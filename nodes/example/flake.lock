@@ -1,0 +1,119 @@
+{
+  "nodes": {
+    "disko": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1779226674,
+        "narHash": "sha256-wuOkjI6pRiN4sEn/EPBRnNW5cmcpvd7xtIM8y5LooAs=",
+        "owner": "nix-community",
+        "repo": "disko",
+        "rev": "65fb947964bd44fc0008faf77d1fcb7a9f40bb32",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "disko",
+        "type": "github"
+      }
+    },
+    "example-package": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "path": "../../packages/example",
+        "type": "path"
+      },
+      "original": {
+        "path": "../../packages/example",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "hardware": {
+      "inputs": {
+        "nixos-hardware": "nixos-hardware"
+      },
+      "locked": {
+        "path": "../../hardware/intel-n100",
+        "type": "path"
+      },
+      "original": {
+        "path": "../../hardware/intel-n100",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "modules": {
+      "locked": {
+        "path": "../../modules",
+        "type": "path"
+      },
+      "original": {
+        "path": "../../modules",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "nixos-hardware": {
+      "locked": {
+        "lastModified": 1779258371,
+        "narHash": "sha256-j1iZsLy6oFApqR1oiDmHhvkwxXqcNi0aoSJj643LuwU=",
+        "owner": "NixOS",
+        "repo": "nixos-hardware",
+        "rev": "c97bc4d15bd3473dd095e8e8ba57330ab1943a77",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixos-hardware",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1779357205,
+        "narHash": "sha256-cCO8aTqss5x9Ky8GWkpY0Hy5fyTZEbtifSUV8QjSzic=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "f83fc3c307e74bc5fd5adb7eb6b8b13ffd2a36e1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "profiles": {
+      "locked": {
+        "path": "../../profiles",
+        "type": "path"
+      },
+      "original": {
+        "path": "../../profiles",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "root": {
+      "inputs": {
+        "disko": "disko",
+        "example-package": "example-package",
+        "hardware": "hardware",
+        "modules": "modules",
+        "nixpkgs": "nixpkgs",
+        "profiles": "profiles"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

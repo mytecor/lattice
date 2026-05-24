@@ -2,12 +2,13 @@
   description = "Lattice node deployment flake";
 
   inputs = {
-    # node-name.url = "./nodes/node-name";
+    example.url = "./nodes/example";
+    # example.url = "git+https://github.com/mytecor/lattice.git?dir=nodes/example";
   };
 
   outputs = inputs: {
     nixosConfigurations = {
-      # node-name = inputs.node-name.nixosConfigurations.node-name;
+      example = inputs.example.nixosConfigurations.example;
     };
   };
 }

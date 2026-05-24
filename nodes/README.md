@@ -1,6 +1,6 @@
-# Nodes
+# Lattice Nodes
 
-Каталог `nodes/` хранит локальные flake-репозитории конкретных нод Lattice.
+Каталог `nodes/` хранит локальные flake-репозитории конкретных нод.
 Нода должна быть самостоятельным flake, который полностью описывает свою NixOS-конфигурацию.
 
 ## Назначение
@@ -11,10 +11,12 @@
 
 - `flake.nix` - flake конкретной ноды
 - `flake.lock` - зафиксированные версии зависимостей ноды
-- `configuration.nix` - основной состав ноды
+- `config.nix` - основной состав ноды
 - `secrets/` - зашифрованные секреты, ключи и материалы, привязанные к этой ноде
 - `files/` - дополнительные файлы для разворачивания на узле
 - `README.md` - заметки по этой конкретной ноде
+
+Шаблон ноды можно посмотреть в [example/](./example/README.md)
 
 ## Что хранить
 
@@ -26,34 +28,7 @@
 - локальные переопределения
 - нодовые secrets и files
 
-## Минимальный flake ноды
-
-```nix
-{
-  description = "Lattice node";
-
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-
-    disko = {
-      url = "github:nix-community/disko";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-  };
-
-  outputs = inputs@{ nixpkgs, disko, ... }: {
-    nixosConfigurations.node-name = nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
-      specialArgs = { inherit inputs; };
-
-      modules = [
-        disko.nixosModules.disko
-        ./configuration.nix
-      ];
-    };
-  };
-}
-```
+Hardware подключается как отдельный flake input конкретной платформы и используется через `hardware.nixosModule`.
 
 ## Порядок сборки
 
