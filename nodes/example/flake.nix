@@ -12,16 +12,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    persistence = {
-      url = "path:../../modules/storage-persistence";
-    };
-
-    wipe-root = {
-      url = "path:../../modules/wipe-root";
+    ephemeral-root = {
+      url = "path:../../modules/ephemeral-root";
     };
   };
 
-  outputs = inputs@{ nixpkgs, disko, hardware, example-package, persistence, wipe-root, ... }: {
+  outputs = inputs@{ nixpkgs, disko, hardware, example-package, ephemeral-root, ... }: {
     nixosConfigurations.example = nixpkgs.lib.nixosSystem {
       specialArgs = { inherit inputs example-package; };
 
@@ -30,10 +26,9 @@
         hardware.nixosModule
         disko.nixosModules.disko
         ./disko.nix
-        wipe-root.nixosModule
+        ephemeral-root.nixosModule
 
         # Modules layer: direct service modules, when a profile is not enough.
-        persistence.nixosModule
         # inputs.modules.nixosModules.service-name
 
         # Profiles layer: reusable node roles.

@@ -1,7 +1,7 @@
 { config, lib, pkgs, ... }:
 
 let
-  cfg = config.lattice.wipe-root;
+  cfg = config.lattice.ephemeral-root;
   device = lib.escapeShellArg cfg.device;
   subvolumePath = lib.escapeShellArg "/mnt/${cfg.subvolume}";
 in
@@ -29,4 +29,18 @@ in
       '';
     };
   };
+
+  environment.persistence."/persist" = {
+    hideMounts = true;
+    directories = [
+      "/var/log"
+      "/var/lib/nixos"
+    ];
+    files = [
+      "/etc/machine-id"
+    ];
+  };
+
+  environment.persistence."/data".hideMounts = true;
+  environment.persistence."/var/cache".hideMounts = true;
 }

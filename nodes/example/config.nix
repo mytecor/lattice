@@ -3,8 +3,6 @@
 {
   networking.hostName = "example";
 
-  lattice.wipe-root.subvolume = "@root";
-
   environment.systemPackages = [
     example-package.packages.${pkgs.stdenv.hostPlatform.system}.default
   ];

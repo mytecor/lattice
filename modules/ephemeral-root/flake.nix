@@ -1,5 +1,5 @@
 {
-  description = "Lattice persistence module";
+  description = "Lattice ephemeral root module";
 
   inputs.impermanence.url = "github:nix-community/impermanence";
 
@@ -7,6 +7,7 @@
     nixosModule = {
       imports = [
         impermanence.nixosModules.impermanence
+        ./options.nix
         ./config.nix
       ];
     };

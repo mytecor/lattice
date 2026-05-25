@@ -31,7 +31,7 @@
 - нодовые secrets и files
 
 Hardware подключается как отдельный flake input конкретной платформы и используется через `hardware.nixosModule`.
-Storage-разметка задается на уровне ноды. Для Btrfs и wipe-on-boot нода подключает `disko.nixosModules.disko`, локальный `disko.nix` и модуль `modules/wipe-root`.
+Storage-разметка задается на уровне ноды. Для Btrfs и ephemeral root нода подключает `disko.nixosModules.disko`, локальный `disko.nix` и модуль `modules/ephemeral-root`.
 
 ## Порядок сборки
 

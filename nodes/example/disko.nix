@@ -1,6 +1,9 @@
 { ... }:
 
 {
+  lattice.ephemeral-root.subvolume = "@root";
+  lattice.ephemeral-root.device = "/dev/disk/by-label/root";
+
   disko.devices.disk.primary = {
     device = "/dev/disk/by-id/replace-me";
     type = "disk";

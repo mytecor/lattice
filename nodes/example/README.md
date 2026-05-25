@@ -8,6 +8,6 @@
 
 Storage описан локально в `disko.nix`: EFI-раздел, Btrfs volume с меткой `root`, subvolume `@root` для `/`, `@nix` для `/nix` и `@persist` для `/persist`.
 
-`wipe-root.nixosModule` пересоздает `@root` при загрузке, а `storage-persistence` сохраняет нужные данные в `/persist` через impermanence.
+`ephemeral-root.nixosModule` пересоздает `@root` при загрузке и сохраняет нужные данные в `/persist` через impermanence.
 
 Общие слои `profiles/` и `modules/` подключаются отдельными flake inputs из основного репозитория.

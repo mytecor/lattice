@@ -18,14 +18,29 @@
         "type": "github"
       }
     },
+    "ephemeral-root": {
+      "inputs": {
+        "impermanence": "impermanence"
+      },
+      "locked": {
+        "path": "../../modules/ephemeral-root",
+        "type": "path"
+      },
+      "original": {
+        "path": "../../modules/ephemeral-root",
+        "type": "path"
+      },
+      "parent": [
+        "example"
+      ]
+    },
     "example": {
       "inputs": {
         "disko": "disko",
+        "ephemeral-root": "ephemeral-root",
         "example-package": "example-package",
         "hardware": "hardware",
-        "nixpkgs": "nixpkgs_2",
-        "persistence": "persistence",
-        "wipe-root": "wipe-root"
+        "nixpkgs": "nixpkgs_3"
       },
       "locked": {
         "path": "./nodes/example",
@@ -95,7 +110,7 @@
       "inputs": {
         "nixpkgs": [
           "example",
-          "persistence",
+          "ephemeral-root",
           "impermanence",
           "nixpkgs"
         ]
@@ -117,7 +132,7 @@
     "impermanence": {
       "inputs": {
         "home-manager": "home-manager",
-        "nixpkgs": "nixpkgs_3"
+        "nixpkgs": "nixpkgs_2"
       },
       "locked": {
         "lastModified": 1769548169,
@@ -166,22 +181,6 @@
     },
     "nixpkgs_2": {
       "locked": {
-        "lastModified": 1779357205,
-        "narHash": "sha256-cCO8aTqss5x9Ky8GWkpY0Hy5fyTZEbtifSUV8QjSzic=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "f83fc3c307e74bc5fd5adb7eb6b8b13ffd2a36e1",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "nixos-unstable",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
-    "nixpkgs_3": {
-      "locked": {
         "lastModified": 1768564909,
         "narHash": "sha256-Kell/SpJYVkHWMvnhqJz/8DqQg2b6PguxVWOuadbHCc=",
         "owner": "nixos",
@@ -196,21 +195,21 @@
         "type": "github"
       }
     },
-    "persistence": {
-      "inputs": {
-        "impermanence": "impermanence"
-      },
+    "nixpkgs_3": {
       "locked": {
-        "path": "../../modules/storage-persistence",
-        "type": "path"
+        "lastModified": 1779357205,
+        "narHash": "sha256-cCO8aTqss5x9Ky8GWkpY0Hy5fyTZEbtifSUV8QjSzic=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "f83fc3c307e74bc5fd5adb7eb6b8b13ffd2a36e1",
+        "type": "github"
       },
       "original": {
-        "path": "../../modules/storage-persistence",
-        "type": "path"
-      },
-      "parent": [
-        "example"
-      ]
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
     },
     "root": {
       "inputs": {
@@ -231,19 +230,6 @@
         "repo": "default",
         "type": "github"
       }
-    },
-    "wipe-root": {
-      "locked": {
-        "path": "../../modules/wipe-root",
-        "type": "path"
-      },
-      "original": {
-        "path": "../../modules/wipe-root",
-        "type": "path"
-      },
-      "parent": [
-        "example"
-      ]
     }
   },
   "root": "root",
