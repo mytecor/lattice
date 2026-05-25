@@ -12,6 +12,7 @@
 - `flake.nix` - flake конкретной ноды
 - `flake.lock` - зафиксированные версии зависимостей ноды
 - `config.nix` - основной состав ноды
+- `disko.nix` - разметка диска, файловые системы и boot loader, если нода управляет storage через `disko`
 - `secrets/` - зашифрованные секреты, ключи и материалы, привязанные к этой ноде
 - `files/` - дополнительные файлы для разворачивания на узле
 - `README.md` - заметки по этой конкретной ноде
@@ -23,15 +24,17 @@
 - собственный `flake.nix` ноды
 - inputs, нужные именно этой ноде
 - выбранное hardware
+- storage-разметку конкретного диска
 - подключенные profiles
 - точечные modules
 - локальные переопределения
 - нодовые secrets и files
 
 Hardware подключается как отдельный flake input конкретной платформы и используется через `hardware.nixosModule`.
+Storage-разметка задается на уровне ноды. Для Btrfs и wipe-on-boot нода подключает `disko.nixosModules.disko`, локальный `disko.nix` и модуль `modules/wipe-root`.
 
 ## Порядок сборки
 
 1. Flake выбирает `nixpkgs` и внешние зависимости.
-2. Flake подключает hardware, profiles, modules и secrets.
+2. Flake подключает hardware, storage, profiles, modules и secrets.
 3. Flake экспортирует `nixosConfigurations.<node-name>`.

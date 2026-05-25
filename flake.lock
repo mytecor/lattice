@@ -1,6 +1,250 @@
 {
   "nodes": {
-    "root": {}
+    "disko": {
+      "inputs": {
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1779226674,
+        "narHash": "sha256-wuOkjI6pRiN4sEn/EPBRnNW5cmcpvd7xtIM8y5LooAs=",
+        "owner": "nix-community",
+        "repo": "disko",
+        "rev": "65fb947964bd44fc0008faf77d1fcb7a9f40bb32",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "disko",
+        "type": "github"
+      }
+    },
+    "example": {
+      "inputs": {
+        "disko": "disko",
+        "example-package": "example-package",
+        "hardware": "hardware",
+        "nixpkgs": "nixpkgs_2",
+        "persistence": "persistence",
+        "wipe-root": "wipe-root"
+      },
+      "locked": {
+        "path": "./nodes/example",
+        "type": "path"
+      },
+      "original": {
+        "path": "./nodes/example",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "example-package": {
+      "inputs": {
+        "flake-utils": "flake-utils",
+        "nixpkgs": [
+          "example",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "path": "../../packages/example",
+        "type": "path"
+      },
+      "original": {
+        "path": "../../packages/example",
+        "type": "path"
+      },
+      "parent": [
+        "example"
+      ]
+    },
+    "flake-utils": {
+      "inputs": {
+        "systems": "systems"
+      },
+      "locked": {
+        "lastModified": 1731533236,
+        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
+    "hardware": {
+      "inputs": {
+        "nixos-hardware": "nixos-hardware"
+      },
+      "locked": {
+        "path": "../../hardware/intel-n100",
+        "type": "path"
+      },
+      "original": {
+        "path": "../../hardware/intel-n100",
+        "type": "path"
+      },
+      "parent": [
+        "example"
+      ]
+    },
+    "home-manager": {
+      "inputs": {
+        "nixpkgs": [
+          "example",
+          "persistence",
+          "impermanence",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1768598210,
+        "narHash": "sha256-kkgA32s/f4jaa4UG+2f8C225Qvclxnqs76mf8zvTVPg=",
+        "owner": "nix-community",
+        "repo": "home-manager",
+        "rev": "c47b2cc64a629f8e075de52e4742de688f930dc6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "home-manager",
+        "type": "github"
+      }
+    },
+    "impermanence": {
+      "inputs": {
+        "home-manager": "home-manager",
+        "nixpkgs": "nixpkgs_3"
+      },
+      "locked": {
+        "lastModified": 1769548169,
+        "narHash": "sha256-03+JxvzmfwRu+5JafM0DLbxgHttOQZkUtDWBmeUkN8Y=",
+        "owner": "nix-community",
+        "repo": "impermanence",
+        "rev": "7b1d382faf603b6d264f58627330f9faa5cba149",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "impermanence",
+        "type": "github"
+      }
+    },
+    "nixos-hardware": {
+      "locked": {
+        "lastModified": 1779258371,
+        "narHash": "sha256-j1iZsLy6oFApqR1oiDmHhvkwxXqcNi0aoSJj643LuwU=",
+        "owner": "NixOS",
+        "repo": "nixos-hardware",
+        "rev": "c97bc4d15bd3473dd095e8e8ba57330ab1943a77",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixos-hardware",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1779694939,
+        "narHash": "sha256-Ly4j75O8ICaSQx3uxPnwk2x7PMF0XQvn5r0c3yBA7FI=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "f9d8b65950353691ab56561e7c73d2e1063d810b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixpkgs-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1779357205,
+        "narHash": "sha256-cCO8aTqss5x9Ky8GWkpY0Hy5fyTZEbtifSUV8QjSzic=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "f83fc3c307e74bc5fd5adb7eb6b8b13ffd2a36e1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_3": {
+      "locked": {
+        "lastModified": 1768564909,
+        "narHash": "sha256-Kell/SpJYVkHWMvnhqJz/8DqQg2b6PguxVWOuadbHCc=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "e4bae1bd10c9c57b2cf517953ab70060a828ee6f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "persistence": {
+      "inputs": {
+        "impermanence": "impermanence"
+      },
+      "locked": {
+        "path": "../../modules/storage-persistence",
+        "type": "path"
+      },
+      "original": {
+        "path": "../../modules/storage-persistence",
+        "type": "path"
+      },
+      "parent": [
+        "example"
+      ]
+    },
+    "root": {
+      "inputs": {
+        "example": "example"
+      }
+    },
+    "systems": {
+      "locked": {
+        "lastModified": 1681028828,
+        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
+        "owner": "nix-systems",
+        "repo": "default",
+        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-systems",
+        "repo": "default",
+        "type": "github"
+      }
+    },
+    "wipe-root": {
+      "locked": {
+        "path": "../../modules/wipe-root",
+        "type": "path"
+      },
+      "original": {
+        "path": "../../modules/wipe-root",
+        "type": "path"
+      },
+      "parent": [
+        "example"
+      ]
+    }
   },
   "root": "root",
   "version": 7
