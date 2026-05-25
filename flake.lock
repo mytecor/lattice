@@ -40,7 +40,8 @@
         "ephemeral-root": "ephemeral-root",
         "example-package": "example-package",
         "hardware": "hardware",
-        "nixpkgs": "nixpkgs_3"
+        "nixpkgs": "nixpkgs_3",
+        "wireless": "wireless"
       },
       "locked": {
         "path": "./nodes/example",
@@ -230,6 +231,19 @@
         "repo": "default",
         "type": "github"
       }
+    },
+    "wireless": {
+      "locked": {
+        "path": "../../modules/wireless",
+        "type": "path"
+      },
+      "original": {
+        "path": "../../modules/wireless",
+        "type": "path"
+      },
+      "parent": [
+        "example"
+      ]
     }
   },
   "root": "root",

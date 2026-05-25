@@ -15,9 +15,13 @@
     ephemeral-root = {
       url = "path:../../modules/ephemeral-root";
     };
+
+    wireless = {
+      url = "path:../../modules/wireless";
+    };
   };
 
-  outputs = inputs@{ nixpkgs, disko, hardware, example-package, ephemeral-root, ... }: {
+  outputs = inputs@{ nixpkgs, disko, hardware, example-package, ephemeral-root, wireless, ... }: {
     nixosConfigurations.example = nixpkgs.lib.nixosSystem {
       specialArgs = { inherit inputs example-package; };
 
@@ -27,6 +31,7 @@
         disko.nixosModules.disko
         ./disko.nix
         ephemeral-root.nixosModule
+        wireless.nixosModule
 
         # Modules layer: direct service modules, when a profile is not enough.
         # inputs.modules.nixosModules.service-name
