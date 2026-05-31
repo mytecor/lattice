@@ -16,12 +16,17 @@
       url = "path:../../modules/ephemeral-root";
     };
 
+    gitops-deploy = {
+      url = "path:../../modules/gitops-deploy";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     wireless = {
       url = "path:../../modules/wireless";
     };
   };
 
-  outputs = inputs@{ nixpkgs, disko, hardware, example-package, ephemeral-root, wireless, ... }: {
+  outputs = inputs@{ nixpkgs, disko, hardware, example-package, ephemeral-root, gitops-deploy, wireless, ... }: {
     nixosConfigurations.example = nixpkgs.lib.nixosSystem {
       specialArgs = { inherit inputs example-package; };
 
@@ -31,6 +36,7 @@
         disko.nixosModules.disko
         ./disko.nix
         ephemeral-root.nixosModule
+        gitops-deploy.nixosModule
         wireless.nixosModule
 
         # Modules layer: direct service modules, when a profile is not enough.

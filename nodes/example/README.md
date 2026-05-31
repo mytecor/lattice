@@ -10,4 +10,6 @@ Storage описан локально в `disko.nix`: EFI-раздел, Btrfs vo
 
 `ephemeral-root.nixosModule` пересоздает `@root` при загрузке и сохраняет нужные данные в `/persist` через impermanence.
 
+`gitops-deploy.nixosModule` подключает `comin` для pull-based обновлений из основного репозитория.
+
 Общие слои `profiles/` и `modules/` подключаются отдельными flake inputs из основного репозитория.
