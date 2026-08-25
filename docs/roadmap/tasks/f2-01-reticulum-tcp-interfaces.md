@@ -1,6 +1,6 @@
 # Добавить TCP-интерфейсы Reticulum в `rns-server`/`profiles/rns-server`
 
-Фича: [F2 — Reticulum поверх TCP/IP](../FEATURES.md).
+Фича: [F2 — Reticulum поверх TCP/IP](../features/f2-reticulum-tcp.md).
 
 ## Контекст
 

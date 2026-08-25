@@ -1,6 +1,6 @@
 # Поднять второй узел; включить `profiles/rnsh` на обоих
 
-Фича: [F2 — Reticulum поверх TCP/IP](../FEATURES.md).
+Фича: [F2 — Reticulum поверх TCP/IP](../features/f2-reticulum-tcp.md).
 
 ## Контекст
 

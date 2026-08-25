@@ -1,6 +1,6 @@
 # Добавить интерфейсы RNode/LoRa в слой интерфейсов Reticulum
 
-Фича: [F6 — радио и mesh](../FEATURES.md).
+Фича: [F6 — радио и mesh](../features/f6-radio-mesh.md).
 
 ## Контекст
 

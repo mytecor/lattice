@@ -1,6 +1,6 @@
 # Radicle-seed на нескольких узлах; `comin` на radicle-remote
 
-Фича: [F4 — полезная нагрузка](../FEATURES.md).
+Фича: [F4 — полезная нагрузка](../features/f4-payload.md).
 
 ## Контекст
 

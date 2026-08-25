@@ -5,7 +5,7 @@
 `f1-05-wireless-on-node.md`.
 
 Затем добавьте строку задачи в [`tasks/README.md`](./README.md) и ссылку на неё в
-[`FEATURES.md`](../FEATURES.md) нужной фичи.
+[`features/`](../features/README.md) нужной фичи.
 
 ---
 

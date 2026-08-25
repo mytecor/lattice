@@ -1,6 +1,6 @@
 # Довести идею `MSG_BUS.md` до модуля
 
-Фича: [F6 — радио и mesh](../FEATURES.md).
+Фича: [F6 — радио и mesh](../features/f6-radio-mesh.md).
 
 ## Контекст
 

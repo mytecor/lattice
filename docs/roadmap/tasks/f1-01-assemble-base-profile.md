@@ -1,6 +1,6 @@
 # Собрать `profiles/base` и подключить в `nodes/example`
 
-Фича: [F1 — одна железная нода](../FEATURES.md).
+Фича: [F1 — одна железная нода](../features/f1-one-node.md).
 
 ## Контекст
 
