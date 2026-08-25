@@ -4,40 +4,37 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     disko.url = "github:nix-community/disko";
+    nixos-hardware.url = "github:NixOS/nixos-hardware";
+    impermanence.url = "github:nix-community/impermanence";
 
-    hardware.url = "path:../../hardware/intel-n100";
-
-    example-package = {
-      url = "path:../../packages/example";
-      inputs.nixpkgs.follows = "nixpkgs";
+    hardware = {
+      url = "path:../../hardware/intel-n100";
+      flake = false;
     };
 
     ephemeral-root = {
       url = "path:../../modules/ephemeral-root";
-    };
-
-    gitops-deploy = {
-      url = "path:../../modules/gitops-deploy";
-      inputs.nixpkgs.follows = "nixpkgs";
+      flake = false;
     };
 
     wireless = {
       url = "path:../../modules/wireless";
+      flake = false;
     };
   };
 
-  outputs = inputs@{ nixpkgs, disko, hardware, example-package, ephemeral-root, gitops-deploy, wireless, ... }: {
+  outputs = { nixpkgs, disko, nixos-hardware, impermanence, hardware, ephemeral-root, wireless, ... }: {
     nixosConfigurations.example = nixpkgs.lib.nixosSystem {
-      specialArgs = { inherit inputs example-package; };
+      specialArgs = { inherit nixos-hardware; };
 
       modules = [
         # Hardware layer: platform, drivers, disks, filesystems, boot.
-        hardware.nixosModule
+        hardware
         disko.nixosModules.disko
         ./disko.nix
-        ephemeral-root.nixosModule
-        gitops-deploy.nixosModule
-        wireless.nixosModule
+        impermanence.nixosModules.impermanence
+        ephemeral-root
+        wireless
 
         # Modules layer: direct service modules, when a profile is not enough.
         # inputs.modules.nixosModules.service-name

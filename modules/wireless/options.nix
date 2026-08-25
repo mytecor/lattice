@@ -1,25 +1,26 @@
 { lib, ... }:
-
+let inherit (lib) types literalExpression mkOption;
+in
 {
   options.lattice.wireless = {
-    networks = lib.mkOption {
-      type = lib.types.listOf (lib.types.submodule {
+    networks = mkOption {
+      type = types.listOf (types.submodule {
         options = {
-          ssid = lib.mkOption {
-            type = lib.types.str;
-            example = lib.literalExpression "config.age.secrets.wifi_ssid.path";
+          ssid = mkOption {
+            type = types.str;
+            example = literalExpression "config.age.secrets.wifi_ssid.path";
             description = "Path to a file containing the Wi-Fi SSID.";
           };
 
-          password = lib.mkOption {
-            type = lib.types.str;
-            example = lib.literalExpression "config.age.secrets.wifi_psk.path";
+          password = mkOption {
+            type = types.str;
+            example = literalExpression "config.age.secrets.wifi_psk.path";
             description = "Path to a file containing the Wi-Fi password.";
           };
         };
       });
       default = [ ];
-      example = lib.literalExpression ''
+      example = literalExpression ''
         [
           {
             ssid = config.age.secrets.wifi_ssid.path;

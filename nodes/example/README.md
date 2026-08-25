@@ -10,6 +10,8 @@ Storage описан локально в `disko.nix`: EFI-раздел, Btrfs vo
 
 `ephemeral-root.nixosModule` пересоздает `@root` при загрузке и сохраняет нужные данные в `/persist` через impermanence.
 
-`gitops-deploy.nixosModule` подключает `comin` для pull-based обновлений из основного репозитория.
+`base-profile.nixosModule` подключает базовый профиль ноды, включая `comin` для pull-based обновлений из GitHub и локального Radicle repo.
+
+`radicle-profile.nixosModule` включает seed node Radicle и HTTP gateway. В конфиге ноды задается публичный ключ `services.radicle.publicKey`.
 
 Общие слои `profiles/` и `modules/` подключаются отдельными flake inputs из основного репозитория.

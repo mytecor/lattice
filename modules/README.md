@@ -1,13 +1,13 @@
 # Lattice Modules
 
-Каталог `modules/` хранит локальные flake-репозитории NixOS-модулей, которые подключаются конкретными нодами.
+Каталог `modules/` хранит локальные flake-репозитории низкоуровневых NixOS-модулей. Эти модули описывают системные механизмы и не должны хранить инфраструктурные дефолты сети Lattice, URL репозиториев, адреса конкретных сервисов или настройки конкретных нод.
 
 ## Модули
 
 - [`ephemeral-root/`](./ephemeral-root/README.md) - пересоздание Btrfs root subvolume при загрузке initrd и постоянные данные через `nix-community/impermanence`.
-- [`gitops-deploy/`](./gitops-deploy/README.md) - общий pull-based GitOps-деплой нод.
-- [`rnsh/`](./rnsh/README.md) - listener-сервис для remote shell через Reticulum.
 - [`rns-server/`](./rns-server/README.md) - сервис `rns-server` и typed-генерация RNS ConfigObj-конфигов.
+- [`rnsh/`](./rnsh/README.md) - listener-сервис для remote shell через Reticulum.
+- [`wireless/`](./wireless/flake.nix) - настройка Wi-Fi сетей через NetworkManager и runtime secret-файлы.
 
 ## Правило
 
