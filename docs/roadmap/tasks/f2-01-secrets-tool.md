@@ -1,6 +1,6 @@
 # Ввести инструмент секретов (sops-nix или agenix)
 
-Фича: [F3 — секреты и идентичность](../features/f3-secrets-identity.md).
+Фича: [F2 — секреты и идентичность](../features/f2-secrets-identity.md).
 
 ## Контекст
 
@@ -26,4 +26,4 @@
 ## Открытые вопросы
 
 sops-nix или agenix — открытое решение №2 в [BACKLOG.md](../BACKLOG.md). От него зависит
-[f3-03](./f3-03-secret-bootstrap.md) и [f3-05](./f3-05-key-rotation.md).
+[f2-03](./f2-03-secret-bootstrap.md) и [f2-05](./f2-05-key-rotation.md).

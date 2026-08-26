@@ -1,6 +1,6 @@
 # Проверить доступ по rnsh к узлу за NAT
 
-Фича: [F2 — Reticulum поверх TCP/IP](../features/f2-reticulum-tcp.md).
+Фича: [F3 — Reticulum поверх TCP/IP](../features/f3-reticulum-tcp.md).
 
 ## Контекст
 

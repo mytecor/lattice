@@ -1,6 +1,6 @@
 # Поднять второй узел; включить `profiles/rnsh` на обоих
 
-Фича: [F2 — Reticulum поверх TCP/IP](../features/f2-reticulum-tcp.md).
+Фича: [F3 — Reticulum поверх TCP/IP](../features/f3-reticulum-tcp.md).
 
 ## Контекст
 
@@ -11,7 +11,7 @@
 
 - [ ] Создать второй узел по образцу `nodes/example`.
 - [ ] Включить `profiles/rnsh` на обоих узлах.
-- [ ] Подключить TCP-интерфейсы ([f2-01](./f2-01-reticulum-tcp-interfaces.md)) на обоих.
+- [ ] Подключить TCP-интерфейсы ([f3-01](./f3-01-reticulum-tcp-interfaces.md)) на обоих.
 - [ ] Проверить, что оба узла видят друг друга через Reticulum.
 
 ## Критерий готовности

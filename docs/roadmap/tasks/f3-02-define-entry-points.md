@@ -1,6 +1,6 @@
 # Определить точку входа Reticulum и как узел узнаёт её адрес
 
-Фича: [F2 — Reticulum поверх TCP/IP](../features/f2-reticulum-tcp.md).
+Фича: [F3 — Reticulum поверх TCP/IP](../features/f3-reticulum-tcp.md).
 
 ## Контекст
 

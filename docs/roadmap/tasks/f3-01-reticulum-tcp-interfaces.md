@@ -1,6 +1,6 @@
 # Добавить TCP-интерфейсы Reticulum в `rns-server`/`profiles/rns-server`
 
-Фича: [F2 — Reticulum поверх TCP/IP](../features/f2-reticulum-tcp.md).
+Фича: [F3 — Reticulum поверх TCP/IP](../features/f3-reticulum-tcp.md).
 
 ## Контекст
 
@@ -29,5 +29,5 @@
 
 ## Открытые вопросы
 
-Сколько узлов с публичным адресом — см. [f2-02](./f2-02-define-entry-points.md) и
+Сколько узлов с публичным адресом — см. [f3-02](./f3-02-define-entry-points.md) и
 [BACKLOG.md](../BACKLOG.md).

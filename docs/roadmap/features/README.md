@@ -18,8 +18,8 @@
 | Фича | Файл | Что это |
 | ----- | ---- | ------- |
 | **F1. Одна железная нода в работе** | [f1-one-node.md](./f1-one-node.md) | первый узел с нуля, переживает перезагрузку, сам применяет коммит |
-| **F2. Reticulum поверх TCP/IP** | [f2-reticulum-tcp.md](./f2-reticulum-tcp.md) | связь по интернету и удалённый доступ по RNS-адресу |
-| **F3. Секреты и идентичность узла** | [f3-secrets-identity.md](./f3-secrets-identity.md) | безопасность на ключах, публикуемый репозиторий |
+| **F2. Секреты и идентичность узла** | [f2-secrets-identity.md](./f2-secrets-identity.md) | безопасность на ключах, публикуемый репозиторий |
+| **F3. Reticulum поверх TCP/IP** | [f3-reticulum-tcp.md](./f3-reticulum-tcp.md) | связь по интернету и удалённый доступ по RNS-адресу |
 | **F4. Полезная нагрузка** | [f4-payload.md](./f4-payload.md) | сервисы, реплика кода, вычисления и хранилище |
 | **F5. Внешние узлы** | [f5-external-nodes.md](./f5-external-nodes.md) | чистая граница узла, внешний репозиторий |
 | **F6. Радио и mesh** | [f6-radio-mesh.md](./f6-radio-mesh.md) | LoRa/RNode как интерфейс Reticulum |

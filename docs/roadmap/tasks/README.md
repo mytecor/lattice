@@ -19,24 +19,24 @@
 | Развернуть первый узел на Intel N100 с нуля | [f1-03](./f1-03-bootstrap-intel-n100.md) |
 | Убедиться, что `comin` тянет из GitHub и применяет конфиг | [f1-04](./f1-04-verify-comin-github.md) |
 
-## F2. Reticulum поверх TCP/IP и удалённый доступ
+## F2. Секреты и идентичность
 
 | Задача | Файл |
 | ------ | ---- |
-| Добавить TCP-интерфейсы Reticulum | [f2-01](./f2-01-reticulum-tcp-interfaces.md) |
-| Определить точку входа и адрес | [f2-02](./f2-02-define-entry-points.md) |
-| Поднять второй узел; включить `rnsh` | [f2-03](./f2-03-second-node-rnsh.md) |
-| Проверить доступ по rnsh к узлу за NAT | [f2-04](./f2-04-rnsh-nat-access.md) |
+| Выбрать инструмент секретов (sops-nix/agenix) | [f2-01](./f2-01-secrets-tool.md) |
+| Определить идентичность узла | [f2-02](./f2-02-node-identity.md) |
+| Описать bootstrap секрета | [f2-03](./f2-03-secret-bootstrap.md) |
+| Заменить секреты-заглушки | [f2-04](./f2-04-replace-dummy-secrets.md) |
+| Описать ротацию и отзыв ключа | [f2-05](./f2-05-key-rotation.md) |
 
-## F3. Секреты и идентичность
+## F3. Reticulum поверх TCP/IP и удалённый доступ
 
 | Задача | Файл |
 | ------ | ---- |
-| Выбрать инструмент секретов (sops-nix/agenix) | [f3-01](./f3-01-secrets-tool.md) |
-| Определить идентичность узла | [f3-02](./f3-02-node-identity.md) |
-| Описать bootstrap секрета | [f3-03](./f3-03-secret-bootstrap.md) |
-| Заменить секреты-заглушки | [f3-04](./f3-04-replace-dummy-secrets.md) |
-| Описать ротацию и отзыв ключа | [f3-05](./f3-05-key-rotation.md) |
+| Добавить TCP-интерфейсы Reticulum | [f3-01](./f3-01-reticulum-tcp-interfaces.md) |
+| Определить точку входа и адрес | [f3-02](./f3-02-define-entry-points.md) |
+| Поднять второй узел; включить `rnsh` | [f3-03](./f3-03-second-node-rnsh.md) |
+| Проверить доступ по rnsh к узлу за NAT | [f3-04](./f3-04-rnsh-nat-access.md) |
 
 ## F4. Полезная нагрузка
 
