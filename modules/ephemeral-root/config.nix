@@ -196,6 +196,7 @@ in
       unitConfig.DefaultDependencies = false;
       serviceConfig = {
         Type = "oneshot";
+        RemainAfterExit = true;
         PrivateMounts = true;
         ExecStart = "${rotateRoot} ${lib.escapeShellArgs [ deviceForScript cfg.subvolume cfg.oldRootsDirectory ]}";
       };
