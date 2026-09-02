@@ -13,6 +13,7 @@
 - [x] Создать `profiles/base/` по образцу остальных профилей.
 - [x] Подключить в `base` профиль `gitops`, unfree-предикат и базовые системные дефолты.
 - [x] Подключить `profiles/base` к `nixosConfigurations.example` в корневом flake.
+- [x] Добавить воспроизводимую `x86_64-linux` проверку system closure в flake и CI.
 - [ ] Проверить, что профили действительно попадают в сборку (`nixos-rebuild build`).
 
 ## Критерий готовности
@@ -28,5 +29,6 @@
 
 ## Открытые вопросы
 
-Pure evaluation (`nix flake check --no-build`) проходит. Полная сборка требует `x86_64-linux`
-builder или запуска на целевом N100; локальный host — `aarch64-darwin`.
+Pure evaluation (`nix flake check --all-systems --no-build`) проходит. Полную сборку
+`checks.x86_64-linux.example` выполняет GitHub Actions; локально она требует `x86_64-linux`
+builder или запуска на целевом N100, потому что локальный host — `aarch64-darwin`.

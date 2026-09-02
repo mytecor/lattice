@@ -104,6 +104,15 @@
           default = pkgs.lattice.rns-server;
         });
 
+      checks.x86_64-linux.example =
+        let
+          config = self.nixosConfigurations.example.config;
+        in
+        assert config.services.comin.enable;
+        assert config.nix.settings.auto-optimise-store;
+        assert config.nix.gc.automatic;
+        config.system.build.toplevel;
+
       nixosModules = {
         ephemeral-root.imports = [ "${module-ephemeral-root}" ];
         rns-server.imports = [ "${module-rns-server}" ];

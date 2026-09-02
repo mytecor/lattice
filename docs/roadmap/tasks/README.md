@@ -16,14 +16,14 @@
 | ------ | ---- |
 | Собрать `profiles/base` и подключить в `nodes/example` | [f1-01](./f1-01-assemble-base-profile.md) |
 | Привести модель flake/не-flake к одному решению | [f1-02](./f1-02-unify-module-profile-model.md) |
-| Развернуть первый узел на Intel N100 с нуля | [f1-03](./f1-03-bootstrap-intel-n100.md) |
+| Создать и развернуть `mytecor-homelab` на Intel N100 | [f1-03](./f1-03-bootstrap-intel-n100.md) |
 | Убедиться, что `comin` тянет из GitHub и применяет конфиг | [f1-04](./f1-04-verify-comin-github.md) |
 
 ## F2. Секреты и идентичность
 
 | Задача | Файл |
 | ------ | ---- |
-| Выбрать инструмент секретов (sops-nix/agenix) | [f2-01](./f2-01-secrets-tool.md) |
+| Подключить выбранный `agenix` | [f2-01](./f2-01-secrets-tool.md) |
 | Определить идентичность узла | [f2-02](./f2-02-node-identity.md) |
 | Описать bootstrap секрета | [f2-03](./f2-03-secret-bootstrap.md) |
 | Заменить секреты-заглушки | [f2-04](./f2-04-replace-dummy-secrets.md) |
