@@ -1,15 +1,39 @@
 {
   "nodes": {
-    "disko": {
+    "comin": {
       "inputs": {
-        "nixpkgs": "nixpkgs"
+        "flake-compat": "flake-compat",
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "treefmt-nix": "treefmt-nix"
       },
       "locked": {
-        "lastModified": 1779226674,
-        "narHash": "sha256-wuOkjI6pRiN4sEn/EPBRnNW5cmcpvd7xtIM8y5LooAs=",
+        "lastModified": 1787549241,
+        "narHash": "sha256-DoJkxpIWIOBkrHBpmZUDBhguJlt6vOo3KuUIq7zOHjw=",
+        "owner": "nlewo",
+        "repo": "comin",
+        "rev": "ffeadf34d3daba1790d4dcc810c1ab301178e752",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nlewo",
+        "repo": "comin",
+        "type": "github"
+      }
+    },
+    "disko": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1781152676,
+        "narHash": "sha256-RxWs5ND31KzTG7wvMM+PMfUjyNpmIEr999lqNARaM5o=",
         "owner": "nix-community",
         "repo": "disko",
-        "rev": "65fb947964bd44fc0008faf77d1fcb7a9f40bb32",
+        "rev": "ff8702b4de27f72b4c78573dfb89ec74e36abdf1",
         "type": "github"
       },
       "original": {
@@ -17,62 +41,6 @@
         "repo": "disko",
         "type": "github"
       }
-    },
-    "ephemeral-root": {
-      "inputs": {
-        "impermanence": "impermanence"
-      },
-      "locked": {
-        "path": "../../modules/ephemeral-root",
-        "type": "path"
-      },
-      "original": {
-        "path": "../../modules/ephemeral-root",
-        "type": "path"
-      },
-      "parent": [
-        "example"
-      ]
-    },
-    "example": {
-      "inputs": {
-        "disko": "disko",
-        "ephemeral-root": "ephemeral-root",
-        "example-package": "example-package",
-        "gitops-deploy": "gitops-deploy",
-        "hardware": "hardware",
-        "nixpkgs": "nixpkgs_4",
-        "wireless": "wireless"
-      },
-      "locked": {
-        "path": "./nodes/example",
-        "type": "path"
-      },
-      "original": {
-        "path": "./nodes/example",
-        "type": "path"
-      },
-      "parent": []
-    },
-    "example-package": {
-      "inputs": {
-        "flake-utils": "flake-utils",
-        "nixpkgs": [
-          "example",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "path": "../../packages/example",
-        "type": "path"
-      },
-      "original": {
-        "path": "../../packages/example",
-        "type": "path"
-      },
-      "parent": [
-        "example"
-      ]
     },
     "flake-compat": {
       "flake": false,
@@ -90,65 +58,21 @@
         "type": "github"
       }
     },
-    "flake-utils": {
-      "inputs": {
-        "systems": "systems"
-      },
+    "hardware-intel-n100": {
+      "flake": false,
       "locked": {
-        "lastModified": 1731533236,
-        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
-        "owner": "numtide",
-        "repo": "flake-utils",
-        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
-        "type": "github"
-      },
-      "original": {
-        "owner": "numtide",
-        "repo": "flake-utils",
-        "type": "github"
-      }
-    },
-    "gitops-deploy": {
-      "inputs": {
-        "nixpkgs": [
-          "example",
-          "nixpkgs"
-        ],
-        "upstream-comin": "upstream-comin"
-      },
-      "locked": {
-        "path": "../../modules/gitops-deploy",
+        "path": "./hardware/intel-n100",
         "type": "path"
       },
       "original": {
-        "path": "../../modules/gitops-deploy",
+        "path": "./hardware/intel-n100",
         "type": "path"
       },
-      "parent": [
-        "example"
-      ]
-    },
-    "hardware": {
-      "inputs": {
-        "nixos-hardware": "nixos-hardware"
-      },
-      "locked": {
-        "path": "../../hardware/intel-n100",
-        "type": "path"
-      },
-      "original": {
-        "path": "../../hardware/intel-n100",
-        "type": "path"
-      },
-      "parent": [
-        "example"
-      ]
+      "parent": []
     },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
-          "example",
-          "ephemeral-root",
           "impermanence",
           "nixpkgs"
         ]
@@ -170,7 +94,9 @@
     "impermanence": {
       "inputs": {
         "home-manager": "home-manager",
-        "nixpkgs": "nixpkgs_2"
+        "nixpkgs": [
+          "nixpkgs"
+        ]
       },
       "locked": {
         "lastModified": 1769548169,
@@ -186,13 +112,66 @@
         "type": "github"
       }
     },
-    "nixos-hardware": {
+    "module-ephemeral-root": {
+      "flake": false,
       "locked": {
-        "lastModified": 1779258371,
-        "narHash": "sha256-j1iZsLy6oFApqR1oiDmHhvkwxXqcNi0aoSJj643LuwU=",
+        "path": "./modules/ephemeral-root",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/ephemeral-root",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "module-rns-server": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/rns-server",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/rns-server",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "module-rnsh": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/rnsh",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/rnsh",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "module-wireless": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/wireless",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/wireless",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "nixos-hardware": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1788335262,
+        "narHash": "sha256-3jBEq8avfzlrsY4UpW4d5TOmm7ocseZfnitEJhqauyc=",
         "owner": "NixOS",
         "repo": "nixos-hardware",
-        "rev": "c97bc4d15bd3473dd095e8e8ba57330ab1943a77",
+        "rev": "44d95795ee2d475b3d687325e26dcf4ca9104557",
         "type": "github"
       },
       "original": {
@@ -202,38 +181,6 @@
       }
     },
     "nixpkgs": {
-      "locked": {
-        "lastModified": 1779694939,
-        "narHash": "sha256-Ly4j75O8ICaSQx3uxPnwk2x7PMF0XQvn5r0c3yBA7FI=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "f9d8b65950353691ab56561e7c73d2e1063d810b",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "nixpkgs-unstable",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
-    "nixpkgs_2": {
-      "locked": {
-        "lastModified": 1768564909,
-        "narHash": "sha256-Kell/SpJYVkHWMvnhqJz/8DqQg2b6PguxVWOuadbHCc=",
-        "owner": "nixos",
-        "repo": "nixpkgs",
-        "rev": "e4bae1bd10c9c57b2cf517953ab70060a828ee6f",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nixos",
-        "ref": "nixos-unstable",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
-    "nixpkgs_3": {
       "locked": {
         "lastModified": 1770107345,
         "narHash": "sha256-tbS0Ebx2PiA1FRW8mt8oejR0qMXmziJmPaU1d4kYY9g=",
@@ -249,13 +196,13 @@
         "type": "github"
       }
     },
-    "nixpkgs_4": {
+    "nixpkgs_2": {
       "locked": {
-        "lastModified": 1779357205,
-        "narHash": "sha256-cCO8aTqss5x9Ky8GWkpY0Hy5fyTZEbtifSUV8QjSzic=",
+        "lastModified": 1788179007,
+        "narHash": "sha256-hn1oU2rue2SYK8dAr8+WNZWtbsz1S2W5mnHlSEuh3bo=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "f83fc3c307e74bc5fd5adb7eb6b8b13ffd2a36e1",
+        "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
         "type": "github"
       },
       "original": {
@@ -265,29 +212,49 @@
         "type": "github"
       }
     },
-    "root": {
-      "inputs": {
-        "example": "example"
-      }
-    },
-    "systems": {
+    "profiles": {
+      "flake": false,
       "locked": {
-        "lastModified": 1681028828,
-        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
-        "owner": "nix-systems",
-        "repo": "default",
-        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
-        "type": "github"
+        "path": "./profiles",
+        "type": "path"
       },
       "original": {
-        "owner": "nix-systems",
-        "repo": "default",
-        "type": "github"
+        "path": "./profiles",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "rns-rs": {
+      "flake": false,
+      "locked": {
+        "path": "./packages/rns-rs",
+        "type": "path"
+      },
+      "original": {
+        "path": "./packages/rns-rs",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "root": {
+      "inputs": {
+        "comin": "comin",
+        "disko": "disko",
+        "hardware-intel-n100": "hardware-intel-n100",
+        "impermanence": "impermanence",
+        "module-ephemeral-root": "module-ephemeral-root",
+        "module-rns-server": "module-rns-server",
+        "module-rnsh": "module-rnsh",
+        "module-wireless": "module-wireless",
+        "nixos-hardware": "nixos-hardware",
+        "nixpkgs": "nixpkgs_2",
+        "profiles": "profiles",
+        "rns-rs": "rns-rs"
       }
     },
     "treefmt-nix": {
       "inputs": {
-        "nixpkgs": "nixpkgs_3"
+        "nixpkgs": "nixpkgs"
       },
       "locked": {
         "lastModified": 1770228511,
@@ -302,43 +269,6 @@
         "repo": "treefmt-nix",
         "type": "github"
       }
-    },
-    "upstream-comin": {
-      "inputs": {
-        "flake-compat": "flake-compat",
-        "nixpkgs": [
-          "example",
-          "gitops-deploy",
-          "nixpkgs"
-        ],
-        "treefmt-nix": "treefmt-nix"
-      },
-      "locked": {
-        "lastModified": 1780200954,
-        "narHash": "sha256-3476T026t+XSpOvgBGzKSG6J4swuRLnPO9dR+OATtq8=",
-        "owner": "nlewo",
-        "repo": "comin",
-        "rev": "4f14d338d755239c27131cbf6b466be4bbb20f91",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nlewo",
-        "repo": "comin",
-        "type": "github"
-      }
-    },
-    "wireless": {
-      "locked": {
-        "path": "../../modules/wireless",
-        "type": "path"
-      },
-      "original": {
-        "path": "../../modules/wireless",
-        "type": "path"
-      },
-      "parent": [
-        "example"
-      ]
     }
   },
   "root": "root",

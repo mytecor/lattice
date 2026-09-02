@@ -1,16 +1,16 @@
 # Lattice Nodes
 
-Каталог `nodes/` хранит локальные flake-репозитории конкретных нод.
-Нода должна быть самостоятельным flake, который полностью описывает свою NixOS-конфигурацию.
+Каталог `nodes/` хранит конфигурации конкретных нод.
+Нода является обычным NixOS-модулем, который задаёт только локальные параметры и storage.
 
 ## Назначение
 
-Каждая нода является отдельным flake и сама собирает свою итоговую NixOS-конфигурацию. Главный flake проекта только импортирует нодовые flake и прокидывает их `nixosConfigurations` для разворачивания через `nixos-rebuild`.
+Главный flake проекта выбирает общие inputs, hardware, modules и profiles, а затем добавляет модуль
+конкретной ноды и экспортирует итоговую `nixosConfigurations.<name>`.
 
 ## Типичная структура
 
-- `flake.nix` - flake конкретной ноды
-- `flake.lock` - зафиксированные версии зависимостей ноды
+- `default.nix` - входной NixOS-модуль ноды
 - `config.nix` - основной состав ноды
 - `disko.nix` - разметка диска, файловые системы и boot loader, если нода управляет storage через `disko`
 - `secrets/` - зашифрованные секреты, ключи и материалы, привязанные к этой ноде
@@ -21,23 +21,20 @@
 
 ## Что хранить
 
-- собственный `flake.nix` ноды
-- inputs, нужные именно этой ноде
-- выбранное hardware
 - storage-разметку конкретного диска
-- подключенные profiles
-- подключенные services
-- точечные modules
+- локальные настройки services
 - локальные переопределения
 - нодовые secrets и files
 
-Hardware подключается как отдельный flake input конкретной платформы и используется через `hardware.nixosModule`.
-Storage-разметка задается на уровне ноды. Для Btrfs и ephemeral root нода подключает `disko.nixosModules.disko`, локальный `disko.nix` и модуль `modules/ephemeral-root`.
-Общий pull-based деплой подключается через flake input `profiles/gitops` напрямую или через профиль `profiles/base`, чтобы ноды опрашивали репозитории GitOps и применяли свою `nixosConfigurations.<hostname>`.
+Hardware, profiles и modules выбираются для ноды в корневом flake. Hardware подключается как input
+с `flake = false`. Storage-разметка задаётся на уровне ноды: для Btrfs и ephemeral root корневой
+flake подключает `disko` и `modules/ephemeral-root`, а нода — локальный `disko.nix`.
+Общий pull-based деплой подключается через `profiles/base`, чтобы ноды опрашивали репозитории
+GitOps и применяли свою `nixosConfigurations.<hostname>`.
 
 ## Порядок сборки
 
-1. Flake выбирает `nixpkgs` и внешние зависимости.
-2. Flake подключает hardware, storage, profiles, services, modules и secrets.
-3. Конфиг ноды задает локальные параметры вроде `networking.hostName`.
-4. Flake экспортирует `nixosConfigurations.<node-name>`.
+1. Корневой flake выбирает `nixpkgs` и внешние зависимости.
+2. Корневой flake подключает hardware, profiles, services и modules.
+3. Модуль ноды добавляет storage, secrets и локальные параметры вроде `networking.hostName`.
+4. Корневой flake экспортирует `nixosConfigurations.<node-name>`.

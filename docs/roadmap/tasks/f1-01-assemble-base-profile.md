@@ -4,17 +4,15 @@
 
 ## Контекст
 
-`profiles/base` упомянут в `profiles/README.md` и `DEPLOYMENT.md`, но не существует. В
-`nodes/example/flake.nix` секция profiles закомментирована, поэтому ни один профиль в сборку
-реально не попадает. По решению №1 в [BUILD_MODEL.md](../../../BUILD_MODEL.md) `profiles/base` =
-gitops + unfree-предикат + базовые системные дефолты.
+`profiles/base` объединяет GitOps, общий unfree-предикат и базовые системные дефолты. Итоговая
+модель сборки зафиксирована в [ARCHITECTURE.md](../../../ARCHITECTURE.md): профиль подключается
+корневым flake из общего `profiles` input с `flake = false`.
 
 ## Что сделать
 
-- [ ] Создать `profiles/base/` по образцу остальных профилей.
-- [ ] Подключить в `base` профиль `gitops`, unfree-предикат и базовые системные дефолты.
-- [ ] Раскомментировать и подключить `profiles/base` в `nodes/example/flake.nix` (или в первый
-      реальный узел).
+- [x] Создать `profiles/base/` по образцу остальных профилей.
+- [x] Подключить в `base` профиль `gitops`, unfree-предикат и базовые системные дефолты.
+- [x] Подключить `profiles/base` к `nixosConfigurations.example` в корневом flake.
 - [ ] Проверить, что профили действительно попадают в сборку (`nixos-rebuild build`).
 
 ## Критерий готовности
@@ -25,9 +23,10 @@ gitops + unfree-предикат + базовые системные дефол�
 ## Затрагиваемые файлы / слои
 
 - `profiles/base/` (новый)
-- `nodes/example/flake.nix`
+- Корневой `flake.nix`, `nodes/example/default.nix`
 - `DEPLOYMENT.md`, `profiles/README.md` (упоминания `base`)
 
 ## Открытые вопросы
 
-_нет_
+Pure evaluation (`nix flake check --no-build`) проходит. Полная сборка требует `x86_64-linux`
+builder или запуска на целевом N100; локальный host — `aarch64-darwin`.

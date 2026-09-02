@@ -1,4 +1,4 @@
-{ lib, rnshPackage, ... }:
+{ lib, pkgs, ... }:
 
 let
   inherit (lib) mkOption types;
@@ -13,8 +13,8 @@ in
 
     package = mkOption {
       type = types.package;
-      default = rnshPackage;
-      defaultText = lib.literalExpression "rns-rs.packages.<system>.rnsh";
+      default = pkgs.lattice.rnsh;
+      defaultText = lib.literalExpression "pkgs.lattice.rnsh";
       description = "Package providing the rnsh binary.";
     };
 

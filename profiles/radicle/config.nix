@@ -1,5 +1,8 @@
-{ latticePorts, lib, ... }:
+{ lib, ... }:
 
+let
+  latticePorts = import ../networking/ports.nix;
+in
 {
   config = {
     services.radicle = {

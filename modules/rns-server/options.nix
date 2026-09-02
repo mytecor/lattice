@@ -1,4 +1,4 @@
-{ lib, rnsServerPackage, ... }:
+{ lib, pkgs, ... }:
 
 let
   inherit (lib) mkOption types;
@@ -18,8 +18,8 @@ in
 
     package = mkOption {
       type = types.package;
-      default = rnsServerPackage;
-      defaultText = lib.literalExpression "rns-rs.packages.<system>.rns-server";
+      default = pkgs.lattice.rns-server;
+      defaultText = lib.literalExpression "pkgs.lattice.rns-server";
       description = "Package providing the rns-server binary.";
     };
 

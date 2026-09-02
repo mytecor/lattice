@@ -21,15 +21,18 @@
 
 Нода должна монтировать `/persist` во время загрузки. Для Btrfs-разметки через `disko` это обычно задается в `nodes/<name>/disko.nix` через subvolume `@persist` и `fileSystems."/persist".neededForBoot = true`.
 
-## Подключение
+## Подключение в корневом flake
 
 ```nix
-inputs.ephemeral-root.url = "path:../../modules/ephemeral-root";
+inputs.module-ephemeral-root = {
+  url = "path:./modules/ephemeral-root";
+  flake = false;
+};
 
-outputs = { nixpkgs, ephemeral-root, ... }: {
+outputs = { nixpkgs, module-ephemeral-root, ... }: {
   nixosConfigurations.example = nixpkgs.lib.nixosSystem {
     modules = [
-      ephemeral-root.nixosModule
+      "${module-ephemeral-root}"
       {
         lattice.ephemeral-root.subvolume = "@root";
         lattice.ephemeral-root.device = "/dev/disk/by-label/root";

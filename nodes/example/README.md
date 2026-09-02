@@ -1,17 +1,24 @@
 # Lattice Node Example
 
-Шаблон ноды с подключением слоев в рекомендуемом порядке.
+Шаблон локальной ноды. [`default.nix`](./default.nix) объединяет локальные storage и config;
+порядок общих слоёв задаёт корневой [`flake.nix`](../../flake.nix).
 
 Используйте эту ноду как основу для новых `nodes/<name>`.
 
-Нода подключает выбранное железо напрямую как автономный hardware flake, например `hardware/intel-n100`, и импортирует его через `hardware.nixosModule`.
+Корневой flake подключает `hardware/intel-n100`, `disko`, impermanence и общие Lattice modules как
+inputs с `flake = false`.
 
 Storage описан локально в `disko.nix`: EFI-раздел, Btrfs volume с меткой `root`, subvolume `@root` для `/`, `@nix` для `/nix` и `@persist` для `/persist`.
 
-`ephemeral-root.nixosModule` пересоздает `@root` при загрузке и сохраняет нужные данные в `/persist` через impermanence.
+Модуль `ephemeral-root` пересоздаёт `@root` при загрузке и сохраняет нужные данные в `/persist`
+через impermanence.
 
-`base-profile.nixosModule` подключает базовый профиль ноды, включая `comin` для pull-based обновлений из GitHub и локального Radicle repo.
+Input `profiles` подключает каталог общих профилей с `flake = false`. Профиль `profiles/base`
+включает `comin` для pull-based обновлений из GitHub и локального Radicle repo, разрешает
+необходимые unfree-пакеты Reticulum и задаёт базовое обслуживание Nix store.
 
-`radicle-profile.nixosModule` включает seed node Radicle и HTTP gateway. В конфиге ноды задается публичный ключ `services.radicle.publicKey`.
+Профиль `profiles/radicle` можно добавить в корневой состав ноды: он включает seed node Radicle и
+HTTP gateway, а конфиг ноды задаёт публичный ключ `services.radicle.publicKey`.
 
-Общие слои `profiles/` и `modules/` подключаются отдельными flake inputs из основного репозитория.
+Общие слои `profiles/` и `modules/` подключаются обычными inputs с `flake = false` из основного
+репозитория.

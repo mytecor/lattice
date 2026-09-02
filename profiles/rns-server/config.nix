@@ -1,5 +1,8 @@
-{ latticePorts, ... }:
+{ ... }:
 
+let
+  latticePorts = import ../networking/ports.nix;
+in
 {
   config.lattice.rns-server = {
     enable = true;

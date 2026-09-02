@@ -25,7 +25,6 @@
 ## Связанные документы
 
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) — как устроен код (не роадмап).
-- [BUILD_MODEL.md](../../BUILD_MODEL.md) — согласованное решение №1 (модель сборки).
 - [BACKLOG.md](./BACKLOG.md) — открытые решения и отложенное.
 - [DEPLOYMENT.md](../../DEPLOYMENT.md) — разворачивание нод.
 - [CONTRIBUTING.md](../../CONTRIBUTING.md) — добавление новых узлов.
