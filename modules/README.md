@@ -4,7 +4,7 @@
 
 ## Модули
 
-- [`ephemeral-root/`](./ephemeral-root/README.md) - пересоздание Btrfs root subvolume при загрузке initrd и постоянные данные через `nix-community/impermanence`.
+- [`ephemeral-root/`](./ephemeral-root/README.md) - безопасная ротация Btrfs root subvolume при загрузке и постоянные данные через `nix-community/impermanence`.
 - [`rns-server/`](./rns-server/README.md) - сервис `rns-server` и typed-генерация RNS ConfigObj-конфигов.
 - [`rnsh/`](./rnsh/README.md) - listener-сервис для remote shell через Reticulum.
 - [`wireless/`](./wireless/default.nix) - настройка Wi-Fi сетей через NetworkManager и runtime secret-файлы.

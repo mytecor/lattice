@@ -23,6 +23,8 @@
 Первая реальная нода проекта — `mytecor-homelab`. Её каталог `nodes/mytecor-homelab/` нужно
 создать по шаблону `example` в рамках [f1-03](../docs/roadmap/tasks/f1-03-bootstrap-intel-n100.md).
 Имя каталога, `networking.hostName` и имя `nixosConfigurations.mytecor-homelab` должны совпадать.
+Физическая машина до миграции носит hostname `byurik`; после включения в Lattice её единственным
+именем ноды становится `mytecor-homelab`. Отдельная конфигурация `byurik` в сети не создаётся.
 Единственный сетевой канал этой ноды — Wi-Fi, поэтому её конфигурация обязана содержать рабочий
 автоматически подключаемый Wi-Fi-профиль до первого запуска установленной системы.
 
@@ -36,6 +38,9 @@
 Hardware, profiles и modules выбираются для ноды в корневом flake. Hardware подключается как input
 с `flake = false`. Storage-разметка задаётся на уровне ноды: для Btrfs и ephemeral root корневой
 flake подключает `disko` и `modules/ephemeral-root`, а нода — локальный `disko.nix`.
+Стираемый root является опциональной модульной возможностью: общий модуль реализует механизм,
+`disko.nix` выбирает storage, а конфигурация ноды перечисляет сохраняемые данные. Он не должен
+включаться неявно для всех нод через hardware или общий профиль.
 Общий pull-based деплой подключается через `profiles/base`, чтобы ноды опрашивали репозитории
 GitOps и применяли свою `nixosConfigurations.<hostname>`.
 

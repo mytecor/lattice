@@ -35,7 +35,12 @@ nix flake check --all-systems --no-build
 
 ```sh
 nix build .#checks.x86_64-linux.example
+nix build .#checks.x86_64-linux.mytecor-homelab
 ```
 
 Для полной проверки нужен `x86_64-linux` builder. В pull request и при push в `main` её выполняет
 GitHub Actions.
+
+Стираемый root дополнительно проверяется evaluation-check `checks.x86_64-linux.ephemeral-root-module`
+и привилегированным loopback-тестом `tests/ephemeral-root-loop.sh`. Loopback-тест запускается только
+на Linux и не обращается к реальным дискам.

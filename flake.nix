@@ -14,6 +14,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    agenix = {
+      url = "github:ryantm/agenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.darwin.follows = "";
+    };
+
     comin = {
       url = "github:nlewo/comin";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -66,6 +72,7 @@
     comin,
     disko,
     impermanence,
+    agenix,
     nixos-hardware,
     hardware-intel-n100,
     module-ephemeral-root,
@@ -86,6 +93,24 @@
           rnsh = final.callPackage "${rns-rs}/package.nix" { bin = "rnsh"; };
         };
       };
+
+      mkNode = nodeModule: nixpkgs.lib.nixosSystem {
+        specialArgs = { inherit nixos-hardware; };
+
+        modules = [
+          { nixpkgs.overlays = [ overlay ]; }
+
+          "${hardware-intel-n100}"
+          disko.nixosModules.disko
+          impermanence.nixosModules.impermanence
+          agenix.nixosModules.default
+          comin.nixosModules.comin
+          self.nixosModules.default
+
+          "${profiles}/base"
+          nodeModule
+        ];
+      };
     in
     {
       overlays.default = overlay;
@@ -104,14 +129,50 @@
           default = pkgs.lattice.rns-server;
         });
 
-      checks.x86_64-linux.example =
+      checks.x86_64-linux =
         let
-          config = self.nixosConfigurations.example.config;
+          pkgs = import nixpkgs { system = "x86_64-linux"; };
+          exampleConfig = self.nixosConfigurations.example.config;
+          homelabConfig = self.nixosConfigurations.mytecor-homelab.config;
+          disabledConfig = (nixpkgs.lib.nixosSystem {
+            modules = [
+              { nixpkgs.hostPlatform = "x86_64-linux"; system.stateVersion = "26.05"; }
+              impermanence.nixosModules.impermanence
+              self.nixosModules.ephemeral-root
+            ];
+          }).config;
         in
-        assert config.services.comin.enable;
-        assert config.nix.settings.auto-optimise-store;
-        assert config.nix.gc.automatic;
-        config.system.build.toplevel;
+        {
+          example =
+            assert exampleConfig.services.comin.enable;
+            assert exampleConfig.nix.settings.auto-optimise-store;
+            assert exampleConfig.nix.gc.automatic;
+            exampleConfig.system.build.toplevel;
+
+          ephemeral-root-module =
+            assert exampleConfig.lattice.ephemeral-root.enable;
+            assert builtins.hasAttr "lattice-ephemeral-root" exampleConfig.boot.initrd.systemd.services;
+            assert builtins.hasAttr "lattice-ephemeral-root-prune" exampleConfig.systemd.services;
+            assert exampleConfig.fileSystems."/persist".neededForBoot;
+            assert !disabledConfig.lattice.ephemeral-root.enable;
+            assert !(builtins.hasAttr "lattice-ephemeral-root" disabledConfig.boot.initrd.systemd.services);
+            assert !(builtins.hasAttr "/data" exampleConfig.environment.persistence);
+            pkgs.runCommand "ephemeral-root-module-evaluation" { } "touch $out";
+
+          mytecor-homelab =
+            assert homelabConfig.networking.hostName == "mytecor-homelab";
+            assert homelabConfig.lattice.ephemeral-root.enable;
+            assert homelabConfig.services.comin.enable;
+            assert homelabConfig.services.openssh.enable;
+            assert !homelabConfig.services.openssh.settings.PasswordAuthentication;
+            assert homelabConfig.services.openssh.settings.PermitRootLogin == "prohibit-password";
+            assert builtins.elem 22 homelabConfig.networking.firewall.allowedTCPPorts;
+            assert homelabConfig.services.avahi.enable;
+            assert homelabConfig.age.identityPaths == [ "/persist/var/lib/lattice/age/identity" ];
+            assert builtins.length (builtins.attrNames homelabConfig.age.secrets) == 2;
+            assert builtins.length homelabConfig.lattice.wireless.networks == 1;
+            homelabConfig.system.build.toplevel;
+        };
 
       nixosModules = {
         ephemeral-root.imports = [ "${module-ephemeral-root}" ];
@@ -127,21 +188,7 @@
         ];
       };
 
-      nixosConfigurations.example = nixpkgs.lib.nixosSystem {
-        specialArgs = { inherit nixos-hardware; };
-
-        modules = [
-          { nixpkgs.overlays = [ overlay ]; }
-
-          "${hardware-intel-n100}"
-          disko.nixosModules.disko
-          impermanence.nixosModules.impermanence
-          comin.nixosModules.comin
-          self.nixosModules.default
-
-          "${profiles}/base"
-          ./nodes/example
-        ];
-      };
+      nixosConfigurations.example = mkNode ./nodes/example;
+      nixosConfigurations.mytecor-homelab = mkNode ./nodes/mytecor-homelab;
     };
 }
