@@ -184,6 +184,7 @@ in
     ];
 
     boot.initrd.supportedFilesystems = [ "btrfs" ];
+    boot.initrd.systemd.storePaths = [ rotateRoot ];
 
     boot.initrd.systemd.services.lattice-ephemeral-root = {
       description = "Rotate and recreate the Btrfs root subvolume";

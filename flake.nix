@@ -152,6 +152,11 @@
           ephemeral-root-module =
             assert exampleConfig.lattice.ephemeral-root.enable;
             assert builtins.hasAttr "lattice-ephemeral-root" exampleConfig.boot.initrd.systemd.services;
+            assert builtins.any
+              (entry: nixpkgs.lib.hasPrefix
+                (toString entry.source)
+                exampleConfig.boot.initrd.systemd.services.lattice-ephemeral-root.serviceConfig.ExecStart)
+              exampleConfig.boot.initrd.systemd.storePaths;
             assert builtins.hasAttr "lattice-ephemeral-root-prune" exampleConfig.systemd.services;
             assert exampleConfig.fileSystems."/persist".neededForBoot;
             assert !disabledConfig.lattice.ephemeral-root.enable;

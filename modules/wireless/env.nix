@@ -56,7 +56,6 @@ in
       wantedBy = [ "multi-user.target" ];
       pathConfig = {
         PathChanged = vars.secretFiles;
-        PathExists = vars.secretFiles;
         Unit = "NetworkManager-ensure-profiles.service";
       };
     };
