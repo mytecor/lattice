@@ -4,6 +4,9 @@
 после установки имя каталога, `networking.hostName` и `nixosConfigurations` совпадают:
 `mytecor-homelab`.
 
+Статус: развёрнута 2026-09-03, доступна как `mytecor-homelab.local` и автоматически применяет
+GitHub `main` через `comin`.
+
 ## Hardware
 
 - CPU: Intel N100
@@ -21,6 +24,36 @@ Wi-Fi создаётся декларативно из `wifi-ssid.age` и `wifi-
 по ключу Mac, а host key создаётся непосредственно в `/persist/etc/ssh/`.
 
 Reticulum identity исходной системы не переносится.
+
+## Root password
+
+Пароль root опционально задаётся через зашифрованный `root-password-hash.age`. В secret хранится
+только yescrypt-хеш, а не открытый пароль. Пока файла нет, парольный вход root заблокирован.
+
+Сгенерировать хеш интерактивно, не добавляя пароль в shell history:
+
+```sh
+umask 077
+nix shell nixpkgs#mkpasswd -c mkpasswd -m yescrypt \
+  > /tmp/mytecor-root-password.hash
+```
+
+Из каталога `nodes/mytecor-homelab/secrets/` зашифровать хеш для ноды и recovery SSH-ключа Mac:
+
+```sh
+nix shell nixpkgs#age -c age \
+  -r age1dyxfyhf8s5lj9k0pzkkjjte0dcg4yecwglh88kmv2udau0q33v0ssa4pd8 \
+  -R ~/.ssh/byurik.pub \
+  -o root-password-hash.age \
+  /tmp/mytecor-root-password.hash
+
+rm /tmp/mytecor-root-password.hash
+```
+
+После добавления `root-password-hash.age` в Git конфигурация автоматически подключит его как
+`users.users.root.hashedPasswordFile`. `users.mutableUsers = false` восстанавливает заданный hash
+при каждой активации, в том числе после очистки root. SSH остаётся key-only: пароль предназначен
+для локальной консоли и `su`, а `services.openssh.settings.PasswordAuthentication` остаётся `false`.
 
 ## Миграция
 

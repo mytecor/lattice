@@ -75,7 +75,12 @@ age_bin=$(nix eval \
   --raw \
   "$flake_path#nixosConfigurations.$configuration.config.age.ageBin")
 
-for secret in wifi-ssid wifi-password; do
+secrets=(wifi-ssid wifi-password)
+if [[ -e "$flake_path/nodes/$configuration/secrets/root-password-hash.age" ]]; then
+  secrets+=(root-password-hash)
+fi
+
+for secret in "${secrets[@]}"; do
   secret_path="$flake_path/nodes/$configuration/secrets/$secret.age"
   [[ -s "$secret_path" ]] || fail "encrypted secret is missing: $secret_path"
   value=$("$age_bin" --decrypt -i "$age_key" "$secret_path") \

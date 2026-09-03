@@ -91,3 +91,7 @@ sudo tests/ephemeral-root-loop.sh <rotate-script> <prune-script>
 Тест проверяет новый root, сохранность `@nix` и `@persist`, вложенный subvolume, безопасный отказ и
 рекурсивную очистку с retention. Оба пути скриптов доступны в `ExecStart` соответствующих units
 после сборки конфигурации.
+
+Rotate script должен одновременно присутствовать в `boot.initrd.systemd.storePaths`: ссылка из
+`ExecStart` сама по себе не добавляет файл в initrd. Initrd oneshot использует
+`RemainAfterExit = true`, поскольку `sysroot.mount` может запросить unit повторно до `switch-root`.

@@ -116,7 +116,12 @@ cmp -s /etc/ssh/ssh_host_ed25519_key.pub \
   "$target/persist/etc/ssh/ssh_host_ed25519_key.pub" \
   || fail "the target SSH host key does not match the current host key"
 
-for secret in wifi-ssid wifi-password; do
+secrets=(wifi-ssid wifi-password)
+if [[ -e "$flake_path/nodes/$configuration/secrets/root-password-hash.age" ]]; then
+  secrets+=(root-password-hash)
+fi
+
+for secret in "${secrets[@]}"; do
   "$age_bin" --decrypt \
     -i "$target/persist/var/lib/lattice/age/identity" \
     "$flake_path/nodes/$configuration/secrets/$secret.age" \

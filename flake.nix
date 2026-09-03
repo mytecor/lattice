@@ -169,13 +169,16 @@
             assert homelabConfig.networking.hostName == "mytecor-homelab";
             assert homelabConfig.lattice.ephemeral-root.enable;
             assert homelabConfig.services.comin.enable;
+            assert map (remote: remote.name) homelabConfig.services.comin.remotes == [ "origin" ];
             assert homelabConfig.services.openssh.enable;
             assert !homelabConfig.services.openssh.settings.PasswordAuthentication;
             assert homelabConfig.services.openssh.settings.PermitRootLogin == "prohibit-password";
             assert builtins.elem 22 homelabConfig.networking.firewall.allowedTCPPorts;
             assert homelabConfig.services.avahi.enable;
             assert homelabConfig.age.identityPaths == [ "/persist/var/lib/lattice/age/identity" ];
-            assert builtins.length (builtins.attrNames homelabConfig.age.secrets) == 2;
+            assert builtins.hasAttr "wifi-ssid" homelabConfig.age.secrets;
+            assert builtins.hasAttr "wifi-password" homelabConfig.age.secrets;
+            assert !homelabConfig.users.mutableUsers;
             assert builtins.length homelabConfig.lattice.wireless.networks == 1;
             homelabConfig.system.build.toplevel;
         };

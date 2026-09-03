@@ -1,5 +1,9 @@
-{ config, ... }:
+{ config, lib, ... }:
 
+let
+  rootPasswordHashFile = ./secrets/root-password-hash.age;
+  hasRootPassword = builtins.pathExists rootPasswordHashFile;
+in
 {
   networking.hostName = "mytecor-homelab";
 
@@ -12,6 +16,11 @@
       };
       wifi-password = {
         file = ./secrets/wifi-password.age;
+        mode = "0400";
+      };
+    } // lib.optionalAttrs hasRootPassword {
+      root-password-hash = {
+        file = rootPasswordHashFile;
         mode = "0400";
       };
     };
@@ -40,12 +49,16 @@
     };
   };
 
+  users.mutableUsers = false;
   users.users.root = {
-    hashedPassword = "*";
     openssh.authorizedKeys.keys = [
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIP6Gm4DbPs1Ar7/g9IU90YS873SoMYMQhc0xjQFHtJEk mytecor@macbook.local"
     ];
-  };
+  } // (if hasRootPassword then {
+    hashedPasswordFile = config.age.secrets.root-password-hash.path;
+  } else {
+    hashedPassword = "*";
+  });
 
   services.avahi = {
     enable = true;
