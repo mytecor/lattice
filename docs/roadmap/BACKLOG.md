@@ -40,4 +40,4 @@ peer, общий реестр в flake и исходящие TCP-соедине�
    Оба исправления предложены в [PR #142](https://github.com/lelloman/rns-rs/pull/142)
    из форка `mytecor/rns-rs`.
    После принятия upstream обновить snapshot и убрать соответствующие downstream-патчи.
-   Ограничения очереди и результаты тестов — в [F3-04](./tasks/f3-04-rnsh-nat-access.md).
+   Поведение очереди и результаты тестов — в [F3-04](./tasks/f3-04-rnsh-nat-access.md).
