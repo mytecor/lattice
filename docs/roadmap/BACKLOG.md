@@ -33,10 +33,9 @@ peer, общий реестр в flake и исходящие TCP-соедине�
 2. **Reticulum interface discovery / auto-connect** — проверить поддержку в закреплённом
    `rns-rs`, затем использовать публичные peers как bootstrap для обнаружения других соседей.
 
-3. **rnsh: обрыв сессии при быстром выводе** — на `rns-rs cb257acf` несколько команд подряд
-   могут вызвать `RNS send failed` ещё до `exit`. Локальный патч уже изолирует ошибку:
-   listener и соседняя сессия продолжают работать, что проверено на homelab.
-   Debug-лог подтвердил `Channel send failed: NotReady`: окно канала заполнено.
-   Нужны ожидание готовности канала и очередь вывода с сохранением порядка EOF/exit status.
-   Причина и критерии исправления — в [upstream #141](https://github.com/lelloman/rns-rs/issues/141)
-   и [F3-04](./tasks/f3-04-rnsh-nat-access.md). Патч изоляции опубликован в #140.
+3. **Сопровождение патчей rnsh** — локально исправлены завершение listener при ошибке сессии
+   и обрыв при заполненном окне канала (`NotReady`). Патчи и проверки опубликованы в
+   [#140](https://github.com/lelloman/rns-rs/issues/140) и
+   [#141](https://github.com/lelloman/rns-rs/issues/141#issuecomment-5541627213).
+   После принятия upstream обновить snapshot и убрать соответствующие downstream-патчи.
+   Ограничения очереди и результаты тестов — в [F3-04](./tasks/f3-04-rnsh-nat-access.md).

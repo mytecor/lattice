@@ -27,7 +27,7 @@ rustPlatform.buildRustPackage rec {
 
   cargoHash = "sha256-cWUs8ZQEhYwjwHPTP2lA3BxbtH49KRs1wQjwygwmtPY=";
 
-  patches = lib.optionals (bin == "rnsh") [ ./rnsh-session-send.patch ]
+  patches = lib.optionals (bin == "rnsh") [ ./rnsh-session-send.patch ./rnsh-backpressure.patch ]
     ++ lib.optionals (bin == "rns-server") (
       [ ./shared-local-delivery.patch ]
       ++ lib.optionals stdenv.hostPlatform.isDarwin [ ./darwin-local-client.patch ]
