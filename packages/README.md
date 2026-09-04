@@ -25,6 +25,13 @@ GitHub-архив не содержит `.git`, из которого upstream �
 - `darwin-local-client.patch` (только macOS) переключает принятый TCP-сокет shared instance
   в blocking mode. Иначе унаследованный `O_NONBLOCK` даёт `EAGAIN`, и локальный клиент отключается.
 
+Пакет `rnsh` содержит `rnsh-session-send.patch`: ошибки отправки вывода, EOF или exit status
+закрывают только затронутую сессию, а события процесса после удаления сессии игнорируются.
+Это исправляет завершение всего listener с `RNS send failed` при закрытии shell
+([upstream issue #140](https://github.com/lelloman/rns-rs/issues/140)). Nix-сборка запускает
+unit-тесты `rnsh`, включая регрессии для закрытого link, ошибок отправки, сохранения соседней
+сессии и штатной доставки EOF/exit status.
+
 На Mac оператор может использовать установленный Python RNS 1.5.2 (`rnsd`/`rnsh`) через тот же
 публичный реестр. Rust-бинарники для Darwin собирались в Nix store для тестов и не подменяли PATH.
 

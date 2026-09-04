@@ -7,6 +7,9 @@
 Статус: развёрнута 2026-09-03, доступна как `mytecor-homelab.local` и автоматически применяет
 GitHub `main` через `comin`.
 Reticulum/rnsh проверены через публичные TCP peers Sydney и ReticulumNet.
+После перезагрузки в Generation 7 (2026-09-04, `e934ee9`) подтверждены автоматическое
+подключение Wi-Fi, SSH и rnsh с прежними identity и destination; состояние Reticulum
+сохранилось в `/persist`. Подробности — в [f3-04](../../docs/roadmap/tasks/f3-04-rnsh-nat-access.md).
 
 ## Hardware
 

@@ -3,6 +3,7 @@
 , fetchFromGitHub
 , pkg-config
 , openssl
+, coreutils
 , stdenv
 , bin ? "rns-server"
 }:
@@ -26,10 +27,11 @@ rustPlatform.buildRustPackage rec {
 
   cargoHash = "sha256-cWUs8ZQEhYwjwHPTP2lA3BxbtH49KRs1wQjwygwmtPY=";
 
-  patches = lib.optionals (bin == "rns-server") (
-    [ ./shared-local-delivery.patch ]
-    ++ lib.optionals stdenv.hostPlatform.isDarwin [ ./darwin-local-client.patch ]
-  );
+  patches = lib.optionals (bin == "rnsh") [ ./rnsh-session-send.patch ]
+    ++ lib.optionals (bin == "rns-server") (
+      [ ./shared-local-delivery.patch ]
+      ++ lib.optionals stdenv.hostPlatform.isDarwin [ ./darwin-local-client.patch ]
+    );
 
   # GitHub source archives have no .git directory. Keep CLI versions traceable
   # without deriving them from an unavailable Git commit count.
@@ -56,8 +58,16 @@ rustPlatform.buildRustPackage rec {
     bin
   ];
 
-  doCheck = bin == "rns-server";
-  cargoTestFlags = [ "-p" "rns-core" "--lib" ];
+  doCheck = true;
+  cargoTestFlags = if bin == "rnsh"
+    then [ "-p" "rns-cli" "--lib" "rnsh::tests::" ]
+    else [ "-p" "rns-core" "--lib" ];
+
+  # The upstream process test uses /bin/cat, absent in the Nix Linux sandbox.
+  preCheck = lib.optionalString (bin == "rnsh") ''
+    substituteInPlace rns-cli/src/rnsh.rs \
+      --replace-fail '"/bin/cat"' '"${lib.getExe' coreutils "cat"}"'
+  '';
 
   installPhase = ''
     runHook preInstall
