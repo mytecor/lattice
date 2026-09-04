@@ -21,27 +21,22 @@ rustPlatform.buildRustPackage rec {
   src = fetchFromGitHub {
     owner = "lelloman";
     repo = "rns-rs";
-    rev = "cb257acf53eb4630a9faa62b3dd6d8475a7f0df0";
-    hash = "sha256-4mJ+AttnbQCAj+mLKuubTzb0NpAV/Zic2Jpj2z2FH9s=";
+    rev = "042e37047b70ea0e06b9aff0aed6214bc305ab35";
+    hash = "sha256-cwei72TfRBlk5fEvbLyIxhRSef8Zy9GkrZmj667EjMA=";
   };
 
   cargoHash = "sha256-cWUs8ZQEhYwjwHPTP2lA3BxbtH49KRs1wQjwygwmtPY=";
 
-  patches = lib.optionals (bin == "rnsh") [ ./rnsh-session-send.patch ./rnsh-backpressure.patch ]
-    ++ lib.optionals (bin == "rns-server") (
-      [ ./shared-local-delivery.patch ]
-      ++ lib.optionals stdenv.hostPlatform.isDarwin [ ./darwin-local-client.patch ]
-    );
+  patches = lib.optionals (bin == "rns-server") (
+    [ ./shared-local-delivery.patch ]
+    ++ lib.optionals stdenv.hostPlatform.isDarwin [ ./darwin-local-client.patch ]
+  );
 
   # GitHub source archives have no .git directory. Keep CLI versions traceable
   # without deriving them from an unavailable Git commit count.
   env.RNS_BUILD_REV = builtins.substring 0 12 src.rev;
 
   postPatch = ''
-    substituteInPlace rns-cli/src/rnsh.rs \
-      --replace-fail "std::ptr::null()," "std::ptr::null_mut()," \
-      --replace-fail "libc::ioctl(tty_fd, libc::TIOCSCTTY, 0);" "libc::ioctl(tty_fd, libc::TIOCSCTTY.into(), 0);"
-
     substituteInPlace rns-cli/build_common.rs rns-server/build_common.rs build/common.rs \
       --replace-fail 'pub fn emit_full_version() {' 'pub fn emit_full_version() {
         if let Ok(rev) = std::env::var("RNS_BUILD_REV") {
