@@ -144,3 +144,17 @@ stdout/stderr/EOF/exit status, независимость второй сесс�
 [#141](https://github.com/lelloman/rns-rs/issues/141#issuecomment-5541627213).
 После проверки runtime override удалён и тестовый daemon остановлен; постоянное
 развёртывание патча не выполнялось. Проверка смены IP клиента по-прежнему остаётся открытой.
+
+## Upstream PR
+
+По приглашению автора создан форк `mytecor/rns-rs` и открыт
+[PR #142](https://github.com/lelloman/rns-rs/pull/142) в `lelloman/rns-rs:master`,
+связывающий исправления с #140 и #141. Ветка `fix/rnsh-session-backpressure` основана
+на том же `cb257acf`; commit PR — `2c4c8a3495d1f9b1044cf0e33691204069022512`.
+
+На самой ветке PR с Rust 1.96.0/macOS напрямую прошли 34 теста rnsh и `cargo fmt --check`.
+Для этого включены исправления типов указателей `openpty` и аргумента `ioctl`, ранее
+применявшиеся в Nix. Clippy для библиотеки `rns-net` и библиотеки/тестов `rns-cli` прошёл
+с разрешением существующих macOS-предупреждений `unused_variables` и исключениями upstream.
+Полный Linux-набор оставлен CI upstream; ограничение существующих Linux-зависимых
+тестов `rns-net` на macOS указано в описании PR.
