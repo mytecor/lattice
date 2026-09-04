@@ -12,6 +12,9 @@ Reticulum/rnsh проверены через публичные TCP peers Sydney
 сохранилось в `/persist`. Подробности — в [f3-04](../../docs/roadmap/tasks/f3-04-rnsh-nat-access.md).
 2026-09-05 `comin` применил `ba03779` без перезагрузки: работающие `rnsh` и `rns-server`
 используют upstream snapshot `042e37047b70`, оба сервиса активны и не перезапускались.
+После переключения Mac на мобильный hotspot rnsh-доступ с прежними identity и destination
+повторно проверен через публичные peers без общей LAN; PID и restart counters сервисов не
+изменились.
 
 ## Hardware
 

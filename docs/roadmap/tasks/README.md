@@ -35,7 +35,7 @@
 | ------ | ---- |
 | Добавить TCP-интерфейсы Reticulum | [f3-01](./f3-01-reticulum-tcp-interfaces.md) |
 | Определить точку входа и адрес | [f3-02](./f3-02-define-entry-points.md) |
-| Поднять второй узел; включить `rnsh` | [f3-03](./f3-03-second-node-rnsh.md) |
+| Вторая постоянная NixOS-нода — отменена | [f3-03](./f3-03-second-node-rnsh.md) |
 | Проверить доступ по rnsh к узлу за NAT | [f3-04](./f3-04-rnsh-nat-access.md) |
 
 ## F4. Полезная нагрузка

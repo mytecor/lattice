@@ -21,6 +21,5 @@
 ключах в [f2-05](../tasks/f2-05-key-rotation.md).
 
 **Статус:** задачи F2 выполнены. Операционная инструкция —
-[KEY_MANAGEMENT.md](../../../KEY_MANAGEMENT.md); проверки отзыва ещё не развёрнутых Reticulum/rnsh
-и Radicle выполняются при их внедрении в F3/F4. Следующая фича —
-[F3: Reticulum поверх TCP/IP](./f3-reticulum-tcp.md).
+[KEY_MANAGEMENT.md](../../../KEY_MANAGEMENT.md). Reticulum/rnsh развёрнуты и проверены в
+[F3](./f3-reticulum-tcp.md); проверка отзыва Radicle выполняется при его внедрении в F4.
