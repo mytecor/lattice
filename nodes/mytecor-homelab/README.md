@@ -10,6 +10,8 @@ Reticulum/rnsh проверены через публичные TCP peers Sydney
 После перезагрузки в Generation 7 (2026-09-04, `e934ee9`) подтверждены автоматическое
 подключение Wi-Fi, SSH и rnsh с прежними identity и destination; состояние Reticulum
 сохранилось в `/persist`. Подробности — в [f3-04](../../docs/roadmap/tasks/f3-04-rnsh-nat-access.md).
+2026-09-05 `comin` применил `ba03779` без перезагрузки: работающие `rnsh` и `rns-server`
+используют upstream snapshot `042e37047b70`, оба сервиса активны и не перезапускались.
 
 ## Hardware
 
