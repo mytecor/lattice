@@ -143,6 +143,12 @@
           }).config;
         in
         {
+          rns-network = import ./tests/rns-network.nix {
+            inherit nixpkgs pkgs;
+            rnsModule = self.nixosModules.rns-server;
+            networkProfile = "${profiles}/rns-network/config.nix";
+          };
+
           rns-tcp = import ./tests/rns-tcp.nix {
             inherit nixpkgs pkgs;
             rnsModule = self.nixosModules.rns-server;
@@ -186,6 +192,16 @@
             assert builtins.hasAttr "wifi-password" homelabConfig.age.secrets;
             assert !homelabConfig.users.mutableUsers;
             assert builtins.length homelabConfig.lattice.wireless.networks == 1;
+            assert homelabConfig.lattice.rns-server.enable;
+            assert homelabConfig.lattice.rns-server.reticulum.enable_transport;
+            assert !homelabConfig.lattice.rns-server.server.http.enabled;
+            assert homelabConfig.lattice.rnsh.enable;
+            assert !homelabConfig.lattice.rnsh.noAuth;
+            assert homelabConfig.lattice.rnsh.allowed != [ ];
+            assert homelabConfig.lattice.rnsh.user == "rnsh";
+            assert homelabConfig.networking.firewall.allowedTCPPorts == [ 22 ];
+            assert nixpkgs.lib.hasInfix "--config /var/lib/rnsh --rnsconfig /var/lib/rns"
+              homelabConfig.systemd.services.rnsh.serviceConfig.ExecStart;
             homelabConfig.system.build.toplevel;
         };
 
@@ -206,6 +222,12 @@
       nixosConfigurations.example = mkNode {
         imports = [ ./nodes/example "${profiles}/rns-server/config.nix" ];
       };
-      nixosConfigurations.mytecor-homelab = mkNode ./nodes/mytecor-homelab;
+      nixosConfigurations.mytecor-homelab = mkNode {
+        imports = [
+          ./nodes/mytecor-homelab
+          "${profiles}/rns-network/config.nix"
+          "${profiles}/rnsh/config.nix"
+        ];
+      };
     };
 }

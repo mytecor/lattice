@@ -33,13 +33,13 @@ in
     homeDir = mkOption {
       type = types.str;
       default = "/var/lib/rnsh";
-      description = "HOME directory for rnsh runtime files.";
+      description = "HOME and application config directory passed via --config; contains rnsh identities, logs and allowed_identities.";
     };
 
     configDir = mkOption {
       type = types.str;
       default = "/var/lib/rns";
-      description = "Reticulum config directory passed via --config.";
+      description = "Reticulum config directory passed via --rnsconfig.";
     };
 
     identity = mkOption {
@@ -61,7 +61,7 @@ in
     };
 
     allowed = mkOption {
-      type = types.listOf types.str;
+      type = types.listOf (types.strMatching "[a-fA-F0-9]{32}");
       default = [ ];
       description = "Allowed initiator identity hashes; each value becomes --allowed.";
     };

@@ -4,7 +4,7 @@ let
   cfg = config.lattice.rnsh;
   repeated = flag: values: lib.concatMap (value: [ flag value ]) values;
   flags =
-    [ "-l" "--config" cfg.configDir ]
+    [ "-l" "--config" cfg.homeDir "--rnsconfig" cfg.configDir ]
     ++ lib.optionals (cfg.identity != null) [ "--identity" cfg.identity ]
     ++ lib.optionals (cfg.service != null) [ "--service" cfg.service ]
     ++ lib.optionals (cfg.announcePeriod != null) [ "--announce" (toString cfg.announcePeriod) ]
@@ -27,7 +27,7 @@ in
     users.users.${cfg.user} = {
       isSystemUser = true;
       group = cfg.group;
-      home = cfg.homeDir;
+      home = lib.mkDefault cfg.homeDir;
     };
 
     systemd.services.rnsh = {
@@ -46,6 +46,7 @@ in
         ExecStart = "${lib.getExe cfg.package} ${lib.escapeShellArgs flags}";
         Restart = "on-failure";
         RestartSec = 5;
+        UMask = "0077";
         WorkingDirectory = cfg.homeDir;
       };
     };

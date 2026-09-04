@@ -26,6 +26,11 @@ rustPlatform.buildRustPackage rec {
 
   cargoHash = "sha256-cWUs8ZQEhYwjwHPTP2lA3BxbtH49KRs1wQjwygwmtPY=";
 
+  patches = lib.optionals (bin == "rns-server") (
+    [ ./shared-local-delivery.patch ]
+    ++ lib.optionals stdenv.hostPlatform.isDarwin [ ./darwin-local-client.patch ]
+  );
+
   # GitHub source archives have no .git directory. Keep CLI versions traceable
   # without deriving them from an unavailable Git commit count.
   env.RNS_BUILD_REV = builtins.substring 0 12 src.rev;
@@ -51,7 +56,8 @@ rustPlatform.buildRustPackage rec {
     bin
   ];
 
-  doCheck = false;
+  doCheck = bin == "rns-server";
+  cargoTestFlags = [ "-p" "rns-core" "--lib" ];
 
   installPhase = ''
     runHook preInstall

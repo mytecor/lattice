@@ -1,0 +1,17 @@
+diff --git a/rns-net/src/interface/local.rs b/rns-net/src/interface/local.rs
+--- a/rns-net/src/interface/local.rs
++++ b/rns-net/src/interface/local.rs
+@@ -490,6 +490,13 @@ fn spawn_local_client_handler(
+     tx: EventSender,
+     dynamic_template: Option<&super::DynamicInterfaceTemplate>,
+ ) {
++    // Accepted sockets inherit O_NONBLOCK on macOS. This handler uses a
++    // blocking reader thread; EAGAIN on an idle client is not a disconnect.
++    if let Err(e) = stream.set_nonblocking(false) {
++        log::warn!("Local server could not set blocking mode: {}", e);
++        return;
++    }
++
+     let writer_stream = match stream.try_clone() {
+         Ok(s) => s,
+         Err(e) => {

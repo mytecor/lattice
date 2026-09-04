@@ -6,6 +6,7 @@
 
 Статус: развёрнута 2026-09-03, доступна как `mytecor-homelab.local` и автоматически применяет
 GitHub `main` через `comin`.
+Reticulum/rnsh проверены через публичные TCP peers Sydney и ReticulumNet.
 
 ## Hardware
 
@@ -28,6 +29,42 @@ Reticulum identity исходной системы не переносится.
 Плановая смена age-ключа, откат и действия при компрометации описаны в
 [KEY_MANAGEMENT.md](../../KEY_MANAGEMENT.md). Ротация ключа расшифрования не требует менять
 Wi-Fi-пароль, SSH host key или имя ноды; при утечке доступные через ключ секреты заменяются.
+
+## Reticulum и rnsh
+
+Корневой flake подключает `profiles/rns-network` и `profiles/rnsh`. Homelab использует публичные
+peers Sydney/ReticulumNet как исходящие TCP uplink. Transport routing включён для передачи
+анонсов и соединений локального rnsh. На firewall по-прежнему открыт только SSH-порт 22.
+
+Слушатель работает как пользователь `rnsh` без sudo/root-привилегий. Его destination:
+`4cf57c92d739f498d2d007b79da66624`. Этот адрес получен по доверенному SSH-каналу; fingerprint
+не следует принимать заново из недоверенного сетевого анонса при смене identity.
+Сервисная identity находится в `/var/lib/rnsh/identity`, каталог сохраняется в `/persist`.
+Состояние транспорта `/var/lib/rns` также сохраняется. Отдельный ключ оператора хранится
+на Mac в `.secrets/rnsh-operator/identity`; файл не входит в Git.
+Разрешённый initiator hash: `59bfffc440ddc304749fd9477865b811`.
+
+На Mac с Python RNS 1.5.2 создайте конфиг из общего реестра (из корня репозитория):
+
+```sh
+umask 077
+mkdir -p .secrets/rns-client
+nix eval --impure --raw --file scripts/rns-client-config.nix > .secrets/rns-client/config
+rnsd --config .secrets/rns-client
+```
+
+Оставьте daemon работающим и из второго интерактивного терминала подключитесь:
+
+```sh
+rnsh --config .secrets/rnsh-operator \
+  --rnsconfig .secrets/rns-client \
+  --identity .secrets/rnsh-operator/identity \
+  4cf57c92d739f498d2d007b79da66624
+```
+
+Клиент использует отдельный shared instance и порты 39428/39429, чтобы не менять пользовательский
+`~/.reticulum`. Не генерируйте заново операторскую identity поверх существующей: новая identity
+потребует обновить allowlist на ноде. Python rnsh следует запускать из терминала с TTY.
 
 ## Root password
 

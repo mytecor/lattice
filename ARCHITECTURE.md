@@ -8,6 +8,31 @@
 - принимать административные подключения через rnsh
 - выступать как постоянный или временный участник сети
 
+## Точки входа Reticulum
+
+На старте узлы подключаются исходящими TCP-соединениями к двум публичным transport-узлам:
+`sydney.reticulum.au:4242` и `node.reticulumnet.nl:4242`. Собственный публичный сервер не требуется.
+Клиенты за NAT не открывают входящие TCP-порты. Публичные узлы маршрутизируют трафик; право
+выполнять команды определяется отдельно allowlist слушателя rnsh.
+
+Общий реестр [`profiles/networking/reticulum.nix`](./profiles/networking/reticulum.nix)
+распространяется через flake/`comin`. Профиль [`rns-network`](./profiles/rns-network/README.md)
+генерирует TCPClientInterface для каждого peer. AutoInterface, входящий listener, transport routing
+и HTTP control plane по умолчанию выключены. Ноды получают одинаковый набор peers без ручной
+настройки адреса на каждой машине. Реестр можно заменить типизированной опцией `uplinks`.
+
+Два gateway уменьшают зависимость от единственного endpoint, но общая внешняя инфраструктура
+остаётся добровольной и может иметь общие маршруты. Список — начальный bootstrap; автоматическое
+обнаружение и подключение peers рассматривается после проверки поддержки в закреплённом `rns-rs`.
+Механизм публичного подключения описан в
+[руководстве Reticulum](https://reticulum.network/manual/gettingstartedfast.html#connect-to-the-distributed-backbone).
+
+На homelab transport routing включён для обслуживания локального rnsh через публичные peers.
+Транспорт работает как `rns`, remote shell — как отдельный пользователь `rnsh`
+без sudo/root-привилегий. Identity оператора хранится на Mac отдельно от SSH/age; на ноде
+разрешён её публичный hash. `/var/lib/rns` и `/var/lib/rnsh` сохраняются в `/persist`.
+`--config` rnsh указывает на его собственный каталог, `--rnsconfig` — на каталог Reticulum.
+
 ## Нода
 
 Базовая нода состоит из следующих компонентов:

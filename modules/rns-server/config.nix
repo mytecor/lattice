@@ -134,6 +134,7 @@ in
         ExecStart = "${lib.getExe cfg.package} ${lib.escapeShellArgs startArgs}";
         Restart = "on-failure";
         RestartSec = 5;
+        UMask = "0077";
         WorkingDirectory = toString cfg.configDir;
       };
     };

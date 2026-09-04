@@ -33,6 +33,15 @@ in
     }
   ];
 
+  # Route the attached rnsh service's announces and links through the public peers.
+  lattice.rns-server.reticulum.enable_transport = true;
+
+  lattice.rnsh = {
+    # Public hash only; private operator identity stays on the Mac in .secrets/rnsh-operator.
+    allowed = [ "59bfffc440ddc304749fd9477865b811" ];
+    command = [ "/run/current-system/sw/bin/bash" ];
+  };
+
   services.openssh = {
     enable = true;
     openFirewall = true;
@@ -72,6 +81,8 @@ in
 
   environment.persistence."/persist".directories = [
     "/var/lib/comin"
+    { directory = "/var/lib/rns"; user = "rns"; group = "rns"; mode = "0750"; }
+    { directory = "/var/lib/rnsh"; user = "rnsh"; group = "rnsh"; mode = "0700"; }
   ];
 
   system.stateVersion = "26.05";
