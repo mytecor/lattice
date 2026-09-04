@@ -22,6 +22,10 @@ nixos-rebuild switch --flake .#<node-name> --target-host root@<host> --use-remot
 Имя `<node-name>` должно соответствовать записи в `nixosConfigurations` [flake.nix](./flake.nix),
 которая собирает модуль конкретной ноды с общими слоями.
 
+Для уже установленной ноды смена ключа и отзыв доступа описаны в
+[KEY_MANAGEMENT.md](./KEY_MANAGEMENT.md). Не запускайте скрипт первоначальной установки ради
+плановой ротации age-ключа.
+
 ## Первая реальная нода: `mytecor-homelab`
 
 Первой разворачивается нода `mytecor-homelab` на Intel N100. До миграции эта физическая машина

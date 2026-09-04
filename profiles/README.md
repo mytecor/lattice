@@ -12,8 +12,8 @@
 
 - [`gitops/`](./gitops/config.nix) - pull-based деплой через `comin` для сети Lattice.
 - [`networking/`](./networking/ports.nix) - общий реестр портов Lattice.
-- [`radicle/`](./radicle/config.nix) - seed node Radicle с `radicle-node` и HTTP gateway через `radicle-httpd`.
-- [`rns-server/`](./rns-server/config.nix) - Reticulum node server с Lattice AutoInterface-дефолтами.
+- [`radicle/`](./radicle/README.md) - seed node Radicle с `radicle-node`, HTTP gateway через `radicle-httpd` и закрытым ключом из `agenix`.
+- [`rns-server/`](./rns-server/README.md) - Reticulum node server с AutoInterface, TCP listener и шаблоном TCP uplink.
 - [`rnsh/`](./rnsh/config.nix) - listener remote shell через Reticulum с общим RNS configDir.
 - [`tcp-gateway/`](./tcp-gateway/config.nix) - Caddy gateway, автоматически настраивающий роутинг для всех активных TCP/HTTP профилей на ноде (например, Radicle HTTP-gateway).
 - [`base/`](./base/default.nix) - базовый профиль: GitOps через `comin`, необходимые

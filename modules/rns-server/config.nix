@@ -32,7 +32,7 @@ let
     let
       listen = if iface.address == null then { } else splitAddress "address" iface.address;
       forward = if iface.forward_address == null then { } else splitAddress "forward_address" iface.forward_address;
-      base = removeAttrs iface [ "address" "forward_address" "extraConfig" ];
+      base = removeAttrs iface [ "address" "forward_address" "extraConfig" "openFirewall" ];
     in
     cleanAttrs (base // iface.extraConfig // lib.optionalAttrs (listen != { }) {
       listen_ip = if iface.listen_ip == null then listen.host else iface.listen_ip;
@@ -70,9 +70,46 @@ let
   });
 
   startArgs = [ "start" "--config" (toString cfg.configDir) ] ++ cfg.extraArgs;
+
+  tcpTypes = [ "TCPClientInterface" "TCPServerInterface" ];
+  tcpFields = [ "type" "enabled" "target_host" "target_port" "listen_ip" "listen_port" "max_connections" "openFirewall" ];
+  interfaceAssertions = name: iface: [
+    {
+      assertion = lib.intersectLists tcpFields (builtins.attrNames iface.extraConfig) == [ ];
+      message = "lattice.rns-server.interfaces.${name}: use typed options instead of extraConfig for TCP connection fields, type, enabled and openFirewall.";
+    }
+    {
+      assertion = !iface.enabled || iface.type != "TCPClientInterface"
+        || (iface.target_host != null && iface.target_port != null);
+      message = "lattice.rns-server.interfaces.${name}: an enabled TCPClientInterface requires target_host and target_port.";
+    }
+    {
+      assertion = !iface.enabled || iface.type != "TCPServerInterface"
+        || (iface.listen_ip != null && iface.listen_port != null);
+      message = "lattice.rns-server.interfaces.${name}: an enabled TCPServerInterface requires listen_ip and listen_port.";
+    }
+    {
+      assertion = !iface.enabled || !(builtins.elem iface.type tcpTypes)
+        || (iface.address == null && iface.port == null);
+      message = "lattice.rns-server.interfaces.${name}: TCP uses target_host/target_port or listen_ip/listen_port; address and port aliases are not supported.";
+    }
+    {
+      assertion = !iface.openFirewall || iface.type == "TCPServerInterface";
+      message = "lattice.rns-server.interfaces.${name}: openFirewall is only supported for TCPServerInterface.";
+    }
+  ];
 in
 {
   config = lib.mkIf cfg.enable {
+    lattice.rns-server.configFile = rnsConfig;
+
+    assertions = lib.concatLists (lib.mapAttrsToList interfaceAssertions cfg.interfaces);
+
+    networking.firewall.allowedTCPPorts = lib.unique (lib.filter (port: port != null)
+      (map (iface: iface.listen_port) (lib.filter
+        (iface: iface.enabled && iface.type == "TCPServerInterface" && iface.openFirewall)
+        (builtins.attrValues cfg.interfaces))));
+
     users.groups.${cfg.group} = { };
     users.users.${cfg.user} = {
       isSystemUser = true;

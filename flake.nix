@@ -143,6 +143,12 @@
           }).config;
         in
         {
+          rns-tcp = import ./tests/rns-tcp.nix {
+            inherit nixpkgs pkgs;
+            rnsModule = self.nixosModules.rns-server;
+            rnsProfile = "${profiles}/rns-server/config.nix";
+          };
+
           example =
             assert exampleConfig.services.comin.enable;
             assert exampleConfig.nix.settings.auto-optimise-store;
@@ -197,7 +203,9 @@
         ];
       };
 
-      nixosConfigurations.example = mkNode ./nodes/example;
+      nixosConfigurations.example = mkNode {
+        imports = [ ./nodes/example "${profiles}/rns-server/config.nix" ];
+      };
       nixosConfigurations.mytecor-homelab = mkNode ./nodes/mytecor-homelab;
     };
 }

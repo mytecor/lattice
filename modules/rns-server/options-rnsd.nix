@@ -6,6 +6,8 @@ let
   nullableOpt = type: description: nullable (types.nullOr type) null description;
   number = types.oneOf [ types.int types.float ];
   scalar = types.oneOf [ types.bool types.int types.float types.str types.path ];
+  host = types.strMatching "[^[:space:]#=]+";
+  networkPort = types.ints.between 1 65535;
 in
 {
   options.lattice.rns-server = {
@@ -83,6 +85,7 @@ in
             description = "RNS interface type.";
           };
           enabled = nullable types.bool true "Enable this interface.";
+          openFirewall = nullable types.bool false "Open listen_port in the NixOS firewall for an enabled TCPServerInterface.";
           mode = nullableOpt (types.enum [ "full" "access_point" "ap" "pointtopoint" "ptp" "roaming" "boundary" "gateway" "gw" ]) "Interface mode.";
           interface_mode = nullableOpt types.str "Raw interface_mode override.";
 
@@ -98,20 +101,20 @@ in
           ignored_devices = mkOption { type = types.listOf types.str; default = [ ]; description = "Ignored AutoInterface devices."; };
           ignored_interfaces = mkOption { type = types.listOf types.str; default = [ ]; description = "Ignored AutoInterface interfaces."; };
 
-          target_host = nullableOpt types.str "TCP/Backbone target host.";
-          target_port = nullableOpt types.port "TCP/Backbone target port.";
+          target_host = nullableOpt host "TCP/Backbone target host; bracket IPv6 literals, for example [::1].";
+          target_port = nullableOpt networkPort "TCP/Backbone target port (1–65535).";
           remote = nullableOpt types.str "Backbone remote host alias.";
           transport_identity = nullableOpt types.str "Backbone transport identity hash.";
           priority = nullableOpt types.int "Backbone peer priority.";
 
           address = nullableOpt types.str "UDP listen address in host:port form.";
           forward_address = nullableOpt types.str "UDP forward address in host:port form.";
-          listen_ip = nullableOpt types.str "Listen address.";
-          listen_port = nullableOpt types.port "Listen port.";
+          listen_ip = nullableOpt host "Listen address; bracket IPv6 literals, for example [::].";
+          listen_port = nullableOpt networkPort "Listen port (1–65535).";
           forward_ip = nullableOpt types.str "UDP forward host.";
           forward_port = nullableOpt types.port "UDP forward port.";
           port = nullableOpt (types.oneOf [ types.port types.str ]) "Port number or serial device path, depending on interface type.";
-          max_connections = nullableOpt types.int "Maximum accepted connections.";
+          max_connections = nullableOpt types.ints.positive "Maximum accepted connections; null leaves the upstream limit unset.";
           idle_timeout = nullableOpt number "Backbone idle timeout in seconds.";
           write_stall_timeout = nullableOpt number "Backbone write-stall timeout in seconds.";
           max_penalty_duration = nullableOpt number "Backbone abuse maximum penalty duration in seconds.";
@@ -182,7 +185,7 @@ in
           extraConfig = mkOption {
             type = types.attrsOf scalar;
             default = { };
-            description = "Additional raw ConfigObj key-value pairs for this interface.";
+            description = "Additional raw ConfigObj key-value pairs; TCP connection fields must use the typed options.";
           };
         };
       });
@@ -196,9 +199,9 @@ in
             discovery_port = 29716;
             data_port = 42671;
           };
-          "Quad4 TCP" = {
+          "TCP Uplink" = {
             type = "TCPClientInterface";
-            target_host = "rns.quad4.io";
+            target_host = "entry.example.net";
             target_port = 4242;
           };
           "Local UDP" = {

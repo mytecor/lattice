@@ -41,6 +41,12 @@ in
       description = "Runtime configuration directory passed to rns-server.";
     };
 
+    configFile = mkOption {
+      type = types.package;
+      readOnly = true;
+      description = "Generated public RNS ConfigObj file installed into configDir.";
+    };
+
     extraArgs = mkOption {
       type = types.listOf types.str;
       default = [ ];

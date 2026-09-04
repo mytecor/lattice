@@ -15,21 +15,33 @@ let
 in
 rustPlatform.buildRustPackage rec {
   pname = bin;
-  version = if bin == "rnsh" then "0.2.4-unstable-2026-05-25" else "0.1.3-unstable-2026-05-25";
+  version = if bin == "rnsh" then "0.4.1-unstable-2026-09-04" else "0.3.1-unstable-2026-09-04";
 
   src = fetchFromGitHub {
     owner = "lelloman";
     repo = "rns-rs";
-    rev = "7743a77938a03defbbace03913117c03db18ccdf";
-    hash = "sha256-Ok9IDkVCVDPxBd3UoDjpJ+qKGg4bA46k4vf87fcDpxM=";
+    rev = "cb257acf53eb4630a9faa62b3dd6d8475a7f0df0";
+    hash = "sha256-4mJ+AttnbQCAj+mLKuubTzb0NpAV/Zic2Jpj2z2FH9s=";
   };
 
-  cargoHash = "sha256-odO4pjMgphjOMiohu13oikB8uHacJCl5Bsfu+ebI4Gc=";
+  cargoHash = "sha256-cWUs8ZQEhYwjwHPTP2lA3BxbtH49KRs1wQjwygwmtPY=";
+
+  # GitHub source archives have no .git directory. Keep CLI versions traceable
+  # without deriving them from an unavailable Git commit count.
+  env.RNS_BUILD_REV = builtins.substring 0 12 src.rev;
 
   postPatch = ''
     substituteInPlace rns-cli/src/rnsh.rs \
       --replace-fail "std::ptr::null()," "std::ptr::null_mut()," \
       --replace-fail "libc::ioctl(tty_fd, libc::TIOCSCTTY, 0);" "libc::ioctl(tty_fd, libc::TIOCSCTTY.into(), 0);"
+
+    substituteInPlace rns-cli/build_common.rs rns-server/build_common.rs build/common.rs \
+      --replace-fail 'pub fn emit_full_version() {' 'pub fn emit_full_version() {
+        if let Ok(rev) = std::env::var("RNS_BUILD_REV") {
+            println!("cargo:rerun-if-env-changed=RNS_BUILD_REV");
+            println!("cargo:rustc-env=FULL_VERSION={}-{}", env!("CARGO_PKG_VERSION"), rev);
+            return;
+        }'
   '';
 
   cargoBuildFlags = [
