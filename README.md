@@ -34,8 +34,9 @@ Lattice - проект для построения сети связанных �
 прежними identity и destination повторно подключился через публичную сеть без LAN discovery;
 сервисы ноды не перезапускались. Вторая постоянная NixOS-нода исключена из плана. В F4 на homelab
 работает selective Radicle seed, публичная реплика доступна через независимые seeds, а `comin`
-выбирает локальный Radicle remote перед GitHub. После завершения F4 основной маршрут идёт через
-F7–F11 — LLM gateway, Pi, caches/artifacts, disposable worker и controller.
+выбирает локальный Radicle remote перед GitHub. Первый прикладной node-status endpoint и Radicle
+HTTP API опубликованы через Caddy. Следующий пункт основного маршрута — executable spike LLM
+gateway в f7-01, затем Pi, caches/artifacts, disposable worker и controller.
 
 ## Направления развития
 

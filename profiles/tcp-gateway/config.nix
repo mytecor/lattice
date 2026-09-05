@@ -1,17 +1,26 @@
 { config, lib, ... }:
 
 let
-  domain = if config.networking.domain != null && config.networking.domain != ""
-           then config.networking.domain
-           else "lattice";
+  hasConfiguredDomain =
+    config.networking.domain != null && config.networking.domain != "";
+
+  domain = if hasConfiguredDomain then config.networking.domain else "lattice";
 
   hostName = config.networking.hostName;
+  siteAddress = service:
+    let
+      host = "${service}.${hostName}.${domain}";
+    in
+    if hasConfiguredDomain then host else "http://${host}";
+
+  radicleSite = siteAddress "radicle";
+  rnsServerSite = siteAddress "rns-server";
 
   # Автоматически собираем проксирование для активных TCP/HTTP сервисов
   proxiedServices = lib.mkMerge [
     # 1. Radicle HTTP Gateway
     (lib.mkIf (config.services.radicle.enable or false && config.services.radicle.httpd.enable or false) {
-      "radicle.${hostName}.${domain}" = {
+      ${radicleSite} = {
         extraConfig = ''
           reverse_proxy 127.0.0.1:${toString config.services.radicle.httpd.listenPort}
         '';
@@ -24,7 +33,7 @@ let
       (config.lattice.rns-server.server.http.enabled or false) &&
       (config.lattice.rns-server.server.http.port or null != null)
     ) {
-      "rns-server.${hostName}.${domain}" = {
+      ${rnsServerSite} = {
         extraConfig = ''
           reverse_proxy 127.0.0.1:${toString config.lattice.rns-server.server.http.port}
         '';
@@ -33,10 +42,12 @@ let
   ];
 in
 {
-  config.services.caddy = {
-    enable = true;
-    virtualHosts = proxiedServices;
-  };
+  config = {
+    services.caddy = {
+      enable = true;
+      virtualHosts = proxiedServices;
+    };
 
-  networking.firewall.allowedTCPPorts = [ 80 443 ];
+    networking.firewall.allowedTCPPorts = [ 80 443 ];
+  };
 }

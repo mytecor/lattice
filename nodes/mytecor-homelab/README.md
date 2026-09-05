@@ -15,7 +15,8 @@ Reticulum/rnsh проверены через публичные TCP peers Sydney
 используют upstream snapshot `042e37047b70`, оба сервиса активны и не перезапускались.
 После переключения Mac на мобильный hotspot rnsh-доступ с прежними identity и destination
 повторно проверен через публичные peers без общей LAN; PID и restart counters сервисов не
-изменились.
+изменились. 2026-09-05 профиль прикладных сервисов проверен с Mac: Caddy вернул node-status JSON
+и проксировал Radicle HTTP API; отдельный backend-процесс не используется.
 
 ## Hardware
 
@@ -43,7 +44,28 @@ Wi-Fi-пароль, SSH host key или имя ноды; при утечке д�
 
 Корневой flake подключает `profiles/rns-network` и `profiles/rnsh`. Homelab использует публичные
 peers Sydney/ReticulumNet как исходящие TCP uplink. Transport routing включён для передачи
-анонсов и соединений локального rnsh. На firewall по-прежнему открыт только SSH-порт 22.
+анонсов и соединений локального rnsh. Для административного доступа открыт SSH 22; прикладной
+gateway дополнительно открывает HTTP/HTTPS 80 и 443.
+
+## Прикладной HTTP gateway
+
+Профиль `profiles/app-services` публикует node-status endpoint через Caddy:
+
+```text
+http://status.mytecor-homelab.lattice/
+```
+
+С клиента без локальной DNS-записи нужно обращаться к IP ноды и передавать
+`Host: status.mytecor-homelab.lattice`. Например, в Yaak используется URL
+`http://192.168.60.168/` и отдельный заголовок `Host`; эквивалентная CLI-проверка:
+
+```sh
+curl --fail -H 'Host: status.mytecor-homelab.lattice' http://192.168.60.168/
+```
+
+Ожидаемый ответ — `{"node":"mytecor-homelab","service":"lattice-node-status"}`. Отдельный
+backend или внутренний listener для статического endpoint не запускается. Radicle HTTP API
+доступен тем же способом с `Host: radicle.mytecor-homelab.lattice`.
 
 Слушатель работает как пользователь `rnsh` без sudo/root-привилегий. Его destination:
 `4cf57c92d739f498d2d007b79da66624`. Этот адрес получен по доверенному SSH-каналу; fingerprint

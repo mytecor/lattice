@@ -155,6 +155,11 @@
             rnsProfile = "${profiles}/rns-server/config.nix";
           };
 
+          app-services = import ./tests/app-services.nix {
+            inherit nixpkgs pkgs;
+            appServicesProfile = "${profiles}/app-services/config.nix";
+          };
+
           example =
             assert exampleConfig.services.comin.enable;
             assert exampleConfig.nix.settings.auto-optimise-store;
@@ -231,7 +236,18 @@
                 else
                   entry.directory == "/var/lib/radicle")
               homelabConfig.environment.persistence."/persist".directories;
-            assert homelabConfig.networking.firewall.allowedTCPPorts == [ 22 ];
+            assert !homelabConfig.services.nginx.enable;
+            assert homelabConfig.services.caddy.enable;
+            assert builtins.hasAttr
+              "http://status.mytecor-homelab.lattice"
+              homelabConfig.services.caddy.virtualHosts;
+            assert builtins.hasAttr
+              "http://radicle.mytecor-homelab.lattice"
+              homelabConfig.services.caddy.virtualHosts;
+            assert nixpkgs.lib.hasInfix "lattice-node-status"
+              homelabConfig.services.caddy.virtualHosts
+                ."http://status.mytecor-homelab.lattice".extraConfig;
+            assert homelabConfig.networking.firewall.allowedTCPPorts == [ 22 80 443 ];
             assert nixpkgs.lib.hasInfix "--config /var/lib/rnsh --rnsconfig /var/lib/rns"
               homelabConfig.systemd.services.rnsh.serviceConfig.ExecStart;
             homelabConfig.system.build.toplevel;
@@ -257,6 +273,7 @@
       nixosConfigurations.mytecor-homelab = mkNode {
         imports = [
           ./nodes/mytecor-homelab
+          "${profiles}/app-services/config.nix"
           "${profiles}/radicle/config.nix"
           "${profiles}/rns-network/config.nix"
           "${profiles}/rnsh/config.nix"

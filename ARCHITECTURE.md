@@ -100,6 +100,19 @@ storage `comin` использует GitHub fallback. `/var/lib/radicle` сох�
 Такая публикация не атомарна: частичный успех требует сверки и повторного push. Настройка remote и
 операционная процедура описаны в [DEPLOYMENT.md](./DEPLOYMENT.md#публикация-в-radicle-и-github).
 
+## Прикладной HTTP ingress
+
+Профиль [`tcp-gateway`](./profiles/tcp-gateway/README.md) владеет внешними HTTP/HTTPS listeners
+Caddy. Активные инфраструктурные HTTP-сервисы получают отдельные host routes; их backend-порты
+остаются на loopback и не открываются в firewall. Без явно настроенного публичного
+`networking.domain` используются HTTP labels под внутренним суффиксом `lattice`, поэтому Caddy не
+обращается к ACME для несуществующего публичного TLD.
+
+Первый прикладной payload — JSON endpoint `status.<node>.lattice` из
+[`profiles/app-services`](./profiles/app-services/README.md). Его обслуживает директива Caddy
+`respond`, без отдельного процесса и состояния. Для будущих динамических приложений этот профиль
+остаётся точкой композиции, а Caddy — единственным внешним ingress.
+
 ## Стираемый root
 
 Ноды Lattice должны поддерживать стираемый (ephemeral) root, при котором корневая файловая система
