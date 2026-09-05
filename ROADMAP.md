@@ -4,7 +4,8 @@
 
 1. **План (верхнеуровневый)** — [`docs/roadmap/VISION.md`](./docs/roadmap/VISION.md): куда идём,
    вехи, без технических деталей.
-2. **Фичи** — [`docs/roadmap/features/`](./docs/roadmap/features/README.md): план по фичам F1–F6.
+2. **Фичи** — [`docs/roadmap/features/`](./docs/roadmap/features/README.md): план по фичам F1–F11
+   и их зависимостям.
 3. **Задачи** — [`docs/roadmap/tasks/`](./docs/roadmap/tasks/README.md): отдельные файлы задач и
    шаблон.
 

@@ -6,7 +6,8 @@
 
 ## Как читать
 
-- Фичи упорядочены по зависимостям, а не по календарю.
+- Номер фичи — стабильный идентификатор. Фактический порядок задаётся явными зависимостями и
+  основным маршрутом в `VISION.md`.
 - У каждой фичи отдельный файл в этой папке.
 - Новая фича заводится по [TEMPLATE.md](./TEMPLATE.md).
 - Каждая фича ссылается на свои задачи в [`tasks/`](../tasks/README.md).
@@ -23,3 +24,8 @@
 | **F4. Полезная нагрузка** | [f4-payload.md](./f4-payload.md) | сервисы, реплика кода, вычисления и хранилище |
 | **F5. Внешние узлы** | [f5-external-nodes.md](./f5-external-nodes.md) | чистая граница узла, внешний репозиторий |
 | **F6. Радио и mesh** | [f6-radio-mesh.md](./f6-radio-mesh.md) | LoRa/RNode как интерфейс Reticulum |
+| **F7. LLM gateway** | [f7-llm-gateway.md](./f7-llm-gateway.md) | логические модели, routing и изоляция provider credentials |
+| **F8. Интерактивный Pi runtime** | [f8-pi-runtime.md](./f8-pi-runtime.md) | один harness для TUI сейчас и RPC workers позже |
+| **F9. Cache и artifact plane** | [f9-cache-artifact-plane.md](./f9-cache-artifact-plane.md) | Git/npm/Nix caches и отдельное хранение результатов |
+| **F10. Disposable worker** | [f10-disposable-worker.md](./f10-disposable-worker.md) | одноразовое выполнение задачи через Pi RPC |
+| **F11. Controller** | [f11-controller.md](./f11-controller.md) | очередь, leases, worker registry и состояние задач |

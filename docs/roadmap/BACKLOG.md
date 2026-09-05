@@ -19,8 +19,16 @@
 
 1. **Bootstrap radicle** — как узел получает хранилище, из которого потом сам обновляется.
    Ждёт F4.
-2. **Что конкретно означает общий пул вычислений и хранилища** — самая непроработанная часть
-   цели. Требует отдельного разбора до F4.
+2. **Окончательный выбор LLM gateway** — `mxyhi/token_proxy` является основным кандидатом, но
+   решение закрывается только после executable spike и проверки требований F7.
+3. **Backend изоляции disposable worker** — VM, microVM или контейнер выбирается в F10 после
+   фиксации threat model и требований к NixOS provisioning.
+4. **Controller storage и provisioner** — конкретные реализации выбираются в F11 после
+   стабилизации task specification и ручного worker lifecycle в F10.
+
+Смысл вычислений и хранилища уточнён в [f4-03](./tasks/f4-03-shared-storage-compute.md): вычисления
+выполняются disposable workers, общей persistent FS у них нет, caches не являются source of truth,
+а S3 хранит artifacts и другие естественно объектные результаты.
 
 Точки входа Reticulum выбраны в [F3-02](./tasks/f3-02-define-entry-points.md): два публичных
 peer, общий реестр в flake и исходящие TCP-соединения.

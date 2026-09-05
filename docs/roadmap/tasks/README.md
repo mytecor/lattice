@@ -42,7 +42,7 @@
 
 | Задача | Файл |
 | ------ | ---- |
-| Radicle-seed; `comin` на radicle-remote | [f4-01](./f4-01-radicle-seed-comin.md) |
+| Radicle source bootstrap; `comin` на radicle-remote | [f4-01](./f4-01-radicle-seed-comin.md) |
 | Профиль прикладных сервисов поверх `tcp-gateway` | [f4-02](./f4-02-app-services-profile.md) |
 | Определить «общее хранилище и вычисления» | [f4-03](./f4-03-shared-storage-compute.md) |
 
@@ -61,3 +61,55 @@
 | Добавить интерфейсы RNode/LoRa | [f6-01](./f6-01-rnode-lora-interfaces.md) |
 | Проверить сервисы на узком канале | [f6-02](./f6-02-narrow-channel-profile.md) |
 | Довести идею `MSG_BUS.md` до модуля | [f6-03](./f6-03-msgbus-module.md) |
+
+## F7. LLM gateway
+
+| Задача | Файл |
+| ------ | ---- |
+| Проверить `mxyhi/token_proxy` executable spike | [f7-01](./f7-01-token-proxy-spike.md) |
+| Собрать декларативный gateway service с секретами из agenix | [f7-02](./f7-02-declarative-gateway-service.md) |
+| Зафиксировать контракт логических моделей | [f7-03](./f7-03-logical-model-contract.md) |
+| Проверить routing, отказоустойчивость и streaming | [f7-04](./f7-04-routing-resilience-tests.md) |
+
+## F8. Интерактивный Pi runtime
+
+| Задача | Файл |
+| ------ | ---- |
+| Упаковать и закрепить Pi | [f8-01](./f8-01-package-pi.md) |
+| Подключить Pi к gateway без provider-specific конфигурации | [f8-02](./f8-02-pi-gateway-config.md) |
+| Собрать воспроизводимый профиль tools | [f8-03](./f8-03-reproducible-tool-profile.md) |
+| Провести интерактивную acceptance-проверку | [f8-04](./f8-04-interactive-acceptance.md) |
+| Зафиксировать общий TUI/RPC контракт Pi | [f8-05](./f8-05-pi-rpc-contract.md) |
+
+## F9. Cache и artifact plane
+
+| Задача | Файл |
+| ------ | ---- |
+| Развернуть Git cache proxy | [f9-01](./f9-01-git-cache-proxy.md) |
+| Ограничить доступ proxy по репозиториям | [f9-02](./f9-02-git-repository-access.md) |
+| Развернуть Verdaccio | [f9-03](./f9-03-verdaccio.md) |
+| Развернуть и проверить Attic | [f9-04](./f9-04-attic.md) |
+| Определить контракт artifacts в S3 | [f9-05](./f9-05-artifact-contract.md) |
+| Доказать disposable-семантику caches | [f9-06](./f9-06-cache-loss-drill.md) |
+
+## F10. Disposable worker
+
+| Задача | Файл |
+| ------ | ---- |
+| Определить версионируемую task specification | [f10-01](./f10-01-task-specification.md) |
+| Выбрать и реализовать границу изоляции worker | [f10-02](./f10-02-worker-isolation.md) |
+| Собрать полный жизненный цикл worker | [f10-03](./f10-03-worker-lifecycle.md) |
+| Запускать task через Pi RPC | [f10-04](./f10-04-pi-rpc-runner.md) |
+| Выдавать worker минимальные временные credentials | [f10-05](./f10-05-worker-credentials.md) |
+| Провести acceptance-тест уничтожения и восстановления | [f10-06](./f10-06-disposability-acceptance.md) |
+
+## F11. Controller
+
+| Задача | Файл |
+| ------ | ---- |
+| Определить модель control-plane state | [f11-01](./f11-01-control-state-model.md) |
+| Реализовать очередь, leases и worker registry | [f11-02](./f11-02-queue-leases-registry.md) |
+| Подключить provisioner disposable workers | [f11-03](./f11-03-worker-provisioner.md) |
+| Сделать выполнение идемпотентным и восстанавливаемым | [f11-04](./f11-04-idempotent-recovery.md) |
+| Зафиксировать публикацию commit/result/artifacts | [f11-05](./f11-05-result-publication.md) |
+| Провести end-to-end recovery drill | [f11-06](./f11-06-end-to-end-recovery.md) |
