@@ -23,6 +23,11 @@ in
         file = rootPasswordHashFile;
         mode = "0400";
       };
+    } // {
+      radicle-private-key = {
+        file = ./secrets/radicle-private-key.age;
+        mode = "0400";
+      };
     };
   };
 
@@ -41,6 +46,10 @@ in
     allowed = [ "59bfffc440ddc304749fd9477865b811" ];
     command = [ "/run/current-system/sw/bin/bash" ];
   };
+
+  # This public key belongs only to the unattended Radicle service identity.
+  services.radicle.publicKey =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPTgXojRWDf3RXhVEILTxI/T9lfL0S6W9cHscze5wszj";
 
   services.openssh = {
     enable = true;
@@ -83,6 +92,7 @@ in
     "/var/lib/comin"
     { directory = "/var/lib/rns"; user = "rns"; group = "rns"; mode = "0750"; }
     { directory = "/var/lib/rnsh"; user = "rnsh"; group = "rnsh"; mode = "0700"; }
+    { directory = "/var/lib/radicle"; user = "radicle"; group = "radicle"; mode = "0750"; }
   ];
 
   system.stateVersion = "26.05";

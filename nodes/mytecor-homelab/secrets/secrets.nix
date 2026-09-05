@@ -6,4 +6,5 @@ in
   "wifi-ssid.age".publicKeys = [ admin node ];
   "wifi-password.age".publicKeys = [ admin node ];
   "root-password-hash.age".publicKeys = [ admin node ];
+  "radicle-private-key.age".publicKeys = [ admin node ];
 }

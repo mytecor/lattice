@@ -5,7 +5,17 @@
 Главный `flake.nix` — единственная точка сборки и единственный lock-файл. Локальные ноды находятся
 в [nodes/](./nodes/README.md) как обычные NixOS-модули.
 
-На нодах, где подключен профиль `profiles/gitops` напрямую или через `profiles/base`, дальнейшие обновления выполняются автоматически: агент `comin` периодически опрашивает `https://github.com/mytecor/lattice.git` и локальный Radicle repository path, ветку `main`, и применяет `nixosConfigurations.<hostname>`.
+На нодах, где подключен профиль `profiles/gitops` напрямую или через `profiles/base`, дальнейшие
+обновления выполняются автоматически: агент `comin` периодически опрашивает каноническую `main`
+в локальном Radicle storage и независимое зеркало
+`https://github.com/mytecor/lattice.git`, затем применяет `nixosConfigurations.<hostname>`.
+Radicle стоит первым в упорядоченном списке remotes, GitHub — вторым.
+
+Чистая нода сначала получает конфигурацию через установочный checkout или GitHub. После запуска
+`radicle-node` сервис `radicle-seed-lattice` получает репозиторий от доступного Radicle seed;
+до успешного bootstrap отсутствующий локальный remote не мешает `comin` использовать GitHub.
+Подробности и runtime-проверки описаны в
+[`profiles/radicle/README.md`](./profiles/radicle/README.md).
 
 Для локальной ноды:
 

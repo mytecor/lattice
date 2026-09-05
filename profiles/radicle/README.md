@@ -1,7 +1,7 @@
 # Radicle
 
-Профиль включает seed node и HTTP gateway. Сейчас он не подключён к существующим нодам;
-развёртывание Radicle и bootstrap его хранилища запланированы в
+Профиль включает selective seed node, HTTP gateway и идемпотентный bootstrap репозитория
+Lattice. На `mytecor-homelab` он подключён в рамках
 [f4-01](../../docs/roadmap/tasks/f4-01-radicle-seed-comin.md).
 
 Нода, подключающая `profiles/radicle/config.nix`, обязана предоставить:
@@ -36,6 +36,25 @@ systemd.services.radicle-node.serviceConfig.LoadCredential = [
 ];
 ```
 
-При подключении профиля в F4 нужно также настроить сохранение `/var/lib/radicle` в `/persist`
-для ноды со стираемым root и проверить запуск с реальной парой ключей. Закрытый ключ Radicle
-не должен совпадать с age-ключом или SSH host key.
+Закрытый ключ Radicle не должен совпадать с age-ключом или SSH host key.
+
+## Bootstrap репозитория
+
+Реестр репозиториев находится в [`repositories.nix`](./repositories.nix). Для Lattice профиль:
+
+- оставляет общий default policy равным `block`;
+- закрепляет RID в HTTP gateway;
+- запускает `radicle-seed-lattice` после `radicle-node`;
+- выполняет `rad seed --scope followed`, повторяя неуспешную попытку через минуту.
+
+Bootstrap получает репозиторий от любого уже подключённого seed, который его хранит. Поэтому до
+развёртывания чистой ноды хотя бы один доступный seed должен получить актуальную Radicle-реплику.
+`scope = followed` ограничивает репликацию делегатами репозитория и явно followed peers.
+
+`profiles/gitops` читает каноническую ветку из bare repository
+`/var/lib/radicle/storage/<RID>` первым remote `comin`. GitHub остаётся вторым независимым remote:
+на чистой ноде он обеспечивает первоначальное применение конфигурации, пока bootstrap ещё не
+создал локальное Radicle storage. После появления storage `comin` может продолжать обновляться
+при недоступном GitHub.
+
+Для ноды со стираемым root весь `/var/lib/radicle` должен сохраняться в `/persist`.

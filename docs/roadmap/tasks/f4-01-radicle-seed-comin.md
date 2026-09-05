@@ -22,6 +22,23 @@ remote. Отдельно решается первичная загрузка: �
 - [ ] `mytecor-homelab` применяет конфиг из Radicle при недоступном GitHub.
 - [ ] Новый узел получает radicle-хранилище и сам обновляется из него.
 
+## Текущий прогресс
+
+2026-09-05 подготовлена декларативная часть для `mytecor-homelab`:
+
+- подключены `radicle-node` и loopback-only `radicle-httpd` с отдельным ключом из `agenix`;
+- `/var/lib/radicle` добавлен в persistent storage;
+- selective policy оставляет default `block`, а `radicle-seed-lattice` идемпотентно разрешает и
+  получает RID Lattice со scope `followed`;
+- `comin` сначала читает каноническую `main` из локального bare storage Radicle, затем использует
+  GitHub как fallback;
+- общий RID и путь storage вынесены в `profiles/radicle/repositories.nix`.
+
+`nix flake check path:. --no-build --all-systems` проходит. Полная Linux-сборка на текущем
+`aarch64-darwin` host недоступна; её нужно выполнить на ноде или Linux builder. До закрытия задачи
+остаются публикация актуального состояния в доступный сетевой seed, применение конфигурации на
+homelab и две runtime acceptance-проверки из критериев готовности.
+
 ## Затрагиваемые файлы / слои
 
 - `profiles/radicle`, `profiles/gitops`

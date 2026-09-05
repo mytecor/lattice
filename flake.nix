@@ -181,7 +181,12 @@
             assert homelabConfig.networking.hostName == "mytecor-homelab";
             assert homelabConfig.lattice.ephemeral-root.enable;
             assert homelabConfig.services.comin.enable;
-            assert map (remote: remote.name) homelabConfig.services.comin.remotes == [ "origin" ];
+            assert map (remote: remote.name) homelabConfig.services.comin.remotes
+              == [ "radicle" "origin" ];
+            assert (builtins.elemAt homelabConfig.services.comin.remotes 0).url
+              == "/var/lib/radicle/storage/z3AqC22BKQ5Gnrkw49N7PGJa91G6L";
+            assert (builtins.elemAt homelabConfig.services.comin.remotes 1).url
+              == "https://github.com/mytecor/lattice.git";
             assert homelabConfig.services.openssh.enable;
             assert !homelabConfig.services.openssh.settings.PasswordAuthentication;
             assert homelabConfig.services.openssh.settings.PermitRootLogin == "prohibit-password";
@@ -190,6 +195,7 @@
             assert homelabConfig.age.identityPaths == [ "/persist/var/lib/lattice/age/identity" ];
             assert builtins.hasAttr "wifi-ssid" homelabConfig.age.secrets;
             assert builtins.hasAttr "wifi-password" homelabConfig.age.secrets;
+            assert builtins.hasAttr "radicle-private-key" homelabConfig.age.secrets;
             assert !homelabConfig.users.mutableUsers;
             assert builtins.length homelabConfig.lattice.wireless.networks == 1;
             assert homelabConfig.lattice.rns-server.enable;
@@ -199,6 +205,32 @@
             assert !homelabConfig.lattice.rnsh.noAuth;
             assert homelabConfig.lattice.rnsh.allowed != [ ];
             assert homelabConfig.lattice.rnsh.user == "rnsh";
+            assert homelabConfig.services.radicle.enable;
+            assert homelabConfig.services.radicle.node.listenPort == 8776;
+            assert !homelabConfig.services.radicle.node.openFirewall;
+            assert homelabConfig.services.radicle.httpd.enable;
+            assert homelabConfig.services.radicle.httpd.listenAddress == "127.0.0.1";
+            assert homelabConfig.services.radicle.httpd.aliases.lattice
+              == "rad:z3AqC22BKQ5Gnrkw49N7PGJa91G6L";
+            assert homelabConfig.services.radicle.settings.node.alias == "mytecor-homelab";
+            assert homelabConfig.services.radicle.settings.node.seedingPolicy.default == "block";
+            assert homelabConfig.services.radicle.settings.web.pinned.repositories
+              == [ "rad:z3AqC22BKQ5Gnrkw49N7PGJa91G6L" ];
+            assert builtins.hasAttr "radicle-seed-lattice" homelabConfig.systemd.services;
+            assert homelabConfig.systemd.services.radicle-seed-lattice.serviceConfig.Restart
+              == "on-failure";
+            assert nixpkgs.lib.hasInfix "rad-system seed --scope followed"
+              homelabConfig.systemd.services.radicle-seed-lattice.serviceConfig.ExecStart;
+            assert builtins.elem
+              "dev.radicle.node.secret:/run/agenix/radicle-private-key"
+              homelabConfig.systemd.services.radicle-node.serviceConfig.LoadCredential;
+            assert builtins.any
+              (entry:
+                if builtins.isString entry then
+                  entry == "/var/lib/radicle"
+                else
+                  entry.directory == "/var/lib/radicle")
+              homelabConfig.environment.persistence."/persist".directories;
             assert homelabConfig.networking.firewall.allowedTCPPorts == [ 22 ];
             assert nixpkgs.lib.hasInfix "--config /var/lib/rnsh --rnsconfig /var/lib/rns"
               homelabConfig.systemd.services.rnsh.serviceConfig.ExecStart;
@@ -225,6 +257,7 @@
       nixosConfigurations.mytecor-homelab = mkNode {
         imports = [
           ./nodes/mytecor-homelab
+          "${profiles}/radicle/config.nix"
           "${profiles}/rns-network/config.nix"
           "${profiles}/rnsh/config.nix"
         ];

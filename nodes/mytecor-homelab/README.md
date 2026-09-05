@@ -5,7 +5,8 @@
 `mytecor-homelab`.
 
 Статус: развёрнута 2026-09-03, доступна как `mytecor-homelab.local` и автоматически применяет
-GitHub `main` через `comin`.
+`main` через `comin`. В F4 основным source remote становится локальная Radicle-реплика, а GitHub
+остаётся независимым fallback.
 Reticulum/rnsh проверены через публичные TCP peers Sydney и ReticulumNet.
 После перезагрузки в Generation 7 (2026-09-04, `e934ee9`) подтверждены автоматическое
 подключение Wi-Fi, SSH и rnsh с прежними identity и destination; состояние Reticulum
@@ -73,6 +74,26 @@ rnsh --config .secrets/rnsh-operator \
 Клиент использует отдельный shared instance и порты 39428/39429, чтобы не менять пользовательский
 `~/.reticulum`. Не генерируйте заново операторскую identity поверх существующей: новая identity
 потребует обновить allowlist на ноде. Python rnsh следует запускать из терминала с TTY.
+
+## Radicle
+
+Нода запускает selective seed и HTTP gateway с отдельной сервисной identity. Закрытый ключ
+поступает из `radicle-private-key.age`, а `/var/lib/radicle` сохраняется в `/persist`.
+Сервис `radicle-seed-lattice` автоматически разрешает и получает только репозиторий Lattice;
+неуспешный bootstrap повторяется, пока репозиторий не станет доступен у подключённого seed.
+
+После применения конфигурации проверьте:
+
+```sh
+systemctl is-active radicle-node radicle-httpd radicle-seed-lattice
+rad-system self --did
+rad-system seed
+git -C /var/lib/radicle/storage/z3AqC22BKQ5Gnrkw49N7PGJa91G6L rev-parse main
+comin status
+```
+
+Проверка clone/fetch с чистого клиента и отказ GitHub фиксируются в
+[`f4-01`](../../docs/roadmap/tasks/f4-01-radicle-seed-comin.md).
 
 ## Root password
 
