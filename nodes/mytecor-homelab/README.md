@@ -5,8 +5,8 @@
 `mytecor-homelab`.
 
 Статус: развёрнута 2026-09-03, доступна как `mytecor-homelab.local` и автоматически применяет
-`main` через `comin`. В F4 основным source remote становится локальная Radicle-реплика, а GitHub
-остаётся независимым fallback.
+`main` через `comin`. Основной source remote — локальная Radicle-реплика; GitHub остаётся
+независимым fallback.
 Reticulum/rnsh проверены через публичные TCP peers Sydney и ReticulumNet.
 После перезагрузки в Generation 7 (2026-09-04, `e934ee9`) подтверждены автоматическое
 подключение Wi-Fi, SSH и rnsh с прежними identity и destination; состояние Reticulum
@@ -82,6 +82,14 @@ rnsh --config .secrets/rnsh-operator \
 Сервис `radicle-seed-lattice` автоматически разрешает и получает только репозиторий Lattice;
 неуспешный bootstrap повторяется, пока репозиторий не станет доступен у подключённого seed.
 
+Runtime проверен 2026-09-05:
+
+- DID сервиса — `did:key:z6Mkvw9xTo5bXFHvQvR6csSC49MqNiK8oemNj7fxkJp5thJJ`;
+- `radicle-node`, `radicle-httpd` и `radicle-seed-lattice` активны;
+- policy RID `rad:z3AqC22BKQ5Gnrkw49N7PGJa91G6L` — `allow/followed`;
+- `2c70a7f` доступен через Iris, Rosa и Heptapod и клонирован чистым клиентом с Rosa;
+- `comin` выбрал `8533477` из `radicle/main` и успешно вычислил тот же system closure.
+
 После применения конфигурации проверьте:
 
 ```sh
@@ -92,7 +100,7 @@ git -C /var/lib/radicle/storage/z3AqC22BKQ5Gnrkw49N7PGJa91G6L rev-parse main
 comin status
 ```
 
-Проверка clone/fetch с чистого клиента и отказ GitHub фиксируются в
+Полный журнал результатов и ещё открытый drill при недоступном GitHub зафиксированы в
 [`f4-01`](../../docs/roadmap/tasks/f4-01-radicle-seed-comin.md).
 
 ## Root password

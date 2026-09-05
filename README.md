@@ -32,9 +32,10 @@ Lattice - проект для построения сети связанных �
 отзыв доступа. F3 также завершена: выбраны публичные peers Sydney/ReticulumNet, а на homelab
 работает rnsh с авторизацией по identity. После переключения Mac на мобильный hotspot клиент с
 прежними identity и destination повторно подключился через публичную сеть без LAN discovery;
-сервисы ноды не перезапускались. Вторая постоянная NixOS-нода исключена из плана. Следующий
-основной маршрут: F4 source bootstrap, затем F7–F11 — LLM gateway, Pi, caches/artifacts,
-disposable worker и controller.
+сервисы ноды не перезапускались. Вторая постоянная NixOS-нода исключена из плана. В F4 на homelab
+работает selective Radicle seed, публичная реплика доступна через независимые seeds, а `comin`
+выбирает локальный Radicle remote перед GitHub. После завершения F4 основной маршрут идёт через
+F7–F11 — LLM gateway, Pi, caches/artifacts, disposable worker и controller.
 
 ## Направления развития
 

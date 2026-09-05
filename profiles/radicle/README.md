@@ -51,6 +51,12 @@ Bootstrap получает репозиторий от любого уже по�
 развёртывания чистой ноды хотя бы один доступный seed должен получить актуальную Radicle-реплику.
 `scope = followed` ограничивает репликацию делегатами репозитория и явно followed peers.
 
+Репозиторий Lattice имеет public visibility; переход выполнен identity revision
+`d28b1987d705c6684cdd6c745deae86cb452fc5c`. На 2026-09-05 репликация подтверждена через Iris,
+Rosa и Heptapod, а отдельный чистый клиент получил `2c70a7f` с Rosa. Public visibility относится
+к репозиторию и не делает закрытый ключ ноды публичным: он по-прежнему поступает только через
+systemd credential.
+
 `profiles/gitops` читает каноническую ветку из bare repository
 `/var/lib/radicle/storage/<RID>` первым remote `comin`. GitHub остаётся вторым независимым remote:
 на чистой ноде он обеспечивает первоначальное применение конфигурации, пока bootstrap ещё не

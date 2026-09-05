@@ -78,6 +78,28 @@
 flake. Граница внешнего репозитория ноды будет добавлена в F5 как односторонняя зависимость внешней
 ноды от экспортируемых `nixosModules` и overlay Lattice.
 
+## Распространение source и GitOps
+
+Репозиторий Lattice публикуется одновременно в GitHub и публичной сети Radicle под RID
+`rad:z3AqC22BKQ5Gnrkw49N7PGJa91G6L`. Public identity и Git history — разные слои: visibility и
+делегаты задаются подписанным Radicle identity document, а `main` остаётся обычной Git-веткой.
+
+На ноде `radicle-node` хранит реплику как bare repository в
+`/var/lib/radicle/storage/<RID без rad:>`. `comin` читает этот локальный путь первым remote и
+GitHub вторым. Используется bare path, а не `rad://`, потому что закреплённый `comin` получает Git
+через `go-git` и не вызывает custom helper `git-remote-rad`. Локальный путь также не ставит
+`radicle-httpd` в критический путь обновления; HTTP gateway предназначен для web/API и удалённых
+клиентов.
+
+Первичная конфигурация чистой ноды приходит из installer checkout или GitHub. После запуска
+Radicle сервис `radicle-seed-lattice` с default policy `block` разрешает только RID Lattice со
+scope `followed` и повторяет fetch, пока публичная реплика не станет доступна. До появления
+storage `comin` использует GitHub fallback. `/var/lib/radicle` сохраняется на ephemeral-root ноде.
+
+Рабочий checkout может иметь локальный remote `publish` с двумя push URL — Radicle и GitHub.
+Такая публикация не атомарна: частичный успех требует сверки и повторного push. Настройка remote и
+операционная процедура описаны в [DEPLOYMENT.md](./DEPLOYMENT.md#публикация-в-radicle-и-github).
+
 ## Стираемый root
 
 Ноды Lattice должны поддерживать стираемый (ephemeral) root, при котором корневая файловая система

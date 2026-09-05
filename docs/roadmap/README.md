@@ -35,8 +35,10 @@
 **F3 — Reticulum поверх TCP/IP** выполнены. На homelab включён авторизованный rnsh через
 публичные peers Sydney/ReticulumNet. После перевода Mac на мобильный hotspot доступ с прежними
 identity и destination восстановился без общей LAN и без перезапуска сервисов. Создание второй
-постоянной NixOS-ноды отменено в [f3-03](./tasks/f3-03-second-node-rnsh.md). Следующая фича —
-**F4: полезная нагрузка**; после независимого source bootstrap основной маршрут идёт через
+постоянной NixOS-ноды отменено в [f3-03](./tasks/f3-03-second-node-rnsh.md). В F4 на homelab
+развёрнут selective Radicle seed, `comin` читает его локальное storage первым remote, а публичная
+реплика проверена чистым клиентом. Для f4-01 остаются строгий drill без GitHub и полный bootstrap
+новой NixOS-ноды; следующий прикладной слой — f4-02. После F4 основной маршрут идёт через
 **F7–F11: LLM gateway → Pi → cache/artifact plane → disposable worker → controller**.
 Незакрытые вопросы отслеживаются в
 [BACKLOG.md](./BACKLOG.md); работа идёт рывками, поэтому `main` всегда собирается.

@@ -14,16 +14,17 @@
   [ARCHITECTURE.md](../../ARCHITECTURE.md#секреты).
 - Модель идентичности узла закрыта в [f2-02](./tasks/f2-02-node-identity.md) и зафиксирована в
   [ARCHITECTURE.md](../../ARCHITECTURE.md#идентичность-узла).
+- Bootstrap Radicle закрыт в [f4-01](./tasks/f4-01-radicle-seed-comin.md): начальный config
+  приходит из installer checkout или GitHub, затем selective seed получает публичную реплику, а
+  `comin` читает локальное bare storage первым remote.
 
 ## Открытые решения
 
-1. **Bootstrap radicle** — как узел получает хранилище, из которого потом сам обновляется.
-   Ждёт F4.
-2. **Окончательный выбор LLM gateway** — `mxyhi/token_proxy` является основным кандидатом, но
+1. **Окончательный выбор LLM gateway** — `mxyhi/token_proxy` является основным кандидатом, но
    решение закрывается только после executable spike и проверки требований F7.
-3. **Backend изоляции disposable worker** — VM, microVM или контейнер выбирается в F10 после
+2. **Backend изоляции disposable worker** — VM, microVM или контейнер выбирается в F10 после
    фиксации threat model и требований к NixOS provisioning.
-4. **Controller storage и provisioner** — конкретные реализации выбираются в F11 после
+3. **Controller storage и provisioner** — конкретные реализации выбираются в F11 после
    стабилизации task specification и ручного worker lifecycle в F10.
 
 Смысл вычислений и хранилища уточнён в [f4-03](./tasks/f4-03-shared-storage-compute.md): вычисления

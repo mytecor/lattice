@@ -17,6 +17,33 @@ Radicle стоит первым в упорядоченном списке remot
 Подробности и runtime-проверки описаны в
 [`profiles/radicle/README.md`](./profiles/radicle/README.md).
 
+## Публикация в Radicle и GitHub
+
+Git remotes хранятся в локальном `.git/config` и не переносятся в новый clone. Для рабочего
+checkout один раз создайте общий remote `publish` с GitHub как fetch URL и двумя push URL:
+
+```sh
+git remote add publish https://github.com/mytecor/lattice.git
+git remote set-url --add --push publish \
+  rad://z3AqC22BKQ5Gnrkw49N7PGJa91G6L/z6Mkvq7AcVgfLmaecxQEasuErFk6s7fLDj2668WLBFCE9xWV
+git remote set-url --add --push publish \
+  https://github.com/mytecor/lattice.git
+```
+
+Обычная публикация выполняется одной командой:
+
+```sh
+git push publish main
+```
+
+Git последовательно отправляет commit в оба URL, но общей атомарной транзакции между Radicle и
+GitHub нет. После частичного отказа сравните `refs/heads/main` в обоих remote и повторите push.
+Локальный `origin/main` при push через `publish` может не обновиться; синхронизируйте tracking ref:
+
+```sh
+git fetch origin main
+```
+
 Для локальной ноды:
 
 ```sh
