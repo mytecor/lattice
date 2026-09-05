@@ -52,20 +52,30 @@ gateway дополнительно открывает HTTP/HTTPS 80 и 443.
 Профиль `profiles/app-services` публикует node-status endpoint через Caddy:
 
 ```text
-http://status.mytecor-homelab.lattice/
+http://status.mytecor-homelab.local/
 ```
 
-С клиента без локальной DNS-записи нужно обращаться к IP ноды и передавать
-`Host: status.mytecor-homelab.lattice`. Например, в Yaak используется URL
-`http://192.168.60.168/` и отдельный заголовок `Host`; эквивалентная CLI-проверка:
+Avahi публикует этот service-specific hostname в mDNS, поэтому с Mac достаточно выполнить:
 
 ```sh
-curl --fail -H 'Host: status.mytecor-homelab.lattice' http://192.168.60.168/
+curl --fail http://status.mytecor-homelab.local/
 ```
 
 Ожидаемый ответ — `{"node":"mytecor-homelab","service":"lattice-node-status"}`. Отдельный
 backend или внутренний listener для статического endpoint не запускается. Radicle HTTP API
-доступен тем же способом с `Host: radicle.mytecor-homelab.lattice`.
+доступен по тому же ingress-контракту:
+
+```text
+http://radicle.mytecor-homelab.local/
+```
+
+LLM gateway доступен через отдельный Caddy reverse proxy и публикуемый Avahi mDNS-алиас:
+
+```text
+http://llm-gateway.mytecor-homelab.local/v1
+```
+
+Сам `token-proxy` остаётся привязан к `127.0.0.1:9208`; в LAN открыт только Caddy на порту 80.
 
 Слушатель работает как пользователь `rnsh` без sudo/root-привилегий. Его destination:
 `4cf57c92d739f498d2d007b79da66624`. Этот адрес получен по доверенному SSH-каналу; fingerprint

@@ -102,16 +102,27 @@ storage `comin` использует GitHub fallback. `/var/lib/radicle` сох�
 
 ## Прикладной HTTP ingress
 
-Профиль [`tcp-gateway`](./profiles/tcp-gateway/README.md) владеет внешними HTTP/HTTPS listeners
-Caddy. Активные инфраструктурные HTTP-сервисы получают отдельные host routes; их backend-порты
-остаются на loopback и не открываются в firewall. Без явно настроенного публичного
-`networking.domain` используются HTTP labels под внутренним суффиксом `lattice`, поэтому Caddy не
-обращается к ACME для несуществующего публичного TLD.
+Локальные HTTP-сервисы, доступные клиентам ноды, следуют единому контракту:
 
-Первый прикладной payload — JSON endpoint `status.<node>.lattice` из
+```text
+http://<service>.<node-name>.local/
+```
+
+Каждое такое имя публикуется через mDNS/Avahi и обслуживается на стандартном HTTP-порту `80`.
+Единственный внешний listener на этом порту принадлежит Caddy из профиля
+[`tcp-gateway`](./profiles/tcp-gateway/README.md). Caddy выбирает сервис по HTTP-заголовку `Host` и
+либо формирует ответ самостоятельно, либо проксирует запрос на backend, привязанный к loopback.
+Backend-порты не открываются в firewall и не являются частью клиентского API. Клиенты не должны
+использовать IP ноды, ручной `Host` или внутренний порт backend вместо канонического mDNS-имени.
+
+Маршруты публичного DNS/HTTPS, если они появятся, настраиваются отдельно и не изменяют локальный
+контракт `service.node-name.local:80`.
+
+Первый прикладной payload — JSON endpoint `status.<node>.local` из
 [`profiles/app-services`](./profiles/app-services/README.md). Его обслуживает директива Caddy
-`respond`, без отдельного процесса и состояния. Для будущих динамических приложений этот профиль
-остаётся точкой композиции, а Caddy — единственным внешним ingress.
+`respond`, без отдельного backend-процесса и состояния; Avahi публикует service-specific hostname
+в mDNS. Для будущих динамических приложений этот профиль остаётся точкой композиции, а Caddy —
+единственным внешним ingress.
 
 ## LLM gateway
 

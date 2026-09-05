@@ -19,6 +19,15 @@ TCP listener запускается вместе с профилем; для в�
 lattice.rns-server.interfaces."TCP Server".openFirewall = true;
 ```
 
+Если включён HTTP control plane и подключён `profiles/tcp-gateway`, его внешний LAN-адрес:
+
+```text
+http://rns-server.<node-name>.local/
+```
+
+Avahi публикует hostname через mDNS, Caddy принимает запросы на порту 80 и проксирует их на
+loopback-порт control plane. Внутренний HTTP-порт в firewall не открывается.
+
 Для ноды, которая только подключается к выбранной точке входа:
 
 ```nix

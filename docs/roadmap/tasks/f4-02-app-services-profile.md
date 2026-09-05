@@ -21,16 +21,15 @@
 ## Результат
 
 Выполнено 2026-09-05. Профиль `profiles/app-services` импортирует `tcp-gateway` и добавляет
-`http://status.<node>.<domain>/`. Статический JSON endpoint обслуживает сам Caddy через `respond`:
-для него не запускается отдельный backend и не открывается внутренний порт. Если
-`networking.domain` не задан, используется `lattice` и HTTP site label; Caddy не пытается получить
-публичный сертификат для внутреннего TLD. То же правило применено к автоматически создаваемым
-routes Radicle и `rns-server`.
+`http://status.<node>.local/`. Статический JSON endpoint обслуживает сам Caddy через `respond`:
+для него не запускается отдельный backend и не открывается внутренний порт. Service-specific
+hostname публикуется Avahi как mDNS address alias. Остальные автоматически создаваемые routes
+Radicle и `rns-server` используют тот же контракт `service.node-name.local:80`.
 
 `nix flake check path:. --no-build --all-systems` прошёл на Mac. На x86_64 homelab собраны
 `checks.x86_64-linux.app-services` и полный system closure, после чего конфигурация активирована в
-режиме `test`. Запрос из Yaak на `http://192.168.60.168/` с заголовком
-`Host: status.mytecor-homelab.lattice` вернул:
+режиме `test`. Первоначальная проверка использовала IP и ручной `Host`; текущий endpoint доступен
+напрямую через mDNS как `http://status.mytecor-homelab.local/` и возвращает:
 
 ```json
 {"node":"mytecor-homelab","service":"lattice-node-status"}

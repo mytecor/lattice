@@ -38,6 +38,17 @@ systemd.services.radicle-node.serviceConfig.LoadCredential = [
 
 Закрытый ключ Radicle не должен совпадать с age-ключом или SSH host key.
 
+## HTTP API в LAN
+
+При подключённом `profiles/tcp-gateway` Radicle HTTP API доступен через Caddy на порту 80:
+
+```text
+http://radicle.<node-name>.local/
+```
+
+Avahi публикует hostname через mDNS. Внутренний listener `radicle-httpd` остаётся на loopback и
+напрямую в firewall не открывается.
+
 ## Bootstrap репозитория
 
 Реестр репозиториев находится в [`repositories.nix`](./repositories.nix). Для Lattice профиль:

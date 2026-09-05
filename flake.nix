@@ -274,15 +274,30 @@
             assert !homelabConfig.services.nginx.enable;
             assert homelabConfig.services.caddy.enable;
             assert builtins.hasAttr
-              "http://status.mytecor-homelab.lattice"
+              "http://status.mytecor-homelab.local"
               homelabConfig.services.caddy.virtualHosts;
             assert builtins.hasAttr
-              "http://radicle.mytecor-homelab.lattice"
+              "http://radicle.mytecor-homelab.local"
+              homelabConfig.services.caddy.virtualHosts;
+            assert builtins.hasAttr
+              "http://llm-gateway.mytecor-homelab.local"
               homelabConfig.services.caddy.virtualHosts;
             assert nixpkgs.lib.hasInfix "lattice-node-status"
               homelabConfig.services.caddy.virtualHosts
-                ."http://status.mytecor-homelab.lattice".extraConfig;
-            assert homelabConfig.networking.firewall.allowedTCPPorts == [ 22 80 443 ];
+                ."http://status.mytecor-homelab.local".extraConfig;
+            assert builtins.hasAttr "node-status-mdns" homelabConfig.systemd.services;
+            assert nixpkgs.lib.hasInfix "status.mytecor-homelab.local"
+              homelabConfig.systemd.services.node-status-mdns.script;
+            assert builtins.hasAttr "radicle-mdns" homelabConfig.systemd.services;
+            assert nixpkgs.lib.hasInfix "radicle.mytecor-homelab.local"
+              homelabConfig.systemd.services.radicle-mdns.script;
+            assert nixpkgs.lib.hasInfix "reverse_proxy 127.0.0.1:9208"
+              homelabConfig.services.caddy.virtualHosts
+                ."http://llm-gateway.mytecor-homelab.local".extraConfig;
+            assert builtins.hasAttr "llm-gateway-mdns" homelabConfig.systemd.services;
+            assert nixpkgs.lib.hasInfix "llm-gateway.mytecor-homelab.local"
+              homelabConfig.systemd.services.llm-gateway-mdns.script;
+            assert homelabConfig.networking.firewall.allowedTCPPorts == [ 22 80 ];
             assert nixpkgs.lib.hasInfix "--config /var/lib/rnsh --rnsconfig /var/lib/rns"
               homelabConfig.systemd.services.rnsh.serviceConfig.ExecStart;
             homelabConfig.system.build.toplevel;

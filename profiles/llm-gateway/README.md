@@ -37,3 +37,16 @@ agenix -e <name>.age -i /path/to/recovery-key
 ```
 
 See [KEY_MANAGEMENT.md](../../KEY_MANAGEMENT.md) for rotation workflow.
+
+### Доступ из LAN через mDNS
+
+Если нода также использует `profiles/tcp-gateway` и Avahi, профиль Caddy публикует gateway по
+service-specific mDNS hostname:
+
+```text
+http://llm-gateway.<node>.local/v1
+```
+
+Например, для `mytecor-homelab` OpenAI-compatible base URL —
+`http://llm-gateway.mytecor-homelab.local/v1`. Caddy проксирует запросы на loopback listener;
+порт `9208` напрямую в LAN не открывается.
