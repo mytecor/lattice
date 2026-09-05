@@ -1,0 +1,22 @@
+diff --git a/crates/token_proxy_runtime/src/proxy/response/mod.rs b/crates/token_proxy_runtime/src/proxy/response/mod.rs
+index 88ebdbd..32e01bc 100644
+--- a/crates/token_proxy_runtime/src/proxy/response/mod.rs
++++ b/crates/token_proxy_runtime/src/proxy/response/mod.rs
+@@ -152,7 +152,7 @@ pub(super) async fn build_proxy_response(
+         start,
+     };
+     let model_override = meta.model_override();
+-    if response_transform != FormatTransform::None {
++    if response_transform != FormatTransform::None || model_override.is_some() {
+         // The body will change; let hyper recalculate the content length.
+         response_headers.remove(axum::http::header::CONTENT_LENGTH);
+     }
+@@ -247,7 +247,7 @@ pub(super) async fn build_proxy_response_buffered(
+         start,
+     };
+     let model_override = meta.model_override();
+-    if response_transform != FormatTransform::None {
++    if response_transform != FormatTransform::None || model_override.is_some() {
+         response_headers.remove(axum::http::header::CONTENT_LENGTH);
+     }
+     apply_estimated_input_tokens(&request_tracker, meta.estimated_input_tokens).await;

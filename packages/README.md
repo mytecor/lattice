@@ -40,6 +40,22 @@ exit status 17, listener не перезапускался. История пр�
 На Mac оператор может использовать установленный Python RNS 1.5.2 (`rnsd`/`rnsh`) через тот же
 публичный реестр. Rust-бинарники для Darwin собирались в Nix store для тестов и не подменяли PATH.
 
+## LLM gateway
+
+Headless CLI [`token-proxy`](./token-proxy/package.nix) собирается из source input
+`token-proxy-src`, закреплённого в корневом `flake.lock`. Пакет не включает Tauri UI и служит
+runtime-кандидатом для F7.
+
+Пакет применяет два минимальных исправления, найденных executable spike:
+
+- [`startup-sqlite-order.patch`](./token-proxy/startup-sqlite-order.patch) сначала инициализирует
+  SQLite через proxy service, затем запускает фоновое обновление price catalog;
+- [`model-alias-content-length.patch`](./token-proxy/model-alias-content-length.patch) удаляет
+  upstream `Content-Length`, когда model alias меняет тело ответа.
+
+Оба поведения проверяет `nix build .#checks.x86_64-linux.token-proxy-spike -L`. При обновлении
+upstream patch удаляется только после прохождения этой проверки без него.
+
 Остальные системные пакеты обновляются через input `nixpkgs` в корневом `flake.lock`.
 Изменение закреплённых версий само по себе не переключает работающую ноду: новую конфигурацию
 применяет обычный процесс развёртывания через `comin` после публикации в `main`.

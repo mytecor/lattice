@@ -14,12 +14,83 @@
 | SSH host key | `services.openssh.hostKeys`, у homelab — `/persist/etc/ssh/` | Ключ сервера и проверенные записи `known_hosts` клиентов |
 | Reticulum/rnsh identity | Файл сервиса; `lattice.rnsh.identity` и `lattice.rnsh.allowed` | Идентичность сервиса, destinations и списки доверия его клиентов/серверов |
 | Radicle key | `age.secrets.radicle-private-key`, `services.radicle.publicKey` | Пара ключей и доверие к соответствующим DID/NID |
+| LLM gateway client key | `age.secrets.llm-gateway-client-key` | Авторизация клиентов на gateway; не является provider credential |
+| LLM provider API key | Отдельный `age.secrets.llm-provider-<name>-key` для каждого upstream | Доступ gateway к provider; клиентам не выдаётся |
 
 Смена age-ключа не меняет значения секретов и не отзывает доступ по SSH или rnsh. У age нет
 центрального списка отзыва: исключение получателя действует только на заново зашифрованные файлы.
 Старый ключ продолжает расшифровывать доступные ему версии из истории Git, копий и snapshots.
 Если ключ утёк, нужно также заменить все действующие пароли, токены и сервисные закрытые ключи,
 которые он позволял получить. Удаление шифротекстов или переписывание Git не возвращает секретность.
+
+## LLM gateway credentials
+
+Для каждого credential создаётся отдельный `.age`-файл; цельный `config.jsonc` не шифруется и не
+редактируется вручную. Сначала добавьте правила в `nodes/<name>/secrets/secrets.nix`, используя
+тех же законных recipients, что и для остальных секретов ноды:
+
+```nix
+"llm-gateway-client-key.age".publicKeys = [ admin node ];
+"llm-provider-primary-key.age".publicKeys = [ admin node ];
+```
+
+Затем с доверенной машины создайте значения интерактивно, не передавая их через аргументы shell:
+
+```sh
+llm_recovery_key=/trusted/path/to/recovery-key
+test -f "$llm_recovery_key"
+cd nodes/mytecor-homelab/secrets
+agenix -e llm-gateway-client-key.age -i "$llm_recovery_key"
+agenix -e llm-provider-primary-key.age -i "$llm_recovery_key"
+```
+
+Каждый файл содержит ровно один key с допустимым завершающим переводом строки. В конфигурации
+ноды объявите secrets с автоматическим перезапуском gateway:
+
+```nix
+age.secrets.llm-gateway-client-key = {
+  file = ./secrets/llm-gateway-client-key.age;
+  mode = "0400";
+  restartUnits = [ "llm-gateway.service" ];
+};
+age.secrets.llm-provider-primary-key = {
+  file = ./secrets/llm-provider-primary-key.age;
+  mode = "0400";
+  restartUnits = [ "llm-gateway.service" ];
+};
+
+lattice.llm-gateway = {
+  clientCredentialFile = config.age.secrets.llm-gateway-client-key.path;
+  upstreams.primary.apiKeyFiles = [
+    config.age.secrets.llm-provider-primary-key.path
+  ];
+};
+```
+
+Профиль `profiles/llm-gateway` добавляется в imports ноды только в том же проверенном изменении,
+где объявлены client credential, хотя бы один upstream и все его secret-файлы. До публикации
+соберите `nixosConfigurations.<node>`; после применения проверьте unit, loopback endpoint и
+отсутствие provider IDs в `/v1/models`. Runtime config создаётся с mode `0600` в
+`/run/llm-gateway` и содержит раскрытые credentials, поэтому каталог доступен только
+`llm-gateway` и исчезает после остановки/перезагрузки; публичный шаблон в Nix store секретов не
+содержит.
+
+Для плановой ротации provider key сначала выпустите новое значение у provider, замените содержимое
+соответствующего `.age`, примените конфигурацию и проверьте запрос через gateway, затем отзовите
+старое значение. URL, logical models, client key и конфигурация Pi при этом не меняются. Если
+provider поддерживает одновременные keys, безопаснее временно добавить второй отдельный secret в
+`apiKeyFiles`, проверить его, затем удалить и отозвать старый.
+
+Client key имеет другую границу: закреплённый runtime принимает одно значение, поэтому его ротация
+требует согласованного обновления авторизованных клиентов и краткого окна переключения. Не
+маскируйте provider key под client key ради «бесшовности». При компрометации сначала ограничьте
+сетевой доступ к loopback/управляемому ingress, замените key и завершите активные клиентские
+процессы; provider credentials меняйте отдельно только если они также могли утечь.
+
+Account-backed OAuth upstreams пока не поддерживаются декларативным модулем: закреплённый headless
+CLI не имеет команды импорта account credential и хранит такую identity в SQLite. Не помещайте
+OAuth record или всю базу в Nix store. До появления проверенного headless import используйте
+отдельные API keys либо оставляйте такой upstream выключенным.
 
 ## Подготовка плановой ротации
 

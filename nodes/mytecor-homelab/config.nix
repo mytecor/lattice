@@ -28,6 +28,15 @@ in
         file = ./secrets/radicle-private-key.age;
         mode = "0400";
       };
+      # LLM Gateway provider keys - generate via agenix before deployment
+      llm-provider-gonka-gg-proxy = {
+        file = ./secrets/llm-provider-gonka-gg-proxy.age;
+        mode = "0400";
+      };
+      llm-provider-gonka-gg-openbroker = {
+        file = ./secrets/llm-provider-gonka-gg-openbroker.age;
+        mode = "0400";
+      };
     };
   };
 
@@ -40,6 +49,36 @@ in
 
   # Route the attached rnsh service's announces and links through the public peers.
   lattice.rns-server.reticulum.enable_transport = true;
+
+  # LLM Gateway: two upstreams with race dispatch for parallel requests.
+  # API keys are loaded from agenix secrets at runtime via systemd credentials.
+  # Client credential is optional; when null, gateway allows unauthenticated access.
+  lattice.llm-gateway = {
+    routing = {
+      dispatch = "race";
+      maxParallel = 2;
+    };
+    upstreams = {
+      proxy = {
+        enable = true;
+        id = "proxy";
+        providers = [ "openai" ];
+        baseUrl = "https://proxy.gonka.gg/v1";
+        apiKeyFiles = [ config.age.secrets.llm-provider-gonka-gg-proxy.path ];
+        priority = 0;
+        availableModels = [ ];
+      };
+      openbroker = {
+        enable = true;
+        id = "openbroker";
+        providers = [ "openai" ];
+        baseUrl = "https://openbroker.gonka.gg/v1";
+        apiKeyFiles = [ config.age.secrets.llm-provider-gonka-gg-openbroker.path ];
+        priority = 0;
+        availableModels = [ ];
+      };
+    };
+  };
 
   lattice.rnsh = {
     # Public hash only; private operator identity stays on the Mac in .secrets/rnsh-operator.

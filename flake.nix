@@ -50,6 +50,11 @@
       flake = false;
     };
 
+    module-llm-gateway = {
+      url = "path:./modules/llm-gateway";
+      flake = false;
+    };
+
     module-wireless = {
       url = "path:./modules/wireless";
       flake = false;
@@ -62,6 +67,11 @@
 
     rns-rs = {
       url = "path:./packages/rns-rs";
+      flake = false;
+    };
+
+    token-proxy-src = {
+      url = "github:mxyhi/token_proxy/v0.1.175";
       flake = false;
     };
   };
@@ -78,9 +88,11 @@
     module-ephemeral-root,
     module-rns-server,
     module-rnsh,
+    module-llm-gateway,
     module-wireless,
     profiles,
     rns-rs,
+    token-proxy-src,
     ...
   }:
     let
@@ -91,6 +103,9 @@
         lattice = {
           rns-server = final.callPackage "${rns-rs}/package.nix" { bin = "rns-server"; };
           rnsh = final.callPackage "${rns-rs}/package.nix" { bin = "rnsh"; };
+          token-proxy = final.callPackage ./packages/token-proxy/package.nix {
+            src = token-proxy-src;
+          };
         };
       };
 
@@ -125,13 +140,16 @@
           };
         in
         {
-          inherit (pkgs.lattice) rns-server rnsh;
+          inherit (pkgs.lattice) rns-server rnsh token-proxy;
           default = pkgs.lattice.rns-server;
         });
 
       checks.x86_64-linux =
         let
-          pkgs = import nixpkgs { system = "x86_64-linux"; };
+          pkgs = import nixpkgs {
+            system = "x86_64-linux";
+            overlays = [ overlay ];
+          };
           exampleConfig = self.nixosConfigurations.example.config;
           homelabConfig = self.nixosConfigurations.mytecor-homelab.config;
           disabledConfig = (nixpkgs.lib.nixosSystem {
@@ -158,6 +176,23 @@
           app-services = import ./tests/app-services.nix {
             inherit nixpkgs pkgs;
             appServicesProfile = "${profiles}/app-services/config.nix";
+          };
+
+          llm-gateway = import ./tests/llm-gateway.nix {
+            inherit nixpkgs pkgs;
+            gatewayModule = self.nixosModules.llm-gateway;
+            gatewayProfile = "${profiles}/llm-gateway/config.nix";
+          };
+
+          llm-gateway-service = import ./tests/llm-gateway-service.nix {
+            inherit pkgs;
+            gatewayModule = self.nixosModules.llm-gateway;
+            gatewayProfile = "${profiles}/llm-gateway/config.nix";
+          };
+
+          token-proxy-spike = import ./tests/token-proxy-spike.nix {
+            inherit pkgs;
+            tokenProxy = pkgs.lattice.token-proxy;
           };
 
           example =
@@ -257,12 +292,14 @@
         ephemeral-root.imports = [ "${module-ephemeral-root}" ];
         rns-server.imports = [ "${module-rns-server}" ];
         rnsh.imports = [ "${module-rnsh}" ];
+        llm-gateway.imports = [ "${module-llm-gateway}" ];
         wireless.imports = [ "${module-wireless}" ];
 
         default.imports = [
           self.nixosModules.ephemeral-root
           self.nixosModules.rns-server
           self.nixosModules.rnsh
+          self.nixosModules.llm-gateway
           self.nixosModules.wireless
         ];
       };
@@ -274,6 +311,7 @@
         imports = [
           ./nodes/mytecor-homelab
           "${profiles}/app-services/config.nix"
+          "${profiles}/llm-gateway/config.nix"
           "${profiles}/radicle/config.nix"
           "${profiles}/rns-network/config.nix"
           "${profiles}/rnsh/config.nix"

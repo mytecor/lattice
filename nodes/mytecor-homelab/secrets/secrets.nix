@@ -7,4 +7,7 @@ in
   "wifi-password.age".publicKeys = [ admin node ];
   "root-password-hash.age".publicKeys = [ admin node ];
   "radicle-private-key.age".publicKeys = [ admin node ];
+  # LLM Gateway provider keys
+  "llm-provider-gonka-gg-proxy.age".publicKeys = [ admin node ];
+  "llm-provider-gonka-gg-openbroker.age".publicKeys = [ admin node ];
 }

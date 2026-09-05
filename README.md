@@ -35,8 +35,10 @@ Lattice - проект для построения сети связанных �
 сервисы ноды не перезапускались. Вторая постоянная NixOS-нода исключена из плана. В F4 на homelab
 работает selective Radicle seed, публичная реплика доступна через независимые seeds, а `comin`
 выбирает локальный Radicle remote перед GitHub. Первый прикладной node-status endpoint и Radicle
-HTTP API опубликованы через Caddy. Следующий пункт основного маршрута — executable spike LLM
-gateway в f7-01, затем Pi, caches/artifacts, disposable worker и controller.
+HTTP API опубликованы через Caddy. В F7 выбран и воспроизводимо проверен headless
+`mxyhi/token_proxy`, добавлены декларативный модуль/профиль и контракт четырёх logical models.
+Для завершения f7-02 нужны Linux VM-прогон и реальные agenix secrets/mappings homelab; затем идут
+Pi, caches/artifacts, disposable worker и controller.
 
 ## Направления развития
 

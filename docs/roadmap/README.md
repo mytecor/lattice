@@ -39,7 +39,9 @@ identity и destination восстановился без общей LAN и бе
 развёрнут selective Radicle seed, `comin` читает его локальное storage первым remote, а публичная
 реплика проверена чистым клиентом. Caddy публикует первый прикладной node-status endpoint и
 Radicle HTTP API; f4-02 выполнена. Для f4-01 остаются строгий drill без GitHub и полный bootstrap
-новой NixOS-ноды. Следующий пункт основного маршрута — **f7-01**, затем F7–F11:
-LLM gateway → Pi → cache/artifact plane → disposable worker → controller.
+новой NixOS-ноды. Spike f7-01 и контракт logical models f7-03 завершены; модуль и профиль f7-02
+готовы к Linux VM-test и подключению реальных agenix secrets. Следующий блокирующий пункт —
+завершение **f7-02**, затем остальные задачи F7–F11:
+declarative LLM gateway → Pi → cache/artifact plane → disposable worker → controller.
 Незакрытые вопросы отслеживаются в
 [BACKLOG.md](./BACKLOG.md); работа идёт рывками, поэтому `main` всегда собирается.

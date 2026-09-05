@@ -113,6 +113,49 @@ Caddy. Активные инфраструктурные HTTP-сервисы п�
 `respond`, без отдельного процесса и состояния. Для будущих динамических приложений этот профиль
 остаётся точкой композиции, а Caddy — единственным внешним ingress.
 
+## LLM gateway
+
+Gateway runtime для F7 — headless CLI `mxyhi/token_proxy`, закреплённый как source input в
+корневом `flake.lock` и собранный пакетом [`packages/token-proxy`](./packages/token-proxy/package.nix).
+Клиентская граница — OpenAI-compatible API с отдельным gateway credential и логическими моделями
+`cheap`, `standard`, `strong`, `frontier`. Provider credentials и реальные model IDs существуют
+только внутри runtime-конфигурации gateway.
+
+Чтобы `/v1/models` не раскрывал внутреннюю топологию, runtime config обязан одновременно задавать
+`model_list_prefix = false`, завершённую миграцию этого флага и `available_models` только из четырёх
+логических имён. `model_mappings` каждого upstream переводит эти имена в реальные IDs; ответ
+переписывается обратно. Непубличные upstream keys подаются отдельно от client key.
+
+Executable spike [f7-01](./docs/roadmap/tasks/f7-01-token-proxy-spike.md) подтвердил Chat и
+Responses SSE, credential boundary, model discovery, retry, fallback, cooldown, priority, `race`
+и `hedged` dispatch. Закреплённая версия содержит два узких локальных исправления для headless
+startup и корректного model rewrite; их необходимость защищена тем же integration check.
+NixOS-модуль, безопасная сборка runtime config и полный resilience contract добавляются в
+f7-02–f7-04.
+
+### Контракт логических моделей
+
+Клиентская поверхность содержит ровно четыре стабильных имени; они описывают намерение, а не
+конкретный provider, семейство или snapshot модели:
+
+| Имя | Семантика |
+| --- | --- |
+| `cheap` | Минимальная стоимость и задержка для простых, ограниченных и легко проверяемых шагов. |
+| `standard` | Сбалансированный класс по умолчанию для обычной интерактивной и агентной работы. |
+| `strong` | Более высокая надёжность рассуждения и выполнения tools для сложных многошаговых задач. |
+| `frontier` | Максимально доступная способность для новых или дорогих в случае ошибки задач. |
+
+Mappings можно менять без изменения клиента, если новое назначение сохраняет смысл класса,
+поддерживает нужный OpenAI-compatible protocol и проходит контрактные/resilience checks. Изменение
+цены, provider ID, priority или fallback внутри класса не меняет API. Перенос модели в другой класс
+является изменением эксплуатационной политики и требует проверки качества, но не нового имени.
+
+Профиль задаёт `logicalModels` этим списком, а модуль проверяет, что `/v1/models` не включает
+upstream prefixes, каждый advertised ID входит в контракт, все четыре имени представлены хотя бы
+одним upstream и каждое имеет явный mapping. Неизвестное или provider-specific имя отклоняется с
+404 до обращения к upstream. Ошибки клиентской авторизации остаются 401; исчерпание retry/fallback
+возвращает gateway error без credentials и без раскрытия внутреннего model ID.
+
 ## Стираемый root
 
 Ноды Lattice должны поддерживать стираемый (ephemeral) root, при котором корневая файловая система

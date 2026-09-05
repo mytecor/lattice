@@ -1,4 +1,5 @@
 {
+  llm-gateway = 9208;
   radicle-node = 8776;
   radicle-httpd = 8080;
   rns-auto-discovery = 29716;

@@ -168,6 +168,18 @@
       },
       "parent": []
     },
+    "module-llm-gateway": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/llm-gateway",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/llm-gateway",
+        "type": "path"
+      },
+      "parent": []
+    },
     "module-rns-server": {
       "flake": false,
       "locked": {
@@ -288,13 +300,15 @@
         "hardware-intel-n100": "hardware-intel-n100",
         "impermanence": "impermanence",
         "module-ephemeral-root": "module-ephemeral-root",
+        "module-llm-gateway": "module-llm-gateway",
         "module-rns-server": "module-rns-server",
         "module-rnsh": "module-rnsh",
         "module-wireless": "module-wireless",
         "nixos-hardware": "nixos-hardware",
         "nixpkgs": "nixpkgs_2",
         "profiles": "profiles",
-        "rns-rs": "rns-rs"
+        "rns-rs": "rns-rs",
+        "token-proxy-src": "token-proxy-src"
       }
     },
     "systems": {
@@ -309,6 +323,23 @@
       "original": {
         "owner": "nix-systems",
         "repo": "default",
+        "type": "github"
+      }
+    },
+    "token-proxy-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1788581728,
+        "narHash": "sha256-p0hArLHg12UYJO4VKPbrYZSsaxjarcWlqL7PoaXqjYY=",
+        "owner": "mxyhi",
+        "repo": "token_proxy",
+        "rev": "afba1cc6c0386219b6b519f3b4fc9c2a83198d34",
+        "type": "github"
+      },
+      "original": {
+        "owner": "mxyhi",
+        "ref": "v0.1.175",
+        "repo": "token_proxy",
         "type": "github"
       }
     },

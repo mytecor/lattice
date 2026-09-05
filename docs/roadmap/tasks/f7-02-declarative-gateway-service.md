@@ -11,10 +11,10 @@ gateway config одним secret-файлом не хранится.
 
 ## Что сделать
 
-- [ ] Добавить NixOS-модуль и профиль gateway с typed options для несекретной конфигурации.
-- [ ] Подать credentials из отдельных agenix secrets, не копируя их в Nix store.
-- [ ] Запускать сервис под отдельным пользователем с минимальными filesystem/network правами.
-- [ ] Описать bootstrap, ротацию gateway/client и provider credentials.
+- [x] Добавить NixOS-модуль и профиль gateway с typed options для несекретной конфигурации.
+- [x] Подать credentials из отдельных agenix secrets, не копируя их в Nix store.
+- [x] Запускать сервис под отдельным пользователем с минимальными filesystem/network правами.
+- [x] Описать bootstrap, ротацию gateway/client и provider credentials.
 
 ## Критерий готовности
 
@@ -30,4 +30,16 @@ gateway config одним secret-файлом не хранится.
 
 ## Открытые вопросы
 
-Точный механизм безопасной сборки runtime config определяется по результату f7-01.
+Безопасная сборка runtime config определена: secret-free JSON создаётся в Nix store, а
+`ExecStartPre` подставляет отдельные systemd credentials в приватный файл mode `0600`.
+
+Account-backed OAuth остаётся ограничением закреплённого headless CLI: декларативной команды
+импорта нет, identity хранится в SQLite. Модуль не выдаёт API key за OAuth record и пока принимает
+только API-key upstreams.
+
+## Статус
+
+Модуль, профиль, evaluation-check и NixOS VM-тест добавлены 2026-09-05. Полная evaluation проходит,
+но Linux VM-тест и фактический `nixos-rebuild` homelab ещё не выполнены: для ноды нужны реальные
+зашифрованные client/provider secrets и выбранные operational mappings. Поэтому критерии готовности
+выше остаются открытыми, а f7-02 — в работе.

@@ -13,6 +13,8 @@
 - [`app-services/`](./app-services/README.md) - первый прикладной payload: node-status endpoint,
   опубликованный через `tcp-gateway` без отдельного backend-процесса.
 - [`gitops/`](./gitops/config.nix) - pull-based деплой через `comin` для сети Lattice.
+- [`llm-gateway/`](./llm-gateway/README.md) - безопасные production defaults для локального
+  OpenAI-compatible gateway; upstreams и secret paths задаёт нода.
 - [`networking/`](./networking/ports.nix) - общие порты и [публичные uplink Reticulum](./networking/reticulum.nix).
 - [`radicle/`](./radicle/README.md) - seed node Radicle с `radicle-node`, HTTP gateway через `radicle-httpd` и закрытым ключом из `agenix`.
 - [`rns-server/`](./rns-server/README.md) - Reticulum node server с AutoInterface, TCP listener и шаблоном TCP uplink.

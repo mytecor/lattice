@@ -10,9 +10,9 @@ Retry, cooldown, fallback, priority groups, `race`, `hedged` requests и streami
 
 ## Что сделать
 
-- [ ] Создать fake upstreams с управляемыми задержками, 429, 5xx, обрывами и SSE.
+- [x] Создать fake upstreams с управляемыми задержками, 429, 5xx, обрывами и SSE.
 - [ ] Проверить каждую routing policy и отмену проигравших parallel requests.
-- [ ] Проверить, что fallback не нарушает model class и credential boundary.
+- [x] Проверить, что fallback не нарушает model class и credential boundary.
 - [ ] Добавить минимальные health/metrics/logs без содержимого prompts и secrets.
 
 ## Критерий готовности
@@ -29,3 +29,14 @@ Retry, cooldown, fallback, priority groups, `race`, `hedged` requests и streami
 ## Открытые вопросы
 
 _нет_. Численные timeout/delay значения настраиваются после измерений.
+
+## Статус
+
+Матрица `tests/token-proxy-spike.py` уже воспроизводит 429, 503, transport disconnect, Chat и
+Responses SSE, same-upstream retry, serial fallback, cooldown, priority, race и hedged dispatch.
+Она проверяет сохранение logical model/credential boundary и SQLite diagnostics без prompt и
+secret values. Четыре последовательных полных прогона прошли 2026-09-05.
+
+Для завершения f7-04 остаются наблюдаемая отмена проигравшего запроса (не только быстрый возврат
+победителя), обрыв уже начатого SSE, отдельный health surface и утверждённый минимальный набор
+метрик/полей журналирования. Эти проверки не подменяются наличием настроек в runtime.
