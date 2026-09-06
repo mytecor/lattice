@@ -39,9 +39,11 @@ identity и destination восстановился без общей LAN и бе
 развёрнут selective Radicle seed, `comin` читает его локальное storage первым remote, а публичная
 реплика проверена чистым клиентом. Caddy публикует первый прикладной node-status endpoint и
 Radicle HTTP API; f4-02 выполнена. Для f4-01 остаются строгий drill без GitHub и полный bootstrap
-новой NixOS-ноды. Spike f7-01 и контракт logical models f7-03 завершены; модуль и профиль f7-02
-готовы к Linux VM-test и подключению реальных agenix secrets. Следующий блокирующий пункт —
-завершение **f7-02**, затем остальные задачи F7–F11:
-declarative LLM gateway → Pi → cache/artifact plane → disposable worker → controller.
+новой NixOS-ноды. Spike f7-01, модуль f7-02 и контракт logical models f7-03 дали временный
+`token_proxy` runtime на homelab. Реальная Gonka-интеграция выявила ограничения динамического
+catalog/scoped routing; source audit f7-05 выбрал Go LIP первым кандидатом. Следующий блокирующий
+пункт — executable PoC и прямой cutover в **f7-06**, затем завершение resilience checks и остальные
+задачи F7–F11:
+LLM gateway → Pi → cache/artifact plane → disposable worker → controller.
 Незакрытые вопросы отслеживаются в
 [BACKLOG.md](./BACKLOG.md); работа идёт рывками, поэтому `main` всегда собирается.

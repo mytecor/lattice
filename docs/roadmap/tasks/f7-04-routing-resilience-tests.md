@@ -1,7 +1,8 @@
 # Проверить routing, отказоустойчивость и streaming
 
 Фича: [F7 — LLM gateway](../features/f7-llm-gateway.md). Зависит от
-[f7-02](./f7-02-declarative-gateway-service.md) и [f7-03](./f7-03-logical-model-contract.md).
+[f7-02](./f7-02-declarative-gateway-service.md), [f7-03](./f7-03-logical-model-contract.md) и
+выбора runtime с прямым cutover в [f7-06](./f7-06-go-lip-gonka-cutover.md).
 
 ## Контекст
 

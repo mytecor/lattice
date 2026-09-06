@@ -126,11 +126,18 @@ Backend-порты не открываются в firewall и не являют�
 
 ## LLM gateway
 
-Gateway runtime для F7 — headless CLI `mxyhi/token_proxy`, закреплённый как source input в
+Текущий временный runtime F7 — headless CLI `mxyhi/token_proxy`, закреплённый как source input в
 корневом `flake.lock` и собранный пакетом [`packages/token-proxy`](./packages/token-proxy/package.nix).
-Клиентская граница — OpenAI-compatible API с отдельным gateway credential и логическими моделями
-`cheap`, `standard`, `strong`, `frontier`. Provider credentials и реальные model IDs существуют
-только внутри runtime-конфигурации gateway.
+Реальная Gonka-интеграция выявила недостаточную поддержку динамических каталогов, безопасного
+наследования каталога несколькими upstream и model-scoped routing groups. Source audit
+[f7-05](./docs/roadmap/tasks/f7-05-research-gateway-alternatives.md) выбрал Go LIP первым кандидатом;
+executable decision и прямой cutover выполняются в
+[f7-06](./docs/roadmap/tasks/f7-06-go-lip-gonka-cutover.md). `token_proxy` не является утверждённой
+долгосрочной зависимостью.
+
+Стабильная клиентская граница независимо от runtime — OpenAI-compatible API с отдельным gateway
+credential и логическими моделями `cheap`, `standard`, `strong`, `frontier`. Provider credentials
+и реальные model IDs существуют только внутри runtime-конфигурации gateway.
 
 Чтобы `/v1/models` не раскрывал внутреннюю топологию, runtime config обязан одновременно задавать
 `model_list_prefix = false`, завершённую миграцию этого флага и `available_models` только из четырёх

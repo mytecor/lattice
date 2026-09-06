@@ -65,4 +65,7 @@ F7.
 
 ## Открытые вопросы
 
-Окончательный выбор gateway — открытое решение №2 в [BACKLOG.md](../BACKLOG.md).
+Первоначальный выбор был закрыт этим spike, но переоткрыт после реальной Gonka-интеграции. Source
+audit выполнен в [f7-05](./f7-05-research-gateway-alternatives.md), executable decision и прямой
+cutover вынесены в [f7-06](./f7-06-go-lip-gonka-cutover.md); выбор остаётся открытым решением №2 в
+[BACKLOG.md](../BACKLOG.md).
