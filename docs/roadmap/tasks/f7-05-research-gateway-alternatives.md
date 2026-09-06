@@ -2,8 +2,9 @@
 
 Фича: [F7 — LLM gateway](../features/f7-llm-gateway.md). Продолжает
 [f7-01](./f7-01-token-proxy-spike.md) после проверки `token_proxy` в реальной конфигурации.
-Executable-проверка лидирующего кандидата и выбор runtime вынесены в
-[f7-06](./f7-06-go-lip-gonka-cutover.md).
+Executable-проверка готового кандидата вынесена в
+[f7-06](./f7-06-go-lip-gonka-cutover.md); последующее решение о собственном proxy поверх Bifrost
+Go API закреплено в [f7-07](./f7-07-bifrost-go-proxy.md).
 
 ## Контекст
 
@@ -36,7 +37,7 @@ Gonka endpoint обнаружилась недостаточная модель 
 | [Go LLM Interactive Proxy](https://github.com/matdev83/go-llm-interactive-proxy) | Apache-2.0 single binary; OpenAI Chat/Responses; remote model inventory с background refresh и last-known-good; regex aliases; streaming parallel selector `!`; retries, circuit breaker, diagnostics | Первый кандидат для PoC |
 | [LLM Interactive Proxy / Aiproxer](https://github.com/aiproxer/aiproxer) | Streaming race по first meaningful output с отменой проигравших; retries/failover/circuit breaker; динамические каталоги отдельных connectors | Резервный кандидат; Python runtime и AGPL-3.0 |
 | [AgentCC Gateway](https://github.com/future-agi/future-agi/tree/main/agentcc-gateway) | Apache-2.0 Go binary; per-provider startup discovery; retry/failover; исходник содержит `RaceExecutor` | Не брать в PoC сейчас: каталог не наследуется между providers, а `RaceExecutor.Execute` не подключён к request path в проверенном tree |
-| [Bifrost](https://github.com/maximhq/bifrost) | Apache-2.0 Go gateway; развитый динамический model catalog, refresh и provider routing | Не подходит без доработки: parallel first-response race не найден |
+| [Bifrost](https://github.com/maximhq/bifrost) | Apache-2.0 Go gateway и Go API; provider adapters, schema conversion, streaming и model discovery | Готовый HTTP gateway не реализует нужный race; Go API выбран библиотечным execution layer для собственного proxy в f7-07 |
 | [LiteLLM](https://github.com/BerriAI/litellm) | Зрелый OpenAI-compatible proxy; model groups, retries, fallback, cooldown, много providers | Не подходит без отдельного race layer: router выбирает один deployment, группы задаются декларативно |
 | [Portkey Gateway](https://github.com/Portkey-AI/gateway) | MIT gateway; retries, fallback, weighted load balancing и conditional routing | Не подходит: нет требуемого streaming race и динамического наследования каталога |
 
@@ -82,8 +83,11 @@ inventory.
 - `docs/roadmap/features/f7-llm-gateway.md`
 - `docs/roadmap/tasks/`
 
-## Открытые вопросы
+## Последующее решение
 
-Окончательный runtime выбирается только по результату [f7-06](./f7-06-go-lip-gonka-cutover.md).
+Go LIP отклонён в [f7-06](./f7-06-go-lip-gonka-cutover.md): обязательные `/v1/models` projection и
+десятиминутный catalog refresh требуют функционального fork. Резервные готовые gateway больше не
+исследуются. Lattice реализует собственный Go HTTP proxy, а Bifrost использует через Go API как
+provider execution library; план и cutover находятся в [f7-07](./f7-07-bifrost-go-proxy.md).
 
-**Статус:** завершена 2026-09-06; executable handoff подготовлен в f7-06.
+**Статус:** завершена 2026-09-06; исторический source audit, решение обновлено в f7-07.

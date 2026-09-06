@@ -128,28 +128,45 @@ Backend-порты не открываются в firewall и не являют�
 
 Текущий временный runtime F7 — headless CLI `mxyhi/token_proxy`, закреплённый как source input в
 корневом `flake.lock` и собранный пакетом [`packages/token-proxy`](./packages/token-proxy/package.nix).
-Реальная Gonka-интеграция выявила недостаточную поддержку динамических каталогов, безопасного
-наследования каталога несколькими upstream и model-scoped routing groups. Source audit
-[f7-05](./docs/roadmap/tasks/f7-05-research-gateway-alternatives.md) выбрал Go LIP первым кандидатом;
-executable decision и прямой cutover выполняются в
-[f7-06](./docs/roadmap/tasks/f7-06-go-lip-gonka-cutover.md). `token_proxy` не является утверждённой
-долгосрочной зависимостью.
+Он не является утверждённой долгосрочной зависимостью: реальная Gonka-интеграция выявила
+недостаточную поддержку независимых inference/discovery endpoints, динамических каталогов и
+model-scoped routing groups. Исследование [f7-05](./docs/roadmap/tasks/f7-05-research-gateway-alternatives.md)
+и отрицательный Go LIP PoC [f7-06](./docs/roadmap/tasks/f7-06-go-lip-gonka-cutover.md) также показали,
+что готовые gateway заставляют менять обязательный клиентский контракт или поддерживать
+функциональный fork.
+
+Целевой runtime закреплён в
+[f7-07](./docs/roadmap/tasks/f7-07-bifrost-go-proxy.md): собственный небольшой Go HTTP proxy
+использует Bifrost через Go API как provider execution library. Bifrost отвечает за
+provider-specific adapters, schema conversion, streaming transport и поддерживаемую им
+инфраструктуру; Lattice владеет OpenAI-compatible ingress, логическими моделями, model discovery
+policy и композицией маршрутов. Parallel race реализуется над отдельными вызовами Bifrost, а не
+форком Bifrost, внешним proxy перед его HTTP gateway или dynamic plugin с рекурсивным вызовом.
 
 Стабильная клиентская граница независимо от runtime — OpenAI-compatible API с отдельным gateway
 credential и логическими моделями `cheap`, `standard`, `strong`, `frontier`. Provider credentials
 и реальные model IDs существуют только внутри runtime-конфигурации gateway.
 
-Чтобы `/v1/models` не раскрывал внутреннюю топологию, runtime config обязан одновременно задавать
-`model_list_prefix = false`, завершённую миграцию этого флага и `available_models` только из четырёх
-логических имён. `model_mappings` каждого upstream переводит эти имена в реальные IDs; ответ
-переписывается обратно. Непубличные upstream keys подаются отдельно от client key.
+`/v1/models` принадлежит Lattice proxy и публикует только четыре логических имени. Входящий model
+ID преобразуется в native target до вызова Bifrost, а исходное logical имя восстанавливается во
+всех ответах и безопасных ошибках. Provider identity, native IDs, внутренние URLs и route selectors
+не входят в клиентскую поверхность. Непубличные upstream keys подаются отдельно от client key.
 
-Executable spike [f7-01](./docs/roadmap/tasks/f7-01-token-proxy-spike.md) подтвердил Chat и
-Responses SSE, credential boundary, model discovery, retry, fallback, cooldown, priority, `race`
-и `hedged` dispatch. Закреплённая версия содержит два узких локальных исправления для headless
-startup и корректного model rewrite; их необходимость защищена тем же integration check.
-NixOS-модуль, безопасная сборка runtime config и полный resilience contract добавляются в
-f7-02–f7-04.
+Provider-конфигурация разделяет `inference_url` и опциональный `models_url`. Поэтому
+`openbroker.gonka.gg` может обслуживать inference, а каталог той же access group — загружаться с
+`proxy.gonka.gg/v1/models`; наличие `/v1/models` на inference endpoint не требуется.
+
+Маршрут строится из плоского упорядоченного `routing_rules` pipeline. Один rule выполняет одно
+действие (`race`, `retry`, `fallback`, позднее `timeout` или `hedge`) и преобразует route,
+построенный предыдущими rules. `race` запускает target calls одновременно и возвращает первый
+успешный результат. В streaming победитель выбирается по первому meaningful content, reasoning
+или tool-call event; проигравшие вызовы отменяются через context cancellation.
+
+Executable spike [f7-01](./docs/roadmap/tasks/f7-01-token-proxy-spike.md) остаётся историческим
+подтверждением требуемого поведения и источником regression tests, но не определяет новый runtime.
+NixOS-модуль, безопасная сборка runtime config и resilience contract из f7-02–f7-04 мигрируют на
+собственный Bifrost-based proxy в f7-07; старые package, patches и runtime-specific config удаляются
+только после подтверждённого прямого cutover.
 
 ### Контракт логических моделей
 

@@ -17,16 +17,12 @@
 - Bootstrap Radicle закрыт в [f4-01](./tasks/f4-01-radicle-seed-comin.md): начальный config
   приходит из installer checkout или GitHub, затем selective seed получает публичную реплику, а
   `comin` читает локальное bare storage первым remote.
-- Первоначальный LLM gateway spike завершён в [f7-01](./tasks/f7-01-token-proxy-spike.md), но
-  окончательный выбор переоткрыт после выявления ограничений `token_proxy` на динамические
-  каталоги и scoped routing. Source audit завершён в
-  [f7-05](./tasks/f7-05-research-gateway-alternatives.md), executable decision и прямой cutover
-  вынесены в [f7-06](./tasks/f7-06-go-lip-gonka-cutover.md).
+- Решение по LLM gateway runtime закрыто: [f7-06](./tasks/f7-06-go-lip-gonka-cutover.md) сохранила
+  отрицательный результат Go LIP PoC, а целевой собственный Go proxy поверх Bifrost Go API и
+  прямой cutover закреплены в [f7-07](./tasks/f7-07-bifrost-go-proxy.md).
 
 ## Открытые решения
 
-2. **LLM gateway runtime** — проверить Go LIP и либо напрямую заменить `token_proxy`, либо перейти
-   к резервному кандидату по процедуре [f7-06](./tasks/f7-06-go-lip-gonka-cutover.md).
 3. **Backend изоляции disposable worker** — VM, microVM или контейнер выбирается в F10 после
    фиксации threat model и требований к NixOS provisioning.
 4. **Controller storage и provisioner** — конкретные реализации выбираются в F11 после

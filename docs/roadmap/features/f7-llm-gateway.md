@@ -2,9 +2,9 @@
 
 Pi и будущие workers обращаются к единой OpenAI-compatible точке входа, не знают provider
 credentials и не зависят от конкретных providers или model IDs. `mxyhi/token_proxy` остаётся
-временным runtime: первоначальный spike пройден, но реальная интеграция выявила недостаточную
-поддержку динамических каталогов и scoped routing. Постоянный gateway повторно выбирается через
-executable comparison, а не только по документации.
+только временным runtime до cutover: его ограничения подтверждены реальной интеграцией, а Go LIP
+отклонён в f7-06. Постоянный runtime — собственный Go proxy поверх Bifrost Go API; Lattice владеет
+HTTP/API contract, routing и discovery policy, не форкая Bifrost.
 
 Зависит от [F1](./f1-one-node.md) и [F2](./f2-secrets-identity.md). Соответствует
 [вехе 7](../VISION.md#вехи-и-зависимости-без-деталей).
@@ -14,7 +14,8 @@ executable comparison, а не только по документации.
 [f7-03](../tasks/f7-03-logical-model-contract.md),
 [f7-04](../tasks/f7-04-routing-resilience-tests.md),
 [f7-05](../tasks/f7-05-research-gateway-alternatives.md),
-[f7-06](../tasks/f7-06-go-lip-gonka-cutover.md).
+[f7-06](../tasks/f7-06-go-lip-gonka-cutover.md),
+[f7-07](../tasks/f7-07-bifrost-go-proxy.md).
 
 **Критерий готовности:** клиент с gateway credential выполняет streaming-запросы к логическим
 моделям `cheap`, `standard`, `strong`, `frontier`; реальные provider credentials и model IDs ему

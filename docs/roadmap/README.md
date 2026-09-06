@@ -41,8 +41,9 @@ identity и destination восстановился без общей LAN и бе
 Radicle HTTP API; f4-02 выполнена. Для f4-01 остаются строгий drill без GitHub и полный bootstrap
 новой NixOS-ноды. Spike f7-01, модуль f7-02 и контракт logical models f7-03 дали временный
 `token_proxy` runtime на homelab. Реальная Gonka-интеграция выявила ограничения динамического
-catalog/scoped routing; source audit f7-05 выбрал Go LIP первым кандидатом. Следующий блокирующий
-пункт — executable PoC и прямой cutover в **f7-06**, затем завершение resilience checks и остальные
+catalog/scoped routing, а f7-06 отклонила Go LIP из-за обязательного функционального fork.
+Целевая архитектура теперь — собственный Go proxy поверх Bifrost Go API. Следующий блокирующий
+пункт — реализация и прямой cutover в **f7-07**, затем завершение resilience checks и остальные
 задачи F7–F11:
 LLM gateway → Pi → cache/artifact plane → disposable worker → controller.
 Незакрытые вопросы отслеживаются в

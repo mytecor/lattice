@@ -71,7 +71,8 @@
 | Зафиксировать контракт логических моделей | [f7-03](./f7-03-logical-model-contract.md) |
 | Проверить routing, отказоустойчивость и streaming | [f7-04](./f7-04-routing-resilience-tests.md) |
 | Исследовать альтернативы `token_proxy` | [f7-05](./f7-05-research-gateway-alternatives.md) |
-| Проверить Go LIP на Gonka и выполнить прямой cutover | [f7-06](./f7-06-go-lip-gonka-cutover.md) |
+| Проверить Go LIP на Gonka (отрицательный PoC) | [f7-06](./f7-06-go-lip-gonka-cutover.md) |
+| Реализовать собственный Go proxy поверх Bifrost и выполнить cutover | [f7-07](./f7-07-bifrost-go-proxy.md) |
 
 ## F8. Интерактивный Pi runtime
 

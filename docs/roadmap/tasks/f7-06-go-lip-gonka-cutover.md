@@ -1,9 +1,14 @@
 # Проверить Go LIP на Gonka и заменить `token_proxy`
 
+> **Статус: закрыта с отрицательным результатом.** Go LIP требует функционального fork для
+> обязательной проекции `/v1/models` и десятиминутного catalog refresh. Решение не переходить к
+> следующему готовому gateway, а реализовать собственный proxy поверх Bifrost Go API закреплено в
+> [f7-07](./f7-07-bifrost-go-proxy.md). Оставшийся текст хранит проверенный PoC и причины отказа.
+
 Фича: [F7 — LLM gateway](../features/f7-llm-gateway.md). Зависит от source audit
-[f7-05](./f7-05-research-gateway-alternatives.md). Блокирует завершение
-[f7-04](./f7-04-routing-resilience-tests.md) и подключение Pi в
-[f8-02](./f8-02-pi-gateway-config.md).
+[f7-05](./f7-05-research-gateway-alternatives.md). Исторически блокировала завершение
+[f7-04](./f7-04-routing-resilience-tests.md); активная зависимость перенесена в
+[f7-07](./f7-07-bifrost-go-proxy.md).
 
 ## Цель
 
