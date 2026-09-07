@@ -1,10 +1,11 @@
 # F7. LLM gateway
 
 Pi и будущие workers обращаются к единой OpenAI-compatible точке входа, не знают provider
-credentials и не зависят от конкретных providers или model IDs. `mxyhi/token_proxy` остаётся
-только временным runtime до cutover: его ограничения подтверждены реальной интеграцией, а Go LIP
-отклонён в f7-06. Постоянный runtime — собственный Go proxy поверх Bifrost Go API; Lattice владеет
-HTTP/API contract, routing и discovery policy, не форкая Bifrost.
+credentials и не зависят от конкретных providers или model IDs. Постоянный runtime — собственный
+Go proxy поверх Bifrost Go API; Lattice владеет HTTP/API contract, routing и discovery policy, не
+форкая Bifrost. Legacy `mxyhi/token_proxy` удалён из активной конфигурации после cutover
+([f7-08](../tasks/f7-08-remove-token-proxy.md)); его ограничения и отклонения Go LIP зафиксированы
+в исторических f7-01, f7-05 и f7-06.
 
 Зависит от [F1](./f1-one-node.md) и [F2](./f2-secrets-identity.md). Соответствует
 [вехе 7](../VISION.md#вехи-и-зависимости-без-деталей).
@@ -15,7 +16,8 @@ HTTP/API contract, routing и discovery policy, не форкая Bifrost.
 [f7-04](../tasks/f7-04-routing-resilience-tests.md),
 [f7-05](../tasks/f7-05-research-gateway-alternatives.md),
 [f7-06](../tasks/f7-06-go-lip-gonka-cutover.md),
-[f7-07](../tasks/f7-07-bifrost-go-proxy.md).
+[f7-07](../tasks/f7-07-bifrost-go-proxy.md),
+[f7-08](../tasks/f7-08-remove-token-proxy.md).
 
 **Критерий готовности:** клиент с gateway credential выполняет streaming-запросы к логическим
 моделям `stupid`, `standard`; реальные provider credentials и model IDs ему

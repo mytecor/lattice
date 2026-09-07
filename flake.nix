@@ -69,11 +69,6 @@
       url = "path:./packages/rns-rs";
       flake = false;
     };
-
-    token-proxy-src = {
-      url = "github:mxyhi/token_proxy/v0.1.175";
-      flake = false;
-    };
   };
 
   outputs = {
@@ -92,7 +87,6 @@
     module-wireless,
     profiles,
     rns-rs,
-    token-proxy-src,
     ...
   }:
     let
@@ -104,9 +98,6 @@
           rns-server = final.callPackage "${rns-rs}/package.nix" { bin = "rns-server"; };
           rnsh = final.callPackage "${rns-rs}/package.nix" { bin = "rnsh"; };
           llm-gateway = final.callPackage ./packages/llm-gateway/package.nix { };
-          token-proxy = final.callPackage ./packages/token-proxy/package.nix {
-            src = token-proxy-src;
-          };
         };
       };
 
@@ -141,7 +132,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) llm-gateway rns-server rnsh token-proxy;
+          inherit (pkgs.lattice) llm-gateway rns-server rnsh;
           default = pkgs.lattice.rns-server;
         });
 
@@ -179,12 +170,6 @@
             appServicesProfile = "${profiles}/app-services/config.nix";
           };
 
-          llm-gateway = import ./tests/llm-gateway.nix {
-            inherit nixpkgs pkgs;
-            gatewayModule = self.nixosModules.llm-gateway;
-            gatewayProfile = "${profiles}/llm-gateway/config.nix";
-          };
-
           llm-gateway-bifrost = import ./tests/llm-gateway-bifrost.nix {
             inherit nixpkgs pkgs;
             gatewayModule = self.nixosModules.llm-gateway;
@@ -195,11 +180,6 @@
             inherit pkgs;
             gatewayModule = self.nixosModules.llm-gateway;
             gatewayProfile = "${profiles}/llm-gateway/config.nix";
-          };
-
-          token-proxy-spike = import ./tests/token-proxy-spike.nix {
-            inherit pkgs;
-            tokenProxy = pkgs.lattice.token-proxy;
           };
 
           example =
@@ -301,8 +281,7 @@
             assert nixpkgs.lib.hasInfix "reverse_proxy 127.0.0.1:9208"
               homelabConfig.services.caddy.virtualHosts
                 ."http://llm-gateway.mytecor-homelab.local".extraConfig;
-            assert homelabConfig.lattice.llm-gateway.runtime == "bifrost";
-            assert homelabConfig.lattice.llm-gateway.logicalModels == [ "stupid" "standard" ];
+            assert homelabConfig.lattice.llm-gateway.package == pkgs.lattice.llm-gateway;
             assert builtins.length (builtins.attrNames homelabConfig.lattice.llm-gateway.providers) == 2;
             assert homelabConfig.lattice.llm-gateway.providers.proxy.modelsUrl == null;
             assert homelabConfig.lattice.llm-gateway.providers.openbroker.modelsUrl

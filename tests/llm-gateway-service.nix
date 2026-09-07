@@ -63,9 +63,6 @@ pkgs.testers.runNixOSTest {
     environment.systemPackages = [ pkgs.curl pkgs.jq ];
 
     lattice.llm-gateway = {
-      runtime = "bifrost";
-      package = pkgs.lattice.llm-gateway;
-      logicalModels = [ "stupid" "standard" ];
       clientCredentialFile = toString clientKey;
       providers.primary = {
         accessGroup = "test";

@@ -1,18 +1,17 @@
 ## LLM Gateway
 
-Профиль задаёт безопасные network/service defaults для `lattice.llm-gateway`. Целевой runtime —
-Lattice-owned Go proxy поверх Bifrost Core; `token_proxy` остаётся включён на существующей homelab
-generation до заполнения operational logical-model mappings и прямого cutover.
+Профиль задаёт безопасные network/service defaults для `lattice.llm-gateway`. Runtime — Lattice-owned
+Go proxy поверх Bifrost Core.
 
 ### Компоненты
 
 - `packages/llm-gateway/` — Go HTTP facade, routing pipeline, catalog и Bifrost execution layer;
-- `modules/llm-gateway/` — dual-runtime NixOS module и безопасная сборка runtime config;
+- `modules/llm-gateway/` — NixOS module и безопасная сборка runtime config;
 - `profiles/llm-gateway/` — loopback port и production-safe defaults.
 
-Для нового runtime задаются `runtime = "bifrost"`, `package = pkgs.lattice.llm-gateway`, providers,
-logical models и плоские `routingRules`. Provider `inferenceUrl` не обязан иметь `/v1/models`:
-`modelsUrl` и `modelsApiKeyFile` независимы. Полный пример находится в
+Профиль оставляет `runtime`/`package` умолчаниям модуля (`pkgs.lattice.llm-gateway`); нода задаёт
+providers, logical models (через `models`) и плоские `routingRules`. Provider `inferenceUrl` не обязан
+иметь `/v1/models`: `modelsUrl` и `modelsApiKeyFile` независимы. Полный пример находится в
 [`modules/llm-gateway/README.md`](../../modules/llm-gateway/README.md).
 
 Secrets подаются через agenix/systemd credentials:

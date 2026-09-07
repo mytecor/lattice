@@ -75,7 +75,8 @@ LLM gateway доступен через отдельный Caddy reverse proxy �
 http://llm-gateway.mytecor-homelab.local/v1
 ```
 
-Сам `token-proxy` остаётся привязан к `127.0.0.1:9208`; в LAN открыт только Caddy на порту 80.
+Сам Gateway (Lattice-owned Go proxy поверх Bifrost) слушает на `127.0.0.1:9208`; в LAN открыт
+только Caddy на порту 80.
 
 Слушатель работает как пользователь `rnsh` без sudo/root-привилегий. Его destination:
 `4cf57c92d739f498d2d007b79da66624`. Этот адрес получен по доверенному SSH-каналу; fingerprint

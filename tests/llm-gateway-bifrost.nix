@@ -2,7 +2,7 @@
 
 let
   inherit (nixpkgs) lib;
-  logicalModels = [ "stupid" "standard" ];
+  models = [ "stupid" "standard" ];
   config = (lib.nixosSystem {
     modules = [
       gatewayModule
@@ -11,9 +11,6 @@ let
         nixpkgs.pkgs = pkgs;
         system.stateVersion = "26.05";
         lattice.llm-gateway = {
-          runtime = "bifrost";
-          package = pkgs.lattice.llm-gateway;
-          inherit logicalModels;
           clientCredentialFile = "/run/agenix/llm-gateway-client-key";
           providers = {
             proxy = {
@@ -40,7 +37,7 @@ let
           routingRules = lib.concatMap (model: [
             { inherit model; action = "race"; providers = [ "gonka-proxy" "gonka-openbroker" ]; }
             { inherit model; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
-          ]) logicalModels;
+          ]) models;
         };
       }
     ];
@@ -49,8 +46,7 @@ let
   service = config.systemd.services.llm-gateway;
   credentials = service.serviceConfig.LoadCredential;
 in
-assert config.lattice.llm-gateway.runtime == "bifrost";
-assert config.lattice.llm-gateway.logicalModels == logicalModels;
+assert config.lattice.llm-gateway.package == pkgs.lattice.llm-gateway;
 assert builtins.elem "client-key:/run/agenix/llm-gateway-client-key" credentials;
 assert builtins.elem "provider-proxy-api-key:/run/agenix/llm-provider-proxy" credentials;
 assert builtins.elem "provider-openbroker-models-api-key:/run/agenix/llm-provider-proxy" credentials;

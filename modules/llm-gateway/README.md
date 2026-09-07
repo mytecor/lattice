@@ -1,9 +1,8 @@
 # LLM gateway module
 
 `lattice.llm-gateway` управляет OpenAI-compatible gateway как непривилегированным systemd
-service. Целевой runtime `bifrost` — собственный Go proxy из `packages/llm-gateway`, использующий
-Bifrost Core через Go API. Legacy runtime `token-proxy` сохранён только для безопасного cutover
-существующей homelab generation.
+service. Runtime — собственный Go proxy из `packages/llm-gateway`, использующий Bifrost Core
+через Go API.
 
 Routing, logical/native mappings, provider identities и независимые inference/discovery URLs
 являются открытой typed Nix configuration. Client key, provider inference key и отдельный catalog
@@ -14,14 +13,9 @@ runtime directory и подставляет credentials через `jq`; ито�
 имеет mode `0600` и исчезает при перезагрузке. Secret options — runtime path strings, не Nix paths.
 
 ```nix
-let
-  logicalModels = [ "stupid" "standard" ];
-in {
+{
   lattice.llm-gateway = {
     enable = true;
-    runtime = "bifrost";
-    package = pkgs.lattice.llm-gateway;
-    inherit logicalModels;
     clientCredentialFile = config.age.secrets.llm-gateway-client-key.path;
 
     providers = {
@@ -48,7 +42,7 @@ in {
     routingRules = builtins.concatMap (model: [
       { inherit model; action = "race"; providers = [ "gonka-proxy" "gonka-openbroker" ]; }
       { inherit model; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
-    ]) logicalModels;
+    ]) [ "stupid" "standard" ];
   };
 }
 ```

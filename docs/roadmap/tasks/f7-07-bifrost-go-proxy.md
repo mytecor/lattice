@@ -158,8 +158,15 @@ fallback и streaming.
   runtime одновременно не держать.
 - [ ] С Mac проверить mDNS, `/v1/models`, Chat/Responses streaming через Pi, scoped Gonka race,
   retries/fallbacks, закрытый backend port и безопасную диагностику.
-- [ ] После успешной runtime-проверки удалить `token-proxy-src`, package, patches, Go LIP notes из
+- [x] После успешной runtime-проверки удалить `token-proxy-src`, package, patches, Go LIP notes из
   активной конфигурации и другие runtime-specific artifacts. Исторические task findings сохранить.
+
+  Удалено 2026-09-07: input `token-proxy-src` и пакет `pkgs.lattice.token-proxy` из корневого
+  `flake.nix`/`flake.lock`, `packages/token-proxy/` (package.nix и оба patches), упавший spike-test
+  `tests/token-proxy-spike.{nix,py}` и его запись в `checks.x86_64-linux`, а также раздел о
+  `token-proxy` в `packages/README.md`. Полная вычистка legacy runtime из модуля, профиля и
+  оставшейся документации — в [f7-08](./f7-08-remove-token-proxy.md). Исторические task findings
+  (`f7-01-token-proxy-spike.md`, `f7-05`, `f7-06`) сохранены неизменными.
 
 ## Критерий готовности
 

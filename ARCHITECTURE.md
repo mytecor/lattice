@@ -126,16 +126,14 @@ Backend-порты не открываются в firewall и не являют�
 
 ## LLM gateway
 
-Текущий временный runtime F7 — headless CLI `mxyhi/token_proxy`, закреплённый как source input в
-корневом `flake.lock` и собранный пакетом [`packages/token-proxy`](./packages/token-proxy/package.nix).
-Он не является утверждённой долгосрочной зависимостью: реальная Gonka-интеграция выявила
-недостаточную поддержку независимых inference/discovery endpoints, динамических каталогов и
-model-scoped routing groups. Исследование [f7-05](./docs/roadmap/tasks/f7-05-research-gateway-alternatives.md)
-и отрицательный Go LIP PoC [f7-06](./docs/roadmap/tasks/f7-06-go-lip-gonka-cutover.md) также показали,
-что готовые gateway заставляют менять обязательный клиентский контракт или поддерживать
-функциональный fork.
+Runtime F7 — собственный небольшой Go HTTP proxy поверх Bifrost Core, собранный пакетом
+[`packages/llm-gateway`](./packages/llm-gateway). Legacy `mxyhi/token_proxy` (input `token-proxy-src`,
+package, patches и spike-тест) удалён из активной конфигурации после подтверждённого cutover;
+исторические findings [f7-01](./docs/roadmap/tasks/f7-01-token-proxy-spike.md),
+[f7-05](./docs/roadmap/tasks/f7-05-research-gateway-alternatives.md) и
+[f7-06](./docs/roadmap/tasks/f7-06-go-lip-gonka-cutover.md) сохранены неизменными.
 
-Целевой runtime закреплён в
+Выбранный runtime закреплён в
 [f7-07](./docs/roadmap/tasks/f7-07-bifrost-go-proxy.md): собственный небольшой Go HTTP proxy
 использует Bifrost через Go API как provider execution library. Bifrost отвечает за
 provider-specific adapters, schema conversion, streaming transport и поддерживаемую им
@@ -169,10 +167,11 @@ Provider-конфигурация разделяет `inference_url` и опци
 ветка; если охлаждаются все ветки, gateway fail-open пробует всю группу снова вместо простоя.
 
 Executable spike [f7-01](./docs/roadmap/tasks/f7-01-token-proxy-spike.md) остаётся историческим
-подтверждением требуемого поведения и источником regression tests, но не определяет новый runtime.
-NixOS-модуль, безопасная сборка runtime config и resilience contract из f7-02–f7-04 мигрируют на
-собственный Bifrost-based proxy в f7-07; старые package, patches и runtime-specific config удаляются
-только после подтверждённого прямого cutover.
+подтверждением требуемого поведения и источником regression tests. NixOS-модуль, безопасная сборка
+runtime config и resilience contract из f7-02–f7-04 работают на собственном Bifrost-based proxy
+([f7-07](./docs/roadmap/tasks/f7-07-bifrost-go-proxy.md)); старые package, patches, input и
+runtime-specific legacy config удалены после подтверждённого прямого cutover
+([f7-08](./docs/roadmap/tasks/f7-08-remove-token-proxy.md)).
 
 ### Контракт логических моделей
 
