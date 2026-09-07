@@ -66,7 +66,6 @@ in
         accessGroup = "gonka";
         inferenceUrl = "https://api.openbroker.gonka.gg";
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
-        modelsApiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
         priority = 10;
       };
     };
