@@ -43,7 +43,10 @@ Radicle HTTP API; f4-02 выполнена. Для f4-01 остаются стр
 `token_proxy` runtime на homelab. Реальная Gonka-интеграция выявила ограничения динамического
 catalog/scoped routing, а f7-06 отклонила Go LIP из-за обязательного функционального fork.
 Архитектура теперь — собственный Go proxy поверх Bifrost Go API: f7-07 выполнил cutover, а f7-08
-удалил legacy `token_proxy` из активной конфигурации. Остальные задачи F7–F11:
-LLM gateway → Pi → cache/artifact plane → disposable worker → controller.
+удалил legacy `token_proxy` из активной конфигурации. **F7 закрыта 2026-09-07**: обязательные
+режимы routing (retry, cooldown, fallback, priority, race, hedge, streaming, cancellation), health
+surface и structured diagnostics подтверждены Go-тестами и evaluation checks. Запускается **F8 —
+интерактивный Pi runtime**; f8-01 закрепляет и упаковывает Pi в flake. Основной маршрут дальше:
+Pi → cache/artifact plane → disposable worker → controller.
 Незакрытые вопросы отслеживаются в
 [BACKLOG.md](./BACKLOG.md); работа идёт рывками, поэтому `main` всегда собирается.

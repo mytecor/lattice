@@ -7,17 +7,15 @@ Go proxy поверх Bifrost Go API; Lattice владеет HTTP/API contract, 
 ([f7-08](../tasks/f7-08-remove-token-proxy.md)); его ограничения и отклонения Go LIP зафиксированы
 в исторических f7-01, f7-05 и f7-06.
 
+**Статус: выполнена 2026-09-07.**
+
 Зависит от [F1](./f1-one-node.md) и [F2](./f2-secrets-identity.md). Соответствует
 [вехе 7](../VISION.md#вехи-и-зависимости-без-деталей).
 
-Задачи: [f7-01](../tasks/f7-01-token-proxy-spike.md),
-[f7-02](../tasks/f7-02-declarative-gateway-service.md),
-[f7-03](../tasks/f7-03-logical-model-contract.md),
-[f7-04](../tasks/f7-04-routing-resilience-tests.md),
-[f7-05](../tasks/f7-05-research-gateway-alternatives.md),
-[f7-06](../tasks/f7-06-go-lip-gonka-cutover.md),
-[f7-07](../tasks/f7-07-bifrost-go-proxy.md),
-[f7-08](../tasks/f7-08-remove-token-proxy.md).
+Все задачи закрыты: f7-01..f7-08. Матрица обязательных режимов F7 (retry, cooldown, fallback,
+priority, race, hedge, streaming, cancellation), health surface и structured diagnostics
+подтверждены Go-тестами и evaluation checks в
+[f7-04](../tasks/f7-04-routing-resilience-tests.md).
 
 **Критерий готовности:** клиент с gateway credential выполняет streaming-запросы к логическим
 моделям `stupid`, `standard`; реальные provider credentials и model IDs ему
