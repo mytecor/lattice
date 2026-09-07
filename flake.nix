@@ -296,8 +296,7 @@
             assert homelabConfig.lattice.llm-gateway.providers.proxy.modelsUrl == null;
             assert homelabConfig.lattice.llm-gateway.providers.openbroker.inferenceUrl
               == "https://api.openbroker.gonka.gg";
-            assert homelabConfig.lattice.llm-gateway.providers.openbroker.modelsUrl
-              == "https://proxy.gonka.gg/v1/models";
+            assert homelabConfig.lattice.llm-gateway.providers.openbroker.modelsUrl == null;
             assert nixpkgs.lib.all
               (rule: rule.action != "retry" || rule.attempts == 10)
               homelabConfig.lattice.llm-gateway.routingRules;
