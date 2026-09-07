@@ -156,7 +156,7 @@ ID преобразуется в native target до вызова Bifrost, а и�
 не входят в клиентскую поверхность. Непубличные upstream keys подаются отдельно от client key.
 
 Provider-конфигурация разделяет `inference_url` и опциональный `models_url`. Поэтому
-`openbroker.gonka.gg` может обслуживать inference, а каталог той же access group — загружаться с
+`api.openbroker.gonka.gg` может обслуживать inference, а каталог той же access group — загружаться с
 `proxy.gonka.gg/v1/models`; наличие `/v1/models` на inference endpoint не требуется.
 
 Маршрут строится из плоского упорядоченного `routing_rules` pipeline. Один rule выполняет одно

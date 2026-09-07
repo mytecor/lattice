@@ -38,7 +38,7 @@ HTTP-вызовом.
 
 Открытая конфигурация разделяет providers, logical model mappings и плоский routing pipeline.
 Provider имеет независимые `inference_url` и опциональный `models_url`, поэтому OpenBroker может
-делать inference через `openbroker.gonka.gg`, а список той же access group загружается с
+делать inference через `api.openbroker.gonka.gg`, а список той же access group загружается с
 `proxy.gonka.gg/v1/models`.
 
 Минимальная форма, которую нужно типизировать и валидировать:
@@ -47,7 +47,7 @@ Provider имеет независимые `inference_url` и опциональ
 providers:
   - id: gonka-openbroker
     name: gonka
-    inference_url: https://openbroker.gonka.gg
+    inference_url: https://api.openbroker.gonka.gg
     models_url: https://proxy.gonka.gg/v1/models
     api_key: env.OPENBROKER_GONKA_GG_API_KEY
     models_api_key: env.PROXY_GONKA_GG_API_KEY

@@ -28,7 +28,7 @@ runtime directory и подставляет credentials через `jq`; ито�
       openbroker = {
         id = "gonka-openbroker";
         accessGroup = "gonka";
-        inferenceUrl = "https://openbroker.gonka.gg";
+        inferenceUrl = "https://api.openbroker.gonka.gg";
         modelsUrl = "https://proxy.gonka.gg/v1/models";
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
         modelsApiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;

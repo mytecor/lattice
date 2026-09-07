@@ -64,8 +64,7 @@ in
       openbroker = {
         id = "gonka-openbroker";
         accessGroup = "gonka";
-        inferenceUrl = "https://openbroker.gonka.gg";
-        modelsUrl = "https://proxy.gonka.gg/v1/models";
+        inferenceUrl = "https://api.openbroker.gonka.gg";
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
         modelsApiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
         priority = 10;

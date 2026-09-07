@@ -100,7 +100,7 @@ Standalone binary поддерживает literal secrets и ссылки `env.
       "id": "gonka-openbroker",
       "name": "gonka",
       "base_provider": "openai",
-      "inference_url": "https://openbroker.gonka.gg",
+      "inference_url": "https://api.openbroker.gonka.gg",
       "models_url": "https://proxy.gonka.gg/v1/models",
       "api_key": "env.OPENBROKER_GONKA_GG_API_KEY",
       "models_api_key": "env.PROXY_GONKA_GG_API_KEY",

@@ -294,6 +294,8 @@
             assert homelabConfig.lattice.llm-gateway.package == pkgs.lattice.llm-gateway;
             assert builtins.length (builtins.attrNames homelabConfig.lattice.llm-gateway.providers) == 2;
             assert homelabConfig.lattice.llm-gateway.providers.proxy.modelsUrl == null;
+            assert homelabConfig.lattice.llm-gateway.providers.openbroker.inferenceUrl
+              == "https://api.openbroker.gonka.gg";
             assert homelabConfig.lattice.llm-gateway.providers.openbroker.modelsUrl
               == "https://proxy.gonka.gg/v1/models";
             assert nixpkgs.lib.all
