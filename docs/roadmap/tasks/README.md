@@ -45,6 +45,7 @@
 | Radicle source bootstrap; `comin` на radicle-remote | [f4-01](./f4-01-radicle-seed-comin.md) |
 | Профиль прикладных сервисов поверх `tcp-gateway` | [f4-02](./f4-02-app-services-profile.md) |
 | Определить «общее хранилище и вычисления» | [f4-03](./f4-03-shared-storage-compute.md) |
+| Обогатить `status.<node>.local` метаинформацией системы | [f4-04](./f4-04-enrich-node-status.md) |
 
 ## F5. Внешние узлы
 

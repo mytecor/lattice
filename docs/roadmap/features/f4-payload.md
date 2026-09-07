@@ -7,7 +7,8 @@
 
 Задачи: [f4-01](../tasks/f4-01-radicle-seed-comin.md),
 [f4-02](../tasks/f4-02-app-services-profile.md),
-[f4-03](../tasks/f4-03-shared-storage-compute.md).
+[f4-03](../tasks/f4-03-shared-storage-compute.md),
+[f4-04](../tasks/f4-04-enrich-node-status.md).
 
 **Статус:** source bootstrap из f4-01 работает на homelab, репозиторий публично реплицирован и
 доступен чистому клиенту. Строгий drill без GitHub и полный bootstrap новой NixOS-ноды ещё не
