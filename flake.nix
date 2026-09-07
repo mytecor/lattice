@@ -95,6 +95,11 @@
 
       overlay = final: _previous: {
         lattice = {
+          comin-source-sync = final.writeShellApplication {
+            name = "lattice-comin-source-sync";
+            runtimeInputs = [ final.coreutils final.git final.jq final.util-linux ];
+            text = builtins.readFile ./profiles/gitops/comin-source-sync.sh;
+          };
           rns-server = final.callPackage "${rns-rs}/package.nix" { bin = "rns-server"; };
           rnsh = final.callPackage "${rns-rs}/package.nix" { bin = "rnsh"; };
           llm-gateway = final.callPackage ./packages/llm-gateway/package.nix { };
@@ -182,6 +187,11 @@
             gatewayProfile = "${profiles}/llm-gateway/config.nix";
           };
 
+          comin-source-sync = import ./tests/comin-source-sync.nix {
+            inherit pkgs;
+            syncPackage = pkgs.lattice.comin-source-sync;
+          };
+
           example =
             assert exampleConfig.services.comin.enable;
             assert exampleConfig.nix.settings.auto-optimise-store;
@@ -209,11 +219,11 @@
             assert homelabConfig.lattice.ephemeral-root.enable;
             assert homelabConfig.services.comin.enable;
             assert map (remote: remote.name) homelabConfig.services.comin.remotes
-              == [ "radicle" "origin" ];
+              == [ "source" ];
             assert (builtins.elemAt homelabConfig.services.comin.remotes 0).url
-              == "/var/lib/radicle/storage/z3AqC22BKQ5Gnrkw49N7PGJa91G6L";
-            assert (builtins.elemAt homelabConfig.services.comin.remotes 1).url
-              == "https://github.com/mytecor/lattice.git";
+              == "/var/lib/comin/source/repository";
+            assert builtins.hasAttr "lattice-comin-source-sync" homelabConfig.systemd.services;
+            assert builtins.hasAttr "lattice-comin-source-sync" homelabConfig.systemd.timers;
             assert homelabConfig.services.openssh.enable;
             assert !homelabConfig.services.openssh.settings.PasswordAuthentication;
             assert homelabConfig.services.openssh.settings.PermitRootLogin == "prohibit-password";

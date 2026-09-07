@@ -130,6 +130,8 @@ systemctl is-active radicle-node radicle-httpd radicle-seed-lattice
 rad-system self --did
 rad-system seed
 git -C /var/lib/radicle/storage/z3AqC22BKQ5Gnrkw49N7PGJa91G6L rev-parse main
+systemctl status lattice-comin-source-sync.timer
+git -C /var/lib/comin/source/repository log -1 --oneline main
 comin status
 ```
 

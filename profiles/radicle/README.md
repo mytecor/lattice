@@ -69,9 +69,10 @@ Rosa и Heptapod, а отдельный чистый клиент получил
 systemd credential.
 
 `profiles/gitops` читает каноническую ветку из bare repository
-`/var/lib/radicle/storage/<RID>` первым remote `comin`. GitHub остаётся вторым независимым remote:
-на чистой ноде он обеспечивает первоначальное применение конфигурации, пока bootstrap ещё не
-создал локальное Radicle storage. После появления storage `comin` может продолжать обновляться
+`/var/lib/radicle/storage/<RID>` и GitHub через `lattice-comin-source-sync`. Сервис передаёт
+`comin` локальную fast-forward ветку и нормализует force-push без изменения дерева выбранного
+commit. На чистой ноде GitHub обеспечивает первоначальное применение конфигурации, пока bootstrap
+ещё не создал локальное Radicle storage. После появления storage обновление может продолжаться
 при недоступном GitHub.
 
 Для ноды со стираемым root весь `/var/lib/radicle` должен сохраняться в `/persist`.

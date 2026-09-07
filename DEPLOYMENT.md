@@ -6,14 +6,20 @@
 в [nodes/](./nodes/README.md) как обычные NixOS-модули.
 
 На нодах, где подключен профиль `profiles/gitops` напрямую или через `profiles/base`, дальнейшие
-обновления выполняются автоматически: агент `comin` периодически опрашивает каноническую `main`
+обновления выполняются автоматически. `lattice-comin-source-sync` опрашивает каноническую `main`
 в локальном Radicle storage и независимое зеркало
-`https://github.com/mytecor/lattice.git`, затем применяет `nixosConfigurations.<hostname>`.
-Radicle стоит первым в упорядоченном списке remotes, GitHub — вторым.
+`https://github.com/mytecor/lattice.git`, затем публикует нормализованную локальную `main` для
+штатного `comin`. Если upstream был force-pushed, нормализатор создаёт merge-коммит с прежним
+deployment history и деревом нового upstream head. Поэтому вход `comin` всегда fast-forward, а
+содержимое точно соответствует выбранному source commit.
+
+Когда heads лежат в одной истории, выбирается более новый. При расхождении Radicle является
+авторитетным, GitHub используется как fallback. Это предотвращает переключение ноды между двумя
+несогласованными историями.
 
 Чистая нода сначала получает конфигурацию через установочный checkout или GitHub. После запуска
 `radicle-node` сервис `radicle-seed-lattice` получает репозиторий от доступного Radicle seed;
-до успешного bootstrap отсутствующий локальный remote не мешает `comin` использовать GitHub.
+до успешного bootstrap отсутствующий локальный remote не мешает нормализатору использовать GitHub.
 Подробности и runtime-проверки описаны в
 [`profiles/radicle/README.md`](./profiles/radicle/README.md).
 
@@ -93,7 +99,7 @@ Wi-Fi без ручного создания NetworkManager-профиля.
 - после смены hostname нода доступна по заранее известному DHCP reservation или по имени
   `mytecor-homelab.local`, не требуя поиска адреса на локальной консоли;
 - работают DNS и HTTPS-доступ к `github.com`;
-- `comin` видит remote `origin` и может получить ветку `main`;
+- `lattice-comin-source-sync` получает `main`, а `comin` видит локальный remote `source`;
 - после перезагрузки Wi-Fi поднимается автоматически, а `comin` продолжает опрашивать remote.
 
 Штатная миграция `byurik` в `mytecor-homelab` выполняется через уже работающий SSH-доступ. Она не
