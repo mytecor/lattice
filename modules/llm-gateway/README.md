@@ -49,4 +49,5 @@ runtime directory и подставляет credentials через `jq`; ито�
 
 Production configuration must provide mappings and rules for every logical model. The service
 listens on loopback by default and does not open a firewall port. Caddy remains the only LAN
-ingress.
+ingress. The unit keeps systemd hardening enabled except for `MemoryDenyWriteExecute`: Bifrost's
+Sonic/Base64x dependency loads SIMD routines with `mprotect(PROT_EXEC)` during process startup.

@@ -54,6 +54,7 @@ assert builtins.elem "provider-openbroker-api-key:/run/agenix/llm-provider-openb
 assert lib.hasInfix ".providers |= map" service.preStart;
 assert lib.hasInfix ".[$field] = $secret" service.preStart;
 assert lib.hasInfix "--config /run/llm-gateway/config.json serve" service.serviceConfig.ExecStart;
+assert !service.serviceConfig.MemoryDenyWriteExecute;
 assert service.serviceConfig.NoNewPrivileges;
 assert service.serviceConfig.ProtectSystem == "strict";
 pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { } ''

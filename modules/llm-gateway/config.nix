@@ -182,7 +182,9 @@ in
         AmbientCapabilities = "";
         CapabilityBoundingSet = "";
         LockPersonality = true;
-        MemoryDenyWriteExecute = true;
+        # Bifrost's Sonic/Base64x dependency loads SIMD routines at startup with
+        # mprotect(PROT_EXEC), so systemd's W^X policy would crash the gateway.
+        MemoryDenyWriteExecute = false;
         NoNewPrivileges = true;
         PrivateDevices = true;
         PrivateTmp = true;
