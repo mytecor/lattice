@@ -126,7 +126,7 @@ lattice_node=mytecor-homelab
 lattice_host=root@mytecor-homelab.local
 lattice_old_key="$lattice_repo/.secrets/$lattice_node.agekey"
 lattice_new_key="$lattice_repo/.secrets/$lattice_node.next.agekey"
-lattice_recovery_key="$HOME/.ssh/byurik"
+lattice_recovery_key="$HOME/.ssh/mytecor-homelab"
 lattice_secrets="$lattice_repo/nodes/$lattice_node/secrets"
 ```
 

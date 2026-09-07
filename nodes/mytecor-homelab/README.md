@@ -156,7 +156,7 @@ nix shell nixpkgs#mkpasswd -c mkpasswd -m yescrypt \
 ```sh
 nix shell nixpkgs#age -c age \
   -r age1dyxfyhf8s5lj9k0pzkkjjte0dcg4yecwglh88kmv2udau0q33v0ssa4pd8 \
-  -R ~/.ssh/byurik.pub \
+  -R ~/.ssh/mytecor-homelab.pub \
   -o root-password-hash.age \
   /tmp/mytecor-root-password.hash
 
