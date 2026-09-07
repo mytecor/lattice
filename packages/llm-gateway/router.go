@@ -223,7 +223,7 @@ func (r *Runner) Run(ctx context.Context, logical string, request ExecuteRequest
 	}
 	var last *CallError
 	for index, stage := range plan.Stages {
-		body, callErr := r.runStage(ctx, logical, stage, request)
+		body, callErr := r.runStage(ctx, logical, index+1, stage, request)
 		if callErr == nil {
 			return body, nil
 		}
@@ -235,11 +235,11 @@ func (r *Runner) Run(ctx context.Context, logical string, request ExecuteRequest
 	return nil, last
 }
 
-func (r *Runner) runStage(ctx context.Context, logical string, stage Stage, request ExecuteRequest) ([]byte, *CallError) {
+func (r *Runner) runStage(ctx context.Context, logical string, stageIndex int, stage Stage, request ExecuteRequest) ([]byte, *CallError) {
 	attempts := stage.Retries + 1
 	var last *CallError
 	for attempt := 0; attempt < attempts; attempt++ {
-		stageCtx := ctx
+		stageCtx := withRouteAttempt(ctx, stageIndex, attempt+1)
 		cancel := func() {}
 		if stage.Timeout > 0 {
 			stageCtx, cancel = context.WithTimeout(ctx, stage.Timeout)

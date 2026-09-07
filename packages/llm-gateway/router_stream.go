@@ -26,7 +26,7 @@ func (r *Runner) SelectStream(ctx context.Context, logical string, request Execu
 	}
 	var last *CallError
 	for index, stage := range plan.Stages {
-		selected, callErr := r.selectStreamStage(ctx, logical, stage, request)
+		selected, callErr := r.selectStreamStage(ctx, logical, index+1, stage, request)
 		if callErr == nil {
 			return selected, nil
 		}
@@ -38,10 +38,10 @@ func (r *Runner) SelectStream(ctx context.Context, logical string, request Execu
 	return nil, last
 }
 
-func (r *Runner) selectStreamStage(ctx context.Context, logical string, stage Stage, request ExecuteRequest) (*SelectedStream, *CallError) {
+func (r *Runner) selectStreamStage(ctx context.Context, logical string, stageIndex int, stage Stage, request ExecuteRequest) (*SelectedStream, *CallError) {
 	var last *CallError
 	for attempt := 0; attempt <= stage.Retries; attempt++ {
-		stageCtx := ctx
+		stageCtx := withRouteAttempt(ctx, stageIndex, attempt+1)
 		stageCancel := func() {}
 		if stage.Timeout > 0 {
 			stageCtx, stageCancel = context.WithTimeout(ctx, stage.Timeout)

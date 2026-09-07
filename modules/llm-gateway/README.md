@@ -16,6 +16,7 @@ runtime directory и подставляет credentials через `jq`; ито�
 {
   lattice.llm-gateway = {
     enable = true;
+    logLevel = "info";
     clientCredentialFile = config.age.secrets.llm-gateway-client-key.path;
 
     providers = {
@@ -51,3 +52,17 @@ Production configuration must provide mappings and rules for every logical model
 listens on loopback by default and does not open a firewall port. Caddy remains the only LAN
 ingress. The unit keeps systemd hardening enabled except for `MemoryDenyWriteExecute`: Bifrost's
 Sonic/Base64x dependency loads SIMD routines with `mprotect(PROT_EXEC)` during process startup.
+
+## Logs
+
+The gateway writes structured JSON to the systemd journal when `logLevel` is one of `error`,
+`warn`, `info`, `debug`, or `trace`. The secure default is `silent`. Request bodies,
+prompts, headers, and credentials are never logged. At `info`, the journal records request
+start/completion with a request ID, logical model, API kind, streaming flag, status, and latency.
+At `debug`, it additionally records provider routing, native model, route stage/attempt, and
+latency. Upstream failures include HTTP status, error class, and a single-line truncated provider
+error message.
+
+```sh
+journalctl -u llm-gateway -f -o cat
+```

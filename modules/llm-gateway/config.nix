@@ -37,6 +37,7 @@ let
 
   publicConfig = {
     inherit (cfg) host port;
+    log_level = cfg.logLevel;
     client_api_key = null;
     catalog_refresh_interval = cfg.catalogRefreshInterval;
     providers = lib.mapAttrsToList publicProvider activeProviders;

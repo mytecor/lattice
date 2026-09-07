@@ -5,22 +5,29 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 const maxRequestBody = 16 << 20
 
 type Server struct {
-	config  *compiledConfig
-	catalog *Catalog
-	runner  *Runner
-	mux     *http.ServeMux
+	config          *compiledConfig
+	catalog         *Catalog
+	runner          *Runner
+	mux             *http.ServeMux
+	logger          *slog.Logger
+	requestSequence atomic.Uint64
 }
 
 func newServer(config *compiledConfig, catalog *Catalog, runner *Runner) *Server {
-	server := &Server{config: config, catalog: catalog, runner: runner, mux: http.NewServeMux()}
+	server := &Server{
+		config: config, catalog: catalog, runner: runner, mux: http.NewServeMux(), logger: config.logger,
+	}
 	server.mux.HandleFunc("GET /healthz", server.health)
 	server.mux.HandleFunc("GET /v1/models", server.auth(server.models))
 	server.mux.HandleFunc("POST /v1/chat/completions", server.auth(server.chat))
@@ -72,8 +79,12 @@ func (s *Server) responses(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *Server) inference(writer http.ResponseWriter, request *http.Request, kind RequestKind) {
+	started := time.Now()
+	requestID := strconv.FormatUint(s.requestSequence.Add(1), 10)
+	request = request.WithContext(withRequestID(request.Context(), requestID))
 	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, maxRequestBody))
 	if err != nil {
+		s.logger.Warn("request rejected", "request_id", requestID, "kind", kind, "status", http.StatusBadRequest, "reason", "invalid_body")
 		writeAPIError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
@@ -82,36 +93,51 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 		Stream bool   `json:"stream"`
 	}
 	if err := json.Unmarshal(body, &metadata); err != nil || strings.TrimSpace(metadata.Model) == "" {
+		s.logger.Warn("request rejected", "request_id", requestID, "kind", kind, "status", http.StatusBadRequest, "reason", "invalid_json_or_model")
 		writeAPIError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
 	if _, exists := s.config.plans[metadata.Model]; !exists {
+		s.logger.Warn("request rejected", "request_id", requestID, "kind", kind, "logical_model", metadata.Model, "status", http.StatusNotFound, "reason", "model_not_found")
 		writeAPIError(writer, http.StatusNotFound, "model_not_found")
 		return
 	}
+	s.logger.Info("request started", "request_id", requestID, "kind", kind, "logical_model", metadata.Model, "stream", metadata.Stream)
 	executeRequest := ExecuteRequest{Kind: kind, Body: body}
 	if metadata.Stream {
-		s.stream(writer, request, metadata.Model, executeRequest)
+		s.stream(writer, request, metadata.Model, executeRequest, started)
 		return
 	}
 	response, callErr := s.runner.Run(request.Context(), metadata.Model, executeRequest)
 	if callErr != nil {
+		s.logger.Warn("request failed",
+			"request_id", requestID, "kind", kind, "logical_model", metadata.Model,
+			"status", callErrorStatus(callErr), "error_class", callErr.Class,
+			"duration_ms", time.Since(started).Milliseconds(),
+		)
 		writeCallError(writer, callErr)
 		return
 	}
 	response, err = sanitizeJSON(response, metadata.Model)
 	if err != nil {
+		s.logger.Error("request failed", "request_id", requestID, "kind", kind, "logical_model", metadata.Model, "status", http.StatusBadGateway, "error_class", ErrorInvalid, "duration_ms", time.Since(started).Milliseconds())
 		writeAPIError(writer, http.StatusBadGateway, "invalid_upstream_response")
 		return
 	}
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusOK)
 	_, _ = writer.Write(response)
+	s.logger.Info("request completed", "request_id", requestID, "kind", kind, "logical_model", metadata.Model, "status", http.StatusOK, "duration_ms", time.Since(started).Milliseconds())
 }
 
-func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logical string, executeRequest ExecuteRequest) {
+func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logical string, executeRequest ExecuteRequest, started time.Time) {
 	selected, callErr := s.runner.SelectStream(request.Context(), logical, executeRequest)
 	if callErr != nil {
+		s.logger.Warn("request failed",
+			"request_id", request.Context().Value(requestIDKey), "kind", executeRequest.Kind, "logical_model", logical,
+			"status", callErrorStatus(callErr), "error_class", callErr.Class,
+			"duration_ms", time.Since(started).Milliseconds(),
+		)
 		writeCallError(writer, callErr)
 		return
 	}
@@ -133,6 +159,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	for {
 		select {
 		case <-request.Context().Done():
+			s.logger.Debug("request cancelled", "request_id", request.Context().Value(requestIDKey), "kind", executeRequest.Kind, "logical_model", logical, "duration_ms", time.Since(started).Milliseconds())
 			return
 		case event, open := <-selected.Remaining:
 			if !open {
@@ -140,9 +167,11 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					_, _ = io.WriteString(writer, "data: [DONE]\n\n")
 					flusher.Flush()
 				}
+				s.logger.Info("request completed", "request_id", request.Context().Value(requestIDKey), "kind", executeRequest.Kind, "logical_model", logical, "status", http.StatusOK, "duration_ms", time.Since(started).Milliseconds())
 				return
 			}
 			if event.Err != nil {
+				s.logger.Warn("request stream failed", "request_id", request.Context().Value(requestIDKey), "kind", executeRequest.Kind, "logical_model", logical, "error_class", event.Err.Class, "duration_ms", time.Since(started).Milliseconds())
 				payload, _ := json.Marshal(map[string]any{"error": map[string]any{"message": "upstream stream failed", "type": string(event.Err.Class)}})
 				_, _ = fmt.Fprintf(writer, "event: error\ndata: %s\n\n", payload)
 				flusher.Flush()
@@ -187,6 +216,15 @@ func (s *Server) refresh(writer http.ResponseWriter, request *http.Request) {
 }
 
 func writeCallError(writer http.ResponseWriter, callErr *CallError) {
+	status := callErrorStatus(callErr)
+	typeName := "upstream_error"
+	if callErr != nil {
+		typeName = string(callErr.Class)
+	}
+	writeAPIError(writer, status, typeName)
+}
+
+func callErrorStatus(callErr *CallError) int {
 	status := http.StatusBadGateway
 	if callErr != nil {
 		switch callErr.Status {
@@ -195,13 +233,9 @@ func writeCallError(writer http.ResponseWriter, callErr *CallError) {
 		}
 	}
 	if status == 499 {
-		status = 408
+		return http.StatusRequestTimeout
 	}
-	typeName := "upstream_error"
-	if callErr != nil {
-		typeName = string(callErr.Class)
-	}
-	writeAPIError(writer, status, typeName)
+	return status
 }
 
 func writeAPIError(writer http.ResponseWriter, status int, kind string) {

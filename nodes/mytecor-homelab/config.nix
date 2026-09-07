@@ -53,6 +53,8 @@ in
   # LLM Gateway: Lattice-owned Go proxy races both Gonka inference endpoints.
   # Proxy owns discovery for the shared group; OpenBroker has no /v1/models.
   lattice.llm-gateway = {
+    # Debug logs contain routing metadata and sanitized upstream errors, never prompts or keys.
+    logLevel = "debug";
     providers = {
       proxy = {
         id = "gonka-proxy";

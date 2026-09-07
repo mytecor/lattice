@@ -59,6 +59,7 @@ assert service.serviceConfig.NoNewPrivileges;
 assert service.serviceConfig.ProtectSystem == "strict";
 pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { } ''
   grep -q '"catalog_refresh_interval":"10m"' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"log_level":"silent"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"inference_url":"https://openbroker.gonka.invalid"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"models_url":"https://proxy.gonka.invalid/v1/models"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"action":"race"' ${config.lattice.llm-gateway.publicConfigFile}

@@ -186,7 +186,8 @@ nix flake check --no-build
 
 - Provider secrets не входят в публичный Nix config и Git.
 - Runtime config имеет mode `0600` и находится в `/run/llm-gateway`.
-- Bifrost content logging не включён; executor использует silent logger.
+- Bifrost content logging не включён; executor использует silent logger. Собственные
+  структурированные логи gateway не содержат request body, prompt, headers или credentials.
 - Ошибки клиенту содержат только безопасный error class, без internal URL, key или native ID.
 - Provider-facing raw OpenAI body получает native model только после проверки logical model.
 

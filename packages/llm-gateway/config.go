@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"os"
 	"sort"
@@ -39,6 +40,7 @@ func (d *Duration) UnmarshalJSON(data []byte) error {
 type Config struct {
 	Host                   string         `json:"host"`
 	Port                   int            `json:"port"`
+	LogLevel               string         `json:"log_level"`
 	ClientAPIKey           string         `json:"client_api_key"`
 	CatalogRefreshInterval Duration       `json:"catalog_refresh_interval"`
 	Providers              []Provider     `json:"providers"`
@@ -94,6 +96,7 @@ type BackoffConfig struct {
 
 type compiledConfig struct {
 	raw         Config
+	logger      *slog.Logger
 	providers   map[string]Provider
 	mappings    map[string]map[string]string
 	plans       map[string]Plan
@@ -176,12 +179,21 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 	if cfg.CatalogRefreshInterval.Duration < time.Second {
 		return nil, fmt.Errorf("catalog_refresh_interval must be at least 1s")
 	}
+	if cfg.LogLevel == "" {
+		cfg.LogLevel = "silent"
+	}
+	switch cfg.LogLevel {
+	case "silent", "error", "warn", "info", "debug", "trace":
+	default:
+		return nil, fmt.Errorf("unsupported log_level %q", cfg.LogLevel)
+	}
 	if len(cfg.Providers) == 0 {
 		return nil, errors.New("at least one provider is required")
 	}
 
 	compiled := &compiledConfig{
 		raw:         cfg,
+		logger:      newGatewayLogger(cfg.LogLevel),
 		providers:   make(map[string]Provider, len(cfg.Providers)),
 		mappings:    make(map[string]map[string]string),
 		plans:       make(map[string]Plan),

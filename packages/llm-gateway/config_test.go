@@ -65,6 +65,9 @@ func TestCompileConfigBuildsFlatPipeline(t *testing.T) {
 	if compiled.raw.CatalogRefreshInterval.Duration != 10*time.Minute {
 		t.Fatalf("catalog refresh default changed: %s", compiled.raw.CatalogRefreshInterval.Duration)
 	}
+	if compiled.raw.LogLevel != "silent" {
+		t.Fatalf("log level default changed: %q", compiled.raw.LogLevel)
+	}
 }
 
 func TestCompileConfigRejectsProviderWithoutModelMapping(t *testing.T) {
@@ -101,5 +104,13 @@ func TestCompileConfigRejectsCredentialsInURL(t *testing.T) {
 	cfg.Providers[0].InferenceURL = "https://secret@example.invalid"
 	if _, err := compileConfig(cfg); err == nil || !strings.Contains(err.Error(), "credentials") {
 		t.Fatalf("expected credential URL rejection, got %v", err)
+	}
+}
+
+func TestCompileConfigRejectsUnknownLogLevel(t *testing.T) {
+	cfg := testConfig()
+	cfg.LogLevel = "verbose"
+	if _, err := compileConfig(cfg); err == nil || !strings.Contains(err.Error(), "log_level") {
+		t.Fatalf("expected log level error, got %v", err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -41,8 +42,10 @@ func run(arguments []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	catalog := newCatalog(compiled)
-	reportCatalogErrors(catalog.Refresh(ctx))
-	catalog.Start(ctx, compiled.raw.CatalogRefreshInterval.Duration, reportCatalogErrors)
+	reportCatalogErrors(compiled.logger, catalog.Refresh(ctx))
+	catalog.Start(ctx, compiled.raw.CatalogRefreshInterval.Duration, func(errorsByGroup map[string]error) {
+		reportCatalogErrors(compiled.logger, errorsByGroup)
+	})
 	executor, err := newBifrostExecutor(ctx, compiled)
 	if err != nil {
 		return err
@@ -56,6 +59,12 @@ func run(arguments []string) error {
 		IdleTimeout:       90 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 	}
+	compiled.logger.Info("gateway starting",
+		"address", httpServer.Addr,
+		"log_level", compiled.raw.LogLevel,
+		"providers", len(compiled.providers),
+		"models", len(compiled.logicalIDs),
+	)
 
 	serveErrors := make(chan error, 1)
 	go func() { serveErrors <- httpServer.ListenAndServe() }()
@@ -72,8 +81,8 @@ func run(arguments []string) error {
 	}
 }
 
-func reportCatalogErrors(errorsByGroup map[string]error) {
-	for group := range errorsByGroup {
-		log.Printf("catalog refresh failed for access group %q", group)
+func reportCatalogErrors(logger *slog.Logger, errorsByGroup map[string]error) {
+	for group, err := range errorsByGroup {
+		logger.Warn("catalog refresh failed", "access_group", group, "detail", safeLogDetail(err.Error()))
 	}
 }

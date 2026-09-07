@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -57,6 +58,7 @@ func (silentLogger) LogHTTPRequest(schemas.LogLevel, string) schemas.LogEventBui
 type BifrostExecutor struct {
 	client    *bifrost.Bifrost
 	providers map[string]Provider
+	logger    *slog.Logger
 }
 
 func newBifrostExecutor(ctx context.Context, config *compiledConfig) (*BifrostExecutor, error) {
@@ -108,7 +110,7 @@ func newBifrostExecutor(ctx context.Context, config *compiledConfig) (*BifrostEx
 	if err != nil {
 		return nil, fmt.Errorf("initialize Bifrost: %w", err)
 	}
-	return &BifrostExecutor{client: client, providers: config.providers}, nil
+	return &BifrostExecutor{client: client, providers: config.providers, logger: config.logger}, nil
 }
 
 func sortedProviderIDs(providers map[string]Provider) []string {
@@ -129,28 +131,37 @@ func slicesSort(values []string) {
 }
 
 func (e *BifrostExecutor) Do(ctx context.Context, target Target, request ExecuteRequest) ([]byte, *CallError) {
+	started := time.Now()
 	bfContext := schemas.NewBifrostContext(ctx, schemas.NoDeadline)
 	switch request.Kind {
 	case RequestChat:
 		chatRequest, callErr := e.chatRequest(bfContext, target, request.Body)
 		if callErr != nil {
+			e.logRequestBuildError(ctx, target, request.Kind, callErr)
 			return nil, callErr
 		}
 		response, bfErr := e.client.ChatCompletionRequest(bfContext, chatRequest)
 		if bfErr != nil {
-			return nil, classifyBifrostError(ctx, bfErr)
+			callErr := classifyBifrostError(ctx, bfErr)
+			e.logUpstreamFailure(ctx, target, request.Kind, started, bfErr, callErr)
+			return nil, callErr
 		}
+		e.logUpstreamSuccess(ctx, target, request.Kind, started)
 		response.Model = target.Model
 		return marshalSanitized(response, "")
 	case RequestResponses:
 		responsesRequest, callErr := e.responsesRequest(bfContext, target, request.Body)
 		if callErr != nil {
+			e.logRequestBuildError(ctx, target, request.Kind, callErr)
 			return nil, callErr
 		}
 		response, bfErr := e.client.ResponsesRequest(bfContext, responsesRequest)
 		if bfErr != nil {
-			return nil, classifyBifrostError(ctx, bfErr)
+			callErr := classifyBifrostError(ctx, bfErr)
+			e.logUpstreamFailure(ctx, target, request.Kind, started, bfErr, callErr)
+			return nil, callErr
 		}
+		e.logUpstreamSuccess(ctx, target, request.Kind, started)
 		response.Model = target.Model
 		return marshalSanitized(response, "")
 	default:
@@ -159,32 +170,40 @@ func (e *BifrostExecutor) Do(ctx context.Context, target Target, request Execute
 }
 
 func (e *BifrostExecutor) Stream(ctx context.Context, target Target, request ExecuteRequest) (<-chan StreamEvent, *CallError) {
+	started := time.Now()
 	bfContext := schemas.NewBifrostContext(ctx, schemas.NoDeadline)
 	var source <-chan *schemas.BifrostStreamChunk
 	switch request.Kind {
 	case RequestChat:
 		chatRequest, callErr := e.chatRequest(bfContext, target, request.Body)
 		if callErr != nil {
+			e.logRequestBuildError(ctx, target, request.Kind, callErr)
 			return nil, callErr
 		}
 		stream, bfErr := e.client.ChatCompletionStreamRequest(bfContext, chatRequest)
 		if bfErr != nil {
-			return nil, classifyBifrostError(ctx, bfErr)
+			callErr := classifyBifrostError(ctx, bfErr)
+			e.logUpstreamFailure(ctx, target, request.Kind, started, bfErr, callErr)
+			return nil, callErr
 		}
 		source = stream
 	case RequestResponses:
 		responsesRequest, callErr := e.responsesRequest(bfContext, target, request.Body)
 		if callErr != nil {
+			e.logRequestBuildError(ctx, target, request.Kind, callErr)
 			return nil, callErr
 		}
 		stream, bfErr := e.client.ResponsesStreamRequest(bfContext, responsesRequest)
 		if bfErr != nil {
-			return nil, classifyBifrostError(ctx, bfErr)
+			callErr := classifyBifrostError(ctx, bfErr)
+			e.logUpstreamFailure(ctx, target, request.Kind, started, bfErr, callErr)
+			return nil, callErr
 		}
 		source = stream
 	default:
 		return nil, &CallError{Class: ErrorInvalid, Status: 400}
 	}
+	e.logUpstreamSuccess(ctx, target, request.Kind, started)
 
 	output := make(chan StreamEvent, 8)
 	go func() {
@@ -201,8 +220,10 @@ func (e *BifrostExecutor) Stream(ctx context.Context, target Target, request Exe
 					continue
 				}
 				if chunk.BifrostError != nil {
+					callErr := classifyBifrostError(ctx, chunk.BifrostError)
+					e.logUpstreamFailure(ctx, target, request.Kind, started, chunk.BifrostError, callErr)
 					select {
-					case output <- StreamEvent{Err: classifyBifrostError(ctx, chunk.BifrostError)}:
+					case output <- StreamEvent{Err: callErr}:
 					case <-ctx.Done():
 					}
 					return
@@ -224,6 +245,55 @@ func (e *BifrostExecutor) Stream(ctx context.Context, target Target, request Exe
 		}
 	}()
 	return output, nil
+}
+
+func (e *BifrostExecutor) logRequestBuildError(ctx context.Context, target Target, kind RequestKind, callErr *CallError) {
+	attrs := logRequestAttrs(ctx)
+	attrs = append(attrs,
+		"provider", target.Provider,
+		"native_model", target.Model,
+		"kind", kind,
+		"status", callErr.Status,
+		"error_class", callErr.Class,
+	)
+	if callErr.Cause != nil {
+		attrs = append(attrs, "detail", safeLogDetail(callErr.Cause.Error()))
+	}
+	e.logger.Warn("provider request rejected before send", attrs...)
+}
+
+func (e *BifrostExecutor) logUpstreamFailure(ctx context.Context, target Target, kind RequestKind, started time.Time, bfErr *schemas.BifrostError, callErr *CallError) {
+	attrs := logRequestAttrs(ctx)
+	attrs = append(attrs,
+		"provider", target.Provider,
+		"native_model", target.Model,
+		"kind", kind,
+		"status", callErr.Status,
+		"error_class", callErr.Class,
+		"duration_ms", time.Since(started).Milliseconds(),
+	)
+	if bfErr != nil {
+		if detail := safeLogDetail(bfErr.GetErrorString()); detail != "" {
+			attrs = append(attrs, "detail", detail)
+		}
+	}
+	if callErr.Class == ErrorCancelled {
+		e.logger.Debug("upstream request cancelled", attrs...)
+		return
+	}
+	e.logger.Warn("upstream request failed", attrs...)
+}
+
+func (e *BifrostExecutor) logUpstreamSuccess(ctx context.Context, target Target, kind RequestKind, started time.Time) {
+	attrs := logRequestAttrs(ctx)
+	attrs = append(attrs,
+		"provider", target.Provider,
+		"native_model", target.Model,
+		"kind", kind,
+		"status", 200,
+		"duration_ms", time.Since(started).Milliseconds(),
+	)
+	e.logger.Debug("upstream request accepted", attrs...)
 }
 
 func (e *BifrostExecutor) chatRequest(ctx *schemas.BifrostContext, target Target, body []byte) (*schemas.BifrostChatRequest, *CallError) {
