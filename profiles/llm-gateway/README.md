@@ -1,52 +1,36 @@
 ## LLM Gateway
 
-Профиль разворачивает [token_proxy](https://github.com/mxyhi/token_proxy) headless как systemd service
-с typed NixOS options и agenix secrets.
+Профиль задаёт безопасные network/service defaults для `lattice.llm-gateway`. Целевой runtime —
+Lattice-owned Go proxy поверх Bifrost Core; `token_proxy` остаётся включён на существующей homelab
+generation до заполнения operational logical-model mappings и прямого cutover.
 
 ### Компоненты
 
-- `modules/llm-gateway/` — NixOS модуль с options и config
-- `profiles/llm-gateway/` — preset с logical models и routing defaults
+- `packages/llm-gateway/` — Go HTTP facade, routing pipeline, catalog и Bifrost execution layer;
+- `modules/llm-gateway/` — dual-runtime NixOS module и безопасная сборка runtime config;
+- `profiles/llm-gateway/` — loopback port и production-safe defaults.
 
-### Конфигурация ноды
+Для нового runtime задаются `runtime = "bifrost"`, `package = pkgs.lattice.llm-gateway`, providers,
+logical models и плоские `routingRules`. Provider `inferenceUrl` не обязан иметь `/v1/models`:
+`modelsUrl` и `modelsApiKeyFile` независимы. Полный пример находится в
+[`modules/llm-gateway/README.md`](../../modules/llm-gateway/README.md).
 
-```nix
-{
-  imports = [ profiles/llm-gateway ];
+Secrets подаются через agenix/systemd credentials:
 
-  # Secrets подаются через agenix:
-  # age.secrets.llm-gateway-client-key (опционально)
-  # age.secrets.llm-provider-<name>-key (по одному на upstream)
+- `clientCredentialFile` — единый client key Pi/workers;
+- `providers.<name>.apiKeyFile` — inference credential;
+- `providers.<name>.modelsApiKeyFile` — отдельный discovery credential, если нужен.
 
-  lattice.llm-gateway = {
-    clientCredentialFile = config.age.secrets.llm-gateway-client-key.path;
-    upstreams.proxy.provider-api-key = {
-      apiKeyFile = config.age.secrets.llm-provider-proxy.path;
-      # ...
-    };
-  };
-}
-```
-
-### Generating secrets
-
-```sh
-# Generate age-encrypted API key
-agenix -e <name>.age -i /path/to/recovery-key
-# Press Enter, type key, Ctrl+D
-```
-
-See [KEY_MANAGEMENT.md](../../KEY_MANAGEMENT.md) for rotation workflow.
+См. [KEY_MANAGEMENT.md](../../KEY_MANAGEMENT.md) для bootstrap/rotation workflow.
 
 ### Доступ из LAN через mDNS
 
-Если нода также использует `profiles/tcp-gateway` и Avahi, профиль Caddy публикует gateway по
+Если нода также использует `profiles/tcp-gateway` и Avahi, Caddy публикует gateway по
 service-specific mDNS hostname:
 
 ```text
 http://llm-gateway.<node>.local/v1
 ```
 
-Например, для `mytecor-homelab` OpenAI-compatible base URL —
-`http://llm-gateway.mytecor-homelab.local/v1`. Caddy проксирует запросы на loopback listener;
-порт `9208` напрямую в LAN не открывается.
+Например: `http://llm-gateway.mytecor-homelab.local/v1`. Caddy проксирует запросы на loopback
+listener; порт `9208` напрямую в LAN не открывается.

@@ -103,6 +103,7 @@
         lattice = {
           rns-server = final.callPackage "${rns-rs}/package.nix" { bin = "rns-server"; };
           rnsh = final.callPackage "${rns-rs}/package.nix" { bin = "rnsh"; };
+          llm-gateway = final.callPackage ./packages/llm-gateway/package.nix { };
           token-proxy = final.callPackage ./packages/token-proxy/package.nix {
             src = token-proxy-src;
           };
@@ -140,7 +141,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) rns-server rnsh token-proxy;
+          inherit (pkgs.lattice) llm-gateway rns-server rnsh token-proxy;
           default = pkgs.lattice.rns-server;
         });
 
@@ -179,6 +180,12 @@
           };
 
           llm-gateway = import ./tests/llm-gateway.nix {
+            inherit nixpkgs pkgs;
+            gatewayModule = self.nixosModules.llm-gateway;
+            gatewayProfile = "${profiles}/llm-gateway/config.nix";
+          };
+
+          llm-gateway-bifrost = import ./tests/llm-gateway-bifrost.nix {
             inherit nixpkgs pkgs;
             gatewayModule = self.nixosModules.llm-gateway;
             gatewayProfile = "${profiles}/llm-gateway/config.nix";
@@ -294,6 +301,17 @@
             assert nixpkgs.lib.hasInfix "reverse_proxy 127.0.0.1:9208"
               homelabConfig.services.caddy.virtualHosts
                 ."http://llm-gateway.mytecor-homelab.local".extraConfig;
+            assert homelabConfig.lattice.llm-gateway.runtime == "bifrost";
+            assert homelabConfig.lattice.llm-gateway.logicalModels == [ "stupid" "standard" ];
+            assert builtins.length (builtins.attrNames homelabConfig.lattice.llm-gateway.providers) == 2;
+            assert homelabConfig.lattice.llm-gateway.providers.proxy.modelsUrl == null;
+            assert homelabConfig.lattice.llm-gateway.providers.openbroker.modelsUrl
+              == "https://proxy.gonka.gg/v1/models";
+            assert nixpkgs.lib.all
+              (rule: rule.action != "retry" || rule.attempts == 10)
+              homelabConfig.lattice.llm-gateway.routingRules;
+            assert nixpkgs.lib.hasInfix "lattice-llm-gateway"
+              homelabConfig.systemd.services.llm-gateway.serviceConfig.ExecStart;
             assert builtins.hasAttr "llm-gateway-mdns" homelabConfig.systemd.services;
             assert nixpkgs.lib.hasInfix "llm-gateway.mytecor-homelab.local"
               homelabConfig.systemd.services.llm-gateway-mdns.script;

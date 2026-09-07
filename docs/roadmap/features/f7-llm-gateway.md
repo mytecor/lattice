@@ -18,7 +18,7 @@ HTTP/API contract, routing и discovery policy, не форкая Bifrost.
 [f7-07](../tasks/f7-07-bifrost-go-proxy.md).
 
 **Критерий готовности:** клиент с gateway credential выполняет streaming-запросы к логическим
-моделям `cheap`, `standard`, `strong`, `frontier`; реальные provider credentials и model IDs ему
+моделям `stupid`, `standard`; реальные provider credentials и model IDs ему
 недоступны; исчезновение primary native model допускает fallback только внутри назначенной access
 group; retry, cooldown, fallback, priority, race и hedging проверены на управляемых сбоях.
 

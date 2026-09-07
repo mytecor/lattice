@@ -10,7 +10,9 @@ let
         nixpkgs.pkgs = pkgs;
         system.stateVersion = "26.05";
         lattice.llm-gateway = {
+          runtime = "token-proxy";
           package = pkgs.lattice.token-proxy;
+          logicalModels = [ ];
           routing = {
             dispatch = "hedged";
             hedgeDelayMs = 250;

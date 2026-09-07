@@ -21,7 +21,10 @@ let
 
         def do_GET(self):
             if self.path == "/v1/models":
-                self.reply({"object": "list", "data": [{"id": "real-cheap", "object": "model"}]})
+                self.reply({"object": "list", "data": [
+                    {"id": "MiniMaxAI/MiniMax-M2.7", "object": "model"},
+                    {"id": "deepseek-ai/DeepSeek-V4-Flash-0731", "object": "model"},
+                ]})
             else:
                 self.reply({"error": "not found"}, 404)
 
@@ -31,7 +34,10 @@ let
             if self.headers.get("Authorization") != "Bearer provider-test-key":
                 self.reply({"error": "wrong credential"}, 401)
                 return
-            if request.get("model") != "real-cheap":
+            if request.get("model") not in {
+                "MiniMaxAI/MiniMax-M2.7",
+                "deepseek-ai/DeepSeek-V4-Flash-0731",
+            }:
                 self.reply({"error": "wrong model"}, 400)
                 return
             self.reply({
@@ -57,20 +63,27 @@ pkgs.testers.runNixOSTest {
     environment.systemPackages = [ pkgs.curl pkgs.jq ];
 
     lattice.llm-gateway = {
-      package = pkgs.lattice.token-proxy;
+      runtime = "bifrost";
+      package = pkgs.lattice.llm-gateway;
+      logicalModels = [ "stupid" "standard" ];
       clientCredentialFile = toString clientKey;
-      upstreams.primary = {
-        providers = [ "openai" ];
-        baseUrl = "http://127.0.0.1:18080/v1";
-        apiKeyFiles = [ (toString providerKey) ];
-        availableModels = [ "cheap" "standard" "strong" "frontier" ];
-        modelMappings = {
-          cheap = "real-cheap";
-          standard = "real-standard";
-          strong = "real-strong";
-          frontier = "real-frontier";
-        };
+      providers.primary = {
+        accessGroup = "test";
+        inferenceUrl = "http://127.0.0.1:18080";
+        modelsUrl = "http://127.0.0.1:18080/v1/models";
+        apiKeyFile = toString providerKey;
+        allowPrivateNetwork = true;
       };
+      models = [
+        { logical = "stupid"; accessGroup = "test"; native = "MiniMaxAI/MiniMax-M2.7"; }
+        { logical = "standard"; accessGroup = "test"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
+      ];
+      routingRules = [
+        { model = "stupid"; action = "race"; providers = [ "primary" ]; }
+        { model = "stupid"; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
+        { model = "standard"; action = "race"; providers = [ "primary" ]; }
+        { model = "standard"; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
+      ];
     };
 
     systemd.services.fake-llm-upstream = {
@@ -95,21 +108,26 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("llm-gateway.service")
     machine.wait_for_open_port(9208)
 
-    response = json.loads(machine.succeed(
+    for logical_model in ["stupid", "standard"]:
+        response = json.loads(machine.succeed(
+            "curl --fail --silent "
+            "-H 'Authorization: Bearer client-test-key' "
+            "-H 'Content-Type: application/json' "
+            f"-d '{{\"model\":\"{logical_model}\",\"messages\":[{{\"role\":\"user\",\"content\":\"hi\"}}]}}' "
+            "http://127.0.0.1:9208/v1/chat/completions"
+        ))
+        assert response["model"] == logical_model, response
+        assert response["choices"][0]["message"]["content"] == "ok", response
+
+    models = json.loads(machine.succeed(
         "curl --fail --silent "
         "-H 'Authorization: Bearer client-test-key' "
-        "-H 'Content-Type: application/json' "
-        "-d '{\"model\":\"cheap\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}' "
-        "http://127.0.0.1:9208/v1/chat/completions"
+        "http://127.0.0.1:9208/v1/models"
     ))
-    assert response["model"] == "cheap", response
-    assert response["choices"][0]["message"]["content"] == "ok", response
+    assert sorted(item["id"] for item in models["data"]) == ["standard", "stupid"], models
 
-    models = json.loads(machine.succeed("curl --fail --silent http://127.0.0.1:9208/v1/models"))
-    assert sorted(item["id"] for item in models["data"]) == ["cheap", "frontier", "standard", "strong"], models
-
-    machine.succeed("test $(stat -c %a /run/llm-gateway/config.jsonc) = 600")
-    machine.fail("sudo -u nobody cat /run/llm-gateway/config.jsonc")
+    machine.succeed("test $(stat -c %a /run/llm-gateway/config.json) = 600")
+    machine.fail("sudo -u nobody cat /run/llm-gateway/config.json")
     machine.succeed("systemctl show -p User --value llm-gateway.service | grep -Fx llm-gateway")
   '';
 }

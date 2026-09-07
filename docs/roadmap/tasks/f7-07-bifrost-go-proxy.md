@@ -28,7 +28,7 @@ HTTP-вызовом.
   внешним портом 80, proxy слушает только loopback.
 - Обязательны `GET /v1/models`, Chat Completions и Responses, включая SSE streaming. Остальные
   endpoints добавляются только по подтверждённой потребности Pi.
-- Pi и workers видят ровно `cheap`, `standard`, `strong`, `frontier` и один gateway client
+- Pi и workers видят ровно `stupid`, `standard` и один gateway client
   credential. Native provider/model IDs, внутренние URLs и route selectors не публикуются.
 - Входящий logical model преобразуется в native target до Bifrost call. Во всех успешных ответах,
   streaming events, безопасных ошибках и diagnostics восстанавливается исходное logical имя.
@@ -50,12 +50,15 @@ providers:
     inference_url: https://openbroker.gonka.gg
     models_url: https://proxy.gonka.gg/v1/models
     api_key: env.OPENBROKER_GONKA_GG_API_KEY
+    models_api_key: env.PROXY_GONKA_GG_API_KEY
   - id: gonka-proxy
     name: gonka
     inference_url: https://proxy.gonka.gg
     api_key: env.PROXY_GONKA_GG_API_KEY
 
 models:
+  - match: {provider: gonka, id: MiniMaxAI/MiniMax-M2.7}
+    override: {id: stupid}
   - match: {provider: gonka, id: deepseek-ai/DeepSeek-V4-Flash-0731}
     override: {id: standard}
 
@@ -65,7 +68,7 @@ routing_rules:
     providers: [gonka-openbroker, gonka-proxy]
   - match: {model: standard}
     action: retry
-    attempts: 2
+    attempts: 10
     on: [timeout, connection_error, 429, 5xx]
     backoff: {type: exponential, initial: 100ms, max: 1s}
   - match: {model: standard}
@@ -96,7 +99,7 @@ fallback и streaming.
 
 ## Model discovery и same-group fallback
 
-- Публичный `/v1/models` строится самим Lattice proxy и содержит только четыре logical IDs.
+- Публичный `/v1/models` строится самим Lattice proxy и содержит только `stupid`, `standard`.
 - Upstream catalogs остаются внутренними. Использовать Bifrost model discovery там, где его
   публичный Go API подходит, и тонкий discovery adapter для независимого `models_url` там, где
   inference endpoint не предоставляет `/v1/models`.
@@ -123,30 +126,30 @@ fallback и streaming.
 
 ### 1. Core и HTTP facade
 
-- [ ] Закрепить совместимую Bifrost version/source и собрать минимальный Go binary.
-- [ ] Реализовать typed config loading/validation и компиляцию flat rules в execution plan.
-- [ ] Реализовать logical model registry, internal catalog snapshots и безопасный refresh.
-- [ ] Реализовать Chat Completions, Responses, `/v1/models`, non-streaming и streaming paths.
-- [ ] Реализовать race, retry, fallback, timeout, priority, cooldown/circuit breaker и hedge.
+- [x] Закрепить совместимую Bifrost version/source и собрать минимальный Go binary.
+- [x] Реализовать typed config loading/validation и компиляцию flat rules в execution plan.
+- [x] Реализовать logical model registry, internal catalog snapshots и безопасный refresh.
+- [x] Реализовать Chat Completions, Responses, `/v1/models`, non-streaming и streaming paths.
+- [x] Реализовать race, retry, fallback, timeout, priority, cooldown/circuit breaker и hedge.
 
 ### 2. Воспроизводимая проверка
 
-- [ ] Mock upstreams доказывают фактический одновременный старт race, first-success semantics,
+- [x] Mock upstreams доказывают фактический одновременный старт race, first-success semantics,
   отсутствие раннего отказа по первой ошибке, отмену проигравших и отсутствие goroutine leaks.
-- [ ] Streaming tests покрывают первый meaningful content/reasoning/tool-call event, порядок SSE,
+- [x] Streaming tests покрывают первый meaningful content/reasoning/tool-call event, порядок SSE,
   ошибку до winner, обрыв начатого stream и client disconnect.
-- [ ] Pipeline tests покрывают retry/backoff, fallback, priority, cooldown/circuit breaker,
+- [x] Pipeline tests покрывают retry/backoff, fallback, priority, cooldown/circuit breaker,
   timeout, hedge/TTFT и error classification.
-- [ ] Contract tests покрывают Chat, Responses, оба streaming path, request/response model rewrite,
+- [x] Contract tests покрывают Chat, Responses, оба streaming path, request/response model rewrite,
   неизвестные IDs и отсутствие внутренних данных.
-- [ ] Discovery tests покрывают разные `inference_url`/`models_url`, refresh 10 минут, manual
+- [x] Discovery tests покрывают разные `inference_url`/`models_url`, refresh 10 минут, manual
   refresh, last-known-good, стабильный same-group fallback, возврат primary и fail closed.
 - [ ] Security tests подтверждают отсутствие provider keys и prompts в logs, diagnostics, errors,
   process args, generated config и Nix store references.
 
 ### 3. NixOS и прямой cutover
 
-- [ ] Перевести существующий `llm-gateway` package/module/profile и VM-test на новый binary,
+- [x] Перевести существующий `llm-gateway` package/module/profile и VM-test на новый binary,
   сохранив unit name, loopback port, Caddy route и credential boundary.
 - [ ] Описать bootstrap, rotation, model refresh, health, cutover и rollback.
 - [ ] До activation проверить closure, decryptability secrets, fake-upstream matrix и доступную
@@ -180,4 +183,21 @@ _нет архитектурных_. Точные Bifrost package/API names и �
 
 ## Статус
 
-Запланирована 2026-09-06. Архитектура выбрана; реализация и cutover не начаты.
+Реализация начата 2026-09-07. Добавлен `packages/llm-gateway` на Go 1.27 с закреплённым Bifrost
+Core v1.8.4, typed JSON config, independent inference/models URLs, internal last-known-good catalog,
+flat routing pipeline, Chat/Responses HTTP facade и streaming winner selection. Unit/integration
+tests подтверждают Bifrost custom provider, parallel first-success race, loser cancellation,
+meaningful streaming selection, retry, fallback, hedge и logical model projection.
+
+Nix overlay экспортирует `pkgs.lattice.llm-gateway`; модуль получил opt-in runtime `bifrost`,
+отдельные credentials для inference/discovery и новый evaluation/VM test. Homelab пока остаётся на
+legacy runtime до изменения node config; native mappings двух logical models теперь утверждены и
+внесены. Для завершения cutover остаётся Linux build/VM run и применение на homelab. Полный Darwin `buildGo127Module`, `nix flake check --no-build`, derivation
+evaluation, обычные Go tests и `go test -race` проходят. Linux package/VM не запускались: текущий
+host — `aarch64-darwin`, Linux remote builder не настроен.
+
+Live smoke 2026-09-07 запустил собранный Nix binary на loopback и успешно обновил внутренний
+catalog с `https://proxy.gonka.gg/v1/models` без inference credential. Активный production mapping
+после пользовательского решения: `stupid → MiniMaxAI/MiniMax-M2.7`,
+`standard → deepseek-ai/DeepSeek-V4-Flash-0731`; `/healthz` не раскрывает topology, а
+`/v1/models` публикует только эти два logical ID.

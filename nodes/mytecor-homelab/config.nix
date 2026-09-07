@@ -1,4 +1,4 @@
-{ config, lib, ... }:
+{ config, lib, pkgs, ... }:
 
 let
   rootPasswordHashFile = ./secrets/root-password-hash.age;
@@ -50,34 +50,40 @@ in
   # Route the attached rnsh service's announces and links through the public peers.
   lattice.rns-server.reticulum.enable_transport = true;
 
-  # LLM Gateway: two upstreams with race dispatch for parallel requests.
-  # API keys are loaded from agenix secrets at runtime via systemd credentials.
-  # Client credential is optional; when null, gateway allows unauthenticated access.
+  # LLM Gateway: Lattice-owned Go proxy races both Gonka inference endpoints.
+  # Proxy owns discovery for the shared group; OpenBroker has no /v1/models.
   lattice.llm-gateway = {
-    routing = {
-      dispatch = "race";
-      maxParallel = 2;
-    };
-    upstreams = {
+    runtime = "bifrost";
+    package = pkgs.lattice.llm-gateway;
+    logicalModels = [ "stupid" "standard" ];
+    providers = {
       proxy = {
-        enable = true;
-        id = "proxy";
-        providers = [ "openai" ];
-        baseUrl = "https://proxy.gonka.gg/v1";
-        apiKeyFiles = [ config.age.secrets.llm-provider-gonka-gg-proxy.path ];
-        priority = 0;
-        availableModels = [ ];
+        id = "gonka-proxy";
+        accessGroup = "gonka";
+        inferenceUrl = "https://proxy.gonka.gg";
+        apiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
+        priority = 10;
       };
       openbroker = {
-        enable = true;
-        id = "openbroker";
-        providers = [ "openai" ];
-        baseUrl = "https://openbroker.gonka.gg/v1";
-        apiKeyFiles = [ config.age.secrets.llm-provider-gonka-gg-openbroker.path ];
-        priority = 0;
-        availableModels = [ ];
+        id = "gonka-openbroker";
+        accessGroup = "gonka";
+        inferenceUrl = "https://openbroker.gonka.gg";
+        modelsUrl = "https://proxy.gonka.gg/v1/models";
+        apiKeyFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
+        modelsApiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
+        priority = 10;
       };
     };
+    models = [
+      { logical = "stupid"; accessGroup = "gonka"; native = "MiniMaxAI/MiniMax-M2.7"; }
+      { logical = "standard"; accessGroup = "gonka"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
+    ];
+    routingRules = [
+      { model = "stupid"; action = "race"; providers = [ "gonka-proxy" "gonka-openbroker" ]; }
+      { model = "stupid"; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
+      { model = "standard"; action = "race"; providers = [ "gonka-proxy" "gonka-openbroker" ]; }
+      { model = "standard"; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
+    ];
   };
 
   lattice.rnsh = {

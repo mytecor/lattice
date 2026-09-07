@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ lib, pkgs, ... }:
 
 let
   latticePorts = import ../networking/ports.nix;
@@ -6,11 +6,13 @@ in
 {
   lattice.llm-gateway = {
     enable = lib.mkDefault true;
+    runtime = lib.mkDefault "bifrost";
+    package = lib.mkDefault pkgs.lattice.llm-gateway;
     host = lib.mkDefault "127.0.0.1";
     port = lib.mkDefault latticePorts.llm-gateway;
     logLevel = lib.mkDefault "silent";
     modelListPrefix = lib.mkDefault false;
-    logicalModels = lib.mkDefault [ ];
+    logicalModels = lib.mkDefault [ "stupid" "standard" ];
     sameUpstreamRetryCount = lib.mkDefault 1;
     retryableFailureCooldownSeconds = lib.mkDefault 15;
     routing = {

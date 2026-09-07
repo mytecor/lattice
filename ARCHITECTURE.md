@@ -144,10 +144,10 @@ policy и композицией маршрутов. Parallel race реализ�
 форком Bifrost, внешним proxy перед его HTTP gateway или dynamic plugin с рекурсивным вызовом.
 
 Стабильная клиентская граница независимо от runtime — OpenAI-compatible API с отдельным gateway
-credential и логическими моделями `cheap`, `standard`, `strong`, `frontier`. Provider credentials
+credential и временным набором logical models `stupid`, `standard`. Provider credentials
 и реальные model IDs существуют только внутри runtime-конфигурации gateway.
 
-`/v1/models` принадлежит Lattice proxy и публикует только четыре логических имени. Входящий model
+`/v1/models` принадлежит Lattice proxy и публикует только два логических имени. Входящий model
 ID преобразуется в native target до вызова Bifrost, а исходное logical имя восстанавливается во
 всех ответах и безопасных ошибках. Provider identity, native IDs, внутренние URLs и route selectors
 не входят в клиентскую поверхность. Непубличные upstream keys подаются отдельно от client key.
@@ -162,6 +162,12 @@ Provider-конфигурация разделяет `inference_url` и опци
 успешный результат. В streaming победитель выбирается по первому meaningful content, reasoning
 или tool-call event; проигравшие вызовы отменяются через context cancellation.
 
+В production Gonka route Proxy и OpenBroker входят в одну access group и запускаются одним
+`race`: ошибка одной ветки не завершает запрос, пока другая ветка ещё может успешно ответить.
+После исчерпания обеих веток `retry` повторяет весь race до 10 раз сверх первой попытки. Provider,
+помеченный retryable failure, временно пропускается по cooldown, пока в группе остаётся рабочая
+ветка; если охлаждаются все ветки, gateway fail-open пробует всю группу снова вместо простоя.
+
 Executable spike [f7-01](./docs/roadmap/tasks/f7-01-token-proxy-spike.md) остаётся историческим
 подтверждением требуемого поведения и источником regression tests, но не определяет новый runtime.
 NixOS-модуль, безопасная сборка runtime config и resilience contract из f7-02–f7-04 мигрируют на
@@ -170,15 +176,12 @@ NixOS-модуль, безопасная сборка runtime config и resilien
 
 ### Контракт логических моделей
 
-Клиентская поверхность содержит ровно четыре стабильных имени; они описывают намерение, а не
-конкретный provider, семейство или snapshot модели:
+До появления дополнительных provider classes клиентская поверхность содержит два имени:
 
 | Имя | Семантика |
 | --- | --- |
-| `cheap` | Минимальная стоимость и задержка для простых, ограниченных и легко проверяемых шагов. |
-| `standard` | Сбалансированный класс по умолчанию для обычной интерактивной и агентной работы. |
-| `strong` | Более высокая надёжность рассуждения и выполнения tools для сложных многошаговых задач. |
-| `frontier` | Максимально доступная способность для новых или дорогих в случае ошибки задач. |
+| `stupid` | `MiniMaxAI/MiniMax-M2.7` в access group `gonka`; дешёвые и простые шаги. |
+| `standard` | `deepseek-ai/DeepSeek-V4-Flash-0731` в access group `gonka`; основной рабочий класс. |
 
 Mappings можно менять без изменения клиента, если новое назначение сохраняет смысл класса,
 поддерживает нужный OpenAI-compatible protocol и проходит контрактные/resilience checks. Изменение
@@ -186,7 +189,7 @@ Mappings можно менять без изменения клиента, ес�
 является изменением эксплуатационной политики и требует проверки качества, но не нового имени.
 
 Профиль задаёт `logicalModels` этим списком, а модуль проверяет, что `/v1/models` не включает
-upstream prefixes, каждый advertised ID входит в контракт, все четыре имени представлены хотя бы
+upstream prefixes, каждый advertised ID входит в контракт, оба имени представлены хотя бы
 одним upstream и каждое имеет явный mapping. Неизвестное или provider-specific имя отклоняется с
 404 до обращения к upstream. Ошибки клиентской авторизации остаются 401; исчерпание retry/fallback
 возвращает gateway error без credentials и без раскрытия внутреннего model ID.

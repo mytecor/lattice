@@ -78,7 +78,7 @@ F5 (внешние узлы) и F6 (радио) — независимые ве�
 - **Деплой pull-based**: узел сам решает, когда обновиться; push — аварийный инструмент.
 - **Конфигурация публична, секреты — нет**: безопасность держится на ключах.
 - **Provider-agnostic agents**: Pi, workers и task definitions используют только логические
-  классы `cheap`, `standard`, `strong`, `frontier`; реальные модели и credentials остаются в
+  классы `stupid` и `standard`; реальные модели и credentials остаются в
   LLM gateway.
 - **Ценное состояние отделено от исполнения**: source/config/tasks/migrations — в Git/Radicle,
   секреты — в agenix, состояние оркестрации — в controller storage, artifacts — в object storage.
