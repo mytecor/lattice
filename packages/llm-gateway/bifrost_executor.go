@@ -332,6 +332,8 @@ func classifyBifrostError(ctx context.Context, err *schemas.BifrostError) *CallE
 	switch {
 	case status == 429:
 		return &CallError{Class: ErrorRateLimit, Status: status}
+	case status == 404 || status == 410:
+		return &CallError{Class: ErrorNotFound, Status: status}
 	case status == 408 || status == 504:
 		return &CallError{Class: ErrorTimeout, Status: status}
 	case status >= 500:

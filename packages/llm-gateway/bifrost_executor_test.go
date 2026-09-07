@@ -230,6 +230,8 @@ func TestBifrostExecutorResponsesStreaming(t *testing.T) {
 func TestBifrostErrorClassification(t *testing.T) {
 	for status, expected := range map[int]ErrorClass{
 		429: ErrorRateLimit,
+		404: ErrorNotFound,
+		410: ErrorNotFound,
 		503: ErrorUpstream,
 		504: ErrorTimeout,
 	} {

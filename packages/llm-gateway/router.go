@@ -16,6 +16,7 @@ const (
 	ErrorTimeout    ErrorClass = "timeout"
 	ErrorConnection ErrorClass = "connection_error"
 	ErrorRateLimit  ErrorClass = "429"
+	ErrorNotFound   ErrorClass = "404"
 	ErrorUpstream   ErrorClass = "5xx"
 	ErrorInvalid    ErrorClass = "invalid_response"
 	ErrorCancelled  ErrorClass = "cancelled"
@@ -168,7 +169,7 @@ func parseErrorClasses(values []string) map[ErrorClass]bool {
 func allRetryableClasses() map[ErrorClass]bool {
 	return map[ErrorClass]bool{
 		ErrorTimeout: true, ErrorConnection: true, ErrorRateLimit: true,
-		ErrorUpstream: true, ErrorInvalid: true,
+		ErrorNotFound: true, ErrorUpstream: true, ErrorInvalid: true,
 	}
 }
 
