@@ -180,6 +180,18 @@
       },
       "parent": []
     },
+    "module-pi": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/pi",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/pi",
+        "type": "path"
+      },
+      "parent": []
+    },
     "module-rns-server": {
       "flake": false,
       "locked": {
@@ -301,6 +313,7 @@
         "impermanence": "impermanence",
         "module-ephemeral-root": "module-ephemeral-root",
         "module-llm-gateway": "module-llm-gateway",
+        "module-pi": "module-pi",
         "module-rns-server": "module-rns-server",
         "module-rnsh": "module-rnsh",
         "module-wireless": "module-wireless",

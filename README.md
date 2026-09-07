@@ -39,7 +39,10 @@ HTTP API опубликованы через Caddy. В F7 развёрнут с�
 модуль/профиль и контракт двух logical models (`stupid`, `standard`). После подтверждённой
 runtime-проверки legacy `mxyhi/token_proxy` удалён целиком из активной конфигурации (input,
 package, patches, spike-тест и legacy-ветки модуля); исторические findings f7-01/f7-05/f7-06
-сохранены. Затем идут caches/artifacts, disposable worker и controller.
+сохранены. В f8-01 Pi закреплён через pnpm lockfile, собирается общим pnpm CLI builder и подключён
+к homelab минимальным модулем; следующим шагом его конфигурация подключается к логическим моделям
+gateway.
+Затем идут caches/artifacts, disposable worker и controller.
 
 ## Направления развития
 

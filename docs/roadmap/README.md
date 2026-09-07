@@ -46,7 +46,9 @@ catalog/scoped routing, а f7-06 отклонила Go LIP из-за обяза�
 удалил legacy `token_proxy` из активной конфигурации. **F7 закрыта 2026-09-07**: обязательные
 режимы routing (retry, cooldown, fallback, priority, race, hedge, streaming, cancellation), health
 surface и structured diagnostics подтверждены Go-тестами и evaluation checks. Запускается **F8 —
-интерактивный Pi runtime**; f8-01 закрепляет и упаковывает Pi в flake. Основной маршрут дальше:
+интерактивный Pi runtime**; f8-01 завершена: Pi закреплён и устанавливается через pnpm без
+пользовательской ручной установки. Следующий шаг — f8-02, декларативное подключение Pi к gateway.
+Основной маршрут дальше:
 Pi → cache/artifact plane → disposable worker → controller.
 Незакрытые вопросы отслеживаются в
 [BACKLOG.md](./BACKLOG.md); работа идёт рывками, поэтому `main` всегда собирается.

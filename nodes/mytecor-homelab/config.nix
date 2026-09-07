@@ -50,6 +50,8 @@ in
   # Route the attached rnsh service's announces and links through the public peers.
   lattice.rns-server.reticulum.enable_transport = true;
 
+  lattice.pi.enable = true;
+
   # LLM Gateway: Lattice-owned Go proxy races both Gonka inference endpoints.
   # Proxy owns discovery for the shared group; OpenBroker has no /v1/models.
   lattice.llm-gateway = {

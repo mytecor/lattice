@@ -53,6 +53,14 @@ executable spike-test) удалён из активной конфигураци
 находки сохранены в задачах `f7-01`/`f7-05`/`f7-06`. Подробности cutover — в
 [`docs/roadmap/tasks/f7-07-bifrost-go-proxy.md`](../docs/roadmap/tasks/f7-07-bifrost-go-proxy.md).
 
+## pnpm CLI
+
+[`packages/pnpm-cli-builder`](./pnpm-cli-builder/README.md) предоставляет общий `buildPnpmCli`
+для воспроизводимой сборки CLI из npm registry. Каждый CLI хранит
+package-specific lock и описание сборки в собственном каталоге; первая реализация —
+[`packages/pi`](./pi/README.md). Зависимости fetch’ятся как fixed-output derivation, затем pnpm
+работает offline в Nix sandbox; Node.js и pnpm приходят из закреплённого `nixpkgs`.
+
 Остальные системные пакеты обновляются через input `nixpkgs` в корневом `flake.lock`.
 Изменение закреплённых версий само по себе не переключает работающую ноду: новую конфигурацию
 применяет обычный процесс развёртывания через `comin` после публикации в `main`.
