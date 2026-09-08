@@ -18,6 +18,7 @@ Lattice - проект для построения сети связанных �
 
 ## Документация
 
+- [AGENTS.md](./AGENTS.md) - обязательные правила для автоматизированных агентов
 - [ROADMAP.md](./ROADMAP.md) - указатель на роадмап (план / фичи / задачи) в [`docs/roadmap/`](./docs/roadmap/README.md)
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - архитектура сети, структура нод
 - [DEPLOYMENT.md](./DEPLOYMENT.md) - разворачивание нод

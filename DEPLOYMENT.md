@@ -25,6 +25,13 @@ deployment history и деревом нового upstream head. Поэтому 
 
 ## Публикация в Radicle и GitHub
 
+Публикация `main` считается завершённой только после успешного push одного и того же commit в
+Radicle и GitHub. Если пользователь просит сделать push и явно не ограничивает список remote,
+нужно публиковать в оба. Канонический способ — общий remote `publish`; если он не настроен,
+выполните отдельные `git push origin main` и `git push rad main` и проверьте успех обеих команд.
+Это правило обязательно и для автоматизированных агентов, работающих по
+[AGENTS.md](./AGENTS.md).
+
 Git remotes хранятся в локальном `.git/config` и не переносятся в новый clone. Для рабочего
 checkout один раз создайте общий remote `publish` с GitHub как fetch URL и двумя push URL:
 
