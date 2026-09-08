@@ -42,20 +42,10 @@ func (r *Runner) selectStreamStage(ctx context.Context, logical string, stageInd
 	var last *CallError
 	for attempt := 0; attempt <= stage.Retries; attempt++ {
 		stageCtx := withRouteAttempt(ctx, stageIndex, attempt+1)
-		stageCancel := func() {}
-		if stage.Timeout > 0 {
-			stageCtx, stageCancel = context.WithTimeout(ctx, stage.Timeout)
-		}
 		selected, callErr := r.selectStreamAttempt(stageCtx, logical, stage, request)
 		if callErr == nil {
-			previousCancel := selected.Cancel
-			selected.Cancel = func() {
-				previousCancel()
-				stageCancel()
-			}
 			return selected, nil
 		}
-		stageCancel()
 		last = callErr
 		if attempt == stage.Retries || !stage.RetryOn[callErr.Class] {
 			break
@@ -72,17 +62,33 @@ func (r *Runner) selectStreamAttempt(ctx context.Context, logical string, stage 
 	if len(providers) == 0 {
 		providers = append([]string(nil), stage.Providers...)
 	}
+	timeout, stopTimeout := streamSelectionTimer(stage.Timeout)
+	defer stopTimeout()
 	if stage.Mode == "serial" {
 		var last *CallError
 		for _, providerID := range providers {
 			branchCtx, cancel := context.WithCancel(ctx)
-			result := r.probeStream(branchCtx, cancel, logical, providerID, request)
-			r.record(providerID, result.err)
-			if result.err == nil {
-				return &SelectedStream{Buffered: result.buffered, Remaining: result.stream, Cancel: cancel}, nil
+			results := make(chan streamResult, 1)
+			go func() {
+				results <- r.probeStream(branchCtx, cancel, logical, providerID, request)
+			}()
+			select {
+			case result := <-results:
+				r.record(providerID, result.err)
+				if result.err == nil {
+					return &SelectedStream{Buffered: result.buffered, Remaining: result.stream, Cancel: cancel}, nil
+				}
+				cancel()
+				last = result.err
+			case <-timeout:
+				cancel()
+				callErr := streamSelectionTimeoutError()
+				r.record(providerID, callErr)
+				return nil, callErr
+			case <-ctx.Done():
+				cancel()
+				return nil, streamSelectionContextError(ctx)
 			}
-			cancel()
-			last = result.err
 		}
 		return nil, last
 	}
@@ -107,27 +113,67 @@ func (r *Runner) selectStreamAttempt(ctx context.Context, logical string, stage 
 
 	var last *CallError
 	for range providers {
-		result := <-results
-		r.record(result.provider, result.err)
-		if result.err == nil {
-			for index, providerID := range providers {
-				if providerID != result.provider {
-					cancels[index]()
+		select {
+		case result := <-results:
+			r.record(result.provider, result.err)
+			if result.err == nil {
+				for index, providerID := range providers {
+					if providerID != result.provider {
+						cancels[index]()
+					}
 				}
+				return &SelectedStream{
+					Buffered: result.buffered, Remaining: result.stream, Cancel: result.cancel,
+				}, nil
 			}
-			return &SelectedStream{
-				Buffered: result.buffered, Remaining: result.stream, Cancel: result.cancel,
-			}, nil
-		}
-		result.cancel()
-		if result.err.Class != ErrorCancelled || last == nil {
-			last = result.err
+			result.cancel()
+			if result.err.Class != ErrorCancelled || last == nil {
+				last = result.err
+			}
+		case <-timeout:
+			callErr := streamSelectionTimeoutError()
+			for index, providerID := range providers {
+				cancels[index]()
+				r.record(providerID, callErr)
+			}
+			return nil, callErr
+		case <-ctx.Done():
+			for _, cancel := range cancels {
+				cancel()
+			}
+			return nil, streamSelectionContextError(ctx)
 		}
 	}
 	if last == nil {
 		last = &CallError{Class: ErrorInvalid, Status: 502}
 	}
 	return nil, last
+}
+
+func streamSelectionTimer(timeout time.Duration) (<-chan time.Time, func()) {
+	if timeout <= 0 {
+		return nil, func() {}
+	}
+	timer := time.NewTimer(timeout)
+	return timer.C, func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}
+}
+
+func streamSelectionTimeoutError() *CallError {
+	return &CallError{Class: ErrorTimeout, Status: 504, Cause: context.DeadlineExceeded}
+}
+
+func streamSelectionContextError(ctx context.Context) *CallError {
+	if ctx.Err() == context.DeadlineExceeded {
+		return streamSelectionTimeoutError()
+	}
+	return &CallError{Class: ErrorCancelled, Status: 499, Cause: ctx.Err()}
 }
 
 func (r *Runner) probeStream(ctx context.Context, cancel context.CancelFunc, logical, providerID string, request ExecuteRequest) streamResult {

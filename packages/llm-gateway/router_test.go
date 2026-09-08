@@ -344,6 +344,110 @@ func TestSelectedStreamHonorsClientCancellation(t *testing.T) {
 	}
 }
 
+func TestStreamingStageTimeoutStopsAfterWinnerSelection(t *testing.T) {
+	cfg := testConfig()
+	cfg.Providers = cfg.Providers[:1]
+	cfg.RoutingRules[0].Providers = []string{"a"}
+	var timeout RoutingRule
+	timeout.Match.Model = "standard"
+	timeout.Action = "timeout"
+	timeout.Duration = Duration{50 * time.Millisecond}
+	cfg.RoutingRules = []RoutingRule{cfg.RoutingRules[0], timeout}
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := &fakeExecutor{
+		do: func(context.Context, Target, ExecuteRequest) ([]byte, *CallError) { return nil, nil },
+		stream: func(ctx context.Context, _ Target, _ ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			stream := make(chan StreamEvent, 2)
+			go func() {
+				defer close(stream)
+				stream <- StreamEvent{Data: []byte(`{"choices":[{"delta":{"content":"hello"}}]}`), Meaningful: true}
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(75 * time.Millisecond):
+					stream <- StreamEvent{Data: []byte(`{"choices":[{"delta":{},"finish_reason":"stop"}]}`)}
+				}
+			}()
+			return stream, nil
+		},
+	}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	selected, callErr := runner.SelectStream(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr != nil {
+		t.Fatal(callErr)
+	}
+	defer selected.Cancel()
+	select {
+	case event, open := <-selected.Remaining:
+		if !open || !strings.Contains(string(event.Data), `"finish_reason":"stop"`) {
+			t.Fatalf("selected stream ended at the first-token deadline: %#v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("selected stream did not finish")
+	}
+}
+
+func TestStreamingStageTimeoutRetriesBeforeWinner(t *testing.T) {
+	cfg := testConfig()
+	cfg.Providers = cfg.Providers[:1]
+	cfg.RoutingRules[0].Providers = []string{"a"}
+	var timeout RoutingRule
+	timeout.Match.Model = "standard"
+	timeout.Action = "timeout"
+	timeout.Duration = Duration{20 * time.Millisecond}
+	retry := cfg.RoutingRules[1]
+	retry.Attempts = 1
+	retry.On = []string{"timeout"}
+	cfg.RoutingRules = []RoutingRule{cfg.RoutingRules[0], timeout, retry}
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	calls := 0
+	var routeAttempts []int
+	executor := &fakeExecutor{
+		do: func(context.Context, Target, ExecuteRequest) ([]byte, *CallError) { return nil, nil },
+		stream: func(ctx context.Context, _ Target, _ ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			mu.Lock()
+			calls++
+			attempt := calls
+			routeAttempt, _ := ctx.Value(routeAttemptKey).(int)
+			routeAttempts = append(routeAttempts, routeAttempt)
+			mu.Unlock()
+			stream := make(chan StreamEvent, 1)
+			if attempt == 1 {
+				go func() {
+					<-ctx.Done()
+					close(stream)
+				}()
+				return stream, nil
+			}
+			stream <- StreamEvent{Data: []byte(`{"choices":[{"delta":{"content":"winner"}}]}`), Meaningful: true}
+			close(stream)
+			return stream, nil
+		},
+	}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.sleep = func(context.Context, time.Duration) error { return nil }
+	selected, callErr := runner.SelectStream(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr != nil {
+		t.Fatalf("retry did not recover from first-token timeout: %v", callErr)
+	}
+	defer selected.Cancel()
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 2 {
+		t.Fatalf("expected one timed-out attempt and one retry, got %d calls", calls)
+	}
+	if len(routeAttempts) != 2 || routeAttempts[0] != 1 || routeAttempts[1] != 2 {
+		t.Fatalf("routing attempt context was not preserved: %#v", routeAttempts)
+	}
+}
+
 func TestMeaningfulPayloadRecognizesReasoningAndTools(t *testing.T) {
 	tests := []struct {
 		name  string
