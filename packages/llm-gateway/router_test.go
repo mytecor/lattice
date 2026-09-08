@@ -189,135 +189,32 @@ func TestRetryWrapsPreviousRace(t *testing.T) {
 
 func TestFallbackRunsOnlyAfterMatchingFailure(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules[0].Providers = []string{"a"}
 	cfg.RoutingRules = []RoutingRule{cfg.RoutingRules[0], cfg.RoutingRules[2]}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var order []string
+	order := make(chan string, 3)
 	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
-		order = append(order, target.Provider)
-		if target.Provider == "a" {
+		order <- target.Provider
+		if target.Provider != "c" {
 			return nil, &CallError{Class: ErrorUpstream, Status: 503}
 		}
-		return []byte(`{"winner":"b"}`), nil
+		return []byte(`{"winner":"c"}`), nil
 	}}
 	runner := newRunner(compiled, newCatalog(compiled), executor)
 	if _, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat}); callErr != nil {
 		t.Fatalf("fallback failed: %v", callErr)
 	}
-	if len(order) != 2 || order[0] != "a" || order[1] != "b" {
-		t.Fatalf("unexpected fallback order: %#v", order)
-	}
-}
-
-func TestHedgeDelaysSecondProvider(t *testing.T) {
-	cfg := testConfig()
-	cfg.RoutingRules = cfg.RoutingRules[:1]
-	cfg.RoutingRules[0].Action = "hedge"
-	cfg.RoutingRules[0].After = Duration{25 * time.Millisecond}
-	compiled, err := compileConfig(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	firstStarted := make(chan time.Time, 1)
-	secondStarted := make(chan time.Time, 1)
-	executor := &fakeExecutor{do: func(ctx context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
-		if target.Provider == "a" {
-			firstStarted <- time.Now()
-			<-ctx.Done()
-			return nil, &CallError{Class: ErrorCancelled, Status: 499}
-		}
-		secondStarted <- time.Now()
-		return []byte(`{"winner":"b"}`), nil
-	}}
-	runner := newRunner(compiled, newCatalog(compiled), executor)
-	result := make(chan *CallError, 1)
-	go func() {
-		_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
-		result <- callErr
-	}()
-	first := <-firstStarted
-	second := <-secondStarted
-	if second.Sub(first) < 20*time.Millisecond {
-		t.Fatalf("hedge launched too early: %s", second.Sub(first))
-	}
-	if callErr := <-result; callErr != nil {
-		t.Fatalf("hedge failed: %v", callErr)
-	}
-}
-
-func TestStreamingHedgeKeepsPrimaryUntilSecondaryWins(t *testing.T) {
-	cfg := testConfig()
-	cfg.RoutingRules = cfg.RoutingRules[:1]
-	cfg.RoutingRules[0].Action = "hedge"
-	cfg.RoutingRules[0].After = Duration{25 * time.Millisecond}
-	compiled, err := compileConfig(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	primaryStarted := make(chan time.Time, 1)
-	secondaryStarted := make(chan time.Time, 1)
-	releaseSecondary := make(chan struct{})
-	primaryCancelled := make(chan struct{})
-	executor := &fakeExecutor{
-		do: func(context.Context, Target, ExecuteRequest) ([]byte, *CallError) { return nil, nil },
-		stream: func(ctx context.Context, target Target, _ ExecuteRequest) (<-chan StreamEvent, *CallError) {
-			stream := make(chan StreamEvent, 1)
-			if target.Provider == "a" {
-				primaryStarted <- time.Now()
-				go func() {
-					<-ctx.Done()
-					close(primaryCancelled)
-					close(stream)
-				}()
-				return stream, nil
-			}
-			secondaryStarted <- time.Now()
-			go func() {
-				<-releaseSecondary
-				stream <- StreamEvent{Data: []byte(`{"choices":[{"delta":{"content":"winner"}}]}`), Meaningful: true}
-				close(stream)
-			}()
-			return stream, nil
-		},
-	}
-	runner := newRunner(compiled, newCatalog(compiled), executor)
-	result := make(chan *SelectedStream, 1)
-	resultErr := make(chan *CallError, 1)
-	go func() {
-		selected, callErr := runner.SelectStream(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
-		result <- selected
-		resultErr <- callErr
-	}()
-	primaryAt := <-primaryStarted
-	secondaryAt := <-secondaryStarted
-	if secondaryAt.Sub(primaryAt) < 20*time.Millisecond {
-		t.Fatalf("streaming hedge launched too early: %s", secondaryAt.Sub(primaryAt))
-	}
-	select {
-	case <-primaryCancelled:
-		t.Fatal("primary stream was cancelled before the hedge produced a winner")
-	default:
-	}
-	close(releaseSecondary)
-	selected := <-result
-	if callErr := <-resultErr; callErr != nil {
-		t.Fatalf("streaming hedge failed: %v", callErr)
-	}
-	defer selected.Cancel()
-	select {
-	case <-primaryCancelled:
-	case <-time.After(time.Second):
-		t.Fatal("primary stream was not cancelled after the hedge won")
+	first, second, third := <-order, <-order, <-order
+	if third != "c" || !((first == "a" && second == "b") || (first == "b" && second == "a")) {
+		t.Fatalf("unexpected fallback order: %q, %q, %q", first, second, third)
 	}
 }
 
 func TestStageTimeoutIsClassified(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules[0].Providers = []string{"a"}
 	var timeout RoutingRule
 	timeout.Match.Model = "standard"
 	timeout.Action = "timeout"
@@ -375,7 +272,6 @@ func TestCooldownSkipsRecentlyFailedProvider(t *testing.T) {
 func TestSelectedStreamHonorsClientCancellation(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules[0].Providers = []string{"a"}
 	cfg.RoutingRules = cfg.RoutingRules[:1]
 	compiled, err := compileConfig(cfg)
 	if err != nil {
@@ -413,7 +309,6 @@ func TestSelectedStreamHonorsClientCancellation(t *testing.T) {
 func TestStreamingStageTimeoutStopsAfterWinnerSelection(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules[0].Providers = []string{"a"}
 	var timeout RoutingRule
 	timeout.Match.Model = "standard"
 	timeout.Action = "timeout"
@@ -459,7 +354,6 @@ func TestStreamingStageTimeoutStopsAfterWinnerSelection(t *testing.T) {
 func TestStreamingStageTimeoutRetriesBeforeWinner(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules[0].Providers = []string{"a"}
 	var timeout RoutingRule
 	timeout.Match.Model = "standard"
 	timeout.Action = "timeout"
@@ -514,15 +408,18 @@ func TestStreamingStageTimeoutRetriesBeforeWinner(t *testing.T) {
 	}
 }
 
-func TestStreamingOverlappingRetryKeepsEarlierRaceUntilWinner(t *testing.T) {
+func TestStreamingHedgeMakesRetriesOverlapUntilWinner(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = cfg.RoutingRules[:2]
-	cfg.RoutingRules[1].Attempts = 1
-	cfg.RoutingRules[1].Overlap = true
-	cfg.RoutingRules[1].On = []string{"429", "5xx", "timeout", "connection_error"}
-	cfg.RoutingRules[1].Backoff = &BackoffConfig{
+	var hedge RoutingRule
+	hedge.Match.Model = "standard"
+	hedge.Action = "hedge"
+	retry := cfg.RoutingRules[1]
+	retry.Attempts = 1
+	retry.On = []string{"429", "5xx", "timeout", "connection_error"}
+	retry.Backoff = &BackoffConfig{
 		Type: "constant", Initial: Duration{25 * time.Millisecond}, Max: Duration{25 * time.Millisecond},
 	}
+	cfg.RoutingRules = []RoutingRule{cfg.RoutingRules[0], hedge, retry}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -564,7 +461,7 @@ func TestStreamingOverlappingRetryKeepsEarlierRaceUntilWinner(t *testing.T) {
 		},
 	}
 	runner := newRunner(compiled, newCatalog(compiled), executor)
-	// Overlapping retries intentionally repeat the complete configured race,
+	// Hedges intentionally repeat the complete configured race,
 	// even when the shared circuit breaker is cooling one of its providers.
 	runner.cooling["b"] = time.Now().Add(time.Hour)
 	result := make(chan *SelectedStream, 1)
@@ -603,7 +500,7 @@ func TestStreamingOverlappingRetryKeepsEarlierRaceUntilWinner(t *testing.T) {
 		t.Fatalf("each attempt must race both providers: %#v", attemptProviders)
 	}
 	if secondStarted.Sub(firstStarted) < 20*time.Millisecond {
-		t.Fatalf("overlapping retry started before backoff: %s", secondStarted.Sub(firstStarted))
+		t.Fatalf("hedged race started before its delay: %s", secondStarted.Sub(firstStarted))
 	}
 	select {
 	case call := <-cancelled:
@@ -614,7 +511,7 @@ func TestStreamingOverlappingRetryKeepsEarlierRaceUntilWinner(t *testing.T) {
 	close(releaseWinner)
 	selected := <-result
 	if callErr := <-resultErr; callErr != nil {
-		t.Fatalf("overlapping retry did not produce a winner: %v", callErr)
+		t.Fatalf("hedged race did not produce a winner: %v", callErr)
 	}
 	defer selected.Cancel()
 	for range 3 {

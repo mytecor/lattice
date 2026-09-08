@@ -41,15 +41,15 @@ type Target struct {
 }
 
 type Stage struct {
-	Mode         string
-	Providers    []string
-	Retries      int
-	RetryOn      map[ErrorClass]bool
-	RetryOverlap bool
-	NextOn       map[ErrorClass]bool
-	Backoff      BackoffConfig
-	Timeout      time.Duration
-	HedgeDelay   time.Duration
+	Mode               string
+	Providers          []string
+	Retries            int
+	RetryOn            map[ErrorClass]bool
+	RetryHedge         bool
+	NextOn             map[ErrorClass]bool
+	Backoff            BackoffConfig
+	Timeout            time.Duration
+	ProviderHedgeDelay time.Duration
 }
 
 type Plan struct {
@@ -71,7 +71,7 @@ func compilePlans(rules []RoutingRule, providers map[string]Provider, mappings m
 		plan.LogicalModel = model
 		action := strings.ToLower(strings.TrimSpace(rule.Action))
 		switch action {
-		case "race", "hedge":
+		case "race":
 			stage, err := newStage(action, rule, providers, mappings[model])
 			if err != nil {
 				return nil, fmt.Errorf("routing rule %d: %w", index, err)
@@ -81,19 +81,32 @@ func compilePlans(rules []RoutingRule, providers map[string]Provider, mappings m
 			if len(plan.Stages) == 0 {
 				return nil, fmt.Errorf("routing rule %d: retry requires a previous route", index)
 			}
+			if len(rule.AccessGroups) != 0 {
+				return nil, fmt.Errorf("routing rule %d: retry modifies the previous route and must not declare access_groups", index)
+			}
 			if rule.Attempts < 1 {
 				return nil, fmt.Errorf("routing rule %d: retry attempts must be positive", index)
 			}
 			stage := &plan.Stages[len(plan.Stages)-1]
 			stage.Retries = rule.Attempts
 			stage.RetryOn = parseErrorClasses(rule.On)
-			stage.RetryOverlap = rule.Overlap
 			if rule.Backoff != nil {
 				stage.Backoff = *rule.Backoff
 			}
+		case "hedge":
+			if len(plan.Stages) == 0 {
+				return nil, fmt.Errorf("routing rule %d: hedge requires a previous route", index)
+			}
+			if len(rule.AccessGroups) != 0 || rule.Attempts != 0 || rule.After.Duration != 0 || len(rule.On) != 0 {
+				return nil, fmt.Errorf("routing rule %d: hedge takes no parameters; retry controls attempts, errors, and backoff", index)
+			}
+			plan.Stages[len(plan.Stages)-1].RetryHedge = true
 		case "timeout":
 			if len(plan.Stages) == 0 || rule.Duration.Duration <= 0 {
 				return nil, fmt.Errorf("routing rule %d: timeout requires a previous route and positive duration", index)
+			}
+			if len(rule.AccessGroups) != 0 {
+				return nil, fmt.Errorf("routing rule %d: timeout modifies the previous route and must not declare access_groups", index)
 			}
 			plan.Stages[len(plan.Stages)-1].Timeout = rule.Duration.Duration
 		case "fallback":
@@ -123,35 +136,46 @@ func newStage(mode string, rule RoutingRule, providers map[string]Provider, mapp
 	if mode != "race" && mode != "hedge" && mode != "serial" {
 		return Stage{}, fmt.Errorf("unsupported dispatch mode %q", mode)
 	}
-	if len(rule.Providers) == 0 {
-		return Stage{}, errors.New("route requires at least one provider")
+	if len(rule.AccessGroups) == 0 {
+		return Stage{}, errors.New("route requires at least one access group")
 	}
-	seen := make(map[string]struct{}, len(rule.Providers))
-	ordered := append([]string(nil), rule.Providers...)
-	for _, id := range ordered {
-		provider, ok := providers[id]
-		if !ok {
-			return Stage{}, fmt.Errorf("unknown provider %q", id)
+	providerIDs := make([]string, 0, len(providers))
+	for id := range providers {
+		providerIDs = append(providerIDs, id)
+	}
+	sort.Strings(providerIDs)
+	seenGroups := make(map[string]struct{}, len(rule.AccessGroups))
+	ordered := make([]string, 0, len(providerIDs))
+	for _, group := range rule.AccessGroups {
+		if _, duplicate := seenGroups[group]; duplicate {
+			return Stage{}, fmt.Errorf("duplicate access group %q", group)
 		}
-		if _, duplicate := seen[id]; duplicate {
-			return Stage{}, fmt.Errorf("duplicate provider %q", id)
+		seenGroups[group] = struct{}{}
+		if _, ok := mappings[group]; !ok {
+			return Stage{}, fmt.Errorf("logical model has no mapping for access group %q", group)
 		}
-		seen[id] = struct{}{}
-		if _, ok := mappings[provider.Name]; !ok {
-			return Stage{}, fmt.Errorf("logical model has no mapping for provider %q access group %q", id, provider.Name)
+		found := false
+		for _, id := range providerIDs {
+			if providers[id].Name == group {
+				ordered = append(ordered, id)
+				found = true
+			}
+		}
+		if !found {
+			return Stage{}, fmt.Errorf("unknown access group %q", group)
 		}
 	}
 	sort.SliceStable(ordered, func(i, j int) bool {
 		return providers[ordered[i]].Priority > providers[ordered[j]].Priority
 	})
 	stage := Stage{
-		Mode:       mode,
-		Providers:  ordered,
-		RetryOn:    allRetryableClasses(),
-		NextOn:     allRetryableClasses(),
-		HedgeDelay: rule.After.Duration,
+		Mode:               mode,
+		Providers:          ordered,
+		RetryOn:            allRetryableClasses(),
+		NextOn:             allRetryableClasses(),
+		ProviderHedgeDelay: rule.After.Duration,
 	}
-	if stage.Mode == "hedge" && stage.HedgeDelay <= 0 {
+	if stage.Mode == "hedge" && stage.ProviderHedgeDelay <= 0 {
 		return Stage{}, errors.New("hedge requires a positive after duration")
 	}
 	return stage, nil
@@ -286,7 +310,7 @@ func (r *Runner) dispatch(ctx context.Context, logical string, stage Stage, requ
 		}
 		return nil, last
 	case "hedge":
-		return r.parallel(ctx, logical, providers, stage.HedgeDelay, request)
+		return r.parallel(ctx, logical, providers, stage.ProviderHedgeDelay, request)
 	default:
 		return r.parallel(ctx, logical, providers, 0, request)
 	}

@@ -157,17 +157,30 @@ in
     assert homelabConfig.lattice.llm-gateway.providers.openbroker.inferenceUrl
       == "https://api.openbroker.gonka.gg";
     assert homelabConfig.lattice.llm-gateway.providers.openbroker.modelsUrl == null;
+    assert builtins.length (builtins.filter
+      (rule: rule.action == "hedge")
+      homelabConfig.lattice.llm-gateway.routingRules) == 2;
+    assert nixpkgs.lib.all
+      (rule: rule.action != "hedge" || (rule.attempts == 0
+        && rule.accessGroups == [ ]
+        && rule.on == [ ]
+        && rule.after == null))
+      homelabConfig.lattice.llm-gateway.routingRules;
+    assert builtins.length (builtins.filter
+      (rule: rule.action == "retry")
+      homelabConfig.lattice.llm-gateway.routingRules) == 2;
     assert nixpkgs.lib.all
       (rule: rule.action != "retry" || (rule.attempts == 3
-        && rule.overlap
         && rule.on == [ "429" "5xx" "timeout" "connection_error" ]
-        && rule.backoffType == "constant"
-        && rule.backoffInitial == "5s"
+        && rule.backoffInitial == "200ms"
         && rule.backoffMax == "5s"))
       homelabConfig.lattice.llm-gateway.routingRules;
     assert nixpkgs.lib.all
       (rule: rule.action != "race"
-        || rule.providers == [ "gonka-proxy" "gonka-openbroker" ])
+        || rule.accessGroups == [ "gonka" ])
+      homelabConfig.lattice.llm-gateway.routingRules;
+    assert nixpkgs.lib.all
+      (rule: builtins.elem rule.action [ "race" "fallback" ] || rule.accessGroups == [ ])
       homelabConfig.lattice.llm-gateway.routingRules;
     assert builtins.length (builtins.filter
       (rule: rule.action == "timeout")

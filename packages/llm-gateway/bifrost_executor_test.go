@@ -21,7 +21,6 @@ func bifrostTestConfig(t *testing.T, upstreamURL string) *compiledConfig {
 	cfg.Providers[0].InferenceURL = upstreamURL
 	cfg.Providers[0].APIKey = "provider-secret"
 	cfg.Providers[0].AllowPrivateNetwork = true
-	cfg.RoutingRules[0].Providers = []string{"mock-openai"}
 	cfg.RoutingRules = cfg.RoutingRules[:1]
 	compiled, err := compileConfig(cfg)
 	if err != nil {

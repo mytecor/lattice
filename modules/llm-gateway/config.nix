@@ -25,7 +25,8 @@ let
 
   publicRule = rule: {
     match.model = rule.model;
-    inherit (rule) action providers attempts overlap on;
+    inherit (rule) action attempts on;
+    access_groups = rule.accessGroups;
     backoff = {
       type = rule.backoffType;
       initial = rule.backoffInitial;
@@ -116,7 +117,7 @@ let
   modelKeys = map (model: "${model.logical}:${model.accessGroup}") cfg.models;
   mappedLogicalModels = lib.unique (map (model: model.logical) cfg.models);
   ruleModels = lib.unique (map (rule: rule.model) cfg.routingRules);
-  ruleProviderIds = lib.concatMap (rule: rule.providers) cfg.routingRules;
+  ruleAccessGroups = lib.concatMap (rule: rule.accessGroups) cfg.routingRules;
 in
 {
   config = lib.mkIf cfg.enable {
@@ -144,8 +145,8 @@ in
         message = "Bifrost routing rules must reference mapped logical models.";
       }
       {
-        assertion = lib.all (id: builtins.elem id providerIds) ruleProviderIds;
-        message = "Bifrost routing rules must reference enabled provider IDs.";
+        assertion = lib.all (group: builtins.elem group providerGroups) ruleAccessGroups;
+        message = "Bifrost routing rules must reference enabled provider access groups.";
       }
       {
         assertion = lib.all

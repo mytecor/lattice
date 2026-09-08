@@ -45,8 +45,8 @@ func (r *Runner) SelectStream(ctx context.Context, logical string, request Execu
 }
 
 func (r *Runner) selectStreamStage(ctx context.Context, logical string, stageIndex int, stage Stage, request ExecuteRequest) (*SelectedStream, *CallError) {
-	if stage.RetryOverlap && stage.Retries > 0 {
-		return r.selectOverlappingStreamStage(ctx, logical, stageIndex, stage, request)
+	if stage.RetryHedge && stage.Retries > 0 {
+		return r.selectHedgedRetryStreamStage(ctx, logical, stageIndex, stage, request)
 	}
 	var last *CallError
 	for attempt := 0; attempt <= stage.Retries; attempt++ {
@@ -66,7 +66,7 @@ func (r *Runner) selectStreamStage(ctx context.Context, logical string, stageInd
 	return nil, last
 }
 
-func (r *Runner) selectOverlappingStreamStage(ctx context.Context, logical string, stageIndex int, stage Stage, request ExecuteRequest) (*SelectedStream, *CallError) {
+func (r *Runner) selectHedgedRetryStreamStage(ctx context.Context, logical string, stageIndex int, stage Stage, request ExecuteRequest) (*SelectedStream, *CallError) {
 	totalAttempts := stage.Retries + 1
 	results := make(chan streamAttemptResult, totalAttempts)
 	cancels := make([]context.CancelFunc, totalAttempts)
@@ -96,9 +96,9 @@ func (r *Runner) selectOverlappingStreamStage(ctx context.Context, logical strin
 	cancelAllAttempts := func() { cancelAttemptsExcept(-1) }
 
 	launch()
-	retryTimer := time.NewTimer(backoffDuration(stage.Backoff, 0))
-	defer retryTimer.Stop()
-	retryReady := retryTimer.C
+	hedgeTimer := time.NewTimer(backoffDuration(stage.Backoff, 0))
+	defer hedgeTimer.Stop()
+	hedgeReady := hedgeTimer.C
 	var last *CallError
 
 	for {
@@ -121,13 +121,13 @@ func (r *Runner) selectOverlappingStreamStage(ctx context.Context, logical strin
 				cancelAllAttempts()
 				return nil, last
 			}
-		case <-retryReady:
-			retryReady = nil
+		case <-hedgeReady:
+			hedgeReady = nil
 			if launched < totalAttempts && (active > 0 || last == nil || stage.RetryOn[last.Class]) {
 				launch()
 				if launched < totalAttempts {
-					retryTimer.Reset(backoffDuration(stage.Backoff, launched-1))
-					retryReady = retryTimer.C
+					hedgeTimer.Reset(backoffDuration(stage.Backoff, launched-1))
+					hedgeReady = hedgeTimer.C
 				}
 			} else if active == 0 {
 				cancelAllAttempts()
@@ -142,10 +142,10 @@ func (r *Runner) selectOverlappingStreamStage(ctx context.Context, logical strin
 
 func (r *Runner) selectStreamAttempt(ctx context.Context, logical string, stage Stage, request ExecuteRequest) (*SelectedStream, *CallError) {
 	providers := []string(nil)
-	if !stage.RetryOverlap {
+	if !stage.RetryHedge {
 		providers = r.availableProviders(stage.Providers)
 	}
-	if stage.RetryOverlap || len(providers) == 0 {
+	if stage.RetryHedge || len(providers) == 0 {
 		providers = append([]string(nil), stage.Providers...)
 	}
 	timeout, stopTimeout := streamSelectionTimer(stage.Timeout)
@@ -187,7 +187,7 @@ func (r *Runner) selectStreamAttempt(ctx context.Context, logical string, stage 
 		index, providerID := index, providerID
 		go func() {
 			if stage.Mode == "hedge" && index > 0 {
-				if err := sleepContext(branchCtx, time.Duration(index)*stage.HedgeDelay); err != nil {
+				if err := sleepContext(branchCtx, time.Duration(index)*stage.ProviderHedgeDelay); err != nil {
 					results <- streamResult{provider: providerID, cancel: cancel, err: &CallError{Class: ErrorCancelled, Status: 499, Cause: err}}
 					return
 				}

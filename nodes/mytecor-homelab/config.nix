@@ -52,8 +52,8 @@ in
 
   lattice.pi.enable = true;
 
-  # LLM Gateway: each attempt races both Gonka endpoints. After every backoff a new race starts
-  # without cancelling earlier attempts; the first meaningful response wins across all races.
+  # LLM Gateway: each attempt races both Gonka endpoints. Hedge keeps prior attempts alive while
+  # retry controls the number of new race generations, their error classes, and backoff.
   # Proxy owns discovery for the shared group; OpenBroker has no /v1/models.
   lattice.llm-gateway = {
     # Debug logs contain routing metadata and sanitized upstream errors, never prompts or keys.
@@ -79,12 +79,14 @@ in
       { logical = "standard"; accessGroup = "gonka"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
     ];
     routingRules = [
-      { model = "stupid"; action = "race"; providers = [ "gonka-proxy" "gonka-openbroker" ]; }
+      { model = "stupid"; action = "race"; accessGroups = [ "gonka" ]; }
+      { model = "stupid"; action = "hedge"; }
+      { model = "stupid"; action = "retry"; attempts = 3; on = [ "429" "5xx" "timeout" "connection_error" ]; backoffInitial = "200ms"; backoffMax = "5s"; }
       { model = "stupid"; action = "timeout"; duration = "60s"; }
-      { model = "stupid"; action = "retry"; attempts = 3; overlap = true; on = [ "429" "5xx" "timeout" "connection_error" ]; backoffType = "constant"; backoffInitial = "5s"; backoffMax = "5s"; }
-      { model = "standard"; action = "race"; providers = [ "gonka-proxy" "gonka-openbroker" ]; }
+      { model = "standard"; action = "race"; accessGroups = [ "gonka" ]; }
+      { model = "standard"; action = "hedge"; }
+      { model = "standard"; action = "retry"; attempts = 3; on = [ "429" "5xx" "timeout" "connection_error" ]; backoffInitial = "200ms"; backoffMax = "5s"; }
       { model = "standard"; action = "timeout"; duration = "60s"; }
-      { model = "standard"; action = "retry"; attempts = 3; overlap = true; on = [ "429" "5xx" "timeout" "connection_error" ]; backoffType = "constant"; backoffInitial = "5s"; backoffMax = "5s"; }
     ];
   };
 

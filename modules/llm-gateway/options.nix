@@ -166,13 +166,12 @@ in
         options = {
           model = mkOption { type = types.str; };
           action = mkOption { type = types.enum [ "race" "retry" "fallback" "timeout" "hedge" ]; };
-          providers = mkOption { type = types.listOf types.str; default = [ ]; };
-          attempts = mkOption { type = types.ints.unsigned; default = 0; };
-          overlap = mkOption {
-            type = types.bool;
-            default = false;
-            description = "For streaming retries, launch the next route after backoff without cancelling active attempts.";
+          accessGroups = mkOption {
+            type = types.listOf types.str;
+            default = [ ];
+            description = "Virtual provider access groups selected by route-creating actions such as race and fallback.";
           };
+          attempts = mkOption { type = types.ints.unsigned; default = 0; };
           on = mkOption {
             type = types.listOf (types.enum [ "timeout" "connection_error" "429" "5xx" "invalid_response" ]);
             default = [ ];

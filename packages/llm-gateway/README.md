@@ -31,24 +31,23 @@ Authorization: Bearer <client_api_key>
 `routing_rules` — плоский упорядоченный pipeline. Каждый rule выполняет одно действие и
 преобразует route, созданный предыдущими rules:
 
-- `race` одновременно вызывает перечисленные provider instances;
-- `retry` повторяет предыдущий route для выбранных error classes; с `overlap: true` следующий
-  streaming attempt запускается после backoff, не отменяя ещё активные попытки;
+- `race` раскрывает перечисленные `access_groups` и одновременно вызывает все их provider instances;
+- `hedge` делает streaming retries перекрывающимися, не отменяя активные попытки;
+- `retry` задаёт число попыток, error classes и backoff;
 - `fallback` добавляет следующий serial/race/hedge stage;
 - `timeout` ограничивает предыдущий stage;
-- `hedge` запускает дополнительные providers с задержкой `after`.
 
-Для `race` все перечисленные в rule providers запускаются параллельно. Ошибка одной ветки не
-завершает запрос: gateway продолжает ждать остальные. Первый успешный ответ побеждает, а
-оставшиеся calls отменяются через `context.Context`.
+Для `race` все provider instances из перечисленных access groups запускаются параллельно. Ошибка
+одной ветки не завершает запрос: gateway продолжает ждать остальные. Первый успешный ответ
+побеждает, а оставшиеся calls отменяются через `context.Context`.
 
 В streaming победитель выбирается только по первому meaningful content, reasoning или tool-call
 event. Пустые role/metadata chunks не выигрывают. Prelude выбранной ветки буферизуется и затем
 отдаётся клиенту в исходном порядке; проигравшие streams отменяются.
 
-Для overlapping streaming retry каждый attempt заново запускает весь предыдущий route. Например,
-повтор `race` снова стартует все его providers параллельно. Backoff задаёт интервал между стартами,
-а первый meaningful event среди всех поколений выбирает победителя и отменяет остальные.
+При наличии `hedge` каждый retry заново запускает весь предыдущий route после своего backoff, не
+отменяя прошлые поколения. Например, retry над `race` снова стартует все его providers параллельно.
+Первый meaningful event среди всех поколений выбирает победителя и отменяет остальные.
 
 `attempts` означает число повторов после первоначального запуска. Поэтому, например,
 `attempts: 10` даёт максимум 11 race-волн. Error classes и backoff также задаются rule.
@@ -128,26 +127,44 @@ Standalone binary поддерживает literal secrets и ссылки `env.
     {
       "match": {"model": "stupid"},
       "action": "race",
-      "providers": ["gonka-proxy", "gonka-openbroker"]
+      "access_groups": ["gonka"]
+    },
+    {
+      "match": {"model": "stupid"},
+      "action": "hedge"
     },
     {
       "match": {"model": "stupid"},
       "action": "retry",
-      "attempts": 10,
+      "attempts": 3,
       "on": ["429", "5xx", "timeout", "connection_error"],
-      "backoff": {"type": "exponential", "initial": "100ms", "max": "1s"}
+      "backoff": {"type": "exponential", "initial": "200ms", "max": "5s"}
+    },
+    {
+      "match": {"model": "stupid"},
+      "action": "timeout",
+      "duration": "60s"
     },
     {
       "match": {"model": "standard"},
       "action": "race",
-      "providers": ["gonka-proxy", "gonka-openbroker"]
+      "access_groups": ["gonka"]
+    },
+    {
+      "match": {"model": "standard"},
+      "action": "hedge"
     },
     {
       "match": {"model": "standard"},
       "action": "retry",
-      "attempts": 10,
+      "attempts": 3,
       "on": ["429", "5xx", "timeout", "connection_error"],
-      "backoff": {"type": "exponential", "initial": "100ms", "max": "1s"}
+      "backoff": {"type": "exponential", "initial": "200ms", "max": "5s"}
+    },
+    {
+      "match": {"model": "standard"},
+      "action": "timeout",
+      "duration": "60s"
     }
   ]
 }

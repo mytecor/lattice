@@ -65,15 +65,20 @@ models:
 routing_rules:
   - match: {model: standard}
     action: race
-    providers: [gonka-openbroker, gonka-proxy]
+    access_groups: [gonka]
+  - match: {model: standard}
+    action: hedge
   - match: {model: standard}
     action: retry
-    attempts: 10
+    attempts: 3
     on: [timeout, connection_error, 429, 5xx]
-    backoff: {type: exponential, initial: 100ms, max: 1s}
+    backoff: {type: exponential, initial: 200ms, max: 5s}
+  - match: {model: standard}
+    action: timeout
+    duration: 60s
   - match: {model: standard}
     action: fallback
-    providers: [backup]
+    access_groups: [backup]
     on: [timeout, connection_error, 429, 5xx]
 ```
 

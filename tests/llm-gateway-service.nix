@@ -76,9 +76,9 @@ pkgs.testers.runNixOSTest {
         { logical = "standard"; accessGroup = "test"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
       ];
       routingRules = [
-        { model = "stupid"; action = "race"; providers = [ "primary" ]; }
+        { model = "stupid"; action = "race"; accessGroups = [ "test" ]; }
         { model = "stupid"; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
-        { model = "standard"; action = "race"; providers = [ "primary" ]; }
+        { model = "standard"; action = "race"; accessGroups = [ "test" ]; }
         { model = "standard"; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
       ];
     };

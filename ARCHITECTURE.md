@@ -160,16 +160,18 @@ Provider-конфигурация разделяет `inference_url` и опци
 `proxy.gonka.gg/v1/models`; наличие `/v1/models` на inference endpoint не требуется.
 
 Маршрут строится из плоского упорядоченного `routing_rules` pipeline. Один rule выполняет одно
-действие (`race`, `retry`, `fallback`, позднее `timeout` или `hedge`) и преобразует route,
-построенный предыдущими rules. `race` запускает target calls одновременно и возвращает первый
-успешный результат. В streaming победитель выбирается по первому meaningful content, reasoning
-или tool-call event; проигравшие вызовы отменяются через context cancellation.
+действие (`race`, `hedge`, `retry`, `timeout` или `fallback`) и преобразует route, построенный
+предыдущими rules. `race` раскрывает указанные virtual access groups во все их provider instances,
+запускает target calls одновременно и возвращает первый успешный результат. В streaming
+победитель выбирается по первому meaningful content, reasoning или tool-call event; проигравшие
+вызовы отменяются через context cancellation.
 
-В production Gonka route Proxy и OpenBroker входят в одну access group и запускаются одним
-`race`: ошибка одной ветки не завершает запрос, пока другая ветка ещё может успешно ответить.
-После исчерпания обеих веток `retry` повторяет весь race до 10 раз сверх первой попытки. Provider,
-помеченный retryable failure, временно пропускается по cooldown, пока в группе остаётся рабочая
-ветка; если охлаждаются все ветки, gateway fail-open пробует всю группу снова вместо простоя.
+В production Gonka route Proxy и OpenBroker входят в access group `gonka`, которую `race`
+раскрывает в обе параллельные ветки. `hedge` делает три retries перекрывающимися: новые полные
+race-поколения стартуют после exponential backoff 200/400/800 ms, а предыдущие остаются активны до
+появления winner. Для этой hedged-группы каждый retry повторяет полный настроенный race даже при
+cooldown отдельного provider. Без `hedge` provider с retryable failure временно пропускается, пока
+в группе остаётся рабочая ветка; если охлаждаются все ветки, gateway fail-open пробует группу снова.
 
 Executable spike [f7-01](./docs/roadmap/f7-llm-gateway/f7-01-token-proxy-spike.md) остаётся историческим
 подтверждением требуемого поведения и источником regression tests. NixOS-модуль, безопасная сборка

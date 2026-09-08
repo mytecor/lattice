@@ -15,16 +15,19 @@ func testConfig() Config {
 	cfg.Providers = []Provider{
 		{ID: "a", Name: "group", BaseProvider: "openai", InferenceURL: "https://a.invalid", Priority: 20},
 		{ID: "b", Name: "group", BaseProvider: "openai", InferenceURL: "https://b.invalid", Priority: 10},
+		{ID: "c", Name: "backup", BaseProvider: "openai", InferenceURL: "https://c.invalid", Priority: 5},
 	}
 	var mapping ModelMapping
 	mapping.Match.Provider = "group"
 	mapping.Match.ID = "native-model"
 	mapping.Override.ID = "standard"
-	cfg.Models = []ModelMapping{mapping}
+	backupMapping := mapping
+	backupMapping.Match.Provider = "backup"
+	cfg.Models = []ModelMapping{mapping, backupMapping}
 	var race RoutingRule
 	race.Match.Model = "standard"
 	race.Action = "race"
-	race.Providers = []string{"b", "a"}
+	race.AccessGroups = []string{"group"}
 	var retry RoutingRule
 	retry.Match.Model = "standard"
 	retry.Action = "retry"
@@ -34,7 +37,7 @@ func testConfig() Config {
 	var fallback RoutingRule
 	fallback.Match.Model = "standard"
 	fallback.Action = "fallback"
-	fallback.Providers = []string{"b"}
+	fallback.AccessGroups = []string{"backup"}
 	fallback.On = []string{"timeout", "5xx"}
 	fallback.FallbackStrategy = "serial"
 	cfg.RoutingRules = []RoutingRule{race, retry, fallback}
@@ -70,24 +73,40 @@ func TestCompileConfigBuildsFlatPipeline(t *testing.T) {
 	}
 }
 
-func TestCompileConfigEnablesOverlappingStreamingRetries(t *testing.T) {
+func TestCompileConfigAddsHedgeToPreviousRoute(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules[1].Overlap = true
+	var hedge RoutingRule
+	hedge.Match.Model = "standard"
+	hedge.Action = "hedge"
+	cfg.RoutingRules = append([]RoutingRule{cfg.RoutingRules[0], hedge}, cfg.RoutingRules[1:]...)
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !compiled.plans["standard"].Stages[0].RetryOverlap {
-		t.Fatal("retry overlap was not compiled into the route stage")
+	stage := compiled.plans["standard"].Stages[0]
+	if !stage.RetryHedge {
+		t.Fatalf("hedge was not compiled into the previous route: %#v", stage)
+	}
+	if stage.Retries != 2 || !stage.RetryOn[ErrorRateLimit] {
+		t.Fatalf("retry no longer composes independently with hedge: %#v", stage)
 	}
 }
 
-func TestCompileConfigRejectsProviderWithoutModelMapping(t *testing.T) {
+func TestCompileConfigRejectsAccessGroupWithoutModelMapping(t *testing.T) {
 	cfg := testConfig()
-	cfg.Providers[1].Name = "other-group"
+	cfg.RoutingRules[0].AccessGroups = []string{"other-group"}
 	_, err := compileConfig(cfg)
 	if err == nil || !strings.Contains(err.Error(), "no mapping") {
 		t.Fatalf("expected mapping error, got %v", err)
+	}
+}
+
+func TestCompileConfigRejectsAccessGroupsOnModifier(t *testing.T) {
+	cfg := testConfig()
+	cfg.RoutingRules[1].AccessGroups = []string{"group"}
+	_, err := compileConfig(cfg)
+	if err == nil || !strings.Contains(err.Error(), "must not declare access_groups") {
+		t.Fatalf("expected modifier selector error, got %v", err)
 	}
 }
 

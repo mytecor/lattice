@@ -13,7 +13,6 @@ import (
 func TestServerAuthModelsAndLogicalRewrite(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules[0].Providers = []string{"a"}
 	cfg.RoutingRules = cfg.RoutingRules[:1]
 	compiled, err := compileConfig(cfg)
 	if err != nil {
@@ -118,7 +117,6 @@ func TestUnknownModelFailsBeforeExecutor(t *testing.T) {
 func TestServerStreamsWinnerWithLogicalModel(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules[0].Providers = []string{"a"}
 	cfg.RoutingRules = cfg.RoutingRules[:1]
 	compiled, err := compileConfig(cfg)
 	if err != nil {
@@ -182,7 +180,6 @@ func TestManualRefreshDoesNotExposeGroupNames(t *testing.T) {
 func TestServerReportsFailureAfterStreamingWinner(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules[0].Providers = []string{"a"}
 	cfg.RoutingRules = cfg.RoutingRules[:1]
 	compiled, err := compileConfig(cfg)
 	if err != nil {

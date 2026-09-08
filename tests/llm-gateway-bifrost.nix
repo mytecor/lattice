@@ -35,7 +35,7 @@ let
             { logical = "standard"; accessGroup = "gonka"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
           ];
           routingRules = lib.concatMap (model: [
-            { inherit model; action = "race"; providers = [ "gonka-proxy" "gonka-openbroker" ]; }
+            { inherit model; action = "race"; accessGroups = [ "gonka" ]; }
             { inherit model; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
           ]) models;
         };

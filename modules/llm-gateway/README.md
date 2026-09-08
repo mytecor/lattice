@@ -41,8 +41,10 @@ runtime directory и подставляет credentials через `jq`; ито�
       { logical = "standard"; accessGroup = "gonka"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
     ];
     routingRules = builtins.concatMap (model: [
-      { inherit model; action = "race"; providers = [ "gonka-proxy" "gonka-openbroker" ]; }
-      { inherit model; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
+      { inherit model; action = "race"; accessGroups = [ "gonka" ]; }
+      { inherit model; action = "hedge"; }
+      { inherit model; action = "retry"; attempts = 3; on = [ "429" "5xx" "timeout" "connection_error" ]; backoffInitial = "200ms"; backoffMax = "5s"; }
+      { inherit model; action = "timeout"; duration = "60s"; }
     ]) [ "stupid" "standard" ];
   };
 }
