@@ -79,8 +79,10 @@ in
     ];
     routingRules = [
       { model = "stupid"; action = "race"; providers = [ "gonka-proxy" "gonka-openbroker" ]; }
+      { model = "stupid"; action = "timeout"; duration = "5s"; }
       { model = "stupid"; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
       { model = "standard"; action = "race"; providers = [ "gonka-proxy" "gonka-openbroker" ]; }
+      { model = "standard"; action = "timeout"; duration = "5s"; }
       { model = "standard"; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
     ];
   };

@@ -160,6 +160,12 @@ in
     assert nixpkgs.lib.all
       (rule: rule.action != "retry" || rule.attempts == 10)
       homelabConfig.lattice.llm-gateway.routingRules;
+    assert builtins.length (builtins.filter
+      (rule: rule.action == "timeout")
+      homelabConfig.lattice.llm-gateway.routingRules) == 2;
+    assert nixpkgs.lib.all
+      (rule: rule.action != "timeout" || rule.duration == "5s")
+      homelabConfig.lattice.llm-gateway.routingRules;
     assert nixpkgs.lib.hasInfix "lattice-llm-gateway"
       homelabConfig.systemd.services.llm-gateway.serviceConfig.ExecStart;
     assert builtins.hasAttr "llm-gateway-mdns" homelabConfig.systemd.services;
