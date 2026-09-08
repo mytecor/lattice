@@ -4,7 +4,7 @@
 выше, часть — быстрые фиксы:
 
 Ранее перечисленные расхождения закрыты: заглушки устранены в
-[f2-04](../tasks/f2-04-replace-dummy-secrets.md), TCP-интерфейсы профиля добавлены в
-[f3-01](../tasks/f3-01-reticulum-tcp-interfaces.md), публичные точки входа выбраны в
-[f3-02](../tasks/f3-02-define-entry-points.md), доступ после смены клиентской сети проверен в
-[f3-04](../tasks/f3-04-rnsh-nat-access.md). Актуальных расхождений, блокирующих F1–F3, нет.
+[f2-04](../f2-secrets-identity/f2-04-replace-dummy-secrets.md), TCP-интерфейсы профиля добавлены в
+[f3-01](../f3-reticulum-tcp/f3-01-reticulum-tcp-interfaces.md), публичные точки входа выбраны в
+[f3-02](../f3-reticulum-tcp/f3-02-define-entry-points.md), доступ после смены клиентской сети проверен в
+[f3-04](../f3-reticulum-tcp/f3-04-rnsh-nat-access.md). Актуальных расхождений, блокирующих F1–F3, нет.

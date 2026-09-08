@@ -21,7 +21,7 @@
 Шаблон ноды можно посмотреть в [example/](./example/README.md)
 
 Первая реальная нода проекта — `mytecor-homelab`. Её каталог `nodes/mytecor-homelab/` нужно
-создать по шаблону `example` в рамках [f1-03](../docs/roadmap/tasks/f1-03-bootstrap-intel-n100.md).
+создать по шаблону `example` в рамках [f1-03](../docs/roadmap/f1-one-node/f1-03-bootstrap-intel-n100.md).
 Имя каталога, `networking.hostName` и имя `nixosConfigurations.mytecor-homelab` должны совпадать.
 Физическая машина до миграции носит hostname `byurik`; после включения в Lattice её единственным
 именем ноды становится `mytecor-homelab`. Отдельная конфигурация `byurik` в сети не создаётся.

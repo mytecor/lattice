@@ -192,4 +192,4 @@ nix flake check --no-build
 - Provider-facing raw OpenAI body получает native model только после проверки logical model.
 
 Полный план и незавершённые шаги cutover находятся в
-[`f7-07-bifrost-go-proxy.md`](../../docs/roadmap/tasks/f7-07-bifrost-go-proxy.md).
+[`f7-07-bifrost-go-proxy.md`](../../docs/roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md).

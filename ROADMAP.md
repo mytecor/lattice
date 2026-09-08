@@ -4,10 +4,11 @@
 
 1. **План (верхнеуровневый)** — [`docs/roadmap/VISION.md`](./docs/roadmap/VISION.md): куда идём,
    вехи, без технических деталей.
-2. **Фичи** — [`docs/roadmap/features/`](./docs/roadmap/features/README.md): план по фичам F1–F11
-   и их зависимостям.
-3. **Задачи** — [`docs/roadmap/tasks/`](./docs/roadmap/tasks/README.md): отдельные файлы задач и
-   шаблон.
+2. **Фичи** — у каждой фичи свой каталог [`docs/roadmap/<feature-id>-<feature-slug>/`](./docs/roadmap/features/README.md),
+   где лежат и файл фичи, и её задачи; индекс — [`docs/roadmap/features/README.md`](./docs/roadmap/features/README.md).
+3. **Задачи** — отдельный файл на задачу внутри каталога своей фичи; реестр —
+   [`docs/roadmap/tasks/README.md`](./docs/roadmap/tasks/README.md), шаблон —
+   [`docs/roadmap/tasks/TEMPLATE.md`](./docs/roadmap/tasks/TEMPLATE.md).
 
 Открытые решения и отложенное — в [`docs/roadmap/BACKLOG.md`](./docs/roadmap/BACKLOG.md).
 

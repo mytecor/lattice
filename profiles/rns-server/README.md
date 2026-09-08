@@ -43,7 +43,7 @@ lattice.rns-server.interfaces = {
 
 Внешняя доступность сервера требует маршрута и, при необходимости, forwarding на маршрутизаторе.
 Профиль не подключает ноду к чужой публичной сети и не выбирает публичный адрес Lattice:
-это [f3-02](../../docs/roadmap/tasks/f3-02-define-entry-points.md). Для узла, который маршрутизирует
+это [f3-02](../../docs/roadmap/f3-reticulum-tcp/f3-02-define-entry-points.md). Для узла, который маршрутизирует
 Reticulum-трафик между соседями, отдельно включается `reticulum.enable_transport = true`;
 сам TCP listener не включает transport routing.
 

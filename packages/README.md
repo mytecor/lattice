@@ -51,7 +51,7 @@ exit status 17, listener не перезапускался. История пр�
 Прежний runtime-кандидат `mxyhi/token_proxy` (input `token-proxy-src`, headless CLI, два патча и
 executable spike-test) удалён из активной конфигурации после cutover на Go proxy; исторические
 находки сохранены в задачах `f7-01`/`f7-05`/`f7-06`. Подробности cutover — в
-[`docs/roadmap/tasks/f7-07-bifrost-go-proxy.md`](../docs/roadmap/tasks/f7-07-bifrost-go-proxy.md).
+[`docs/roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md`](../docs/roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md).
 
 ## pnpm CLI
 

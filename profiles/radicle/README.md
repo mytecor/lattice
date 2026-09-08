@@ -2,7 +2,7 @@
 
 Профиль включает selective seed node, HTTP gateway и идемпотентный bootstrap репозитория
 Lattice. На `mytecor-homelab` он подключён в рамках
-[f4-01](../../docs/roadmap/tasks/f4-01-radicle-seed-comin.md).
+[f4-01](../../docs/roadmap/f4-payload/f4-01-radicle-seed-comin.md).
 
 Нода, подключающая `profiles/radicle/config.nix`, обязана предоставить:
 

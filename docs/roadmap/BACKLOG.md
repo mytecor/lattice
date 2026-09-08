@@ -12,14 +12,14 @@
 - Решение №1 (модель сборки) закрыто и зафиксировано в [ARCHITECTURE.md](../../ARCHITECTURE.md).
 - Инструмент секретов выбран: `agenix`; решение зафиксировано в
   [ARCHITECTURE.md](../../ARCHITECTURE.md#секреты).
-- Модель идентичности узла закрыта в [f2-02](./tasks/f2-02-node-identity.md) и зафиксирована в
+- Модель идентичности узла закрыта в [f2-02](f2-secrets-identity/f2-02-node-identity.md) и зафиксирована в
   [ARCHITECTURE.md](../../ARCHITECTURE.md#идентичность-узла).
-- Bootstrap Radicle закрыт в [f4-01](./tasks/f4-01-radicle-seed-comin.md): начальный config
+- Bootstrap Radicle закрыт в [f4-01](f4-payload/f4-01-radicle-seed-comin.md): начальный config
   приходит из installer checkout или GitHub, затем selective seed получает публичную реплику, а
   `comin` читает локальное bare storage первым remote.
-- Решение по LLM gateway runtime закрыто: [f7-06](./tasks/f7-06-go-lip-gonka-cutover.md) сохранила
+- Решение по LLM gateway runtime закрыто: [f7-06](f7-llm-gateway/f7-06-go-lip-gonka-cutover.md) сохранила
   отрицательный результат Go LIP PoC, а целевой собственный Go proxy поверх Bifrost Go API и
-  прямой cutover закреплены в [f7-07](./tasks/f7-07-bifrost-go-proxy.md).
+  прямой cutover закреплены в [f7-07](f7-llm-gateway/f7-07-bifrost-go-proxy.md).
 
 ## Открытые решения
 
@@ -28,11 +28,11 @@
 4. **Controller storage и provisioner** — конкретные реализации выбираются в F11 после
    стабилизации task specification и ручного worker lifecycle в F10.
 
-Смысл вычислений и хранилища уточнён в [f4-03](./tasks/f4-03-shared-storage-compute.md): вычисления
+Смысл вычислений и хранилища уточнён в [f4-03](f4-payload/f4-03-shared-storage-compute.md): вычисления
 выполняются disposable workers, общей persistent FS у них нет, caches не являются source of truth,
 а S3 хранит artifacts и другие естественно объектные результаты.
 
-Точки входа Reticulum выбраны в [F3-02](./tasks/f3-02-define-entry-points.md): два публичных
+Точки входа Reticulum выбраны в [F3-02](f3-reticulum-tcp/f3-02-define-entry-points.md): два публичных
 peer, общий реестр в flake и исходящие TCP-соединения.
 
 ## Отложенное

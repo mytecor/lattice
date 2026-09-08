@@ -1,11 +1,14 @@
 # Шаблон задачи
 
-Скопируйте этот файл в `docs/roadmap/tasks/<id>-<slug>.md` и заполните. `<id>` — номер вида
-`f1-05` (фича — порядковый номер), `<slug>` — короткое имя. Пример:
-`f1-05-wireless-on-node.md`.
+Скопируйте этот файл в каталог своей фичи как
+`docs/roadmap/<feature-id>-<feature-slug>/<feature-id>-<task-id>-<task-slug>.md` и заполните.
+`<feature-id>` — номер фичи, `<feature-slug>` — слаг фичи, `<task-id>` — номер задачи,
+`<task-slug>` — слаг задачи. Каталог называется по имени файла фичи
+(`<feature-id>-<feature-slug>/`). Пример: `f1-05-wireless-on-node.md` в каталоге `../f1-one-node/`.
 
-Затем добавьте строку задачи в [`tasks/README.md`](./README.md) и ссылку на неё в
-[`features/`](../features/README.md) нужной фичи.
+Затем добавьте ссылку на задачу в файл своей фичи (`README.md` в каталоге
+`<feature-id>-<feature-slug>/`) и строку в реестр
+[`tasks/README.md`](./README.md), если он поддерживается.
 
 ---
 
