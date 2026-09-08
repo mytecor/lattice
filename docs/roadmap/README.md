@@ -47,7 +47,11 @@ catalog/scoped routing, а f7-06 отклонила Go LIP из-за обяза�
 режимы routing (retry, cooldown, fallback, priority, race, hedge, streaming, cancellation), health
 surface и structured diagnostics подтверждены Go-тестами и evaluation checks. Запускается **F8 —
 интерактивный Pi runtime**; f8-01 завершена: Pi закреплён и устанавливается через pnpm без
-пользовательской ручной установки. Следующий шаг — f8-02, декларативное подключение Pi к gateway.
+пользовательской ручной установки. В f8-02 выполнена декларативная привязка Pi к gateway:
+`lattice.pi` генерирует store JSON и материализует `~/.pi/agent/{settings,models}.json` симлинками,
+`discoverModels = false`, только логические классы `standard`/`stupid` по loopback, с NixOS-проверкой
+`tests/pi-config.nix`. Task-confirmed: client credential и интерактивная проверка streaming остаются
+за f8-02 (auth) и f8-04 (TUI).
 Основной маршрут дальше:
 Pi → cache/artifact plane → disposable worker → controller.
 Незакрытые вопросы отслеживаются в

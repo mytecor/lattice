@@ -50,7 +50,44 @@ in
   # Route the attached rnsh service's announces and links through the public peers.
   lattice.rns-server.reticulum.enable_transport = true;
 
-  lattice.pi.enable = true;
+  # Pi подключается к gateway по loopback с только логическими классами. Provider-specific
+  # discovery отключён; upstream credentials остаются внутри llm-gateway и сюда не попадают.
+  lattice.pi = {
+    enable = true;
+    user = "root";
+    settings = {
+      defaultProvider = "llm-gateway";
+      defaultModel = "standard";
+      defaultThinkingLevel = "xhigh";
+    };
+    models.llm-gateway = {
+      baseUrl = "http://127.0.0.1:9208/v1";
+      api = "openai-completions";
+      # f8-02: без client auth. Если включим clientKey позже — apiKey задаётся env-ссылкой,
+      # не литералом в store.
+      discoverModels = false;
+      models = [
+        { id = "standard"; }
+        { id = "stupid"; }
+      ];
+      modelOverrides = {
+        standard = {
+          thinkingLevelMap = {
+            off = null; minimal = null; low = null; medium = null;
+            high = null; xhigh = null; max = null;
+          };
+          compat = { supportsReasoningEffort = false; };
+        };
+        stupid = {
+          thinkingLevelMap = {
+            off = null; minimal = null; low = null; medium = null;
+            high = null; xhigh = null; max = null;
+          };
+          compat = { supportsReasoningEffort = false; };
+        };
+      };
+    };
+  };
 
   # LLM Gateway: each attempt races both Gonka endpoints. Hedge keeps prior attempts alive while
   # retry controls the number of new race generations, their error classes, and backoff.

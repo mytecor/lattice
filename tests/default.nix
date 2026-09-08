@@ -45,6 +45,11 @@ in
     gatewayProfile = "${profiles}/llm-gateway/config.nix";
   };
 
+  pi-config = import ./pi-config.nix {
+    inherit pkgs;
+    piModule = self.nixosModules.pi;
+  };
+
   comin-source-sync = import ./comin-source-sync.nix {
     inherit pkgs;
     syncPackage = pkgs.lattice.comin-source-sync;
@@ -102,6 +107,28 @@ in
     assert homelabConfig.lattice.rnsh.user == "rnsh";
     assert homelabConfig.lattice.pi.enable;
     assert builtins.elem pkgs.lattice.pi homelabConfig.environment.systemPackages;
+    # f8-02: Pi подключается к gateway только через логические классы, без
+    # provider-specific discovery и без upstream credentials в конфиге.
+    assert homelabConfig.lattice.pi.user == "root";
+    assert homelabConfig.lattice.pi.settings.defaultProvider == "llm-gateway";
+    assert homelabConfig.lattice.pi.settings.defaultModel == "standard";
+    assert homelabConfig.lattice.pi.settings.defaultThinkingLevel == "xhigh";
+    assert builtins.length (builtins.attrNames homelabConfig.lattice.pi.models) == 1;
+    assert homelabConfig.lattice.pi.models.llm-gateway.baseUrl == "http://127.0.0.1:9208/v1";
+    assert homelabConfig.lattice.pi.models.llm-gateway.api == "openai-completions";
+    assert homelabConfig.lattice.pi.models.llm-gateway.discoverModels == false;
+    assert homelabConfig.lattice.pi.models.llm-gateway.apiKey == null;
+    assert map (m: m.id) homelabConfig.lattice.pi.models.llm-gateway.models == [ "standard" "stupid" ];
+    # Активация материализует immutable JSON в store как симлинки ~/.pi/agent.
+    assert builtins.hasAttr "pi-config" homelabConfig.system.activationScripts;
+    assert nixpkgs.lib.hasInfix ".pi/agent"
+      homelabConfig.system.activationScripts.pi-config.text;
+    assert nixpkgs.lib.hasInfix "settings.json"
+      homelabConfig.system.activationScripts.pi-config.text;
+    assert nixpkgs.lib.hasInfix "models.json"
+      homelabConfig.system.activationScripts.pi-config.text;
+    assert nixpkgs.lib.hasInfix "ln -sfn"
+      homelabConfig.system.activationScripts.pi-config.text;
     assert homelabConfig.services.radicle.enable;
     assert homelabConfig.services.radicle.node.listenPort == 8776;
     assert !homelabConfig.services.radicle.node.openFirewall;
