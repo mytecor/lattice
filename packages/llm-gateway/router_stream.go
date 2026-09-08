@@ -141,8 +141,11 @@ func (r *Runner) selectOverlappingStreamStage(ctx context.Context, logical strin
 }
 
 func (r *Runner) selectStreamAttempt(ctx context.Context, logical string, stage Stage, request ExecuteRequest) (*SelectedStream, *CallError) {
-	providers := r.availableProviders(stage.Providers)
-	if len(providers) == 0 {
+	providers := []string(nil)
+	if !stage.RetryOverlap {
+		providers = r.availableProviders(stage.Providers)
+	}
+	if stage.RetryOverlap || len(providers) == 0 {
 		providers = append([]string(nil), stage.Providers...)
 	}
 	timeout, stopTimeout := streamSelectionTimer(stage.Timeout)

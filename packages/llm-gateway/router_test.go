@@ -564,6 +564,9 @@ func TestStreamingOverlappingRetryKeepsEarlierRaceUntilWinner(t *testing.T) {
 		},
 	}
 	runner := newRunner(compiled, newCatalog(compiled), executor)
+	// Overlapping retries intentionally repeat the complete configured race,
+	// even when the shared circuit breaker is cooling one of its providers.
+	runner.cooling["b"] = time.Now().Add(time.Hour)
 	result := make(chan *SelectedStream, 1)
 	resultErr := make(chan *CallError, 1)
 	go func() {
