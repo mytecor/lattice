@@ -168,6 +168,11 @@ in
           action = mkOption { type = types.enum [ "race" "retry" "fallback" "timeout" "hedge" ]; };
           providers = mkOption { type = types.listOf types.str; default = [ ]; };
           attempts = mkOption { type = types.ints.unsigned; default = 0; };
+          overlap = mkOption {
+            type = types.bool;
+            default = false;
+            description = "For streaming retries, launch the next route after backoff without cancelling active attempts.";
+          };
           on = mkOption {
             type = types.listOf (types.enum [ "timeout" "connection_error" "429" "5xx" "invalid_response" ]);
             default = [ ];

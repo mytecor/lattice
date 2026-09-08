@@ -25,7 +25,7 @@ let
 
   publicRule = rule: {
     match.model = rule.model;
-    inherit (rule) action providers attempts on;
+    inherit (rule) action providers attempts overlap on;
     backoff = {
       type = rule.backoffType;
       initial = rule.backoffInitial;

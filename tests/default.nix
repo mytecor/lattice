@@ -159,16 +159,15 @@ in
     assert homelabConfig.lattice.llm-gateway.providers.openbroker.modelsUrl == null;
     assert nixpkgs.lib.all
       (rule: rule.action != "retry" || (rule.attempts == 3
-        && rule.on == [ "429" "5xx" "connection_error" ]
-        && rule.backoffInitial == "1s"
+        && rule.overlap
+        && rule.on == [ "429" "5xx" "timeout" "connection_error" ]
+        && rule.backoffType == "constant"
+        && rule.backoffInitial == "5s"
         && rule.backoffMax == "5s"))
       homelabConfig.lattice.llm-gateway.routingRules;
-    assert builtins.length (builtins.filter
-      (rule: rule.action == "hedge")
-      homelabConfig.lattice.llm-gateway.routingRules) == 2;
     assert nixpkgs.lib.all
-      (rule: rule.action != "hedge" || (rule.after == "5s"
-        && rule.providers == [ "gonka-proxy" "gonka-openbroker" ]))
+      (rule: rule.action != "race"
+        || rule.providers == [ "gonka-proxy" "gonka-openbroker" ])
       homelabConfig.lattice.llm-gateway.routingRules;
     assert builtins.length (builtins.filter
       (rule: rule.action == "timeout")

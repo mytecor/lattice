@@ -41,14 +41,15 @@ type Target struct {
 }
 
 type Stage struct {
-	Mode       string
-	Providers  []string
-	Retries    int
-	RetryOn    map[ErrorClass]bool
-	NextOn     map[ErrorClass]bool
-	Backoff    BackoffConfig
-	Timeout    time.Duration
-	HedgeDelay time.Duration
+	Mode         string
+	Providers    []string
+	Retries      int
+	RetryOn      map[ErrorClass]bool
+	RetryOverlap bool
+	NextOn       map[ErrorClass]bool
+	Backoff      BackoffConfig
+	Timeout      time.Duration
+	HedgeDelay   time.Duration
 }
 
 type Plan struct {
@@ -86,6 +87,7 @@ func compilePlans(rules []RoutingRule, providers map[string]Provider, mappings m
 			stage := &plan.Stages[len(plan.Stages)-1]
 			stage.Retries = rule.Attempts
 			stage.RetryOn = parseErrorClasses(rule.On)
+			stage.RetryOverlap = rule.Overlap
 			if rule.Backoff != nil {
 				stage.Backoff = *rule.Backoff
 			}

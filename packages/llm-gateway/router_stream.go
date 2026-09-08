@@ -19,6 +19,12 @@ type streamResult struct {
 	err      *CallError
 }
 
+type streamAttemptResult struct {
+	attempt  int
+	selected *SelectedStream
+	err      *CallError
+}
+
 func (r *Runner) SelectStream(ctx context.Context, logical string, request ExecuteRequest) (*SelectedStream, *CallError) {
 	plan, ok := r.config.plans[logical]
 	if !ok {
@@ -39,6 +45,9 @@ func (r *Runner) SelectStream(ctx context.Context, logical string, request Execu
 }
 
 func (r *Runner) selectStreamStage(ctx context.Context, logical string, stageIndex int, stage Stage, request ExecuteRequest) (*SelectedStream, *CallError) {
+	if stage.RetryOverlap && stage.Retries > 0 {
+		return r.selectOverlappingStreamStage(ctx, logical, stageIndex, stage, request)
+	}
 	var last *CallError
 	for attempt := 0; attempt <= stage.Retries; attempt++ {
 		stageCtx := withRouteAttempt(ctx, stageIndex, attempt+1)
@@ -55,6 +64,80 @@ func (r *Runner) selectStreamStage(ctx context.Context, logical string, stageInd
 		}
 	}
 	return nil, last
+}
+
+func (r *Runner) selectOverlappingStreamStage(ctx context.Context, logical string, stageIndex int, stage Stage, request ExecuteRequest) (*SelectedStream, *CallError) {
+	totalAttempts := stage.Retries + 1
+	results := make(chan streamAttemptResult, totalAttempts)
+	cancels := make([]context.CancelFunc, totalAttempts)
+	launched := 0
+	active := 0
+
+	launch := func() {
+		attempt := launched
+		attemptCtx := withRouteAttempt(ctx, stageIndex, attempt+1)
+		attemptCtx, cancel := context.WithCancel(attemptCtx)
+		cancels[attempt] = cancel
+		launched++
+		active++
+		go func() {
+			selected, callErr := r.selectStreamAttempt(attemptCtx, logical, stage, request)
+			results <- streamAttemptResult{attempt: attempt, selected: selected, err: callErr}
+		}()
+	}
+
+	cancelAttemptsExcept := func(winner int) {
+		for attempt := 0; attempt < launched; attempt++ {
+			if attempt != winner {
+				cancels[attempt]()
+			}
+		}
+	}
+	cancelAllAttempts := func() { cancelAttemptsExcept(-1) }
+
+	launch()
+	retryTimer := time.NewTimer(backoffDuration(stage.Backoff, 0))
+	defer retryTimer.Stop()
+	retryReady := retryTimer.C
+	var last *CallError
+
+	for {
+		select {
+		case result := <-results:
+			active--
+			if result.err == nil {
+				cancelAttemptsExcept(result.attempt)
+				attemptCancel := cancels[result.attempt]
+				streamCancel := result.selected.Cancel
+				result.selected.Cancel = func() {
+					streamCancel()
+					attemptCancel()
+				}
+				return result.selected, nil
+			}
+			cancels[result.attempt]()
+			last = result.err
+			if active == 0 && (!stage.RetryOn[last.Class] || launched == totalAttempts) {
+				cancelAllAttempts()
+				return nil, last
+			}
+		case <-retryReady:
+			retryReady = nil
+			if launched < totalAttempts && (active > 0 || last == nil || stage.RetryOn[last.Class]) {
+				launch()
+				if launched < totalAttempts {
+					retryTimer.Reset(backoffDuration(stage.Backoff, launched-1))
+					retryReady = retryTimer.C
+				}
+			} else if active == 0 {
+				cancelAllAttempts()
+				return nil, last
+			}
+		case <-ctx.Done():
+			cancelAllAttempts()
+			return nil, streamSelectionContextError(ctx)
+		}
+	}
 }
 
 func (r *Runner) selectStreamAttempt(ctx context.Context, logical string, stage Stage, request ExecuteRequest) (*SelectedStream, *CallError) {

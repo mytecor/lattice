@@ -83,6 +83,7 @@ type RoutingRule struct {
 	Attempts         int            `json:"attempts,omitempty"`
 	On               []string       `json:"on,omitempty"`
 	Backoff          *BackoffConfig `json:"backoff,omitempty"`
+	Overlap          bool           `json:"overlap,omitempty"`
 	Duration         Duration       `json:"duration,omitempty"`
 	After            Duration       `json:"after,omitempty"`
 	FallbackStrategy string         `json:"fallback_strategy,omitempty"`

@@ -514,6 +514,115 @@ func TestStreamingStageTimeoutRetriesBeforeWinner(t *testing.T) {
 	}
 }
 
+func TestStreamingOverlappingRetryKeepsEarlierRaceUntilWinner(t *testing.T) {
+	cfg := testConfig()
+	cfg.RoutingRules = cfg.RoutingRules[:2]
+	cfg.RoutingRules[1].Attempts = 1
+	cfg.RoutingRules[1].Overlap = true
+	cfg.RoutingRules[1].On = []string{"429", "5xx", "timeout", "connection_error"}
+	cfg.RoutingRules[1].Backoff = &BackoffConfig{
+		Type: "constant", Initial: Duration{25 * time.Millisecond}, Max: Duration{25 * time.Millisecond},
+	}
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type startedCall struct {
+		attempt  int
+		provider string
+		at       time.Time
+	}
+	started := make(chan startedCall, 4)
+	cancelled := make(chan startedCall, 4)
+	releaseWinner := make(chan struct{})
+	executor := &fakeExecutor{
+		do: func(context.Context, Target, ExecuteRequest) ([]byte, *CallError) { return nil, nil },
+		stream: func(ctx context.Context, target Target, _ ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			attempt, _ := ctx.Value(routeAttemptKey).(int)
+			call := startedCall{attempt: attempt, provider: target.Provider, at: time.Now()}
+			started <- call
+			stream := make(chan StreamEvent, 1)
+			if attempt == 2 && target.Provider == "a" {
+				go func() {
+					select {
+					case <-releaseWinner:
+						stream <- StreamEvent{Data: []byte(`{"choices":[{"delta":{"content":"winner"}}]}`), Meaningful: true}
+						close(stream)
+					case <-ctx.Done():
+						cancelled <- call
+						close(stream)
+					}
+				}()
+				return stream, nil
+			}
+			go func() {
+				<-ctx.Done()
+				cancelled <- call
+				close(stream)
+			}()
+			return stream, nil
+		},
+	}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	result := make(chan *SelectedStream, 1)
+	resultErr := make(chan *CallError, 1)
+	go func() {
+		selected, callErr := runner.SelectStream(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+		result <- selected
+		resultErr <- callErr
+	}()
+
+	var calls []startedCall
+	for range 4 {
+		select {
+		case call := <-started:
+			calls = append(calls, call)
+		case <-time.After(time.Second):
+			t.Fatal("both race generations did not start")
+		}
+	}
+	firstStarted := calls[0].at
+	secondStarted := time.Time{}
+	attemptProviders := map[int]map[string]bool{}
+	for _, call := range calls {
+		if attemptProviders[call.attempt] == nil {
+			attemptProviders[call.attempt] = map[string]bool{}
+		}
+		attemptProviders[call.attempt][call.provider] = true
+		if call.attempt == 1 && call.at.Before(firstStarted) {
+			firstStarted = call.at
+		}
+		if call.attempt == 2 && (secondStarted.IsZero() || call.at.Before(secondStarted)) {
+			secondStarted = call.at
+		}
+	}
+	if len(attemptProviders[1]) != 2 || len(attemptProviders[2]) != 2 {
+		t.Fatalf("each attempt must race both providers: %#v", attemptProviders)
+	}
+	if secondStarted.Sub(firstStarted) < 20*time.Millisecond {
+		t.Fatalf("overlapping retry started before backoff: %s", secondStarted.Sub(firstStarted))
+	}
+	select {
+	case call := <-cancelled:
+		t.Fatalf("an earlier race was cancelled before a winner appeared: %#v", call)
+	default:
+	}
+
+	close(releaseWinner)
+	selected := <-result
+	if callErr := <-resultErr; callErr != nil {
+		t.Fatalf("overlapping retry did not produce a winner: %v", callErr)
+	}
+	defer selected.Cancel()
+	for range 3 {
+		select {
+		case <-cancelled:
+		case <-time.After(time.Second):
+			t.Fatal("losing requests were not cancelled after winner selection")
+		}
+	}
+}
+
 func TestMeaningfulPayloadRecognizesReasoningAndTools(t *testing.T) {
 	tests := []struct {
 		name  string

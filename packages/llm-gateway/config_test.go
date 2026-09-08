@@ -70,6 +70,18 @@ func TestCompileConfigBuildsFlatPipeline(t *testing.T) {
 	}
 }
 
+func TestCompileConfigEnablesOverlappingStreamingRetries(t *testing.T) {
+	cfg := testConfig()
+	cfg.RoutingRules[1].Overlap = true
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !compiled.plans["standard"].Stages[0].RetryOverlap {
+		t.Fatal("retry overlap was not compiled into the route stage")
+	}
+}
+
 func TestCompileConfigRejectsProviderWithoutModelMapping(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers[1].Name = "other-group"

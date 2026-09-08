@@ -32,7 +32,8 @@ Authorization: Bearer <client_api_key>
 преобразует route, созданный предыдущими rules:
 
 - `race` одновременно вызывает перечисленные provider instances;
-- `retry` повторяет предыдущий route для выбранных error classes;
+- `retry` повторяет предыдущий route для выбранных error classes; с `overlap: true` следующий
+  streaming attempt запускается после backoff, не отменяя ещё активные попытки;
 - `fallback` добавляет следующий serial/race/hedge stage;
 - `timeout` ограничивает предыдущий stage;
 - `hedge` запускает дополнительные providers с задержкой `after`.
@@ -44,6 +45,10 @@ Authorization: Bearer <client_api_key>
 В streaming победитель выбирается только по первому meaningful content, reasoning или tool-call
 event. Пустые role/metadata chunks не выигрывают. Prelude выбранной ветки буферизуется и затем
 отдаётся клиенту в исходном порядке; проигравшие streams отменяются.
+
+Для overlapping streaming retry каждый attempt заново запускает весь предыдущий route. Например,
+повтор `race` снова стартует все его providers параллельно. Backoff задаёт интервал между стартами,
+а первый meaningful event среди всех поколений выбирает победителя и отменяет остальные.
 
 `attempts` означает число повторов после первоначального запуска. Поэтому, например,
 `attempts: 10` даёт максимум 11 race-волн. Error classes и backoff также задаются rule.
