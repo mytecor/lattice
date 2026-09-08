@@ -158,13 +158,23 @@ in
       == "https://api.openbroker.gonka.gg";
     assert homelabConfig.lattice.llm-gateway.providers.openbroker.modelsUrl == null;
     assert nixpkgs.lib.all
-      (rule: rule.action != "retry" || rule.attempts == 10)
+      (rule: rule.action != "retry" || (rule.attempts == 3
+        && rule.on == [ "429" "5xx" "connection_error" ]
+        && rule.backoffInitial == "1s"
+        && rule.backoffMax == "5s"))
+      homelabConfig.lattice.llm-gateway.routingRules;
+    assert builtins.length (builtins.filter
+      (rule: rule.action == "hedge")
+      homelabConfig.lattice.llm-gateway.routingRules) == 2;
+    assert nixpkgs.lib.all
+      (rule: rule.action != "hedge" || (rule.after == "5s"
+        && rule.providers == [ "gonka-proxy" "gonka-openbroker" ]))
       homelabConfig.lattice.llm-gateway.routingRules;
     assert builtins.length (builtins.filter
       (rule: rule.action == "timeout")
       homelabConfig.lattice.llm-gateway.routingRules) == 2;
     assert nixpkgs.lib.all
-      (rule: rule.action != "timeout" || rule.duration == "5s")
+      (rule: rule.action != "timeout" || rule.duration == "60s")
       homelabConfig.lattice.llm-gateway.routingRules;
     assert nixpkgs.lib.hasInfix "lattice-llm-gateway"
       homelabConfig.systemd.services.llm-gateway.serviceConfig.ExecStart;

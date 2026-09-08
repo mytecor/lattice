@@ -248,6 +248,72 @@ func TestHedgeDelaysSecondProvider(t *testing.T) {
 	}
 }
 
+func TestStreamingHedgeKeepsPrimaryUntilSecondaryWins(t *testing.T) {
+	cfg := testConfig()
+	cfg.RoutingRules = cfg.RoutingRules[:1]
+	cfg.RoutingRules[0].Action = "hedge"
+	cfg.RoutingRules[0].After = Duration{25 * time.Millisecond}
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	primaryStarted := make(chan time.Time, 1)
+	secondaryStarted := make(chan time.Time, 1)
+	releaseSecondary := make(chan struct{})
+	primaryCancelled := make(chan struct{})
+	executor := &fakeExecutor{
+		do: func(context.Context, Target, ExecuteRequest) ([]byte, *CallError) { return nil, nil },
+		stream: func(ctx context.Context, target Target, _ ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			stream := make(chan StreamEvent, 1)
+			if target.Provider == "a" {
+				primaryStarted <- time.Now()
+				go func() {
+					<-ctx.Done()
+					close(primaryCancelled)
+					close(stream)
+				}()
+				return stream, nil
+			}
+			secondaryStarted <- time.Now()
+			go func() {
+				<-releaseSecondary
+				stream <- StreamEvent{Data: []byte(`{"choices":[{"delta":{"content":"winner"}}]}`), Meaningful: true}
+				close(stream)
+			}()
+			return stream, nil
+		},
+	}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	result := make(chan *SelectedStream, 1)
+	resultErr := make(chan *CallError, 1)
+	go func() {
+		selected, callErr := runner.SelectStream(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+		result <- selected
+		resultErr <- callErr
+	}()
+	primaryAt := <-primaryStarted
+	secondaryAt := <-secondaryStarted
+	if secondaryAt.Sub(primaryAt) < 20*time.Millisecond {
+		t.Fatalf("streaming hedge launched too early: %s", secondaryAt.Sub(primaryAt))
+	}
+	select {
+	case <-primaryCancelled:
+		t.Fatal("primary stream was cancelled before the hedge produced a winner")
+	default:
+	}
+	close(releaseSecondary)
+	selected := <-result
+	if callErr := <-resultErr; callErr != nil {
+		t.Fatalf("streaming hedge failed: %v", callErr)
+	}
+	defer selected.Cancel()
+	select {
+	case <-primaryCancelled:
+	case <-time.After(time.Second):
+		t.Fatal("primary stream was not cancelled after the hedge won")
+	}
+}
+
 func TestStageTimeoutIsClassified(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]

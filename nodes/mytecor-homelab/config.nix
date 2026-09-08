@@ -52,7 +52,8 @@ in
 
   lattice.pi.enable = true;
 
-  # LLM Gateway: Lattice-owned Go proxy races both Gonka inference endpoints.
+  # LLM Gateway: Lattice-owned Go proxy keeps the primary Gonka request alive and starts the
+  # second endpoint after a soft TTFT deadline. Only the first meaningful response wins.
   # Proxy owns discovery for the shared group; OpenBroker has no /v1/models.
   lattice.llm-gateway = {
     # Debug logs contain routing metadata and sanitized upstream errors, never prompts or keys.
@@ -78,12 +79,12 @@ in
       { logical = "standard"; accessGroup = "gonka"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
     ];
     routingRules = [
-      { model = "stupid"; action = "race"; providers = [ "gonka-proxy" "gonka-openbroker" ]; }
-      { model = "stupid"; action = "timeout"; duration = "5s"; }
-      { model = "stupid"; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
-      { model = "standard"; action = "race"; providers = [ "gonka-proxy" "gonka-openbroker" ]; }
-      { model = "standard"; action = "timeout"; duration = "5s"; }
-      { model = "standard"; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
+      { model = "stupid"; action = "hedge"; providers = [ "gonka-proxy" "gonka-openbroker" ]; after = "5s"; }
+      { model = "stupid"; action = "timeout"; duration = "60s"; }
+      { model = "stupid"; action = "retry"; attempts = 3; on = [ "429" "5xx" "connection_error" ]; backoffInitial = "1s"; backoffMax = "5s"; }
+      { model = "standard"; action = "hedge"; providers = [ "gonka-proxy" "gonka-openbroker" ]; after = "5s"; }
+      { model = "standard"; action = "timeout"; duration = "60s"; }
+      { model = "standard"; action = "retry"; attempts = 3; on = [ "429" "5xx" "connection_error" ]; backoffInitial = "1s"; backoffMax = "5s"; }
     ];
   };
 
