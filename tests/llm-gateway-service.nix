@@ -76,10 +76,34 @@ pkgs.testers.runNixOSTest {
         { logical = "standard"; accessGroup = "test"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
       ];
       routingRules = [
-        { model = "stupid"; action = "race"; accessGroups = [ "test" ]; }
-        { model = "stupid"; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
-        { model = "standard"; action = "race"; accessGroups = [ "test" ]; }
-        { model = "standard"; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
+        {
+          model = "stupid";
+          action = "pool";
+          accessGroups = [ "test" ];
+        }
+        { model = "stupid"; action = "rank"; strategy = "priority"; }
+        { model = "stupid"; action = "race"; count = 2; }
+        {
+          model = "stupid";
+          action = "semaphore";
+          maxCalls = 4;
+          maxInFlight = 3;
+          maxCallsPerProvider = 1;
+        }
+        {
+          model = "standard";
+          action = "pool";
+          accessGroups = [ "test" ];
+        }
+        { model = "standard"; action = "rank"; strategy = "priority"; }
+        { model = "standard"; action = "race"; count = 2; }
+        {
+          model = "standard";
+          action = "semaphore";
+          maxCalls = 4;
+          maxInFlight = 3;
+          maxCallsPerProvider = 1;
+        }
       ];
     };
 

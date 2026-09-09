@@ -7,13 +7,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestServerAuthModelsAndLogicalRewrite(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules = cfg.RoutingRules[:1]
+	cfg.RoutingRules = cfg.RoutingRules[:3]
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -117,7 +119,7 @@ func TestUnknownModelFailsBeforeExecutor(t *testing.T) {
 func TestServerStreamsWinnerWithLogicalModel(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules = cfg.RoutingRules[:1]
+	cfg.RoutingRules = cfg.RoutingRules[:3]
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +184,7 @@ func TestManualRefreshDoesNotExposeGroupNames(t *testing.T) {
 func TestServerReportsFailureAfterStreamingWinner(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules = cfg.RoutingRules[:1]
+	cfg.RoutingRules = cfg.RoutingRules[:3]
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -209,5 +211,184 @@ func TestServerReportsFailureAfterStreamingWinner(t *testing.T) {
 	text := string(body)
 	if !strings.Contains(text, `"content":"start"`) || !strings.Contains(text, "event: error") || strings.Contains(text, "native-model") {
 		t.Fatalf("started stream failure handling mismatch: %s", text)
+	}
+}
+
+func affinityServerConfig(t *testing.T) *compiledConfig {
+	t.Helper()
+	cfg := testConfig()
+	cfg.Providers = cfg.Providers[:1]
+	cfg.RoutingRules = []RoutingRule{
+		poolRule("standard", "group"),
+		rankRule("standard"),
+		rule("affinity", "standard", func(r *RoutingRule) {
+			r.Sources = []string{"responses.conversation", "responses.previous_response_id"}
+			r.TTL = Duration{time.Hour}
+			r.OnMissing = "ignore"
+			r.OnProviderFailure = "fail-closed"
+		}),
+		raceRule("standard", 1),
+	}
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return compiled
+}
+
+func TestServerBindsResponseAffinityNonStreaming(t *testing.T) {
+	compiled := affinityServerConfig(t)
+	executor := &fakeExecutor{
+		do: func(_ context.Context, _ Target, _ ExecuteRequest) ([]byte, *CallError) {
+			return []byte(`{"id":"resp_1","object":"response","conversation":{"id":"conv_1"}}`), nil
+		},
+		stream: func(context.Context, Target, ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			return nil, &CallError{Class: ErrorInvalid, Status: 500}
+		},
+	}
+	catalog := newCatalog(compiled)
+	runner := newRunner(compiled, catalog, executor)
+	server := httptest.NewServer(newServer(compiled, catalog, runner))
+	defer server.Close()
+	response, err := http.Post(server.URL+"/v1/responses", "application/json", strings.NewReader(`{"model":"standard","input":"hi"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected status %d", response.StatusCode)
+	}
+	if provider, ok := runner.affinity.Lookup("resp_1"); !ok || provider != "a" {
+		t.Fatalf("response id was not bound to the winner: %q %v", provider, ok)
+	}
+	if provider, ok := runner.affinity.Lookup("conv_1"); !ok || provider != "a" {
+		t.Fatalf("conversation id was not bound to the winner: %q %v", provider, ok)
+	}
+}
+
+func TestServerBindsResponseAffinityStreaming(t *testing.T) {
+	compiled := affinityServerConfig(t)
+	executor := &fakeExecutor{
+		do: func(context.Context, Target, ExecuteRequest) ([]byte, *CallError) { return nil, nil },
+		stream: func(context.Context, Target, ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			stream := make(chan StreamEvent, 3)
+			stream <- StreamEvent{
+				Event: "response.created",
+				Data:  []byte(`{"type":"response.created","response":{"id":"resp_s1","conversation":{"id":"conv_s1"}}}`),
+			}
+			stream <- StreamEvent{
+				Event:      "response.output_text.delta",
+				Data:       []byte(`{"type":"response.output_text.delta","delta":"hi"}`),
+				Meaningful: true,
+			}
+			close(stream)
+			return stream, nil
+		},
+	}
+	catalog := newCatalog(compiled)
+	runner := newRunner(compiled, catalog, executor)
+	server := httptest.NewServer(newServer(compiled, catalog, runner))
+	defer server.Close()
+	response, err := http.Post(server.URL+"/v1/responses", "application/json", strings.NewReader(`{"model":"standard","stream":true,"input":"hi"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected stream status %d: %s", response.StatusCode, body)
+	}
+	if provider, ok := runner.affinity.Lookup("resp_s1"); !ok || provider != "a" {
+		t.Fatalf("streaming response id was not bound to the winner: %q %v", provider, ok)
+	}
+	if provider, ok := runner.affinity.Lookup("conv_s1"); !ok || provider != "a" {
+		t.Fatalf("streaming conversation id was not bound to the winner: %q %v", provider, ok)
+	}
+}
+
+func TestServerResponsesAffinityPinsSecondRequest(t *testing.T) {
+	compiled := affinityServerConfig(t)
+	// The behavior switch is atomic because cancelled branch goroutines may
+	// still be draining after the first request.
+	var failAll atomic.Bool
+	executor := &fakeExecutor{
+		do: func(_ context.Context, _ Target, _ ExecuteRequest) ([]byte, *CallError) {
+			if failAll.Load() {
+				return nil, &CallError{Class: ErrorUpstream, Status: 503}
+			}
+			return []byte(`{"id":"resp_1","object":"response"}`), nil
+		},
+		stream: func(context.Context, Target, ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			return nil, &CallError{Class: ErrorInvalid, Status: 500}
+		},
+	}
+	catalog := newCatalog(compiled)
+	runner := newRunner(compiled, catalog, executor)
+	server := httptest.NewServer(newServer(compiled, catalog, runner))
+	defer server.Close()
+	// First request binds resp_1 -> a.
+	response, err := http.Post(server.URL+"/v1/responses", "application/json", strings.NewReader(`{"model":"standard","input":"hi"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(response.Body)
+	response.Body.Close()
+	// Second request with previous_response_id=resp_1 must be pinned to a even
+	// though the executor would otherwise fail for the single pool member.
+	failAll.Store(true)
+	response, err = http.Post(server.URL+"/v1/responses", "application/json", strings.NewReader(`{"model":"standard","previous_response_id":"resp_1","input":"hi"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(response.Body)
+	response.Body.Close()
+	// The pinned provider failed: the route must fail closed (no other target),
+	// propagating the pinned provider's error.
+	if response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("known affinity route must fail closed, got %d", response.StatusCode)
+	}
+}
+
+func TestServerResponsesAffinityConversationPinsSecondRequest(t *testing.T) {
+	compiled := affinityServerConfig(t)
+	// The behavior switch is atomic because cancelled branch goroutines may
+	// still be draining after the first request.
+	var failAll atomic.Bool
+	executor := &fakeExecutor{
+		do: func(_ context.Context, _ Target, _ ExecuteRequest) ([]byte, *CallError) {
+			if failAll.Load() {
+				return nil, &CallError{Class: ErrorUpstream, Status: 503}
+			}
+			return []byte(`{"id":"resp_1","object":"response","conversation":{"id":"conv_1"}}`), nil
+		},
+		stream: func(context.Context, Target, ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			return nil, &CallError{Class: ErrorInvalid, Status: 500}
+		},
+	}
+	catalog := newCatalog(compiled)
+	runner := newRunner(compiled, catalog, executor)
+	server := httptest.NewServer(newServer(compiled, catalog, runner))
+	defer server.Close()
+	// First request binds conv_1 -> a.
+	response, err := http.Post(server.URL+"/v1/responses", "application/json", strings.NewReader(`{"model":"standard","input":"hi"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(response.Body)
+	response.Body.Close()
+	// Second request carrying the conversation identifier must be pinned to a
+	// even though the executor would otherwise fail for the single pool member.
+	failAll.Store(true)
+	response, err = http.Post(server.URL+"/v1/responses", "application/json", strings.NewReader(`{"model":"standard","conversation":{"id":"conv_1"},"input":"hi"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(response.Body)
+	response.Body.Close()
+	// The pinned provider failed: the route must fail closed (no other target),
+	// propagating the pinned provider's error.
+	if response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("known conversation affinity must fail closed, got %d", response.StatusCode)
 	}
 }

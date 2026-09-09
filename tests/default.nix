@@ -194,30 +194,76 @@ in
       == "https://api.proxy.gonka.gg/v1";
     assert homelabConfig.lattice.llm-gateway.providers.gonka-api.inferenceUrl
       == "https://hskyauefqcgbvgvxkluj.supabase.co/functions/v1/gonka";
+    # f7-09: target bounded pipeline and priorities for both logical models.
+    assert homelabConfig.lattice.llm-gateway.providers.hyperfusion.priority == 100;
+    assert homelabConfig.lattice.llm-gateway.providers.gonka-proxy.priority == 50;
+    assert homelabConfig.lattice.llm-gateway.providers.gonka-openbroker.priority == 40;
+    assert homelabConfig.lattice.llm-gateway.providers.gonka-api.priority == 30;
+    assert homelabConfig.lattice.llm-gateway.providers.dahl.priority == 20;
+    assert homelabConfig.lattice.llm-gateway.providers.gonkarouter.priority == 10;
     assert builtins.length (builtins.filter
-      (rule: rule.action == "hedge")
+      (rule: rule.action == "pool")
       homelabConfig.lattice.llm-gateway.routingRules) == 2;
     assert nixpkgs.lib.all
-      (rule: rule.action != "hedge" || (rule.attempts == 0
-        && rule.accessGroups == [ ]
-        && rule.on == [ ]
-        && rule.after == null))
+      (rule: rule.action != "pool" || rule.accessGroups == [ "gonka" ])
+      homelabConfig.lattice.llm-gateway.routingRules;
+    assert builtins.length (builtins.filter
+      (rule: rule.action == "rank")
+      homelabConfig.lattice.llm-gateway.routingRules) == 2;
+    assert nixpkgs.lib.all
+      (rule: rule.action != "rank" || rule.strategy == "priority")
+      homelabConfig.lattice.llm-gateway.routingRules;
+    assert builtins.length (builtins.filter
+      (rule: rule.action == "lease")
+      homelabConfig.lattice.llm-gateway.routingRules) == 2;
+    assert nixpkgs.lib.all
+      (rule: rule.action != "lease" || (rule.source == "winner"
+        && rule.duration == "10m"
+        && rule.renewOnSuccess
+        && rule.releaseOn == [ "429" "5xx" "timeout" "connection_error" ]
+        && rule.releaseAfterSlowStarts == 3
+        && rule.slowStart == "3s"))
+      homelabConfig.lattice.llm-gateway.routingRules;
+    assert builtins.length (builtins.filter
+      (rule: rule.action == "affinity")
+      homelabConfig.lattice.llm-gateway.routingRules) == 2;
+    assert nixpkgs.lib.all
+      (rule: rule.action != "affinity" || (rule.sources
+        == [ "responses.conversation" "responses.previous_response_id" ]
+        && rule.ttl == "24h"
+        && rule.onMissing == "ignore"
+        && rule.onProviderFailure == "fail-closed"))
+      homelabConfig.lattice.llm-gateway.routingRules;
+    assert builtins.length (builtins.filter
+      (rule: rule.action == "race")
+      homelabConfig.lattice.llm-gateway.routingRules) == 2;
+    assert nixpkgs.lib.all
+      (rule: rule.action != "race" || (rule.count == 2 && rule.accessGroups == [ ]))
       homelabConfig.lattice.llm-gateway.routingRules;
     assert builtins.length (builtins.filter
       (rule: rule.action == "retry")
       homelabConfig.lattice.llm-gateway.routingRules) == 2;
     assert nixpkgs.lib.all
-      (rule: rule.action != "retry" || (rule.attempts == 3
-        && rule.on == [ "429" "5xx" "timeout" "connection_error" ]
+      (rule: rule.action != "retry" || (rule.scope == "next"
+        && rule.count == 1
+        && rule.attempts == 2
+        && rule.on == [ "429" "5xx" "timeout" "connection_error" "invalid_response" ]
         && rule.backoffInitial == "200ms"
-        && rule.backoffMax == "5s"))
+        && rule.backoffMax == "1s"))
       homelabConfig.lattice.llm-gateway.routingRules;
+    assert builtins.length (builtins.filter
+      (rule: rule.action == "hedge")
+      homelabConfig.lattice.llm-gateway.routingRules) == 2;
     assert nixpkgs.lib.all
-      (rule: rule.action != "race"
-        || rule.accessGroups == [ "gonka" ])
+      (rule: rule.action != "hedge" || rule.after == "3s")
       homelabConfig.lattice.llm-gateway.routingRules;
+    assert builtins.length (builtins.filter
+      (rule: rule.action == "semaphore")
+      homelabConfig.lattice.llm-gateway.routingRules) == 2;
     assert nixpkgs.lib.all
-      (rule: builtins.elem rule.action [ "race" "fallback" ] || rule.accessGroups == [ ])
+      (rule: rule.action != "semaphore" || (rule.maxCalls == 4
+        && rule.maxInFlight == 3
+        && rule.maxCallsPerProvider == 1))
       homelabConfig.lattice.llm-gateway.routingRules;
     assert builtins.length (builtins.filter
       (rule: rule.action == "timeout")
@@ -225,8 +271,14 @@ in
     assert nixpkgs.lib.all
       (rule: rule.action != "timeout" || rule.duration == "60s")
       homelabConfig.lattice.llm-gateway.routingRules;
+    # The migrated homelab config uses no legacy access_groups outside pool.
+    assert nixpkgs.lib.all
+      (rule: rule.action == "pool" || rule.accessGroups == [ ])
+      homelabConfig.lattice.llm-gateway.routingRules;
     assert nixpkgs.lib.hasInfix "lattice-llm-gateway"
       homelabConfig.systemd.services.llm-gateway.serviceConfig.ExecStart;
+    assert homelabConfig.systemd.services.llm-gateway.serviceConfig.RuntimeDirectoryPreserve
+      == "restart";
     assert builtins.hasAttr "llm-gateway-mdns" homelabConfig.systemd.services;
     assert nixpkgs.lib.hasInfix "llm-gateway.mytecor-homelab.local"
       homelabConfig.systemd.services.llm-gateway-mdns.script;

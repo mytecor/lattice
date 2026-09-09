@@ -52,6 +52,7 @@ func run(arguments []string) error {
 	}
 	defer executor.Close()
 	runner := newRunner(compiled, catalog, executor)
+	defer runner.Close()
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", compiled.raw.Host, compiled.raw.Port),
 		Handler:           newServer(compiled, catalog, runner),

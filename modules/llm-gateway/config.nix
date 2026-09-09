@@ -23,31 +23,85 @@ let
     override.id = model.logical;
   };
 
-  publicRule = rule: {
-    match.model = rule.model;
-    inherit (rule) action attempts on;
-    access_groups = rule.accessGroups;
-    backoff = {
-      type = rule.backoffType;
-      initial = rule.backoffInitial;
-      max = rule.backoffMax;
-    };
-    inherit (rule) duration after;
-    fallback_strategy = rule.fallbackStrategy;
-  };
+  # Emits exactly the fields a routing action owns. This keeps the generated
+  # public JSON clean (no spurious defaulted fields) and mirrors the gateway's
+  # per-action field validation.
+  publicRule = rule:
+    let
+      base = {
+        match.model = rule.model;
+        action = rule.action;
+      };
+      byAction = {
+        pool = { access_groups = rule.accessGroups; };
+        rank = { strategy = rule.strategy; };
+        lease = {
+          source = rule.source;
+          duration = rule.duration;
+          renew_on_success = rule.renewOnSuccess;
+          release_on = rule.releaseOn;
+          release_after_slow_starts = rule.releaseAfterSlowStarts;
+          slow_start = rule.slowStart;
+        };
+        affinity = {
+          sources = rule.sources;
+          ttl = rule.ttl;
+          on_missing = rule.onMissing;
+          on_provider_failure = rule.onProviderFailure;
+        };
+        race = {
+          count = rule.count;
+        } // lib.optionalAttrs (rule.accessGroups != []) {
+          # Legacy shorthand { action = "race"; access_groups = [...]; } is
+          # normalized by the gateway into pool → rank → race(all). Only emit
+          # the field when it carries groups: an empty access_groups (the
+          # default when pool already declares the groups) is rejected by the
+          # gateway's race validation, which accepts the field only on the
+          # legacy path.
+          access_groups = rule.accessGroups;
+        };
+        retry = {
+          scope = rule.scope;
+          count = rule.count;
+          attempts = rule.attempts;
+          on = rule.on;
+          backoff = {
+            type = rule.backoffType;
+            initial = rule.backoffInitial;
+            max = rule.backoffMax;
+          };
+        };
+        hedge = { after = rule.after; };
+        semaphore = {
+          max_calls = rule.maxCalls;
+          max_in_flight = rule.maxInFlight;
+          max_calls_per_provider = rule.maxCallsPerProvider;
+        };
+        timeout = { duration = rule.duration; };
+        # Legacy terminal fallback.
+        fallback = {
+          access_groups = rule.accessGroups;
+          on = rule.on;
+          fallback_strategy = rule.fallbackStrategy;
+        };
+      };
+    in
+    base // byAction.${rule.action};
+
+  dataDir = "/run/${cfg.runtimeDirectory}";
 
   publicConfig = {
     inherit (cfg) host port;
     log_level = cfg.logLevel;
     client_api_key = null;
     catalog_refresh_interval = cfg.catalogRefreshInterval;
+    affinity_file = if (cfg.affinityFile != null) then cfg.affinityFile else "${dataDir}/affinity.json";
     providers = lib.mapAttrsToList publicProvider activeProviders;
     models = map publicModel cfg.models;
     routing_rules = map publicRule cfg.routingRules;
   };
 
   publicConfigFile = pkgs.writeText "llm-gateway-public-config.json" (builtins.toJSON publicConfig);
-  dataDir = "/run/${cfg.runtimeDirectory}";
   runtimeConfigFile = "${dataDir}/config.json";
 
   sanitizeName = name: lib.replaceStrings [ "." "_" ] [ "-" "-" ] name;
@@ -174,6 +228,7 @@ in
         Group = cfg.group;
         RuntimeDirectory = cfg.runtimeDirectory;
         RuntimeDirectoryMode = "0700";
+        RuntimeDirectoryPreserve = "restart";
         WorkingDirectory = dataDir;
         LoadCredential = loadCredentials;
         ExecStart = "${lib.getExe cfg.package} --config ${runtimeConfigFile} serve";

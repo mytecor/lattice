@@ -139,7 +139,7 @@ func TestCatalogFetchesDerivedProviderPaths(t *testing.T) {
 			cfg.Providers[0].InferenceURL = server.URL + test.basePath
 			cfg.Providers[0].APIKey = "provider-key"
 			cfg.Models = cfg.Models[:1]
-			cfg.RoutingRules = cfg.RoutingRules[:2]
+			cfg.RoutingRules = cfg.RoutingRules[:3]
 			compiled, err := compileConfig(cfg)
 			if err != nil {
 				t.Fatal(err)

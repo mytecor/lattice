@@ -163,19 +163,37 @@ Provider-конфигурация разделяет `inference_url` и опци
 gateway добавляет только операцию (`/chat/completions`), не вставляя `/v1` автоматически, так что
 provider может хостить API под произвольным маршрутизированным префиксом.
 
-Маршрут строится из плоского упорядоченного `routing_rules` pipeline. Один rule выполняет одно
-действие (`race`, `hedge`, `retry`, `timeout` или `fallback`) и преобразует route, построенный
-предыдущими rules. `race` раскрывает указанные virtual access groups во все их provider instances,
-запускает target calls одновременно и возвращает первый успешный результат. В streaming
-победитель выбирается по первому meaningful content, reasoning или tool-call event; проигравшие
-вызовы отменяются через context cancellation.
+Маршрут строится из плоского упорядоченного `routing_rules` pipeline. Каждый rule выполняет одно
+action с одной ответственностью, а compiled route отделён от внешних rules: кандидатный pool,
+ranking, dispatch batches, retry/hedge schedule, semaphore limits, lease и affinity state
+компилируются в отдельную структуру. Канонический порядок actions:
+`pool → rank → lease → affinity → race → retry → hedge → semaphore → timeout`.
 
-В production все настроенные Gonka providers входят в access group `gonka`, которую `race`
-раскрывает в параллельные ветки. `hedge` делает три retries перекрывающимися: новые полные
-race-поколения стартуют после exponential backoff 200/400/800 ms, а предыдущие остаются активны до
-появления winner. Для этой hedged-группы каждый retry повторяет полный настроенный race даже при
-cooldown отдельного provider. Без `hedge` provider с retryable failure временно пропускается, пока
-в группе остаётся рабочая ветка; если охлаждаются все ветки, gateway fail-open пробует группу снова.
+`pool` собирает candidate pool из access groups (элемент — готовая target-пара provider instance и
+resolved native model), `rank` сортирует его по priority. `lease` поднимает текущего победителя в
+начало ranking, продлевается успешным ответом и освобождается по настроенным hard failures либо
+после последовательных превышений meaningful TTFT. `affinity` закрепляет stateful Responses chain
+(по `conversation` / `previous_response_id`) за вернувшим её provider и fail-closed при его отказе;
+Chat affinity никогда не получает. `race` запускает только top-`count` unused targets; `retry`
+`scope = "next"` берёт следующие unused targets и не повторяет provider; `hedge` разрешает
+следующему retry batch начаться до завершения текущих branches; `semaphore` ограничивает
+суммарные/одновременные/на-провайдера upstream calls во всём request, включая fallback;
+`timeout` ограничивает primary, backoff и fallback одним абсолютным deadline. Retry следующей
+wave разрешён, только когда все ошибки завершившейся active wave входят в `retry.on`; итоговый
+класс ошибки выбирается детерминированно. В
+streaming победитель выбирается по первому meaningful content, reasoning или tool-call event;
+отменённые losers не влияют на cooldown и lease. После winner, client cancellation, timeout или
+исчерпания semaphore budget новые upstream calls не стартуют.
+
+В production все настроенные Gonka providers входят в access group `gonka`, ранжируются по
+priority (hyperfusion 100, gonka-proxy 50, gonka-openbroker 40, gonka-api 30, dahl 20, gonkarouter
+10), а race/retry/hedge потребляют топ-2 и по одному следующему unused target при целевом
+semaphore `max_calls = 4`, `max_in_flight = 3`, `max_calls_per_provider = 1` — один запрос никогда
+не создаёт больше четырёх upstream calls, больше трёх concurrent calls или повторный call к
+одному provider. Provider с retryable failure получает cooldown и временно пропускается; если
+охлаждаются все ветки, gateway fail-open пробует группу снова. Старые `race accessGroups` и
+`retry` без `scope` нормализуются в legacy-совместимые формы; parameterless `hedge` отклоняется
+с точной migration error.
 
 Executable spike [f7-01](./docs/roadmap/f7-llm-gateway/f7-01-token-proxy-spike.md) остаётся историческим
 подтверждением требуемого поведения и источником regression tests. NixOS-модуль, безопасная сборка

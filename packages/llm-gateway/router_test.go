@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -24,10 +26,16 @@ func (f *fakeExecutor) Stream(ctx context.Context, target Target, request Execut
 
 func (*fakeExecutor) Close() error { return nil }
 
+type callResult struct {
+	provider string
+	body     []byte
+	err      *CallError
+}
+
 func raceOnlyConfig(t *testing.T) *compiledConfig {
 	t.Helper()
 	cfg := testConfig()
-	cfg.RoutingRules = cfg.RoutingRules[:1]
+	cfg.RoutingRules = cfg.RoutingRules[:3]
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -35,20 +43,59 @@ func raceOnlyConfig(t *testing.T) *compiledConfig {
 	return compiled
 }
 
-func TestRaceStartsAllProvidersAndFirstSuccessWins(t *testing.T) {
-	compiled := raceOnlyConfig(t)
-	catalog := newCatalog(compiled)
-	started := make(chan string, 2)
+// rulesConfig returns a compiled config whose pool contains n providers of the
+// "group" access group, ranked by descending priority (a first).
+func rulesConfig(t *testing.T, n int, rules []RoutingRule) *compiledConfig {
+	t.Helper()
+	cfg := testConfig()
+	providers := make([]Provider, 0, n)
+	for i := 0; i < n; i++ {
+		letter := rune('a' + i)
+		providers = append(providers, Provider{
+			ID:           string(letter),
+			Name:         "group",
+			BaseProvider: "openai",
+			InferenceURL: fmt.Sprintf("https://%c.invalid", letter),
+			Priority:     100 - i,
+		})
+	}
+	cfg.Providers = providers
+	cfg.Models = cfg.Models[:1]
+	cfg.RoutingRules = rules
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return compiled
+}
+
+func successBody(winner string) []byte {
+	return []byte(`{"winner":"` + winner + `"}`)
+}
+
+// ---------------------------------------------------------------------------
+// race bounds and first-success semantics
+// ---------------------------------------------------------------------------
+
+func TestBoundedRaceStartsExactlyTopCount(t *testing.T) {
+	compiled := rulesConfig(t, 3, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+	})
+	started := make(chan string, 3)
 	release := make(chan struct{})
 	executor := &fakeExecutor{do: func(ctx context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
 		started <- target.Provider
-		<-release
-		if target.Provider == "a" {
-			return nil, &CallError{Class: ErrorUpstream, Status: 503}
+		select {
+		case <-release:
+			if target.Provider == "a" {
+				return nil, &CallError{Class: ErrorUpstream, Status: 503}
+			}
+			return successBody(target.Provider), nil
+		case <-ctx.Done():
+			return nil, &CallError{Class: ErrorCancelled, Status: 499, Cause: ctx.Err()}
 		}
-		return []byte(`{"model":"native-model","winner":"b"}`), nil
 	}}
-	runner := newRunner(compiled, catalog, executor)
+	runner := newRunner(compiled, newCatalog(compiled), executor)
 	result := make(chan callResult, 1)
 	go func() {
 		body, err := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
@@ -61,11 +108,56 @@ func TestRaceStartsAllProvidersAndFirstSuccessWins(t *testing.T) {
 		case provider := <-started:
 			seen[provider] = true
 		case <-time.After(time.Second):
-			t.Fatal("providers did not start concurrently")
+			t.Fatal("top-count providers did not start")
 		}
 	}
 	if !seen["a"] || !seen["b"] {
-		t.Fatalf("not all providers started: %#v", seen)
+		t.Fatalf("race must start the top-2 targets, got %#v", seen)
+	}
+	select {
+	case provider := <-started:
+		t.Fatalf("race launched a target outside the top-count batch: %s", provider)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	got := <-result
+	if got.err != nil {
+		t.Fatalf("race failed: %v", got.err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(got.body, &payload); err != nil || payload["winner"] != "b" {
+		t.Fatalf("unexpected winner: %s, %v", got.body, err)
+	}
+}
+
+func TestBoundedRaceFirstErrorDoesNotFinishRequest(t *testing.T) {
+	compiled := raceOnlyConfig(t)
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	executor := &fakeExecutor{do: func(ctx context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		started <- target.Provider
+		select {
+		case <-release:
+			if target.Provider == "a" {
+				return nil, &CallError{Class: ErrorUpstream, Status: 503}
+			}
+			return successBody("b"), nil
+		case <-ctx.Done():
+			return nil, &CallError{Class: ErrorCancelled, Status: 499, Cause: ctx.Err()}
+		}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	result := make(chan callResult, 1)
+	go func() {
+		body, err := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+		result <- callResult{body: body, err: err}
+	}()
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("providers did not start concurrently")
+		}
 	}
 	close(release)
 	got := <-result
@@ -78,7 +170,7 @@ func TestRaceStartsAllProvidersAndFirstSuccessWins(t *testing.T) {
 	}
 }
 
-func TestRaceCancelsLoser(t *testing.T) {
+func TestBoundedRaceCancelsLosers(t *testing.T) {
 	compiled := raceOnlyConfig(t)
 	started := make(chan string, 2)
 	releaseWinner := make(chan struct{})
@@ -88,7 +180,7 @@ func TestRaceCancelsLoser(t *testing.T) {
 		started <- target.Provider
 		if target.Provider == "a" {
 			<-releaseWinner
-			return []byte(`{"winner":"a"}`), nil
+			return successBody("a"), nil
 		}
 		<-ctx.Done()
 		once.Do(func() { close(loserCancelled) })
@@ -117,6 +209,344 @@ func TestRaceCancelsLoser(t *testing.T) {
 		t.Fatal("loser was not cancelled")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// retry scope
+// ---------------------------------------------------------------------------
+
+func TestRetryNextUsesOnlyUnusedTargetsWithinBudget(t *testing.T) {
+	compiled := rulesConfig(t, 3, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		retryNextRule("standard", 1, 2),
+	})
+	var mu sync.Mutex
+	calls := map[string]int{}
+	order := []string{}
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		mu.Lock()
+		calls[target.Provider]++
+		order = append(order, target.Provider)
+		mu.Unlock()
+		if target.Provider == "c" {
+			return successBody("c"), nil
+		}
+		return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.sleep = func(context.Context, time.Duration) error { return nil }
+	body, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr != nil {
+		t.Fatalf("retry next did not recover: %v", callErr)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(order) != 3 {
+		t.Fatalf("expected one initial batch plus one next target, got %d calls: %#v", len(order), order)
+	}
+	for provider, count := range calls {
+		if count > 1 {
+			t.Fatalf("scope=next reused provider %q %d times", provider, count)
+		}
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil || payload["winner"] != "c" {
+		t.Fatalf("next target did not win: %s", body)
+	}
+}
+
+func TestRetrySameRepeatsOriginalSelection(t *testing.T) {
+	cfg := testConfig()
+	cfg.RoutingRules = []RoutingRule{
+		poolRule("standard", "group"),
+		rankRule("standard"),
+		raceRule("standard", 2),
+		rule("retry", "standard", func(r *RoutingRule) {
+			// Legacy: no scope => "same".
+			r.Attempts = 1
+			r.On = []string{"429", "5xx"}
+			r.Backoff = &BackoffConfig{Initial: Duration{time.Millisecond}, Max: Duration{time.Millisecond}}
+		}),
+	}
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan string, 4)
+	release := make(chan struct{})
+	var attempt atomic.Int32
+	executor := &fakeExecutor{do: func(ctx context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		started <- target.Provider
+		if attempt.Add(1) <= 2 {
+			return nil, &CallError{Class: ErrorUpstream, Status: 503} // initial batch fails
+		}
+		select {
+		case <-release:
+			return successBody(target.Provider), nil
+		case <-ctx.Done():
+			return nil, &CallError{Class: ErrorCancelled, Status: 499, Cause: ctx.Err()}
+		}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.sleep = func(context.Context, time.Duration) error { return nil }
+	result := make(chan *CallError, 1)
+	go func() {
+		_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+		result <- callErr
+	}()
+	// The whole selection must be retried with the same providers.
+	seen := map[string]int{}
+	for total := 0; total < 4; {
+		select {
+		case provider := <-started:
+			seen[provider]++
+			total++
+		case <-time.After(time.Second):
+			t.Fatalf("scope=same did not repeat the selection: %#v", seen)
+		}
+	}
+	seenTotal := seen["a"] + seen["b"]
+	if seenTotal != 4 || seen["a"] < 2 || seen["b"] < 2 {
+		t.Fatalf("scope=same must repeat the whole selection: %#v", seen)
+	}
+	close(release)
+	if callErr := <-result; callErr != nil {
+		t.Fatalf("scope=same did not recover: %v", callErr)
+	}
+}
+
+func TestRetryNextPoolExhaustionReturnsLastError(t *testing.T) {
+	compiled := rulesConfig(t, 2, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		retryNextRule("standard", 1, 5), // more batches than remaining targets
+	})
+	var mu sync.Mutex
+	calls := map[string]int{}
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		mu.Lock()
+		calls[target.Provider]++
+		mu.Unlock()
+		return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.sleep = func(context.Context, time.Duration) error { return nil }
+	_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr == nil || callErr.Class != ErrorRateLimit {
+		t.Fatalf("expected rate limit after pool exhaustion, got %v", callErr)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if calls["a"]+calls["b"] != 2 {
+		t.Fatalf("pool exhaustion must not repeat used providers: %#v", calls)
+	}
+}
+
+func TestRouteTimeoutInterruptsRetryBackoff(t *testing.T) {
+	compiled := rulesConfig(t, 2, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 1),
+		rule("retry", "standard", func(r *RoutingRule) {
+			r.Scope = "next"
+			r.Count = 1
+			r.Attempts = 1
+			r.On = []string{"429"}
+			r.Backoff = &BackoffConfig{
+				Type: "constant", Initial: Duration{200 * time.Millisecond}, Max: Duration{200 * time.Millisecond},
+			}
+		}),
+		rule("timeout", "standard", func(r *RoutingRule) { r.Duration = Duration{30 * time.Millisecond} }),
+	})
+	var calls atomic.Int32
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		calls.Add(1)
+		if target.Provider == "b" {
+			return successBody("b"), nil
+		}
+		return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	started := time.Now()
+	_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr == nil || callErr.Class != ErrorTimeout {
+		t.Fatalf("route timeout during backoff was not preserved: %#v", callErr)
+	}
+	if elapsed := time.Since(started); elapsed >= 150*time.Millisecond {
+		t.Fatalf("route timeout waited for full retry backoff: %s", elapsed)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("new upstream call started after route timeout: %d", calls.Load())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// hedge
+// ---------------------------------------------------------------------------
+
+func TestHedgeStartsOnlyNextBatchAfterDelay(t *testing.T) {
+	compiled := rulesConfig(t, 3, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		retryNextRule("standard", 1, 2),
+		rule("hedge", "standard", func(r *RoutingRule) { r.After = Duration{40 * time.Millisecond} }),
+	})
+	started := make(chan string, 4)
+	release := make(chan struct{})
+	executor := &fakeExecutor{do: func(ctx context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		started <- target.Provider
+		select {
+		case <-release:
+			if target.Provider == "c" {
+				return successBody("c"), nil
+			}
+			return nil, &CallError{Class: ErrorUpstream, Status: 503}
+		case <-ctx.Done():
+			return nil, &CallError{Class: ErrorCancelled, Status: 499, Cause: ctx.Err()}
+		}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	done := make(chan *CallError, 1)
+	go func() {
+		_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+		done <- callErr
+	}()
+	startTimes := make([]time.Time, 0, 3)
+	for len(startTimes) < 2 {
+		select {
+		case <-started:
+			startTimes = append(startTimes, time.Now())
+		case <-time.After(time.Second):
+			t.Fatalf("initial race did not start")
+		}
+	}
+	// The next batch (one unused target) must start after the hedge delay while
+	// the first two branches are still running.
+	select {
+	case <-started:
+		startTimes = append(startTimes, time.Now())
+	case <-time.After(time.Second):
+		t.Fatalf("hedged next batch never started")
+	}
+	if elapsed := startTimes[2].Sub(startTimes[1]); elapsed < 25*time.Millisecond {
+		t.Fatalf("next batch started before the hedge delay: %s", elapsed)
+	}
+	// Hedge must not clone the pool: only one additional target appears.
+	select {
+	case provider := <-started:
+		t.Fatalf("hedge started more than one unused target: %s", provider)
+	case <-time.After(80 * time.Millisecond):
+	}
+	close(release)
+	if callErr := <-done; callErr != nil {
+		t.Fatalf("hedged route failed: %v", callErr)
+	}
+}
+
+func TestHedgeNewWaveDespiteCooledProvider(t *testing.T) {
+	// A whole-batch retryable failure continues the route before the hedge
+	// timer, and the next hedge wave uses only unused targets.
+	compiled := rulesConfig(t, 3, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 1),
+		retryNextRule("standard", 1, 2),
+		rule("hedge", "standard", func(r *RoutingRule) { r.After = Duration{50 * time.Millisecond} }),
+	})
+	started := make(chan string, 4)
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		started <- target.Provider
+		if target.Provider == "b" {
+			return successBody("b"), nil
+		}
+		return nil, &CallError{Class: ErrorUpstream, Status: 503}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.sleep = func(context.Context, time.Duration) error { return nil }
+	done := make(chan *CallError, 1)
+	go func() {
+		_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+		done <- callErr
+	}()
+	first := <-started
+	if first != "a" {
+		t.Fatalf("initial race must pick the top target, got %q", first)
+	}
+	second := <-started
+	if second != "b" {
+		t.Fatalf("next batch must use the next unused target, got %q", second)
+	}
+	if callErr := <-done; callErr != nil {
+		t.Fatalf("route failed: %v", callErr)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// semaphore bounds
+// ---------------------------------------------------------------------------
+
+func TestSemaphoreMaxCallsBoundsTotalCalls(t *testing.T) {
+	compiled := rulesConfig(t, 4, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		retryNextRule("standard", 1, 6),
+		rule("semaphore", "standard", func(r *RoutingRule) {
+			r.MaxCalls = 3
+			r.MaxInFlight = 3
+			r.MaxCallsPerProvider = 1
+		}),
+	})
+	var mu sync.Mutex
+	calls := 0
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.sleep = func(context.Context, time.Duration) error { return nil }
+	_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr == nil {
+		t.Fatal("expected failure")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 3 {
+		t.Fatalf("semaphore max_calls bound violated: %d calls", calls)
+	}
+}
+
+func TestSemaphoreMaxCallsPerProviderEvenForScopeSame(t *testing.T) {
+	compiled := rulesConfig(t, 2, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		rule("retry", "standard", func(r *RoutingRule) {
+			r.Scope = "same"
+			r.Attempts = 3
+			r.On = []string{"429", "5xx"}
+		}),
+		rule("semaphore", "standard", func(r *RoutingRule) {
+			r.MaxCalls = 4
+			r.MaxInFlight = 4
+			r.MaxCallsPerProvider = 1
+		}),
+	})
+	var mu sync.Mutex
+	calls := map[string]int{}
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		mu.Lock()
+		calls[target.Provider]++
+		mu.Unlock()
+		return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.sleep = func(context.Context, time.Duration) error { return nil }
+	_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr == nil {
+		t.Fatal("expected failure")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if calls["a"] > 1 || calls["b"] > 1 {
+		t.Fatalf("max_calls_per_provider bound violated: %#v", calls)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// streaming
+// ---------------------------------------------------------------------------
 
 func TestStreamingWinnerRequiresMeaningfulEvent(t *testing.T) {
 	compiled := raceOnlyConfig(t)
@@ -148,6 +578,9 @@ func TestStreamingWinnerRequiresMeaningfulEvent(t *testing.T) {
 	if len(selected.Buffered) != 2 || !selected.Buffered[1].Meaningful {
 		t.Fatalf("winner buffer does not preserve prelude and meaningful event: %#v", selected.Buffered)
 	}
+	if selected.Provider != "b" {
+		t.Fatalf("winner provider not reported: %q", selected.Provider)
+	}
 	select {
 	case <-cancelled:
 	case <-time.After(time.Second):
@@ -155,124 +588,39 @@ func TestStreamingWinnerRequiresMeaningfulEvent(t *testing.T) {
 	}
 }
 
-func TestRetryWrapsPreviousRace(t *testing.T) {
-	cfg := testConfig()
-	cfg.RoutingRules = cfg.RoutingRules[:2]
-	cfg.RoutingRules[1].Attempts = 1
-	compiled, err := compileConfig(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var mu sync.Mutex
-	calls := map[string]int{}
-	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
-		mu.Lock()
-		calls[target.Provider]++
-		attempt := calls[target.Provider]
-		mu.Unlock()
-		if attempt == 1 {
-			return nil, &CallError{Class: ErrorUpstream, Status: 503}
-		}
-		return []byte(`{"ok":true}`), nil
-	}}
-	runner := newRunner(compiled, newCatalog(compiled), executor)
-	runner.sleep = func(context.Context, time.Duration) error { return nil }
-	if _, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat}); callErr != nil {
-		t.Fatalf("retry did not recover: %v", callErr)
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	if calls["a"]+calls["b"] < 3 {
-		t.Fatalf("race was not retried: %#v", calls)
-	}
-}
-
-func TestFallbackRunsOnlyAfterMatchingFailure(t *testing.T) {
-	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{cfg.RoutingRules[0], cfg.RoutingRules[2]}
-	compiled, err := compileConfig(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	order := make(chan string, 3)
-	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
-		order <- target.Provider
-		if target.Provider != "c" {
-			return nil, &CallError{Class: ErrorUpstream, Status: 503}
-		}
-		return []byte(`{"winner":"c"}`), nil
-	}}
-	runner := newRunner(compiled, newCatalog(compiled), executor)
-	if _, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat}); callErr != nil {
-		t.Fatalf("fallback failed: %v", callErr)
-	}
-	first, second, third := <-order, <-order, <-order
-	if third != "c" || !((first == "a" && second == "b") || (first == "b" && second == "a")) {
-		t.Fatalf("unexpected fallback order: %q, %q, %q", first, second, third)
-	}
-}
-
-func TestStageTimeoutIsClassified(t *testing.T) {
-	cfg := testConfig()
-	cfg.Providers = cfg.Providers[:1]
-	var timeout RoutingRule
-	timeout.Match.Model = "standard"
-	timeout.Action = "timeout"
-	timeout.Duration = Duration{10 * time.Millisecond}
-	cfg.RoutingRules = []RoutingRule{cfg.RoutingRules[0], timeout}
-	compiled, err := compileConfig(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	executor := &fakeExecutor{do: func(ctx context.Context, _ Target, _ ExecuteRequest) ([]byte, *CallError) {
-		<-ctx.Done()
-		return nil, &CallError{Class: ErrorCancelled, Status: 499, Cause: ctx.Err()}
-	}}
-	runner := newRunner(compiled, newCatalog(compiled), executor)
-	_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
-	if callErr == nil || callErr.Class != ErrorTimeout || callErr.Status != 504 {
-		t.Fatalf("timeout classification mismatch: %#v", callErr)
-	}
-}
-
-func TestCooldownSkipsRecentlyFailedProvider(t *testing.T) {
+func TestStreamingRaceIgnoresErrorBeforeWinner(t *testing.T) {
 	compiled := raceOnlyConfig(t)
-	var mu sync.Mutex
-	calls := map[string]int{}
-	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
-		mu.Lock()
-		calls[target.Provider]++
-		mu.Unlock()
-		if target.Provider == "a" {
-			return nil, &CallError{Class: ErrorUpstream, Status: 503}
-		}
-		time.Sleep(15 * time.Millisecond)
-		return []byte(`{"winner":"b"}`), nil
-	}}
+	executor := &fakeExecutor{
+		do: func(context.Context, Target, ExecuteRequest) ([]byte, *CallError) { return nil, nil },
+		stream: func(_ context.Context, target Target, _ ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			stream := make(chan StreamEvent, 1)
+			if target.Provider == "a" {
+				stream <- StreamEvent{Err: &CallError{Class: ErrorUpstream, Status: 503}}
+				close(stream)
+				return stream, nil
+			}
+			go func() {
+				time.Sleep(10 * time.Millisecond)
+				stream <- StreamEvent{Data: []byte(`{"choices":[{"delta":{"content":"winner"}}]}`), Meaningful: true}
+				close(stream)
+			}()
+			return stream, nil
+		},
+	}
 	runner := newRunner(compiled, newCatalog(compiled), executor)
-	if _, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat}); callErr != nil {
-		t.Fatal(callErr)
+	selected, callErr := runner.SelectStream(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr != nil {
+		t.Fatalf("first stream error incorrectly won: %v", callErr)
 	}
-	mu.Lock()
-	firstA := calls["a"]
-	mu.Unlock()
-	if firstA != 1 {
-		t.Fatalf("failed provider was not observed before winner: %#v", calls)
-	}
-	if _, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat}); callErr != nil {
-		t.Fatal(callErr)
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	if calls["a"] != firstA || calls["b"] != 2 {
-		t.Fatalf("cooldown did not skip failed provider: %#v", calls)
+	defer selected.Cancel()
+	if len(selected.Buffered) != 1 || !strings.Contains(string(selected.Buffered[0].Data), "winner") {
+		t.Fatalf("unexpected selected stream: %#v", selected.Buffered)
 	}
 }
 
 func TestSelectedStreamHonorsClientCancellation(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules = cfg.RoutingRules[:1]
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -306,14 +654,15 @@ func TestSelectedStreamHonorsClientCancellation(t *testing.T) {
 	}
 }
 
-func TestStreamingStageTimeoutStopsAfterWinnerSelection(t *testing.T) {
+func TestStreamingRouteTimeoutKeepsWinnerStreamAlive(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	var timeout RoutingRule
-	timeout.Match.Model = "standard"
-	timeout.Action = "timeout"
-	timeout.Duration = Duration{50 * time.Millisecond}
-	cfg.RoutingRules = []RoutingRule{cfg.RoutingRules[0], timeout}
+	cfg.RoutingRules = []RoutingRule{
+		poolRule("standard", "group"),
+		rankRule("standard"),
+		raceRule("standard", 1),
+		rule("timeout", "standard", func(r *RoutingRule) { r.Duration = Duration{30 * time.Millisecond} }),
+	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -328,7 +677,7 @@ func TestStreamingStageTimeoutStopsAfterWinnerSelection(t *testing.T) {
 				select {
 				case <-ctx.Done():
 					return
-				case <-time.After(75 * time.Millisecond):
+				case <-time.After(60 * time.Millisecond):
 					stream <- StreamEvent{Data: []byte(`{"choices":[{"delta":{},"finish_reason":"stop"}]}`)}
 				}
 			}()
@@ -344,182 +693,266 @@ func TestStreamingStageTimeoutStopsAfterWinnerSelection(t *testing.T) {
 	select {
 	case event, open := <-selected.Remaining:
 		if !open || !strings.Contains(string(event.Data), `"finish_reason":"stop"`) {
-			t.Fatalf("selected stream ended at the first-token deadline: %#v", event)
+			t.Fatalf("winner stream was cut by the route timeout: %#v", event)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("selected stream did not finish")
 	}
 }
 
-func TestStreamingStageTimeoutRetriesBeforeWinner(t *testing.T) {
+func TestNonStreamingRouteTimeoutClassified(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	var timeout RoutingRule
-	timeout.Match.Model = "standard"
-	timeout.Action = "timeout"
-	timeout.Duration = Duration{20 * time.Millisecond}
-	retry := cfg.RoutingRules[1]
-	retry.Attempts = 1
-	retry.On = []string{"timeout"}
-	cfg.RoutingRules = []RoutingRule{cfg.RoutingRules[0], timeout, retry}
+	cfg.RoutingRules = []RoutingRule{
+		poolRule("standard", "group"),
+		rankRule("standard"),
+		raceRule("standard", 1),
+		rule("timeout", "standard", func(r *RoutingRule) { r.Duration = Duration{20 * time.Millisecond} }),
+	}
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := &fakeExecutor{do: func(ctx context.Context, _ Target, _ ExecuteRequest) ([]byte, *CallError) {
+		<-ctx.Done()
+		return nil, &CallError{Class: ErrorCancelled, Status: 499, Cause: ctx.Err()}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr == nil || callErr.Class != ErrorTimeout || callErr.Status != 504 {
+		t.Fatalf("route timeout classification mismatch: %#v", callErr)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// cooldown, fallback, meaningful payload
+// ---------------------------------------------------------------------------
+
+func TestCooldownSkipsRecentlyFailedProvider(t *testing.T) {
+	compiled := raceOnlyConfig(t)
+	var mu sync.Mutex
+	calls := map[string]int{}
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		mu.Lock()
+		calls[target.Provider]++
+		mu.Unlock()
+		if target.Provider == "a" {
+			return nil, &CallError{Class: ErrorUpstream, Status: 503}
+		}
+		time.Sleep(15 * time.Millisecond)
+		return successBody("b"), nil
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	if _, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat}); callErr != nil {
+		t.Fatal(callErr)
+	}
+	mu.Lock()
+	firstA := calls["a"]
+	mu.Unlock()
+	if firstA != 1 {
+		t.Fatalf("failed provider was not observed before winner: %#v", calls)
+	}
+	if _, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat}); callErr != nil {
+		t.Fatal(callErr)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if calls["a"] != firstA || calls["b"] != 2 {
+		t.Fatalf("cooldown did not skip failed provider: %#v", calls)
+	}
+}
+
+func TestFallbackRunsOnlyAfterMatchingFailure(t *testing.T) {
+	cfg := testConfig()
+	cfg.RoutingRules = []RoutingRule{cfg.RoutingRules[0], cfg.RoutingRules[1], cfg.RoutingRules[2], cfg.RoutingRules[4]}
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	order := make(chan string, 3)
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		order <- target.Provider
+		if target.Provider != "c" {
+			return nil, &CallError{Class: ErrorUpstream, Status: 503}
+		}
+		return successBody("c"), nil
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	if _, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat}); callErr != nil {
+		t.Fatalf("fallback failed: %v", callErr)
+	}
+	first, second, third := <-order, <-order, <-order
+	if third != "c" || !((first == "a" && second == "b") || (first == "b" && second == "a")) {
+		t.Fatalf("unexpected fallback order: %q, %q, %q", first, second, third)
+	}
+}
+
+func TestFallbackSharesPrimarySemaphoreBudget(t *testing.T) {
+	cfg := testConfig()
+	cfg.RoutingRules = []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		rule("semaphore", "standard", func(r *RoutingRule) {
+			r.MaxCalls = 2
+			r.MaxInFlight = 2
+			r.MaxCallsPerProvider = 1
+		}),
+		rule("fallback", "standard", func(r *RoutingRule) {
+			r.AccessGroups = []string{"backup"}
+			r.On = []string{"5xx"}
+			r.FallbackStrategy = "serial"
+		}),
+	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var mu sync.Mutex
-	calls := 0
-	var routeAttempts []int
-	executor := &fakeExecutor{
-		do: func(context.Context, Target, ExecuteRequest) ([]byte, *CallError) { return nil, nil },
-		stream: func(ctx context.Context, _ Target, _ ExecuteRequest) (<-chan StreamEvent, *CallError) {
-			mu.Lock()
-			calls++
-			attempt := calls
-			routeAttempt, _ := ctx.Value(routeAttemptKey).(int)
-			routeAttempts = append(routeAttempts, routeAttempt)
-			mu.Unlock()
-			stream := make(chan StreamEvent, 1)
-			if attempt == 1 {
-				go func() {
-					<-ctx.Done()
-					close(stream)
-				}()
-				return stream, nil
-			}
-			stream <- StreamEvent{Data: []byte(`{"choices":[{"delta":{"content":"winner"}}]}`), Meaningful: true}
-			close(stream)
-			return stream, nil
-		},
-	}
+	calls := map[string]int{}
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		mu.Lock()
+		calls[target.Provider]++
+		mu.Unlock()
+		if target.Provider == "c" {
+			return successBody("c"), nil
+		}
+		return nil, &CallError{Class: ErrorUpstream, Status: 503}
+	}}
 	runner := newRunner(compiled, newCatalog(compiled), executor)
-	runner.sleep = func(context.Context, time.Duration) error { return nil }
-	selected, callErr := runner.SelectStream(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
-	if callErr != nil {
-		t.Fatalf("retry did not recover from first-token timeout: %v", callErr)
+	if _, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat}); callErr == nil {
+		t.Fatal("fallback bypassed exhausted request-wide call budget")
 	}
-	defer selected.Cancel()
 	mu.Lock()
 	defer mu.Unlock()
-	if calls != 2 {
-		t.Fatalf("expected one timed-out attempt and one retry, got %d calls", calls)
-	}
-	if len(routeAttempts) != 2 || routeAttempts[0] != 1 || routeAttempts[1] != 2 {
-		t.Fatalf("routing attempt context was not preserved: %#v", routeAttempts)
+	if calls["a"] != 1 || calls["b"] != 1 || calls["c"] != 0 {
+		t.Fatalf("fallback did not share primary semaphore counters: %#v", calls)
 	}
 }
 
-func TestStreamingHedgeMakesRetriesOverlapUntilWinner(t *testing.T) {
+func TestRouteTimeoutBoundsSerialFallback(t *testing.T) {
 	cfg := testConfig()
-	var hedge RoutingRule
-	hedge.Match.Model = "standard"
-	hedge.Action = "hedge"
-	retry := cfg.RoutingRules[1]
-	retry.Attempts = 1
-	retry.On = []string{"429", "5xx", "timeout", "connection_error"}
-	retry.Backoff = &BackoffConfig{
-		Type: "constant", Initial: Duration{25 * time.Millisecond}, Max: Duration{25 * time.Millisecond},
+	cfg.RoutingRules = []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		rule("timeout", "standard", func(r *RoutingRule) { r.Duration = Duration{40 * time.Millisecond} }),
+		rule("fallback", "standard", func(r *RoutingRule) {
+			r.AccessGroups = []string{"backup"}
+			r.On = []string{"5xx"}
+			r.FallbackStrategy = "serial"
+		}),
 	}
-	cfg.RoutingRules = []RoutingRule{cfg.RoutingRules[0], hedge, retry}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	type startedCall struct {
-		attempt  int
-		provider string
-		at       time.Time
+	fallbackCancelled := make(chan struct{})
+	executor := &fakeExecutor{do: func(ctx context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		if target.Provider != "c" {
+			return nil, &CallError{Class: ErrorUpstream, Status: 503}
+		}
+		<-ctx.Done()
+		close(fallbackCancelled)
+		return nil, &CallError{Class: ErrorCancelled, Status: 499, Cause: ctx.Err()}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	started := time.Now()
+	_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr == nil || callErr.Class != ErrorTimeout {
+		t.Fatalf("serial fallback escaped route timeout: %#v", callErr)
 	}
-	started := make(chan startedCall, 4)
-	cancelled := make(chan startedCall, 4)
-	releaseWinner := make(chan struct{})
+	if elapsed := time.Since(started); elapsed >= 150*time.Millisecond {
+		t.Fatalf("serial fallback exceeded route timeout: %s", elapsed)
+	}
+	select {
+	case <-fallbackCancelled:
+	case <-time.After(time.Second):
+		t.Fatal("route timeout did not cancel serial fallback upstream")
+	}
+}
+
+func TestFailedBatchAggregationIsIndependentOfCompletionOrder(t *testing.T) {
+	for _, notFoundLast := range []bool{false, true} {
+		name := "not-found-first"
+		if notFoundLast {
+			name = "not-found-last"
+		}
+		t.Run(name, func(t *testing.T) {
+			compiled := rulesConfig(t, 3, []RoutingRule{
+				poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+				retryNextRule("standard", 1, 1),
+			})
+			var calls atomic.Int32
+			executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+				calls.Add(1)
+				switch target.Provider {
+				case "a":
+					if notFoundLast {
+						time.Sleep(20 * time.Millisecond)
+					}
+					return nil, &CallError{Class: ErrorNotFound, Status: 404}
+				case "b":
+					if !notFoundLast {
+						time.Sleep(20 * time.Millisecond)
+					}
+					return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+				default:
+					return successBody(target.Provider), nil
+				}
+			}}
+			runner := newRunner(compiled, newCatalog(compiled), executor)
+			_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+			if callErr == nil || callErr.Class != ErrorNotFound {
+				t.Fatalf("mixed batch produced timing-dependent error: %#v", callErr)
+			}
+			if calls.Load() != 2 {
+				t.Fatalf("retry started despite a non-retryable batch failure: %d calls", calls.Load())
+			}
+		})
+	}
+}
+
+func TestSerialStreamingFallbackReturnsCancellationHandle(t *testing.T) {
+	cfg := testConfig()
+	cfg.RoutingRules = []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		rule("fallback", "standard", func(r *RoutingRule) {
+			r.AccessGroups = []string{"backup"}
+			r.On = []string{"5xx"}
+			r.FallbackStrategy = "serial"
+		}),
+	}
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstreamCancelled := make(chan struct{})
 	executor := &fakeExecutor{
 		do: func(context.Context, Target, ExecuteRequest) ([]byte, *CallError) { return nil, nil },
 		stream: func(ctx context.Context, target Target, _ ExecuteRequest) (<-chan StreamEvent, *CallError) {
-			attempt, _ := ctx.Value(routeAttemptKey).(int)
-			call := startedCall{attempt: attempt, provider: target.Provider, at: time.Now()}
-			started <- call
-			stream := make(chan StreamEvent, 1)
-			if attempt == 2 && target.Provider == "a" {
-				go func() {
-					select {
-					case <-releaseWinner:
-						stream <- StreamEvent{Data: []byte(`{"choices":[{"delta":{"content":"winner"}}]}`), Meaningful: true}
-						close(stream)
-					case <-ctx.Done():
-						cancelled <- call
-						close(stream)
-					}
-				}()
-				return stream, nil
+			if target.Provider != "c" {
+				return nil, &CallError{Class: ErrorUpstream, Status: 503}
 			}
+			stream := make(chan StreamEvent, 1)
+			stream <- StreamEvent{Data: []byte(`{"choices":[{"delta":{"content":"fallback"}}]}`), Meaningful: true}
 			go func() {
 				<-ctx.Done()
-				cancelled <- call
+				close(upstreamCancelled)
 				close(stream)
 			}()
 			return stream, nil
 		},
 	}
 	runner := newRunner(compiled, newCatalog(compiled), executor)
-	// Hedges intentionally repeat the complete configured race,
-	// even when the shared circuit breaker is cooling one of its providers.
-	runner.cooling["b"] = time.Now().Add(time.Hour)
-	result := make(chan *SelectedStream, 1)
-	resultErr := make(chan *CallError, 1)
-	go func() {
-		selected, callErr := runner.SelectStream(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
-		result <- selected
-		resultErr <- callErr
-	}()
-
-	var calls []startedCall
-	for range 4 {
-		select {
-		case call := <-started:
-			calls = append(calls, call)
-		case <-time.After(time.Second):
-			t.Fatal("both race generations did not start")
-		}
+	selected, callErr := runner.SelectStream(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr != nil {
+		t.Fatalf("serial streaming fallback failed: %v", callErr)
 	}
-	firstStarted := calls[0].at
-	secondStarted := time.Time{}
-	attemptProviders := map[int]map[string]bool{}
-	for _, call := range calls {
-		if attemptProviders[call.attempt] == nil {
-			attemptProviders[call.attempt] = map[string]bool{}
-		}
-		attemptProviders[call.attempt][call.provider] = true
-		if call.attempt == 1 && call.at.Before(firstStarted) {
-			firstStarted = call.at
-		}
-		if call.attempt == 2 && (secondStarted.IsZero() || call.at.Before(secondStarted)) {
-			secondStarted = call.at
-		}
+	if selected.Cancel == nil || selected.Provider != "c" {
+		t.Fatalf("fallback winner has no usable cancellation handle: %#v", selected)
 	}
-	if len(attemptProviders[1]) != 2 || len(attemptProviders[2]) != 2 {
-		t.Fatalf("each attempt must race both providers: %#v", attemptProviders)
-	}
-	if secondStarted.Sub(firstStarted) < 20*time.Millisecond {
-		t.Fatalf("hedged race started before its delay: %s", secondStarted.Sub(firstStarted))
-	}
+	selected.Cancel()
 	select {
-	case call := <-cancelled:
-		t.Fatalf("an earlier race was cancelled before a winner appeared: %#v", call)
-	default:
-	}
-
-	close(releaseWinner)
-	selected := <-result
-	if callErr := <-resultErr; callErr != nil {
-		t.Fatalf("hedged race did not produce a winner: %v", callErr)
-	}
-	defer selected.Cancel()
-	for range 3 {
-		select {
-		case <-cancelled:
-		case <-time.After(time.Second):
-			t.Fatal("losing requests were not cancelled after winner selection")
-		}
+	case <-upstreamCancelled:
+	case <-time.After(time.Second):
+		t.Fatal("fallback cancellation did not reach the selected upstream")
 	}
 }
 
@@ -543,32 +976,617 @@ func TestMeaningfulPayloadRecognizesReasoningAndTools(t *testing.T) {
 	}
 }
 
-func TestStreamingRaceIgnoresErrorBeforeWinner(t *testing.T) {
-	compiled := raceOnlyConfig(t)
-	executor := &fakeExecutor{
-		do: func(context.Context, Target, ExecuteRequest) ([]byte, *CallError) { return nil, nil },
-		stream: func(_ context.Context, target Target, _ ExecuteRequest) (<-chan StreamEvent, *CallError) {
-			stream := make(chan StreamEvent, 1)
-			if target.Provider == "a" {
-				stream <- StreamEvent{Err: &CallError{Class: ErrorUpstream, Status: 503}}
-				close(stream)
-				return stream, nil
-			}
-			go func() {
-				time.Sleep(10 * time.Millisecond)
-				stream <- StreamEvent{Data: []byte(`{"choices":[{"delta":{"content":"winner"}}]}`), Meaningful: true}
-				close(stream)
-			}()
-			return stream, nil
-		},
-	}
+// ---------------------------------------------------------------------------
+// lease
+// ---------------------------------------------------------------------------
+
+func TestLeasePromotesHolderToFront(t *testing.T) {
+	compiled := rulesConfig(t, 3, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"),
+		rule("lease", "standard", func(r *RoutingRule) {
+			r.Source = "winner"
+			r.Duration = Duration{time.Minute}
+			r.RenewOnSuccess = boolPtr(true)
+			r.ReleaseOn = []string{"429", "5xx", "timeout", "connection_error"}
+		}),
+		raceRule("standard", 1),
+	})
+	var mu sync.Mutex
+	called := []string{}
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		mu.Lock()
+		called = append(called, target.Provider)
+		mu.Unlock()
+		if target.Provider == "b" {
+			return successBody("b"), nil
+		}
+		return nil, &CallError{Class: ErrorUpstream, Status: 503}
+	}}
 	runner := newRunner(compiled, newCatalog(compiled), executor)
-	selected, callErr := runner.SelectStream(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	// b is the low-priority holder; with race count 1 it must be the only
+	// target of the batch and win without a retry batch.
+	runner.leases.Renew("standard", "b", time.Minute)
+	body, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
 	if callErr != nil {
-		t.Fatalf("first stream error incorrectly won: %v", callErr)
+		t.Fatal(callErr)
 	}
-	defer selected.Cancel()
-	if len(selected.Buffered) != 1 || !strings.Contains(string(selected.Buffered[0].Data), "winner") {
-		t.Fatalf("unexpected selected stream: %#v", selected.Buffered)
+	mu.Lock()
+	defer mu.Unlock()
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil || payload["winner"] != "b" {
+		t.Fatalf("lease holder did not win: %s", body)
+	}
+	if len(called) != 1 || called[0] != "b" {
+		t.Fatalf("lease holder was not promoted to the front: %#v", called)
+	}
+}
+
+func TestLeaseAcquiredByWinnerAndReleasedOnHardFailure(t *testing.T) {
+	compiled := rulesConfig(t, 3, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"),
+		rule("lease", "standard", func(r *RoutingRule) {
+			r.Source = "winner"
+			r.Duration = Duration{time.Minute}
+			r.RenewOnSuccess = boolPtr(true)
+			r.ReleaseOn = []string{"429", "5xx", "timeout", "connection_error"}
+		}),
+		raceRule("standard", 2),
+	})
+	// The behavior switch is atomic because cancelled branch goroutines may
+	// still be draining after Run returns.
+	var failAll atomic.Bool
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		if failAll.Load() {
+			return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+		}
+		if target.Provider == "a" {
+			return successBody("a"), nil
+		}
+		return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	if _, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat}); callErr != nil {
+		t.Fatal(callErr)
+	}
+	if holder, ok := runner.leases.Holder("standard"); !ok || holder != "a" {
+		t.Fatalf("winner did not acquire the lease: %q %v", holder, ok)
+	}
+	// The holder fails hard and there is no winner: the lease must drop.
+	failAll.Store(true)
+	if _, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat}); callErr == nil {
+		t.Fatal("expected failure")
+	}
+	if _, ok := runner.leases.Holder("standard"); ok {
+		t.Fatal("lease was not released on hard failure of the holder")
+	}
+}
+
+func TestLeaseLoserCancellationIsNeutral(t *testing.T) {
+	compiled := rulesConfig(t, 2, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"),
+		rule("lease", "standard", func(r *RoutingRule) {
+			r.Source = "winner"
+			r.Duration = Duration{time.Minute}
+			r.RenewOnSuccess = boolPtr(true)
+			r.ReleaseOn = []string{"429", "5xx", "timeout", "connection_error"}
+		}),
+		raceRule("standard", 2),
+	})
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		if target.Provider == "b" {
+			return nil, &CallError{Class: ErrorCancelled, Status: 499}
+		}
+		return successBody(target.Provider), nil
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.leases.Renew("standard", "a", time.Minute)
+	if _, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat}); callErr != nil {
+		t.Fatal(callErr)
+	}
+	if holder, ok := runner.leases.Holder("standard"); !ok || holder != "a" {
+		t.Fatalf("cancelled loser affected the lease: %q %v", holder, ok)
+	}
+}
+
+func TestLeaseReleasedAfterConsecutiveSlowStarts(t *testing.T) {
+	compiled := rulesConfig(t, 2, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"),
+		rule("lease", "standard", func(r *RoutingRule) {
+			r.Source = "winner"
+			r.Duration = Duration{time.Minute}
+			r.RenewOnSuccess = boolPtr(true)
+			r.ReleaseOn = []string{"429", "5xx", "timeout", "connection_error"}
+			r.ReleaseAfterSlowStarts = 2
+			r.SlowStart = Duration{30 * time.Millisecond}
+		}),
+		raceRule("standard", 1),
+	})
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		if target.Provider == "a" {
+			time.Sleep(60 * time.Millisecond) // slow winner
+		}
+		return successBody(target.Provider), nil
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.leases.Renew("standard", "a", time.Minute)
+	for i := 0; i < 2; i++ {
+		if _, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat}); callErr != nil {
+			t.Fatal(callErr)
+		}
+	}
+	if _, ok := runner.leases.Holder("standard"); ok {
+		t.Fatal("lease survived two consecutive slow starts")
+	}
+	if count := runner.leases.HolderCount(); count != 0 {
+		t.Fatalf("expected no live leases, got %d", count)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// affinity pinning
+// ---------------------------------------------------------------------------
+
+func affinityPipeline(t *testing.T) *compiledConfig {
+	t.Helper()
+	cfg := testConfig()
+	cfg.RoutingRules = []RoutingRule{
+		poolRule("standard", "group"),
+		rankRule("standard"),
+		rule("affinity", "standard", func(r *RoutingRule) {
+			r.Sources = []string{"responses.previous_response_id"}
+			r.TTL = Duration{time.Hour}
+			r.OnMissing = "ignore"
+			r.OnProviderFailure = "fail-closed"
+		}),
+		raceRule("standard", 2),
+	}
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return compiled
+}
+
+func responsesRequest(previousResponseID string) ExecuteRequest {
+	body := []byte(`{"model":"standard","previous_response_id":"` + previousResponseID + `","input":"hi"}`)
+	return ExecuteRequest{Kind: RequestResponses, Body: body}
+}
+
+func TestAffinityPinsRouteAndFailsClosed(t *testing.T) {
+	compiled := affinityPipeline(t)
+	// A second bound provider must never be reached. The behavior switch is
+	// atomic because cancelled branch goroutines may still be draining.
+	var recover atomic.Bool
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		if !recover.Load() && target.Provider == "a" {
+			return nil, &CallError{Class: ErrorUpstream, Status: 503}
+		}
+		return successBody(target.Provider), nil
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.affinity.Bind("resp_1", "a", time.Hour)
+	_, callErr := runner.Run(context.Background(), "standard", responsesRequest("resp_1"))
+	if callErr == nil {
+		t.Fatal("known affinity route must fail closed when the pinned provider fails")
+	}
+	recover.Store(true)
+	body, callErr := runner.Run(context.Background(), "standard", responsesRequest("resp_1"))
+	if callErr != nil {
+		t.Fatal(callErr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil || payload["winner"] != "a" {
+		t.Fatalf("pinned provider did not win: %s", body)
+	}
+}
+
+func TestAffinityUnknownIdRoutesNormally(t *testing.T) {
+	compiled := affinityPipeline(t)
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	executor := &fakeExecutor{do: func(ctx context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		started <- target.Provider
+		select {
+		case <-release:
+			if target.Provider == "b" {
+				return successBody("b"), nil
+			}
+			return nil, &CallError{Class: ErrorUpstream, Status: 503}
+		case <-ctx.Done():
+			return nil, &CallError{Class: ErrorCancelled, Status: 499, Cause: ctx.Err()}
+		}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	result := make(chan *CallError, 1)
+	go func() {
+		_, callErr := runner.Run(context.Background(), "standard", responsesRequest("unknown-id"))
+		result <- callErr
+	}()
+	// Both pool members must be eligible: the unknown id must not narrow the route.
+	seen := map[string]bool{}
+	for len(seen) < 2 {
+		select {
+		case provider := <-started:
+			seen[provider] = true
+		case <-time.After(time.Second):
+			t.Fatalf("unknown affinity id must not narrow the route: %#v", seen)
+		}
+	}
+	if !seen["a"] || !seen["b"] {
+		t.Fatalf("unknown affinity id must not narrow the route: %#v", seen)
+	}
+	close(release)
+	if callErr := <-result; callErr != nil {
+		t.Fatalf("unknown affinity request failed: %v", callErr)
+	}
+}
+
+func TestChatNeverUsesAffinity(t *testing.T) {
+	compiled := affinityPipeline(t)
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	executor := &fakeExecutor{do: func(ctx context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		started <- target.Provider
+		select {
+		case <-release:
+			if target.Provider == "b" {
+				return successBody("b"), nil
+			}
+			return nil, &CallError{Class: ErrorUpstream, Status: 503}
+		case <-ctx.Done():
+			return nil, &CallError{Class: ErrorCancelled, Status: 499, Cause: ctx.Err()}
+		}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.affinity.Bind("resp_1", "a", time.Hour)
+	chat := ExecuteRequest{Kind: RequestChat, Body: []byte(`{"model":"standard","previous_response_id":"resp_1","messages":[{"role":"user","content":"hi"}]}`)}
+	result := make(chan *CallError, 1)
+	go func() {
+		_, callErr := runner.Run(context.Background(), "standard", chat)
+		result <- callErr
+	}()
+	// Chat must keep the full pool: no affinity narrowing.
+	seen := map[string]bool{}
+	for len(seen) < 2 {
+		select {
+		case provider := <-started:
+			seen[provider] = true
+		case <-time.After(time.Second):
+			t.Fatalf("chat route was narrowed despite no affinity support: %#v", seen)
+		}
+	}
+	close(release)
+	if callErr := <-result; callErr != nil {
+		t.Fatalf("chat request failed: %v", callErr)
+	}
+}
+
+func TestSemaphoreMaxInFlightGatesNextBatch(t *testing.T) {
+	compiled := rulesConfig(t, 3, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		retryNextRule("standard", 1, 2),
+		rule("semaphore", "standard", func(r *RoutingRule) {
+			r.MaxCalls = 3
+			r.MaxInFlight = 2
+			r.MaxCallsPerProvider = 1
+		}),
+	})
+	releaseB := make(chan struct{})
+	cStarted := make(chan struct{})
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		if target.Provider == "b" {
+			<-releaseB
+			return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+		}
+		if target.Provider == "c" {
+			close(cStarted)
+			return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+		}
+		return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.sleep = func(context.Context, time.Duration) error { return nil }
+	result := make(chan *CallError, 1)
+	go func() {
+		_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+		result <- callErr
+	}()
+	// With maxInFlight=2 and an active b, the next batch must not start until a
+	// slot frees; the scheduler must not hang or launch c early.
+	select {
+	case <-cStarted:
+		t.Fatal("next batch started while maxInFlight was exhausted")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(releaseB)
+	select {
+	case <-cStarted:
+	case <-time.After(time.Second):
+		t.Fatal("next batch never started after an in-flight slot freed")
+	}
+	if callErr := <-result; callErr == nil {
+		t.Fatal("expected failure")
+	}
+}
+
+func TestSemaphoreRefillsPartiallyStartedInitialRace(t *testing.T) {
+	compiled := rulesConfig(t, 3, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 3),
+		rule("semaphore", "standard", func(r *RoutingRule) {
+			r.MaxCalls = 3
+			r.MaxInFlight = 1
+			r.MaxCallsPerProvider = 1
+		}),
+	})
+	var mu sync.Mutex
+	var called []string
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		mu.Lock()
+		called = append(called, target.Provider)
+		mu.Unlock()
+		if target.Provider == "c" {
+			return successBody("c"), nil
+		}
+		return nil, &CallError{Class: ErrorUpstream, Status: 503}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	body, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr != nil {
+		t.Fatalf("semaphore-limited initial race dropped its successful target: %v", callErr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil || payload["winner"] != "c" {
+		t.Fatalf("unexpected winner: %s, %v", body, err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got := strings.Join(called, ","); got != "a,b,c" {
+		t.Fatalf("initial batch was not refilled in rank order: %s", got)
+	}
+}
+
+func TestNoUpstreamCallsAfterWinner(t *testing.T) {
+	compiled := rulesConfig(t, 2, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 1),
+		rule("retry", "standard", func(r *RoutingRule) {
+			r.Scope = "same"
+			r.Attempts = 3
+			r.On = []string{"429", "5xx"}
+		}),
+	})
+	var calls atomic.Int32
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		calls.Add(1)
+		if target.Provider == "a" {
+			return successBody("a"), nil
+		}
+		return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.sleep = func(context.Context, time.Duration) error { return nil }
+	if _, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat}); callErr != nil {
+		t.Fatal(callErr)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("upstream calls continued after the winner: %d", calls.Load())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// affinity fail-closed guarantees
+// ---------------------------------------------------------------------------
+
+func TestAffinityPinnedRouteNeverUsesFallback(t *testing.T) {
+	// Known affinity narrows the route to the pinned provider; a legacy
+	// fallback group must not pick up the stateful chain (no state replay).
+	cfg := testConfig()
+	cfg.RoutingRules = []RoutingRule{
+		poolRule("standard", "group"),
+		rankRule("standard"),
+		rule("affinity", "standard", func(r *RoutingRule) {
+			r.Sources = []string{"responses.previous_response_id"}
+			r.TTL = Duration{time.Hour}
+			r.OnMissing = "ignore"
+			r.OnProviderFailure = "fail-closed"
+		}),
+		raceRule("standard", 2),
+		rule("fallback", "standard", func(r *RoutingRule) {
+			r.AccessGroups = []string{"backup"}
+			r.On = []string{"5xx", "timeout"}
+			r.FallbackStrategy = "serial"
+		}),
+	}
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	called := map[string]int{}
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		mu.Lock()
+		called[target.Provider]++
+		mu.Unlock()
+		if target.Provider == "a" {
+			return nil, &CallError{Class: ErrorUpstream, Status: 503}
+		}
+		return successBody(target.Provider), nil
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.affinity.Bind("resp_1", "a", time.Hour)
+	_, callErr := runner.Run(context.Background(), "standard", responsesRequest("resp_1"))
+	if callErr == nil {
+		t.Fatal("pinned provider failure must fail closed and skip the fallback")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if called["c"] != 0 {
+		t.Fatalf("fallback ran for a pinned route: backup provider called %d times", called["c"])
+	}
+	if called["b"] != 0 {
+		t.Fatalf("pinned route reached a non-pinned provider b: %d calls", called["b"])
+	}
+}
+
+func TestAffinityResolutionFailureRemainsPinned(t *testing.T) {
+	cfg := testConfig()
+	// An explicit catalog requires a last-known-good snapshot. Leaving the
+	// fresh catalog empty makes target resolution fail before executor dispatch.
+	cfg.Providers[0].ModelsURL = "https://catalog.invalid/v1/models"
+	cfg.RoutingRules = []RoutingRule{
+		poolRule("standard", "group"),
+		rankRule("standard"),
+		rule("affinity", "standard", func(r *RoutingRule) {
+			r.Sources = []string{"responses.previous_response_id"}
+			r.TTL = Duration{time.Hour}
+			r.OnMissing = "ignore"
+			r.OnProviderFailure = "fail-closed"
+		}),
+		raceRule("standard", 2),
+		rule("fallback", "standard", func(r *RoutingRule) {
+			r.AccessGroups = []string{"backup"}
+			r.On = []string{"invalid_response"}
+			r.FallbackStrategy = "serial"
+		}),
+	}
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		calls.Add(1)
+		return successBody(target.Provider), nil
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.affinity.Bind("resp_1", "a", time.Hour)
+	if _, callErr := runner.Run(context.Background(), "standard", responsesRequest("resp_1")); callErr == nil {
+		t.Fatal("pinned resolution failure incorrectly opened the fallback route")
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("resolution failure dispatched %d upstream calls", calls.Load())
+	}
+	if provider, ok := runner.affinity.Lookup("resp_1"); !ok || provider != "a" {
+		t.Fatalf("runtime resolution failure removed affinity mapping: %q %v", provider, ok)
+	}
+}
+
+func TestAffinityStaleMappingFallsBackToPool(t *testing.T) {
+	compiled := affinityPipeline(t)
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	executor := &fakeExecutor{do: func(ctx context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		started <- target.Provider
+		select {
+		case <-release:
+			if target.Provider == "b" {
+				return successBody("b"), nil
+			}
+			return nil, &CallError{Class: ErrorUpstream, Status: 503}
+		case <-ctx.Done():
+			return nil, &CallError{Class: ErrorCancelled, Status: 499, Cause: ctx.Err()}
+		}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	// Mapping to a provider that no longer exists in the config must not fail
+	// the request: it is dropped and the request routes normally.
+	runner.affinity.Bind("resp_1", "ghost", time.Hour)
+	result := make(chan *CallError, 1)
+	go func() {
+		_, callErr := runner.Run(context.Background(), "standard", responsesRequest("resp_1"))
+		result <- callErr
+	}()
+	seen := map[string]bool{}
+	for len(seen) < 2 {
+		select {
+		case provider := <-started:
+			seen[provider] = true
+		case <-time.After(time.Second):
+			t.Fatalf("stale mapping did not fall back to the pool: %#v", seen)
+		}
+	}
+	close(release)
+	if callErr := <-result; callErr != nil {
+		t.Fatalf("stale affinity mapping failed the request: %v", callErr)
+	}
+	if _, ok := runner.affinity.Lookup("resp_1"); ok {
+		t.Fatal("stale mapping was not dropped")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// partial next batch under semaphore pressure
+// ---------------------------------------------------------------------------
+
+func TestHedgeRetriesPermitBlockedBatchMembers(t *testing.T) {
+	compiled := rulesConfig(t, 4, []RoutingRule{
+		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		retryNextRule("standard", 2, 1),
+		rule("hedge", "standard", func(r *RoutingRule) { r.After = Duration{30 * time.Millisecond} }),
+		rule("semaphore", "standard", func(r *RoutingRule) {
+			r.MaxCalls = 4
+			r.MaxInFlight = 3
+			r.MaxCallsPerProvider = 1
+		}),
+	})
+	cStarted := make(chan struct{})
+	dStarted := make(chan struct{})
+	releaseA := make(chan struct{})
+	releaseB := make(chan struct{})
+	releaseC := make(chan struct{})
+	var calls atomic.Int32
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		calls.Add(1)
+		switch target.Provider {
+		case "a":
+			<-releaseA
+			return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+		case "b":
+			<-releaseB
+			return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+		case "c":
+			close(cStarted)
+			<-releaseC
+			return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+		default: // d
+			close(dStarted)
+			return nil, &CallError{Class: ErrorRateLimit, Status: 429}
+		}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	done := make(chan *CallError, 1)
+	go func() {
+		_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+		done <- callErr
+	}()
+	// First hedge wave starts c; with a and b still in flight (maxInFlight=3)
+	// the second member d of the next batch is denied a permit. c stays in
+	// flight so the slot genuinely never frees.
+	select {
+	case <-cStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first hedge wave did not start c")
+	}
+	// While a, b and c are all in flight, d must stay blocked across successive
+	// hedge waves.
+	select {
+	case <-dStarted:
+		t.Fatal("d started while maxInFlight was exhausted")
+	case <-time.After(100 * time.Millisecond):
+	}
+	// Free a slot by completing c; the next hedge wave must then start d
+	// instead of dropping the denied member permanently.
+	close(releaseC)
+	select {
+	case <-dStarted:
+	case <-time.After(time.Second):
+		t.Fatal("permit-blocked batch member d was never re-launched after a slot freed")
+	}
+	close(releaseB)
+	close(releaseA)
+	if callErr := <-done; callErr == nil {
+		t.Fatal("expected failure")
+	}
+	if n := calls.Load(); n != 4 {
+		t.Fatalf("semaphore budget violated: %d calls", n)
 	}
 }

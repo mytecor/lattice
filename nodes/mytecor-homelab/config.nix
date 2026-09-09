@@ -105,9 +105,13 @@ in
     };
   };
 
-  # LLM Gateway: each attempt races all configured Gonka endpoints. Hedge keeps prior attempts alive while
-  # retry controls the number of new race generations, their error classes, and backoff.
-  # Each provider uses its inferred <inferenceUrl>/models catalog; successful catalogs are merged.
+  # LLM Gateway: bounded routing splits the flat pipeline into single-purpose
+  # actions. The candidate pool is ranked by provider priority, a winner lease
+  # promotes the current leader, Responses affinity pins stateful chains to
+  # their originating provider, and race/retry/hedge consume only the next
+  # unused targets within the semaphore budget. One request never creates more
+  # than four upstream calls (race 2 + two next-retries of 1), more than three
+  # concurrent calls, or a repeated call to one provider.
   lattice.llm-gateway = {
     # Debug logs contain routing metadata and sanitized upstream errors, never prompts or keys.
     logLevel = "debug";
@@ -117,35 +121,35 @@ in
         accessGroup = "gonka";
         inferenceUrl = "https://api.proxy.gonka.gg/v1";
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
-        priority = 10;
+        priority = 50;
       };
       gonka-openbroker = {
         id = "gonka-openbroker";
         accessGroup = "gonka";
         inferenceUrl = "https://api.openbroker.gonka.gg/v1";
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
-        priority = 10;
+        priority = 40;
       };
       gonka-api = {
         id = "gonka-api";
         accessGroup = "gonka";
         inferenceUrl = "https://hskyauefqcgbvgvxkluj.supabase.co/functions/v1/gonka";
         apiKeyFile = config.age.secrets.llm-provider-gonka-api.path;
-        priority = 10;
+        priority = 30;
       };
       dahl = {
         id = "dahl";
         accessGroup = "gonka";
         inferenceUrl = "https://inference.dahl.global/v1";
         apiKeyFile = config.age.secrets.llm-provider-dahl.path;
-        priority = 10;
+        priority = 20;
       };
       hyperfusion = {
         id = "hyperfusion";
         accessGroup = "gonka";
         inferenceUrl = "https://api.hyperfusion.io/v1";
         apiKeyFile = config.age.secrets.llm-provider-hyperfusion.path;
-        priority = 10;
+        priority = 100;
       };
       gonkarouter = {
         id = "gonkarouter";
@@ -159,16 +163,49 @@ in
       { logical = "stupid"; accessGroup = "gonka"; native = "MiniMaxAI/MiniMax-M2.7"; }
       { logical = "standard"; accessGroup = "gonka"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
     ];
-    routingRules = [
-      { model = "stupid"; action = "race"; accessGroups = [ "gonka" ]; }
-      { model = "stupid"; action = "hedge"; }
-      { model = "stupid"; action = "retry"; attempts = 3; on = [ "429" "5xx" "timeout" "connection_error" ]; backoffInitial = "200ms"; backoffMax = "5s"; }
-      { model = "stupid"; action = "timeout"; duration = "60s"; }
-      { model = "standard"; action = "race"; accessGroups = [ "gonka" ]; }
-      { model = "standard"; action = "hedge"; }
-      { model = "standard"; action = "retry"; attempts = 3; on = [ "429" "5xx" "timeout" "connection_error" ]; backoffInitial = "200ms"; backoffMax = "5s"; }
-      { model = "standard"; action = "timeout"; duration = "60s"; }
-    ];
+    # The same bounded pipeline applies to both logical models.
+    routingRules = builtins.concatMap (model: [
+      { inherit model; action = "pool"; accessGroups = [ "gonka" ]; }
+      { inherit model; action = "rank"; strategy = "priority"; }
+      {
+        inherit model;
+        action = "lease";
+        source = "winner";
+        duration = "10m";
+        renewOnSuccess = true;
+        releaseOn = [ "429" "5xx" "timeout" "connection_error" ];
+        releaseAfterSlowStarts = 3;
+        slowStart = "3s";
+      }
+      {
+        inherit model;
+        action = "affinity";
+        sources = [ "responses.conversation" "responses.previous_response_id" ];
+        ttl = "24h";
+        onMissing = "ignore";
+        onProviderFailure = "fail-closed";
+      }
+      { inherit model; action = "race"; count = 2; }
+      {
+        inherit model;
+        action = "retry";
+        scope = "next";
+        count = 1;
+        attempts = 2;
+        on = [ "429" "5xx" "timeout" "connection_error" "invalid_response" ];
+        backoffInitial = "200ms";
+        backoffMax = "1s";
+      }
+      { inherit model; action = "hedge"; after = "3s"; }
+      {
+        inherit model;
+        action = "semaphore";
+        maxCalls = 4;
+        maxInFlight = 3;
+        maxCallsPerProvider = 1;
+      }
+      { inherit model; action = "timeout"; duration = "60s"; }
+    ]) [ "stupid" "standard" ];
   };
 
   lattice.rnsh = {

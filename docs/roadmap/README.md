@@ -43,10 +43,12 @@ Radicle HTTP API; f4-02 выполнена. Для f4-01 остаются стр
 `token_proxy` runtime на homelab. Реальная Gonka-интеграция выявила ограничения динамического
 catalog/scoped routing, а f7-06 отклонила Go LIP из-за обязательного функционального fork.
 Архитектура теперь — собственный Go proxy поверх Bifrost Go API: f7-07 выполнил cutover, а f7-08
-удалил legacy `token_proxy` из активной конфигурации. **F7 закрыта 2026-09-07**: обязательные
+удалил legacy `token_proxy` из активной конфигурации. Базовая F7 закрыта 2026-09-07: обязательные
 режимы routing (retry, cooldown, fallback, priority, race, hedge, streaming, cancellation), health
-surface и structured diagnostics подтверждены Go-тестами и evaluation checks. Запускается **F8 —
-интерактивный Pi runtime**; f8-01 завершена: Pi закреплён и устанавливается через pnpm без
+surface и structured diagnostics подтверждены Go-тестами и evaluation checks. Live acceptance
+выявила мультипликативный fanout полного race и hedged retries; bounded provider routing вынесен в
+[f7-09](./f7-llm-gateway/f7-09-bounded-provider-routing.md). Запускается **F8 — интерактивный Pi
+runtime**; f8-01 завершена: Pi закреплён и устанавливается через pnpm без
 пользовательской ручной установки. В f8-02 выполнена декларативная привязка Pi к gateway:
 `lattice.pi` генерирует store JSON и материализует `~/.pi/agent/{settings,models}.json` симлинками,
 `discoverModels = false`, только логические классы `standard`/`stupid` по loopback, с NixOS-проверкой

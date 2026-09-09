@@ -28,33 +28,63 @@ Authorization: Bearer <client_api_key>
 
 ## Routing
 
-`routing_rules` — плоский упорядоченный pipeline. Каждый rule выполняет одно действие и
-преобразует route, созданный предыдущими rules:
+`routing_rules` — плоский упорядоченный pipeline. Каждый rule выполняет одно действие с одной
+ответственностью и преобразует compiled route. Канонический порядок:
 
-- `race` раскрывает перечисленные `access_groups` и одновременно вызывает все их provider instances;
-- `hedge` делает streaming retries перекрывающимися, не отменяя активные попытки;
-- `retry` задаёт число попыток, error classes и backoff;
-- `fallback` добавляет следующий serial/race/hedge stage;
-- `timeout` ограничивает предыдущий stage;
+```text
+pool → rank → lease → affinity → race → retry → hedge → semaphore → timeout
+```
 
-Для `race` все provider instances из перечисленных access groups запускаются параллельно. Ошибка
-одной ветки не завершает запрос: gateway продолжает ждать остальные. Первый успешный ответ
-побеждает, а оставшиеся calls отменяются через `context.Context`.
+- `pool` формирует candidate pool из перечисленных `access_groups`; элементом pool является
+  готовая target-пара (provider instance, resolved native model);
+- `rank` сортирует pool по `strategy = "priority"` (порядок гарантирует контракт для будущих
+  ранжирований по наблюдаемому meaningful TTFT);
+- `lease` временно поднимает победителя в начало ranking. Lease scoped по logical model,
+  продлевается успешным ответом (`renew_on_success`) и освобождается по настроенным hard
+  failures (`release_on`) либо после `release_after_slow_starts` последовательных превышений
+  `slow_start` (время до первого meaningful события; для non-streaming — до валидного успешного
+  ответа);
+- `affinity` закрепляет stateful Responses chain за provider, вернувшим `conversation` или
+  `previous_response_id`. Chat Completions никогда не получает affinity; `prompt_cache_key` не
+  считается session identifier. Known affinity сужает route до одного provider и при его отказе
+  завершает request fail closed (без state replay; cross-provider stateful retry невозможен).
+  Unknown identifier игнорируется (`on_missing = "ignore"`). Поддержка `conversation` ограничена
+  идентификаторами, которые gateway уже записал из своих ответов: `/v1/conversations` proxy не
+  реализован, поэтому незнакомый conversation_id трактуется как unknown и не закрепляет route;
+- `race` берёт первые `count` unused targets из подготовленного pool и запускает их одновременно
+  (first-success semantics);
+- `retry` остаётся отдельным действием: `scope = "same"` повторяет исходную выборку,
+  `scope = "next"` берёт следующие unused targets из ranked pool (provider никогда не
+  повторяется). `count` задаёт размер retry batch, `attempts` — число дополнительных batches.
+  Следующий batch запускается после backoff, только если все terminal failures активной wave
+  входят в `on`; смешанная wave с non-retryable ошибкой останавливает route. Возвращаемый класс
+  выбирается детерминированно, независимо от порядка завершения goroutines;
+- `hedge` разрешает следующему retry batch начаться до завершения текущих branches, если winner
+  не появился за `after`. Hedge использует только next batch из compiled route — он не клонирует
+  полный pool и не повторяет used providers;
+- `semaphore` — request-wide safety action: `max_calls`, `max_in_flight`,
+  `max_calls_per_provider` ограничивают суммарные/одновременные/на-провайдера upstream calls,
+  включая legacy fallback;
+- `timeout` ограничивает весь скомпилированный route, включая retry backoff и fallback. Для
+  streaming он ограничивает выбор winner, но не обрывает уже выбранный успешный stream.
 
-В streaming победитель выбирается только по первому meaningful content, reasoning или tool-call
-event. Пустые role/metadata chunks не выигрывают. Prelude выбранной ветки буферизуется и затем
-отдаётся клиенту в исходном порядке; проигравшие streams отменяются.
+Одна ветка, вернувшая ошибку при живой другой ветке, сама по себе не создаёт новый call: ранний
+overlap контролирует только `hedge`. Streaming и non-streaming пути гарантируют одинаковые
+invariants: initial race получает только top `count`, retry next — только unused targets, hedge —
+следующий batch, и после winner/cancellation/timeout/исчерпания semaphore budget новые upstream
+calls не стартуют.
 
-При наличии `hedge` каждый retry заново запускает весь предыдущий route после своего backoff, не
-отменяя прошлые поколения. Например, retry над `race` снова стартует все его providers параллельно.
-Первый meaningful event среди всех поколений выбирает победителя и отменяет остальные.
+Legacy-нормализация:
 
-`attempts` означает число повторов после первоначального запуска. Поэтому, например,
-`attempts: 10` даёт максимум 11 race-волн. Error classes и backoff также задаются rule.
+- старый `{ action = "race"; access_groups = [...]; }` компилируется в implicit
+  `pool(access_groups) → rank(priority) → race(count=all)`;
+- старый `retry` без `scope` получает `scope = "same"` и повторяет исходную выборку;
+- `{ action = "hedge"; }` без `after` отклоняется с точной migration error — целевой конфиг
+  переведён на явные actions.
 
-Provider с retryable failure получает cooldown, по умолчанию 15 секунд. Пока в route есть другой
-доступный provider, охлаждаемая ветка пропускается. Если охлаждаются все providers, gateway снова
-пробует всю группу вместо искусственного полного простоя.
+Provider с retryable failure получает cooldown, по умолчанию 15 секунд. Охлаждённые providers не
+попадают в candidate pool; если охлаждаются все, gateway fail-open пробует группу снова.
+Отменённые losers не влияют ни на cooldown, ни на lease.
 
 ## Model discovery
 
@@ -143,19 +173,57 @@ Standalone binary поддерживает literal secrets и ссылки `env.
   "routing_rules": [
     {
       "match": {"model": "stupid"},
-      "action": "race",
+      "action": "pool",
       "access_groups": ["gonka"]
     },
     {
       "match": {"model": "stupid"},
-      "action": "hedge"
+      "action": "rank",
+      "strategy": "priority"
+    },
+    {
+      "match": {"model": "stupid"},
+      "action": "lease",
+      "source": "winner",
+      "duration": "10m",
+      "renew_on_success": true,
+      "release_on": ["429", "5xx", "timeout", "connection_error"],
+      "release_after_slow_starts": 3,
+      "slow_start": "3s"
+    },
+    {
+      "match": {"model": "stupid"},
+      "action": "affinity",
+      "sources": ["responses.conversation", "responses.previous_response_id"],
+      "ttl": "24h",
+      "on_missing": "ignore",
+      "on_provider_failure": "fail-closed"
+    },
+    {
+      "match": {"model": "stupid"},
+      "action": "race",
+      "count": 2
     },
     {
       "match": {"model": "stupid"},
       "action": "retry",
-      "attempts": 3,
-      "on": ["429", "5xx", "timeout", "connection_error"],
-      "backoff": {"type": "exponential", "initial": "200ms", "max": "5s"}
+      "scope": "next",
+      "count": 1,
+      "attempts": 2,
+      "on": ["429", "5xx", "timeout", "connection_error", "invalid_response"],
+      "backoff": {"type": "exponential", "initial": "200ms", "max": "1s"}
+    },
+    {
+      "match": {"model": "stupid"},
+      "action": "hedge",
+      "after": "3s"
+    },
+    {
+      "match": {"model": "stupid"},
+      "action": "semaphore",
+      "max_calls": 4,
+      "max_in_flight": 3,
+      "max_calls_per_provider": 1
     },
     {
       "match": {"model": "stupid"},
@@ -164,19 +232,57 @@ Standalone binary поддерживает literal secrets и ссылки `env.
     },
     {
       "match": {"model": "standard"},
-      "action": "race",
+      "action": "pool",
       "access_groups": ["gonka"]
     },
     {
       "match": {"model": "standard"},
-      "action": "hedge"
+      "action": "rank",
+      "strategy": "priority"
+    },
+    {
+      "match": {"model": "standard"},
+      "action": "lease",
+      "source": "winner",
+      "duration": "10m",
+      "renew_on_success": true,
+      "release_on": ["429", "5xx", "timeout", "connection_error"],
+      "release_after_slow_starts": 3,
+      "slow_start": "3s"
+    },
+    {
+      "match": {"model": "standard"},
+      "action": "affinity",
+      "sources": ["responses.conversation", "responses.previous_response_id"],
+      "ttl": "24h",
+      "on_missing": "ignore",
+      "on_provider_failure": "fail-closed"
+    },
+    {
+      "match": {"model": "standard"},
+      "action": "race",
+      "count": 2
     },
     {
       "match": {"model": "standard"},
       "action": "retry",
-      "attempts": 3,
-      "on": ["429", "5xx", "timeout", "connection_error"],
-      "backoff": {"type": "exponential", "initial": "200ms", "max": "5s"}
+      "scope": "next",
+      "count": 1,
+      "attempts": 2,
+      "on": ["429", "5xx", "timeout", "connection_error", "invalid_response"],
+      "backoff": {"type": "exponential", "initial": "200ms", "max": "1s"}
+    },
+    {
+      "match": {"model": "standard"},
+      "action": "hedge",
+      "after": "3s"
+    },
+    {
+      "match": {"model": "standard"},
+      "action": "semaphore",
+      "max_calls": 4,
+      "max_in_flight": 3,
+      "max_calls_per_provider": 1
     },
     {
       "match": {"model": "standard"},
@@ -215,11 +321,22 @@ nix flake check --no-build
 
 - реальный Bifrost custom-provider path для Chat и Responses;
 - оба streaming API;
-- параллельный старт, first-success и игнорирование первой ошибки;
+- bounded race: ровно top-`count` targets, first-success и игнорирование первой ошибки;
 - cancellation проигравшего provider и client disconnect;
-- retry, fallback, timeout, hedge, priority и cooldown;
+- retry `scope = "same"` / `scope = "next"`, отсутствие повторного использования provider,
+  исчерпание pool и backoff;
+- hedge, стартующий только следующий retry batch, а не полный pool;
+- semaphore bounds `max_calls`, `max_in_flight`, `max_calls_per_provider` при race, retry, hedge,
+  timeout и client cancellation;
+- lease acquire/renew/expire/release, slow-start threshold и нейтральность loser cancellations;
+- Responses affinity: Chat без affinity, `previous_response_id`, conversation boundary,
+  missing/expired mapping, pinned success/failure (fail-closed) и отсутствие cross-provider
+  stateful retry;
+- persistence opaque affinity mapping через файл mode 0600;
+- config validation (поля/порядок), legacy normalization `race accessGroups` и `retry` без `scope`;
 - independent discovery URL, manual refresh, last-known-good и fail-closed;
-- logical/native model rewrite и удаление Bifrost routing metadata из client responses.
+- logical/native model rewrite и удаление Bifrost routing metadata из client responses;
+- отсутствие новых upstream calls после winner/cancellation/timeout/semaphore exhaustion.
 
 ## Безопасность
 

@@ -21,7 +21,7 @@ func bifrostTestConfig(t *testing.T, upstreamURL string) *compiledConfig {
 	cfg.Providers[0].InferenceURL = upstreamURL
 	cfg.Providers[0].APIKey = "provider-secret"
 	cfg.Providers[0].AllowPrivateNetwork = true
-	cfg.RoutingRules = cfg.RoutingRules[:1]
+	cfg.RoutingRules = cfg.RoutingRules[:3]
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)

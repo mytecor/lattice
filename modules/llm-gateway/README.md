@@ -42,19 +42,66 @@ runtime directory и подставляет credentials через `jq`; ито�
       { logical = "standard"; accessGroup = "gonka"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
     ];
     routingRules = builtins.concatMap (model: [
-      { inherit model; action = "race"; accessGroups = [ "gonka" ]; }
-      { inherit model; action = "hedge"; }
-      { inherit model; action = "retry"; attempts = 3; on = [ "429" "5xx" "timeout" "connection_error" ]; backoffInitial = "200ms"; backoffMax = "5s"; }
+      { inherit model; action = "pool"; accessGroups = [ "gonka" ]; }
+      { inherit model; action = "rank"; strategy = "priority"; }
+      {
+        inherit model;
+        action = "lease";
+        source = "winner";
+        duration = "10m";
+        renewOnSuccess = true;
+        releaseOn = [ "429" "5xx" "timeout" "connection_error" ];
+        releaseAfterSlowStarts = 3;
+        slowStart = "3s";
+      }
+      {
+        inherit model;
+        action = "affinity";
+        sources = [ "responses.conversation" "responses.previous_response_id" ];
+        ttl = "24h";
+        onMissing = "ignore";
+        onProviderFailure = "fail-closed";
+      }
+      { inherit model; action = "race"; count = 2; }
+      {
+        inherit model;
+        action = "retry";
+        scope = "next";
+        count = 1;
+        attempts = 2;
+        on = [ "429" "5xx" "timeout" "connection_error" "invalid_response" ];
+        backoffInitial = "200ms";
+        backoffMax = "1s";
+      }
+      { inherit model; action = "hedge"; after = "3s"; }
+      {
+        inherit model;
+        action = "semaphore";
+        maxCalls = 4;
+        maxInFlight = 3;
+        maxCallsPerProvider = 1;
+      }
       { inherit model; action = "timeout"; duration = "60s"; }
     ]) [ "stupid" "standard" ];
   };
 }
 ```
 
-Production configuration must provide mappings and rules for every logical model. The service
-listens on loopback by default and does not open a firewall port. Caddy remains the only LAN
-ingress. The unit keeps systemd hardening enabled except for `MemoryDenyWriteExecute`: Bifrost's
+Production configuration must provide mappings and rules for every logical model. Rules follow the
+canonical action order `pool → rank → lease → affinity → race → retry → hedge → semaphore →
+timeout`; each action owns only its own fields and the gateway rejects unknown or misplaced fields
+at startup. Legacy `race access_groups` and `retry` without `scope` are still normalized;
+parameterless `hedge` is rejected with a migration error.
+
+The service listens on loopback by default and does not open a firewall port. Caddy remains the only
+LAN ingress. The unit keeps systemd hardening enabled except for `MemoryDenyWriteExecute`: Bifrost's
 Sonic/Base64x dependency loads SIMD routines with `mprotect(PROT_EXEC)` during process startup.
+
+Responses affinity state (opaque id → provider mapping for `conversation` and
+`previous_response_id`) is snapshotted to `/run/llm-gateway/affinity.json` (or `affinityFile` if
+set) with mode `0600`, owned by the gateway user; it survives service restarts and is cleared on a
+full service stop or reboot. The file contains no prompts, keys, or provider URLs. Failed writes
+remain dirty and are retried by the next periodic/final flush; persistence errors are logged.
 
 ## Logs
 

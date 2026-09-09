@@ -7,15 +7,22 @@ Go proxy поверх Bifrost Go API; Lattice владеет HTTP/API contract, 
 ([f7-08](f7-08-remove-token-proxy.md)); его ограничения и отклонения Go LIP зафиксированы
 в исторических f7-01, f7-05 и f7-06.
 
-**Статус: выполнена 2026-09-07.**
+**Статус:** базовая реализация выполнена 2026-09-07; после live acceptance routing открыты
+[f7-09](./f7-09-bounded-provider-routing.md),
+[f7-10](./f7-10-route-native-provider-mapping.md) и
+[f7-11](./f7-11-typed-routing-rules.md).
 
 Зависит от [F1](../f1-one-node/README.md) и [F2](../f2-secrets-identity/README.md). Соответствует
 [вехе 7](../VISION.md#вехи-и-зависимости-без-деталей).
 
-Все задачи закрыты: f7-01..f7-08. Матрица обязательных режимов F7 (retry, cooldown, fallback,
-priority, race, hedge, streaming, cancellation), health surface и structured diagnostics
-подтверждены Go-тестами и evaluation checks в
-[f7-04](f7-04-routing-resilience-tests.md).
+Базовые задачи f7-01..f7-08 закрыты. Follow-up
+[f7-09](./f7-09-bounded-provider-routing.md) декомпозирует flat routing pipeline и ограничивает
+upstream fanout, выявленный live Pi-сессией;
+[f7-10](./f7-10-route-native-provider-mapping.md) переносит native mapping и provider selection
+в routing rules; [f7-11](./f7-11-typed-routing-rules.md) разделяет внешний rule contract и
+реализации по action types. Матрица обязательных режимов F7 (retry, cooldown, fallback, priority,
+race, hedge, streaming, cancellation), health surface и structured diagnostics подтверждены
+Go-тестами и evaluation checks в [f7-04](./f7-04-routing-resilience-tests.md).
 
 **Критерий готовности:** клиент с gateway credential выполняет streaming-запросы к логическим
 моделям `stupid`, `standard`; реальные provider credentials и model IDs ему

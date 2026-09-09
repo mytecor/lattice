@@ -108,7 +108,7 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 		s.stream(writer, request, metadata.Model, executeRequest, started)
 		return
 	}
-	response, callErr := s.runner.Run(request.Context(), metadata.Model, executeRequest)
+	result, callErr := s.runner.RunWithResult(request.Context(), metadata.Model, executeRequest)
 	if callErr != nil {
 		s.logger.Warn("request failed",
 			"request_id", requestID, "kind", kind, "logical_model", metadata.Model,
@@ -117,6 +117,12 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 		)
 		writeCallError(writer, callErr)
 		return
+	}
+	response := result.Body
+	// Bind the winning provider to the opaque Responses state identifiers;
+	// the identifiers themselves and the request body never reach the logs.
+	if kind == RequestResponses {
+		s.bindResponsesAffinity(metadata.Model, result.Provider, response, "")
 	}
 	response, err = sanitizeJSON(response, metadata.Model)
 	if err != nil {
@@ -151,7 +157,17 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	writer.Header().Set("Cache-Control", "no-cache")
 	writer.Header().Set("Connection", "keep-alive")
 	writer.WriteHeader(http.StatusOK)
+
+	// Bind the winning provider to the opaque response id as it appears in the
+	// winner's stream (response.created / response.completed events).
+	bind := func(event StreamEvent) {
+		if executeRequest.Kind != RequestResponses {
+			return
+		}
+		s.bindResponsesAffinity(logical, selected.Provider, event.Data, event.Event)
+	}
 	for _, event := range selected.Buffered {
+		bind(event)
 		if !writeStreamEvent(writer, flusher, logical, executeRequest.Kind, event) {
 			return
 		}
@@ -180,6 +196,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 			if !writeStreamEvent(writer, flusher, logical, executeRequest.Kind, event) {
 				return
 			}
+			bind(event)
 		}
 	}
 }
@@ -213,6 +230,26 @@ func (s *Server) refresh(writer http.ResponseWriter, request *http.Request) {
 		status = http.StatusBadGateway
 	}
 	writeJSON(writer, status, map[string]any{"refreshed": len(failed) == 0, "failed_count": len(failed)})
+}
+
+func (s *Server) bindResponsesAffinity(logical, provider string, data []byte, eventType string) {
+	ttl, ok := s.runner.affinityBindTTL(logical)
+	if !ok || provider == "" || s.runner.affinity == nil {
+		return
+	}
+	if eventType == "" {
+		for _, id := range responseBodyAffinityIDs(data) {
+			if id != "" {
+				s.runner.affinity.Bind(id, provider, ttl)
+			}
+		}
+		return
+	}
+	for _, id := range streamResponseAffinityIDs(data, eventType) {
+		if id != "" {
+			s.runner.affinity.Bind(id, provider, ttl)
+		}
+	}
 }
 
 func writeCallError(writer http.ResponseWriter, callErr *CallError) {

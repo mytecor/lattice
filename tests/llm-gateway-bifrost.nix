@@ -35,8 +35,16 @@ let
             { logical = "standard"; accessGroup = "gonka"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
           ];
           routingRules = lib.concatMap (model: [
-            { inherit model; action = "race"; accessGroups = [ "gonka" ]; }
-            { inherit model; action = "retry"; attempts = 10; on = [ "429" "5xx" "timeout" "connection_error" ]; }
+            { inherit model; action = "pool"; accessGroups = [ "gonka" ]; }
+            { inherit model; action = "rank"; strategy = "priority"; }
+            { inherit model; action = "race"; count = 2; }
+            {
+              inherit model;
+              action = "semaphore";
+              maxCalls = 4;
+              maxInFlight = 3;
+              maxCallsPerProvider = 1;
+            }
           ]) models;
         };
       }
@@ -57,13 +65,25 @@ assert lib.hasInfix "--config /run/llm-gateway/config.json serve" service.servic
 assert !service.serviceConfig.MemoryDenyWriteExecute;
 assert service.serviceConfig.NoNewPrivileges;
 assert service.serviceConfig.ProtectSystem == "strict";
-pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { } ''
+pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ pkgs.jq ]; } ''
   grep -q '"catalog_refresh_interval":"10m"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"log_level":"silent"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"inference_url":"https://openbroker.gonka.invalid/v1"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"models_url":"https://proxy.gonka.invalid/v1/models"' ${config.lattice.llm-gateway.publicConfigFile}
-  grep -q '"action":"race"' ${config.lattice.llm-gateway.publicConfigFile}
-  grep -q '"attempts":10' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"action":"pool"' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"action":"rank"' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"action":"semaphore"' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"max_calls":4' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"max_in_flight":3' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"count":2' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"strategy":"priority"' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"affinity_file":"/run/llm-gateway/affinity.json"' ${config.lattice.llm-gateway.publicConfigFile}
+
+  # access_groups must appear only on pool rules (no legacy race shorthand).
+  if ! jq -e '[.routing_rules[] | select(((."access_groups" // []) | length) > 0) | .action] | all(. == "pool")' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+    echo "legacy access_groups outside pool rules" >&2
+    exit 1
+  fi
 
   if grep -q 'llm-gateway-client-key\|llm-provider-proxy\|llm-provider-openbroker' ${config.lattice.llm-gateway.publicConfigFile}; then
     echo "public Bifrost proxy config contains a credential path" >&2
