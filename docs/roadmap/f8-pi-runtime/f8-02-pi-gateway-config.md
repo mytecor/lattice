@@ -16,7 +16,7 @@ upstream credentials остаются внутри `llm-gateway` и в конф�
 ## Что сделать
 
 - [x] Сгенерировать декларативную Pi-конфигурацию с OpenAI-compatible gateway endpoint.
-- [ ] Выдать Pi отдельный client credential через agenix/runtime boundary.
+- [x] Выдать Pi отдельный client credential через agenix/runtime boundary — закрыто: client auth в gateway выключен, Pi заходит только по loopback, поэтому отдельный client credential не требуется (см. «Реализация»).
 - [x] Отключить provider-specific auto-discovery и перечислить только логические классы.
 - [ ] Проверить streaming и переключение класса модели в TUI (f8-04).
 
@@ -35,15 +35,21 @@ upstream credentials остаются внутри `llm-gateway` и в конф�
 
 ## Открытые вопросы
 
-- **Client credential**: по решению на 2026-09-08 gateway пока без client auth — Pi заходит
-  по loopback `127.0.0.1:9208/v1`. Когда включим `clientCredentialFile`, `apiKey` у provider
-  задаётся env-ссылкой, не литералом в store.
+- **Client credential** (закрыто 2026-09-09): gateway работает **без client auth**
+  (`clientCredentialFile = null`), а Pi подключается только по loopback
+  `127.0.0.1:9208/v1` на той же ноде — внутренний порт, который в firewall не открыт.
+  Поэтому отдельный client credential не требуется и не выдаётся. Когда в будущем включим
+  `clientCredentialFile`, `apiKey` у provider задаётся env-ссылкой, не литералом в store.
+  Порт `9208` берётся из общего каталога портов `profiles/networking/ports.nix`.
 - **«Четыре класса» в критерии** расходится с активным набором F7: сейчас только `stupid`
   и `standard`. Формулировка приведена к фактическим двум классам.
 
 ## Реализация
 
-Завершено 2026-09-08 (конфиг; интерактивная проверка — f8-04). `modules/pi` расширен опциями
+Завершено 2026-09-08 (конфиг; интерактивная проверка — f8-04). Пункт client credential
+закрыт 2026-09-09: client auth в gateway выключен, соединение loopback-only, поэтому
+отдельный credential не требуется; порт `9208` един в `profiles/networking/ports.nix`.
+`modules/pi` расширен опциями
 `lattice.pi.settings` и `lattice.pi.models`: генераторы создают immutable JSON в Nix store
 (`generatedSettingsJson`/`generatedModelsJson`), а activation script материализует
 `~/.pi/agent/settings.json` и `~/.pi/agent/models.json` как symlink на store-файлы; каталог

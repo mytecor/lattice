@@ -50,8 +50,9 @@ surface и structured diagnostics подтверждены Go-тестами и 
 пользовательской ручной установки. В f8-02 выполнена декларативная привязка Pi к gateway:
 `lattice.pi` генерирует store JSON и материализует `~/.pi/agent/{settings,models}.json` симлинками,
 `discoverModels = false`, только логические классы `standard`/`stupid` по loopback, с NixOS-проверкой
-`tests/pi-config.nix`. Task-confirmed: client credential и интерактивная проверка streaming остаются
-за f8-02 (auth) и f8-04 (TUI).
+`tests/pi-config.nix`. Client credential закрыт как не требующийся (client auth в gateway выключен,
+соединение loopback-only, порт `9208` един в `profiles/networking/ports.nix`); интерактивная проверка
+streaming остаётся за f8-04 (TUI).
 Основной маршрут дальше:
 Pi → cache/artifact plane → disposable worker → controller.
 Незакрытые вопросы отслеживаются в
