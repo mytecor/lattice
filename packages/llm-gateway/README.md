@@ -112,6 +112,21 @@ Compilation строго валидирует порядок `map`, `rank`, `rac
 pool, duplicate provider, dangling `map`, mapping после stage и отсутствие предыдущего stage дают
 точную configuration error с logical model и индексом rule.
 
+### Typed routing rules
+
+Внешний `RoutingRule`-union отсутствует: каждый action — отдельный Go type со своими полями,
+валидацией и применением к compiler state. JSON decoder читает минимальный envelope с `action` и
+декодирует тот же объект в конкретный type с `DisallowUnknownFields` — неизвестный action,
+неизвестное поле и поле чужого action отклоняются на decode boundary. Compiled scheduler
+зависит только от immutable `Plan`, не от JSON DTO. Nix `routingRules` — discriminated union: каждый entry валидируется своим action-подмодулем при
+evaluation и генерирует только принадлежащие ему поля.
+
+Добавление нового action не трогает общий union-struct и центральный compiler switch (его нет):
+нужно только зарегистрировать action в `ruleRegistry` (`rule.go`, позиция в pipeline + factory),
+написать новый файл `rule_<action>.go` (тип, `apply(*stageContext)`, defaults/validation),
+добавить action-подмодуль в Nix `options.nix` и покрыть новый action тестами в
+`rule_<action>_test.go` (положительный decode/compile и отрицательные кейсы).
+
 ## Model discovery
 
 Discovery provider-scoped: каждый provider владеет своим catalog snapshot и refresh state.

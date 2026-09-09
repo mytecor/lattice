@@ -8,69 +8,6 @@ import (
 	"time"
 )
 
-// rule builds a routing rule for a model with optional field mutations.
-func rule(action, model string, modify func(*RoutingRule)) RoutingRule {
-	var r RoutingRule
-	r.Match.Model = model
-	r.Action = action
-	if modify != nil {
-		modify(&r)
-	}
-	return r
-}
-
-// mapRule builds a map action binding one native model to a set of providers.
-func mapRule(model, native string, providers ...string) RoutingRule {
-	return rule("map", model, func(r *RoutingRule) { r.Native = native; r.Providers = providers })
-}
-
-// poolRule is a test convenience that expands the virtual access-group names of
-// the shared provider registry into provider IDs with the shared native model
-// id: "group" expands to a,b and "backup" to c.
-func poolRule(model string, groups ...string) RoutingRule {
-	var providers []string
-	for _, group := range groups {
-		switch group {
-		case "group":
-			providers = append(providers, "a", "b")
-		case "backup":
-			providers = append(providers, "c")
-		default:
-			providers = append(providers, group)
-		}
-	}
-	return mapRule(model, "native-model", providers...)
-}
-
-func rankRule(model string) RoutingRule {
-	return rule("rank", model, func(r *RoutingRule) { r.Strategy = "priority" })
-}
-
-func raceRule(model string, count int) RoutingRule {
-	return rule("race", model, func(r *RoutingRule) { r.Count = count })
-}
-
-func retryNextRule(model string, count, attempts int) RoutingRule {
-	return rule("retry", model, func(r *RoutingRule) {
-		r.Scope = "next"
-		r.Count = count
-		r.Attempts = attempts
-		r.On = []string{"429", "5xx"}
-		r.Backoff = &BackoffConfig{Type: "exponential", Initial: Duration{100 * time.Millisecond}, Max: Duration{time.Second}}
-	})
-}
-
-// fallbackStage returns the second-stage rules for a provider-backed fallback.
-func fallbackStage(model, provider string, on []string, mode string) []RoutingRule {
-	return []RoutingRule{
-		poolRule(model, provider),
-		rule("fallback", model, func(r *RoutingRule) {
-			r.On = on
-			r.FallbackStrategy = mode
-		}),
-	}
-}
-
 func testConfig() Config {
 	var cfg Config
 	cfg.Host = "127.0.0.1"
@@ -80,60 +17,44 @@ func testConfig() Config {
 		{ID: "b", BaseProvider: "openai", InferenceURL: "https://b.invalid", Priority: 10},
 		{ID: "c", BaseProvider: "openai", InferenceURL: "https://c.invalid", Priority: 5},
 	}
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = RoutingRules{
 		poolRule("standard", "group"),
 		rankRule("standard"),
 		raceRule("standard", 2),
 		retryNextRule("standard", 1, 2),
 		poolRule("standard", "backup"),
-		rule("fallback", "standard", func(r *RoutingRule) {
-			r.On = []string{"timeout", "5xx"}
-			r.FallbackStrategy = "serial"
-		}),
+		fallbackRule("standard", []string{"timeout", "5xx"}, "serial"),
 	}
 	return cfg
 }
 
 // boundedPipeline returns the canonical f7-09 pipeline for a model.
-func boundedPipeline(model string) []RoutingRule {
-	return []RoutingRule{
+func boundedPipeline(model string) []Rule {
+	lease := leaseRule(model, func(r *LeaseRule) {
+		r.Source = "winner"
+		r.Duration = Duration{10 * time.Minute}
+		r.RenewOnSuccess = boolPtr(true)
+		r.ReleaseOn = []string{"429", "5xx", "timeout", "connection_error"}
+		r.ReleaseAfterSlowStarts = 3
+		r.SlowStart = Duration{3 * time.Second}
+	})
+	affinity := affinityRule(model, func(r *AffinityRule) {
+		r.Sources = []string{"responses.conversation", "responses.previous_response_id"}
+		r.TTL = Duration{24 * time.Hour}
+		r.OnMissing = "ignore"
+		r.OnProviderFailure = "fail-closed"
+	})
+	return []Rule{
 		poolRule(model, "group"),
 		rankRule(model),
-		rule("lease", model, func(r *RoutingRule) {
-			r.Source = "winner"
-			r.Duration = Duration{10 * time.Minute}
-			r.RenewOnSuccess = boolPtr(true)
-			r.ReleaseOn = []string{"429", "5xx", "timeout", "connection_error"}
-			r.ReleaseAfterSlowStarts = 3
-			r.SlowStart = Duration{3 * time.Second}
-		}),
-		rule("affinity", model, func(r *RoutingRule) {
-			r.Sources = []string{"responses.conversation", "responses.previous_response_id"}
-			r.TTL = Duration{24 * time.Hour}
-			r.OnMissing = "ignore"
-			r.OnProviderFailure = "fail-closed"
-		}),
+		lease,
+		affinity,
 		raceRule(model, 2),
 		retryNextRule(model, 1, 2),
-		rule("hedge", model, func(r *RoutingRule) { r.After = Duration{3 * time.Second} }),
-		rule("semaphore", model, func(r *RoutingRule) {
-			r.MaxCalls = 4
-			r.MaxInFlight = 3
-			r.MaxCallsPerProvider = 1
-		}),
-		rule("timeout", model, func(r *RoutingRule) { r.Duration = Duration{60 * time.Second} }),
+		hedgeRule(model, 3*time.Second),
+		semaphoreRule(model, 4, 3, 1),
+		timeoutRule(model, 60*time.Second),
 	}
-}
-
-func boolPtr(value bool) *bool { return &value }
-
-// targetIDs joins the provider ids of a compiled target pool for assertions.
-func targetIDs(targets []Target) string {
-	ids := make([]string, 0, len(targets))
-	for _, target := range targets {
-		ids = append(ids, target.Provider)
-	}
-	return strings.Join(ids, ",")
 }
 
 func TestCompileConfigBuildsFlatPipeline(t *testing.T) {
@@ -208,11 +129,11 @@ func TestCompileConfigBoundedPipeline(t *testing.T) {
 
 func TestCompileConfigRetryWithoutScopeDefaultsToSame(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "group"),
 		rankRule("standard"),
 		raceRule("standard", 2),
-		rule("retry", "standard", func(r *RoutingRule) { r.Attempts = 1 }),
+		retryRule("standard", func(r *RetryRule) { r.Attempts = 1 }),
 	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
@@ -232,7 +153,7 @@ func TestCompileConfigRetryWithoutScopeDefaultsToSame(t *testing.T) {
 
 func TestCompileConfigConsecutiveMapsAccumulateAndDeduplicate(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		mapRule("standard", "native-model", "a"),
 		mapRule("standard", "native-model", "b"),
 		rankRule("standard"),
@@ -249,7 +170,7 @@ func TestCompileConfigConsecutiveMapsAccumulateAndDeduplicate(t *testing.T) {
 
 func TestCompileConfigRejectsDuplicateProviderInPool(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		mapRule("standard", "deepseek-ai/model", "a", "a"),
 		rankRule("standard"),
 		raceRule("standard", 2),
@@ -262,7 +183,7 @@ func TestCompileConfigRejectsDuplicateProviderInPool(t *testing.T) {
 
 func TestCompileConfigRejectsUnknownProvider(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		mapRule("standard", "native-model", "ghost"),
 		rankRule("standard"),
 		raceRule("standard", 2),
@@ -275,25 +196,16 @@ func TestCompileConfigRejectsUnknownProvider(t *testing.T) {
 
 func TestCompileConfigRejectsParameterlessHedge(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = append(cfg.RoutingRules[:3], rule("hedge", "standard", nil))
+	cfg.RoutingRules = append(cfg.RoutingRules[:3], hedgeRule("standard", 0))
 	_, err := compileConfig(cfg)
 	if err == nil || !strings.Contains(err.Error(), "after") || !strings.Contains(err.Error(), "migration") {
 		t.Fatalf("expected precise hedge migration error, got %v", err)
 	}
 }
 
-func TestCompileConfigRejectsUnexpectedFields(t *testing.T) {
-	cfg := testConfig()
-	cfg.RoutingRules[0].Count = 2 // map may not carry count
-	_, err := compileConfig(cfg)
-	if err == nil || !strings.Contains(err.Error(), `action "map"`) || !strings.Contains(err.Error(), "unexpected field(s): count") {
-		t.Fatalf("expected map field error, got %v", err)
-	}
-}
-
 func TestCompileConfigRejectsOutOfOrderActions(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "group"),
 		raceRule("standard", 2),
 		rankRule("standard"),
@@ -306,7 +218,7 @@ func TestCompileConfigRejectsOutOfOrderActions(t *testing.T) {
 
 func TestCompileConfigRejectsMapAfterRank(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "group"),
 		rankRule("standard"),
 		poolRule("standard", "group"),
@@ -320,9 +232,7 @@ func TestCompileConfigRejectsMapAfterRank(t *testing.T) {
 
 func TestCompileConfigRejectsRaceWithoutMap(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
-		rule("race", "standard", func(r *RoutingRule) { r.Count = 2 }),
-	}
+	cfg.RoutingRules = []Rule{raceRule("standard", 2)}
 	_, err := compileConfig(cfg)
 	if err == nil || !strings.Contains(err.Error(), "preceding map") {
 		t.Fatalf("expected map prerequisite error, got %v", err)
@@ -331,7 +241,7 @@ func TestCompileConfigRejectsRaceWithoutMap(t *testing.T) {
 
 func TestCompileConfigRejectsMissingRace(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{poolRule("standard", "group"), rankRule("standard")}
+	cfg.RoutingRules = []Rule{poolRule("standard", "group"), rankRule("standard")}
 	_, err := compileConfig(cfg)
 	if err == nil || !strings.Contains(err.Error(), "no route-creating race action") {
 		t.Fatalf("expected missing race error, got %v", err)
@@ -349,12 +259,9 @@ func TestCompileConfigRejectsDanglingFallbackMap(t *testing.T) {
 
 func TestCompileConfigRejectsFallbackWithoutPrimaryStage(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "backup"),
-		rule("fallback", "standard", func(r *RoutingRule) {
-			r.On = []string{"5xx"}
-			r.FallbackStrategy = "serial"
-		}),
+		fallbackRule("standard", []string{"5xx"}, "serial"),
 	}
 	_, err := compileConfig(cfg)
 	if err == nil || !strings.Contains(err.Error(), "preceding primary race") {
@@ -364,14 +271,11 @@ func TestCompileConfigRejectsFallbackWithoutPrimaryStage(t *testing.T) {
 
 func TestCompileConfigRejectsFallbackWithoutStageMap(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "group"),
 		rankRule("standard"),
 		raceRule("standard", 2),
-		rule("fallback", "standard", func(r *RoutingRule) {
-			r.On = []string{"5xx"}
-			r.FallbackStrategy = "serial"
-		}),
+		fallbackRule("standard", []string{"5xx"}, "serial"),
 	}
 	_, err := compileConfig(cfg)
 	if err == nil || !strings.Contains(err.Error(), "preceding map action that starts the fallback stage") {
@@ -399,10 +303,11 @@ func TestCompileConfigFallbackStageDoesNotMutatePrimary(t *testing.T) {
 
 func TestCompileConfigRejectsInvalidRetryNext(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = append(cfg.RoutingRules[:3], rule("retry", "standard", func(r *RoutingRule) {
-		r.Scope = "next"
-		r.Attempts = 1
-	}))
+	cfg.RoutingRules = append(cfg.RoutingRules[:3],
+		retryRule("standard", func(r *RetryRule) {
+			r.Scope = "next"
+			r.Attempts = 1
+		}))
 	_, err := compileConfig(cfg)
 	if err == nil || !strings.Contains(err.Error(), "positive count") {
 		t.Fatalf("expected retry count error, got %v", err)
@@ -411,9 +316,9 @@ func TestCompileConfigRejectsInvalidRetryNext(t *testing.T) {
 
 func TestCompileConfigRejectsInvalidLease(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "group"), rankRule("standard"),
-		rule("lease", "standard", func(r *RoutingRule) {
+		leaseRule("standard", func(r *LeaseRule) {
 			r.Source = "loser"
 			r.Duration = Duration{time.Minute}
 		}),
@@ -427,9 +332,9 @@ func TestCompileConfigRejectsInvalidLease(t *testing.T) {
 
 func TestCompileConfigRejectsInvalidAffinity(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "group"), rankRule("standard"),
-		rule("affinity", "standard", func(r *RoutingRule) {
+		affinityRule("standard", func(r *AffinityRule) {
 			r.Sources = []string{"chat.messages"}
 			r.TTL = Duration{time.Hour}
 			r.OnMissing = "ignore"
@@ -445,13 +350,9 @@ func TestCompileConfigRejectsInvalidAffinity(t *testing.T) {
 
 func TestCompileConfigRejectsInvalidSemaphore(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
-		rule("semaphore", "standard", func(r *RoutingRule) {
-			r.MaxCalls = 0
-			r.MaxInFlight = 1
-			r.MaxCallsPerProvider = 1
-		}),
+		semaphoreRule("standard", 0, 1, 1),
 	}
 	_, err := compileConfig(cfg)
 	if err == nil || !strings.Contains(err.Error(), "positive") {
@@ -461,10 +362,10 @@ func TestCompileConfigRejectsInvalidSemaphore(t *testing.T) {
 
 func TestCompileConfigModifiersRequireRace(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "group"),
 		rankRule("standard"),
-		rule("timeout", "standard", func(r *RoutingRule) { r.Duration = Duration{time.Second} }),
+		timeoutRule("standard", time.Second),
 	}
 	_, err := compileConfig(cfg)
 	if err == nil || !strings.Contains(err.Error(), "timeout requires a preceding race") {
@@ -537,15 +438,6 @@ func TestCompileConfigRejectsDuplicateProviderID(t *testing.T) {
 	cfg.Providers = append(cfg.Providers, cfg.Providers[0])
 	if _, err := compileConfig(cfg); err == nil || !strings.Contains(err.Error(), "duplicate provider id") {
 		t.Fatalf("expected duplicate provider error, got %v", err)
-	}
-}
-
-func TestCompileConfigRejectsFieldsOnLegacyFallback(t *testing.T) {
-	cfg := testConfig()
-	cfg.RoutingRules[5].Duration = Duration{time.Second}
-	_, err := compileConfig(cfg)
-	if err == nil || !strings.Contains(err.Error(), `action "fallback"`) || !strings.Contains(err.Error(), "unexpected field(s): duration") {
-		t.Fatalf("expected fallback field error, got %v", err)
 	}
 }
 
@@ -686,6 +578,8 @@ func TestCompileJSONRejectsUnknownPublicField(t *testing.T) {
 }
 
 func TestCompileJSONRejectsZeroValuedMisplacedField(t *testing.T) {
+	// An explicitly-present zero-valued field of another action is a decode
+	// error, not silently accepted: count belongs to race/retry, not map.
 	raw := `
 {
   "host": "127.0.0.1",
@@ -703,12 +597,60 @@ func TestCompileJSONRejectsZeroValuedMisplacedField(t *testing.T) {
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	_, err := loadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), `unknown field "count"`) || !strings.Contains(err.Error(), `action "map"`) {
+		t.Fatalf("expected explicitly present zero foreign field rejection, got %v", err)
+	}
+}
+
+func TestCompileJSONRejectsUnknownAction(t *testing.T) {
+	raw := `
+{
+  "host": "127.0.0.1",
+  "port": 9208,
+  "providers": [
+    {"id":"a","base_provider":"openai","inference_url":"https://a.invalid"}
+  ],
+  "routing_rules": [
+    {"match":{"model":"standard"},"action":"mystery"}
+  ]
+}`
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "unsupported action") || !strings.Contains(err.Error(), "mystery") {
+		t.Fatalf("expected unknown action rejection, got %v", err)
+	}
+}
+
+func TestCompileJSONRejectsMissingRequiredRuleField(t *testing.T) {
+	// map without providers decodes but fails validation with a positioned
+	// cause; the logical model survives into the error.
+	raw := `
+{
+  "host": "127.0.0.1",
+  "port": 9208,
+  "providers": [
+    {"id":"a","base_provider":"openai","inference_url":"https://a.invalid"}
+  ],
+  "routing_rules": [
+    {"match":{"model":"standard"},"action":"map","native":"native-model"},
+    {"match":{"model":"standard"},"action":"rank","strategy":"priority"},
+    {"match":{"model":"standard"},"action":"race","count":1}
+  ]
+}`
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	cfg, err := loadConfig(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := compileConfig(cfg); err == nil || !strings.Contains(err.Error(), "unexpected field(s): count") {
-		t.Fatalf("expected explicitly present zero field rejection, got %v", err)
+	if _, err := compileConfig(cfg); err == nil || !strings.Contains(err.Error(), "map requires at least one provider id") || !strings.Contains(err.Error(), `model "standard"`) {
+		t.Fatalf("expected missing required field error with model context, got %v", err)
 	}
 }
 

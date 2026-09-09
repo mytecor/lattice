@@ -47,7 +47,7 @@ func raceOnlyConfig(t *testing.T) *compiledConfig {
 
 // rulesConfig returns a compiled config whose pool contains n providers of the
 // "group" access group, ranked by descending priority (a first).
-func rulesConfig(t *testing.T, n int, rules []RoutingRule) *compiledConfig {
+func rulesConfig(t *testing.T, n int, rules []Rule) *compiledConfig {
 	t.Helper()
 	cfg := testConfig()
 	providers := make([]Provider, 0, n)
@@ -78,7 +78,7 @@ func successBody(winner string) []byte {
 // ---------------------------------------------------------------------------
 
 func TestBoundedRaceStartsExactlyTopCount(t *testing.T) {
-	compiled := rulesConfig(t, 3, []RoutingRule{
+	compiled := rulesConfig(t, 3, []Rule{
 		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
 	})
 	started := make(chan string, 3)
@@ -215,7 +215,7 @@ func TestBoundedRaceCancelsLosers(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRetryNextUsesOnlyUnusedTargetsWithinBudget(t *testing.T) {
-	compiled := rulesConfig(t, 3, []RoutingRule{
+	compiled := rulesConfig(t, 3, []Rule{
 		mapRule("standard", "native-model", "a", "b", "c"), rankRule("standard"), raceRule("standard", 2),
 		retryNextRule("standard", 1, 2),
 	})
@@ -256,11 +256,11 @@ func TestRetryNextUsesOnlyUnusedTargetsWithinBudget(t *testing.T) {
 
 func TestRetrySameRepeatsOriginalSelection(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "group"),
 		rankRule("standard"),
 		raceRule("standard", 2),
-		rule("retry", "standard", func(r *RoutingRule) {
+		retryRule("standard", func(r *RetryRule) {
 			// Legacy: no scope => "same".
 			r.Attempts = 1
 			r.On = []string{"429", "5xx"}
@@ -315,7 +315,7 @@ func TestRetrySameRepeatsOriginalSelection(t *testing.T) {
 }
 
 func TestRetryNextPoolExhaustionReturnsLastError(t *testing.T) {
-	compiled := rulesConfig(t, 2, []RoutingRule{
+	compiled := rulesConfig(t, 2, []Rule{
 		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
 		retryNextRule("standard", 1, 5), // more batches than remaining targets
 	})
@@ -341,9 +341,9 @@ func TestRetryNextPoolExhaustionReturnsLastError(t *testing.T) {
 }
 
 func TestRouteTimeoutInterruptsRetryBackoff(t *testing.T) {
-	compiled := rulesConfig(t, 2, []RoutingRule{
+	compiled := rulesConfig(t, 2, []Rule{
 		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 1),
-		rule("retry", "standard", func(r *RoutingRule) {
+		retryRule("standard", func(r *RetryRule) {
 			r.Scope = "next"
 			r.Count = 1
 			r.Attempts = 1
@@ -352,7 +352,7 @@ func TestRouteTimeoutInterruptsRetryBackoff(t *testing.T) {
 				Type: "constant", Initial: Duration{200 * time.Millisecond}, Max: Duration{200 * time.Millisecond},
 			}
 		}),
-		rule("timeout", "standard", func(r *RoutingRule) { r.Duration = Duration{30 * time.Millisecond} }),
+		timeoutRule("standard", 30*time.Millisecond),
 	})
 	var calls atomic.Int32
 	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
@@ -381,10 +381,10 @@ func TestRouteTimeoutInterruptsRetryBackoff(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHedgeStartsOnlyNextBatchAfterDelay(t *testing.T) {
-	compiled := rulesConfig(t, 3, []RoutingRule{
+	compiled := rulesConfig(t, 3, []Rule{
 		mapRule("standard", "native-model", "a", "b", "c"), rankRule("standard"), raceRule("standard", 2),
 		retryNextRule("standard", 1, 2),
-		rule("hedge", "standard", func(r *RoutingRule) { r.After = Duration{40 * time.Millisecond} }),
+		hedgeRule("standard", 40*time.Millisecond),
 	})
 	started := make(chan string, 4)
 	release := make(chan struct{})
@@ -441,10 +441,10 @@ func TestHedgeStartsOnlyNextBatchAfterDelay(t *testing.T) {
 func TestHedgeNewWaveDespiteCooledProvider(t *testing.T) {
 	// A whole-batch retryable failure continues the route before the hedge
 	// timer, and the next hedge wave uses only unused targets.
-	compiled := rulesConfig(t, 3, []RoutingRule{
+	compiled := rulesConfig(t, 3, []Rule{
 		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 1),
 		retryNextRule("standard", 1, 2),
-		rule("hedge", "standard", func(r *RoutingRule) { r.After = Duration{50 * time.Millisecond} }),
+		hedgeRule("standard", 50*time.Millisecond),
 	})
 	started := make(chan string, 4)
 	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
@@ -479,14 +479,10 @@ func TestHedgeNewWaveDespiteCooledProvider(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSemaphoreMaxCallsBoundsTotalCalls(t *testing.T) {
-	compiled := rulesConfig(t, 4, []RoutingRule{
+	compiled := rulesConfig(t, 4, []Rule{
 		mapRule("standard", "native-model", "a", "b", "c", "d"), rankRule("standard"), raceRule("standard", 2),
 		retryNextRule("standard", 1, 6),
-		rule("semaphore", "standard", func(r *RoutingRule) {
-			r.MaxCalls = 3
-			r.MaxInFlight = 3
-			r.MaxCallsPerProvider = 1
-		}),
+		semaphoreRule("standard", 3, 3, 1),
 	})
 	var mu sync.Mutex
 	calls := 0
@@ -510,18 +506,14 @@ func TestSemaphoreMaxCallsBoundsTotalCalls(t *testing.T) {
 }
 
 func TestSemaphoreMaxCallsPerProviderEvenForScopeSame(t *testing.T) {
-	compiled := rulesConfig(t, 2, []RoutingRule{
+	compiled := rulesConfig(t, 2, []Rule{
 		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
-		rule("retry", "standard", func(r *RoutingRule) {
+		retryRule("standard", func(r *RetryRule) {
 			r.Scope = "same"
 			r.Attempts = 3
 			r.On = []string{"429", "5xx"}
 		}),
-		rule("semaphore", "standard", func(r *RoutingRule) {
-			r.MaxCalls = 4
-			r.MaxInFlight = 4
-			r.MaxCallsPerProvider = 1
-		}),
+		semaphoreRule("standard", 4, 4, 1),
 	})
 	var mu sync.Mutex
 	calls := map[string]int{}
@@ -621,7 +613,7 @@ func TestStreamingRaceIgnoresErrorBeforeWinner(t *testing.T) {
 func TestSelectedStreamHonorsClientCancellation(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		mapRule("standard", "native-model", "a"),
 		rankRule("standard"),
 		raceRule("standard", 1),
@@ -662,11 +654,11 @@ func TestSelectedStreamHonorsClientCancellation(t *testing.T) {
 func TestStreamingRouteTimeoutKeepsWinnerStreamAlive(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		mapRule("standard", "native-model", "a"),
 		rankRule("standard"),
 		raceRule("standard", 1),
-		rule("timeout", "standard", func(r *RoutingRule) { r.Duration = Duration{30 * time.Millisecond} }),
+		timeoutRule("standard", 30*time.Millisecond),
 	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
@@ -708,11 +700,11 @@ func TestStreamingRouteTimeoutKeepsWinnerStreamAlive(t *testing.T) {
 func TestNonStreamingRouteTimeoutClassified(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		mapRule("standard", "native-model", "a"),
 		rankRule("standard"),
 		raceRule("standard", 1),
-		rule("timeout", "standard", func(r *RoutingRule) { r.Duration = Duration{20 * time.Millisecond} }),
+		timeoutRule("standard", 20*time.Millisecond),
 	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
@@ -770,7 +762,7 @@ func TestCooldownSkipsRecentlyFailedProvider(t *testing.T) {
 func TestFallbackRunsOnlyAfterMatchingFailure(t *testing.T) {
 	cfg := testConfig()
 	// map(group), rank, race plus the compiled fallback stage (map(backup), fallback).
-	cfg.RoutingRules = []RoutingRule{cfg.RoutingRules[0], cfg.RoutingRules[1], cfg.RoutingRules[2], cfg.RoutingRules[4], cfg.RoutingRules[5]}
+	cfg.RoutingRules = []Rule{cfg.RoutingRules[0], cfg.RoutingRules[1], cfg.RoutingRules[2], cfg.RoutingRules[4], cfg.RoutingRules[5]}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -795,18 +787,11 @@ func TestFallbackRunsOnlyAfterMatchingFailure(t *testing.T) {
 
 func TestFallbackSharesPrimarySemaphoreBudget(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
-		rule("semaphore", "standard", func(r *RoutingRule) {
-			r.MaxCalls = 2
-			r.MaxInFlight = 2
-			r.MaxCallsPerProvider = 1
-		}),
+		semaphoreRule("standard", 2, 2, 1),
 		poolRule("standard", "backup"),
-		rule("fallback", "standard", func(r *RoutingRule) {
-			r.On = []string{"5xx"}
-			r.FallbackStrategy = "serial"
-		}),
+		fallbackRule("standard", []string{"5xx"}, "serial"),
 	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
@@ -836,14 +821,11 @@ func TestFallbackSharesPrimarySemaphoreBudget(t *testing.T) {
 
 func TestRouteTimeoutBoundsSerialFallback(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
-		rule("timeout", "standard", func(r *RoutingRule) { r.Duration = Duration{40 * time.Millisecond} }),
+		timeoutRule("standard", 40*time.Millisecond),
 		poolRule("standard", "backup"),
-		rule("fallback", "standard", func(r *RoutingRule) {
-			r.On = []string{"5xx"}
-			r.FallbackStrategy = "serial"
-		}),
+		fallbackRule("standard", []string{"5xx"}, "serial"),
 	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
@@ -881,7 +863,7 @@ func TestFailedBatchAggregationIsIndependentOfCompletionOrder(t *testing.T) {
 			name = "not-found-last"
 		}
 		t.Run(name, func(t *testing.T) {
-			compiled := rulesConfig(t, 3, []RoutingRule{
+			compiled := rulesConfig(t, 3, []Rule{
 				poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
 				retryNextRule("standard", 1, 1),
 			})
@@ -917,13 +899,10 @@ func TestFailedBatchAggregationIsIndependentOfCompletionOrder(t *testing.T) {
 
 func TestSerialStreamingFallbackReturnsCancellationHandle(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
 		poolRule("standard", "backup"),
-		rule("fallback", "standard", func(r *RoutingRule) {
-			r.On = []string{"5xx"}
-			r.FallbackStrategy = "serial"
-		}),
+		fallbackRule("standard", []string{"5xx"}, "serial"),
 	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
@@ -987,9 +966,9 @@ func TestMeaningfulPayloadRecognizesReasoningAndTools(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLeasePromotesHolderToFront(t *testing.T) {
-	compiled := rulesConfig(t, 3, []RoutingRule{
+	compiled := rulesConfig(t, 3, []Rule{
 		poolRule("standard", "group"), rankRule("standard"),
-		rule("lease", "standard", func(r *RoutingRule) {
+		leaseRule("standard", func(r *LeaseRule) {
 			r.Source = "winner"
 			r.Duration = Duration{time.Minute}
 			r.RenewOnSuccess = boolPtr(true)
@@ -1028,9 +1007,9 @@ func TestLeasePromotesHolderToFront(t *testing.T) {
 }
 
 func TestLeaseAcquiredByWinnerAndReleasedOnHardFailure(t *testing.T) {
-	compiled := rulesConfig(t, 3, []RoutingRule{
+	compiled := rulesConfig(t, 3, []Rule{
 		poolRule("standard", "group"), rankRule("standard"),
-		rule("lease", "standard", func(r *RoutingRule) {
+		leaseRule("standard", func(r *LeaseRule) {
 			r.Source = "winner"
 			r.Duration = Duration{time.Minute}
 			r.RenewOnSuccess = boolPtr(true)
@@ -1068,9 +1047,9 @@ func TestLeaseAcquiredByWinnerAndReleasedOnHardFailure(t *testing.T) {
 }
 
 func TestLeaseLoserCancellationIsNeutral(t *testing.T) {
-	compiled := rulesConfig(t, 2, []RoutingRule{
+	compiled := rulesConfig(t, 2, []Rule{
 		poolRule("standard", "group"), rankRule("standard"),
-		rule("lease", "standard", func(r *RoutingRule) {
+		leaseRule("standard", func(r *LeaseRule) {
 			r.Source = "winner"
 			r.Duration = Duration{time.Minute}
 			r.RenewOnSuccess = boolPtr(true)
@@ -1095,9 +1074,9 @@ func TestLeaseLoserCancellationIsNeutral(t *testing.T) {
 }
 
 func TestLeaseReleasedAfterConsecutiveSlowStarts(t *testing.T) {
-	compiled := rulesConfig(t, 2, []RoutingRule{
+	compiled := rulesConfig(t, 2, []Rule{
 		poolRule("standard", "group"), rankRule("standard"),
-		rule("lease", "standard", func(r *RoutingRule) {
+		leaseRule("standard", func(r *LeaseRule) {
 			r.Source = "winner"
 			r.Duration = Duration{time.Minute}
 			r.RenewOnSuccess = boolPtr(true)
@@ -1135,10 +1114,10 @@ func TestLeaseReleasedAfterConsecutiveSlowStarts(t *testing.T) {
 func affinityPipeline(t *testing.T) *compiledConfig {
 	t.Helper()
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "group"),
 		rankRule("standard"),
-		rule("affinity", "standard", func(r *RoutingRule) {
+		affinityRule("standard", func(r *AffinityRule) {
 			r.Sources = []string{"responses.previous_response_id"}
 			r.TTL = Duration{time.Hour}
 			r.OnMissing = "ignore"
@@ -1268,14 +1247,10 @@ func TestChatNeverUsesAffinity(t *testing.T) {
 }
 
 func TestSemaphoreMaxInFlightGatesNextBatch(t *testing.T) {
-	compiled := rulesConfig(t, 3, []RoutingRule{
+	compiled := rulesConfig(t, 3, []Rule{
 		mapRule("standard", "native-model", "a", "b", "c"), rankRule("standard"), raceRule("standard", 2),
 		retryNextRule("standard", 1, 2),
-		rule("semaphore", "standard", func(r *RoutingRule) {
-			r.MaxCalls = 3
-			r.MaxInFlight = 2
-			r.MaxCallsPerProvider = 1
-		}),
+		semaphoreRule("standard", 3, 2, 1),
 	})
 	releaseB := make(chan struct{})
 	cStarted := make(chan struct{})
@@ -1316,13 +1291,9 @@ func TestSemaphoreMaxInFlightGatesNextBatch(t *testing.T) {
 }
 
 func TestSemaphoreRefillsPartiallyStartedInitialRace(t *testing.T) {
-	compiled := rulesConfig(t, 3, []RoutingRule{
+	compiled := rulesConfig(t, 3, []Rule{
 		mapRule("standard", "native-model", "a", "b", "c"), rankRule("standard"), raceRule("standard", 3),
-		rule("semaphore", "standard", func(r *RoutingRule) {
-			r.MaxCalls = 3
-			r.MaxInFlight = 1
-			r.MaxCallsPerProvider = 1
-		}),
+		semaphoreRule("standard", 3, 1, 1),
 	})
 	var mu sync.Mutex
 	var called []string
@@ -1352,9 +1323,9 @@ func TestSemaphoreRefillsPartiallyStartedInitialRace(t *testing.T) {
 }
 
 func TestNoUpstreamCallsAfterWinner(t *testing.T) {
-	compiled := rulesConfig(t, 2, []RoutingRule{
+	compiled := rulesConfig(t, 2, []Rule{
 		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 1),
-		rule("retry", "standard", func(r *RoutingRule) {
+		retryRule("standard", func(r *RetryRule) {
 			r.Scope = "same"
 			r.Attempts = 3
 			r.On = []string{"429", "5xx"}
@@ -1386,10 +1357,10 @@ func TestAffinityPinnedRouteNeverUsesFallback(t *testing.T) {
 	// Known affinity narrows the route to the pinned provider; a legacy
 	// fallback group must not pick up the stateful chain (no state replay).
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "group"),
 		rankRule("standard"),
-		rule("affinity", "standard", func(r *RoutingRule) {
+		affinityRule("standard", func(r *AffinityRule) {
 			r.Sources = []string{"responses.previous_response_id"}
 			r.TTL = Duration{time.Hour}
 			r.OnMissing = "ignore"
@@ -1397,10 +1368,7 @@ func TestAffinityPinnedRouteNeverUsesFallback(t *testing.T) {
 		}),
 		raceRule("standard", 2),
 		poolRule("standard", "backup"),
-		rule("fallback", "standard", func(r *RoutingRule) {
-			r.On = []string{"5xx", "timeout"}
-			r.FallbackStrategy = "serial"
-		}),
+		fallbackRule("standard", []string{"5xx", "timeout"}, "serial"),
 	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
@@ -1438,10 +1406,10 @@ func TestAffinityResolutionFailureRemainsPinned(t *testing.T) {
 	// An explicit catalog requires a last-known-good snapshot. Leaving the
 	// fresh catalog empty makes target resolution fail before executor dispatch.
 	cfg.Providers[0].ModelsURL = "https://catalog.invalid/v1/models"
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		poolRule("standard", "group"),
 		rankRule("standard"),
-		rule("affinity", "standard", func(r *RoutingRule) {
+		affinityRule("standard", func(r *AffinityRule) {
 			r.Sources = []string{"responses.previous_response_id"}
 			r.TTL = Duration{time.Hour}
 			r.OnMissing = "ignore"
@@ -1449,10 +1417,7 @@ func TestAffinityResolutionFailureRemainsPinned(t *testing.T) {
 		}),
 		raceRule("standard", 2),
 		poolRule("standard", "backup"),
-		rule("fallback", "standard", func(r *RoutingRule) {
-			r.On = []string{"invalid_response"}
-			r.FallbackStrategy = "serial"
-		}),
+		fallbackRule("standard", []string{"invalid_response"}, "serial"),
 	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
@@ -1524,15 +1489,11 @@ func TestAffinityStaleMappingFallsBackToPool(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHedgeRetriesPermitBlockedBatchMembers(t *testing.T) {
-	compiled := rulesConfig(t, 4, []RoutingRule{
+	compiled := rulesConfig(t, 4, []Rule{
 		mapRule("standard", "native-model", "a", "b", "c", "d"), rankRule("standard"), raceRule("standard", 2),
 		retryNextRule("standard", 2, 1),
-		rule("hedge", "standard", func(r *RoutingRule) { r.After = Duration{30 * time.Millisecond} }),
-		rule("semaphore", "standard", func(r *RoutingRule) {
-			r.MaxCalls = 4
-			r.MaxInFlight = 3
-			r.MaxCallsPerProvider = 1
-		}),
+		hedgeRule("standard", 30*time.Millisecond),
+		semaphoreRule("standard", 4, 3, 1),
 	})
 	cStarted := make(chan struct{})
 	dStarted := make(chan struct{})
@@ -1621,7 +1582,7 @@ func catalogServer(t *testing.T, ids ...string) *httptest.Server {
 // compiledWithCatalogs builds a compiled config whose catalog sources are set
 // directly so tests can prove exact native validation without real HTTP. It
 // returns the shared catalog instance so the runner uses the same snapshots.
-func compiledWithCatalogs(t *testing.T, rules []RoutingRule, catalogs map[string][]string) (*compiledConfig, *Catalog) {
+func compiledWithCatalogs(t *testing.T, rules []Rule, catalogs map[string][]string) (*compiledConfig, *Catalog) {
 	t.Helper()
 	cfg := testConfig()
 	cfg.Providers = []Provider{
@@ -1649,7 +1610,7 @@ func compiledWithCatalogs(t *testing.T, rules []RoutingRule, catalogs map[string
 }
 
 func TestMapGivesDifferentProvidersDifferentNatives(t *testing.T) {
-	compiled, catalog := compiledWithCatalogs(t, []RoutingRule{
+	compiled, catalog := compiledWithCatalogs(t, []Rule{
 		mapRule("standard", "native-a", "a"),
 		mapRule("standard", "native-b", "b"),
 		rankRule("standard"),
@@ -1696,15 +1657,12 @@ func TestModelNotFoundTriggersExplicitFallback(t *testing.T) {
 	// alias; provider b lacks both. All primary targets locally fail
 	// model_not_found, which must activate the configured fallback stage and
 	// dispatch the fallback target with its own native, never an unrelated one.
-	compiled, catalog := compiledWithCatalogs(t, []RoutingRule{
+	compiled, catalog := compiledWithCatalogs(t, []Rule{
 		mapRule("standard", "alias-a", "a", "b"),
 		rankRule("standard"),
 		raceRule("standard", 2),
 		mapRule("standard", "alias-b", "a"),
-		rule("fallback", "standard", func(r *RoutingRule) {
-			r.On = []string{"model_not_found"}
-			r.FallbackStrategy = "race"
-		}),
+		fallbackRule("standard", []string{"model_not_found"}, "race"),
 	}, map[string][]string{"a": {"alias-b"}, "b": {"unrelated"}})
 	var mu sync.Mutex
 	var called []Target
@@ -1737,21 +1695,17 @@ func TestModelNotFoundWithMatchingRetryStaysBounded(t *testing.T) {
 	// All primary targets fail model_not_found and retry.on opts in: the next
 	// retry wave uses only unused targets, stays inside the semaphore budget
 	// and never dispatches a provider twice.
-	compiled, catalog := compiledWithCatalogs(t, []RoutingRule{
+	compiled, catalog := compiledWithCatalogs(t, []Rule{
 		mapRule("standard", "alias-a", "a", "b", "c"),
 		rankRule("standard"),
 		raceRule("standard", 2),
-		rule("retry", "standard", func(r *RoutingRule) {
+		retryRule("standard", func(r *RetryRule) {
 			r.Scope = "next"
 			r.Count = 1
 			r.Attempts = 1
 			r.On = []string{"model_not_found"}
 		}),
-		rule("semaphore", "standard", func(r *RoutingRule) {
-			r.MaxCalls = 4
-			r.MaxInFlight = 3
-			r.MaxCallsPerProvider = 1
-		}),
+		semaphoreRule("standard", 4, 3, 1),
 	}, map[string][]string{"a": {"other"}, "b": {"other"}, "c": {"other"}})
 	var calls atomic.Int32
 	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
@@ -1773,7 +1727,7 @@ func TestModelNotFoundWithMatchingRetryStaysBounded(t *testing.T) {
 func TestModelNotFoundNeverSelectsUnrelatedModel(t *testing.T) {
 	// A missing native must surface as model_not_found to the caller, never as
 	// a lexicographic substitution to an arbitrary catalog id.
-	compiled, catalog := compiledWithCatalogs(t, []RoutingRule{
+	compiled, catalog := compiledWithCatalogs(t, []Rule{
 		mapRule("standard", "deepseek-ai/DeepSeek-V4", "a"),
 		rankRule("standard"),
 		raceRule("standard", 1),
@@ -1799,20 +1753,13 @@ func TestDualAliasFallbackUsesSameProviderOnce(t *testing.T) {
 	// primary alias is locally absent, the fallback reaches the same provider
 	// once with its other native; the per-provider budget is not burned by the
 	// pre-validated primary target.
-	compiled, catalog := compiledWithCatalogs(t, []RoutingRule{
+	compiled, catalog := compiledWithCatalogs(t, []Rule{
 		mapRule("standard", "deepseek-ai/DeepSeek-V4", "a", "b"),
 		rankRule("standard"),
 		raceRule("standard", 2),
-		rule("semaphore", "standard", func(r *RoutingRule) {
-			r.MaxCalls = 4
-			r.MaxInFlight = 3
-			r.MaxCallsPerProvider = 1
-		}),
+		semaphoreRule("standard", 4, 3, 1),
 		mapRule("standard", "gonka/deepseek-ai/DeepSeek-V4", "a"),
-		rule("fallback", "standard", func(r *RoutingRule) {
-			r.On = []string{"model_not_found", "5xx"}
-			r.FallbackStrategy = "race"
-		}),
+		fallbackRule("standard", []string{"model_not_found", "5xx"}, "race"),
 	}, map[string][]string{
 		"a": {"gonka/deepseek-ai/DeepSeek-V4"},
 		"b": {"deepseek-ai/DeepSeek-V3"},

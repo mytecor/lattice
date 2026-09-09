@@ -107,12 +107,17 @@ runtime directory и подставляет credentials через `jq`; ито�
 
 Production configuration must provide map/race rules for every advertised logical model. Rules
 follow the canonical action order `map → rank → lease → affinity → race → retry → hedge →
-semaphore → timeout`; each action owns only its own fields and the gateway rejects unknown or
-misplaced fields at startup. A new set of `map` after `race` starts the fallback stage and must
-end with `fallback`. An empty pool, a duplicate provider in one pool, a dangling `map`, a mapping
-after a completed stage, or a fallback without a preceding primary stage are all rejected at
-startup with the rule index. Legacy `race access_groups`, an independent `models` list and
-access-group routing are removed; provider transport and credentials stay in the registry.
+semaphore → timeout`; each entry is a discriminated rule for exactly one action and owns only
+that action's fields. An unknown action, an unknown field, or a field owned by another action
+(e.g. `count` on `map`, `providers` on `fallback`) fails during Nix evaluation; the gateway
+binary independently re-validates the generated JSON at startup, so JSON produced outside Nix
+receives the same strict per-action checks. Generated JSON contains only the fields of the
+chosen action, never implicit defaults borrowed from other actions. A new set of `map` after
+`race` starts the fallback stage and must end with `fallback`. An empty pool, a duplicate
+provider in one pool, a dangling `map`, a mapping after a completed stage, or a fallback
+without a preceding primary stage are all rejected at startup with the rule index. Legacy
+`race access_groups`, an independent `models` list and access-group routing are removed;
+provider transport and credentials stay in the registry.
 
 Discovery validation is provider-scoped and exact: each target `(provider, native)` is checked
 against the provider's last-known-good catalog before dispatch. Missing native → `model_not_found`

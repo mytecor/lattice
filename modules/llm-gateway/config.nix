@@ -17,63 +17,19 @@ let
     allow_private_network = provider.allowPrivateNetwork;
   };
 
-  # Emits exactly the fields a routing action owns. This keeps the generated
-  # public JSON clean (no spurious defaulted fields) and mirrors the gateway's
-  # per-action field validation. map binds one native model id to a set of
-  # provider IDs; the logical model registry is derived from compiled plans, so
-  # there is no separate native-model config field.
+  # Emits exactly the fields a routing action owns. The action-specific fields
+  # come from the discriminated submodule's internal `_public` projection, so
+  # the generated public JSON stays clean (no spurious defaulted fields from
+  # other actions) and mirrors the gateway's per-action strict decoder. map
+  # binds one native model id to a set of provider IDs; the logical model
+  # registry is derived from compiled plans, so there is no separate
+  # native-model config field.
   publicRule = rule:
-    let
-      base = {
-        match.model = rule.model;
-        action = rule.action;
-      };
-      byAction = {
-        map = { native = rule.native; providers = rule.providers; };
-        rank = { strategy = rule.strategy; };
-        lease = {
-          source = rule.source;
-          duration = rule.duration;
-          renew_on_success = rule.renewOnSuccess;
-          release_on = rule.releaseOn;
-          release_after_slow_starts = rule.releaseAfterSlowStarts;
-          slow_start = rule.slowStart;
-        };
-        affinity = {
-          sources = rule.sources;
-          ttl = rule.ttl;
-          on_missing = rule.onMissing;
-          on_provider_failure = rule.onProviderFailure;
-        };
-        race = { count = rule.count; };
-        retry = {
-          scope = rule.scope;
-          count = rule.count;
-          attempts = rule.attempts;
-          on = rule.on;
-          backoff = {
-            type = rule.backoffType;
-            initial = rule.backoffInitial;
-            max = rule.backoffMax;
-          };
-        };
-        hedge = { after = rule.after; };
-        semaphore = {
-          max_calls = rule.maxCalls;
-          max_in_flight = rule.maxInFlight;
-          max_calls_per_provider = rule.maxCallsPerProvider;
-        };
-        timeout = { duration = rule.duration; };
-        # Terminal action of the optional fallback stage: the target pool is the
-        # snapshot of the fallback-stage map rules that precede it.
-        fallback = {
-          on = rule.on;
-          fallback_strategy = rule.fallbackStrategy;
-          after = rule.after;
-        };
-      };
-    in
-    base // byAction.${rule.action};
+    {
+      match.model = rule.model;
+      action = rule.action;
+    }
+    // rule._public;
 
   dataDir = "/run/${cfg.runtimeDirectory}";
 
@@ -153,9 +109,11 @@ let
   '';
 
   providerIds = map (provider: provider.id) (builtins.attrValues activeProviders);
-  ruleModels = lib.unique (map (rule: rule.model) cfg.routingRules);
-  mappedProviderIds = lib.unique (lib.concatMap (rule: rule.providers) cfg.routingRules);
-  fallbackRules = lib.filter (rule: rule.action == "fallback") cfg.routingRules;
+  # Only map rules carry a provider list; the other discriminated actions own
+  # none, so the registry lookup is guarded by action.
+  mappedProviderIds = lib.unique (lib.concatMap
+    (rule: if rule.action == "map" then rule.providers else [ ])
+    cfg.routingRules);
 in
 {
   config = lib.mkIf cfg.enable {
@@ -176,12 +134,9 @@ in
           mappedProviderIds;
         message = "Every routing map must reference an enabled provider ID.";
       }
-      {
-        assertion = lib.all
-          (rule: rule.action != "fallback" || rule.providers == [ ])
-          cfg.routingRules;
-        message = "Bifrost fallback declares its target pool via preceding map rules, not providers.";
-      }
+      # The fallback target pool is declared via preceding map rules only: the
+      # discriminated fallback submodule owns no providers field, so this is
+      # guaranteed structurally at Nix evaluation time.
       {
         assertion = lib.all
           (provider: provider.modelsApiKeyFile == null || provider.modelsUrl != null)

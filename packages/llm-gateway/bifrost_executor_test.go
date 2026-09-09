@@ -21,7 +21,7 @@ func bifrostTestConfig(t *testing.T, upstreamURL string) *compiledConfig {
 	cfg.Providers[0].InferenceURL = upstreamURL
 	cfg.Providers[0].APIKey = "provider-secret"
 	cfg.Providers[0].AllowPrivateNetwork = true
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		mapRule("standard", "native-model", "mock-openai"),
 		rankRule("standard"),
 		raceRule("standard", 1),

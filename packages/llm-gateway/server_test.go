@@ -15,7 +15,7 @@ import (
 func TestServerAuthModelsAndLogicalRewrite(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		mapRule("standard", "native-model", "a"),
 		rankRule("standard"),
 		raceRule("standard", 1),
@@ -123,7 +123,7 @@ func TestUnknownModelFailsBeforeExecutor(t *testing.T) {
 func TestServerStreamsWinnerWithLogicalModel(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		mapRule("standard", "native-model", "a"),
 		rankRule("standard"),
 		raceRule("standard", 1),
@@ -192,7 +192,7 @@ func TestManualRefreshDoesNotExposeProviderNamespace(t *testing.T) {
 func TestServerReportsFailureAfterStreamingWinner(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		mapRule("standard", "native-model", "a"),
 		rankRule("standard"),
 		raceRule("standard", 1),
@@ -230,10 +230,10 @@ func affinityServerConfig(t *testing.T) *compiledConfig {
 	t.Helper()
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules = []RoutingRule{
+	cfg.RoutingRules = []Rule{
 		mapRule("standard", "native-model", "a"),
 		rankRule("standard"),
-		rule("affinity", "standard", func(r *RoutingRule) {
+		affinityRule("standard", func(r *AffinityRule) {
 			r.Sources = []string{"responses.conversation", "responses.previous_response_id"}
 			r.TTL = Duration{time.Hour}
 			r.OnMissing = "ignore"

@@ -96,35 +96,35 @@ Legacy compatibility сохраняется только в той мере, в 
 
 ## Что сделать
 
-- [ ] Зафиксировать минимальный общий rule envelope/interface и отделить JSON DTO от compiled
+- [x] Зафиксировать минимальный общий rule envelope/interface и отделить JSON DTO от compiled
   scheduler types.
-- [ ] Реализовать двухфазный strict decoder по `action` с `DisallowUnknownFields` для каждого
+- [x] Реализовать двухфазный strict decoder по `action` с `DisallowUnknownFields` для каждого
   конкретного типа.
-- [ ] Создать отдельный Go type и отдельный implementation file для каждого актуального action.
-- [ ] Перенести action-specific defaults и validation из общего compiler switch в реализации
+- [x] Создать отдельный Go type и отдельный implementation file для каждого актуального action.
+- [x] Перенести action-specific defaults и validation из общего compiler switch в реализации
   конкретных rules.
-- [ ] Заменить большой `compilePlans` switch небольшим compiler/builder contract с typed dispatch.
-- [ ] Сохранить индекс rule и logical model в ошибках decode, validation и compilation.
-- [ ] Разделить Nix `routingRules` на action-specific types и генерировать только принадлежащие
+- [x] Заменить большой `compilePlans` switch небольшим compiler/builder contract с typed dispatch.
+- [x] Сохранить индекс rule и logical model в ошибках decode, validation и compilation.
+- [x] Разделить Nix `routingRules` на action-specific types и генерировать только принадлежащие
   action поля.
-- [ ] Удалить общий struct и мёртвые compatibility fields после миграции всех callers/tests.
-- [ ] Обновить developer documentation, описав добавление нового action одним типом, Nix schema,
+- [x] Удалить общий struct и мёртвые compatibility fields после миграции всех callers/tests.
+- [x] Обновить developer documentation, описав добавление нового action одним типом, Nix schema,
   файлом реализации и тестом.
 
 ## Критерий готовности (Definition of Done)
 
-- [ ] В Go и Nix отсутствует единый rule type, содержащий объединение полей всех actions.
-- [ ] Каждому action соответствует отдельный тип и отдельный implementation file.
-- [ ] Добавление тестового нового action не требует изменения общего `RoutingRule` и большого
+- [x] В Go и Nix отсутствует единый rule type, содержащий объединение полей всех actions.
+- [x] Каждому action соответствует отдельный тип и отдельный implementation file.
+- [x] Добавление тестового нового action не требует изменения общего `RoutingRule` и большого
   compiler switch; меняется только discriminator registry/decoder и новый action-файл.
-- [ ] Unknown action, unknown field, поле чужого action, отсутствующее обязательное поле и
+- [x] Unknown action, unknown field, поле чужого action, отсутствующее обязательное поле и
   неправильный порядок pipeline дают точные отрицательные тесты.
-- [ ] Положительные decode/compile tests существуют для `map`, `rank`, `lease`, `affinity`,
+- [x] Положительные decode/compile tests существуют для `map`, `rank`, `lease`, `affinity`,
   `race`, `retry`, `hedge`, `fallback` при его наличии, `semaphore` и `timeout`.
-- [ ] Все scheduler, streaming, discovery, response sanitization и Nix service regression tests
+- [x] Все scheduler, streaming, discovery, response sanitization и Nix service regression tests
   из [f7-09](./f7-09-bounded-provider-routing.md) и
   [f7-10](./f7-10-route-native-provider-mapping.md) проходят без изменения поведения.
-- [ ] `gofmt`, gateway `go test ./...`, `go test -race ./...`, доступные Nix checks и code index
+- [x] `gofmt`, gateway `go test ./...`, `go test -race ./...`, доступные Nix checks и code index
   проходят.
 
 ## Затрагиваемые файлы / слои
@@ -139,3 +139,36 @@ Legacy compatibility сохраняется только в той мере, в 
 _нет_. Выбор между закрытым interface и tagged wrapper остаётся внутренней деталью при условии,
 что невозможные комбинации полей не представлены публичным типом и compiler semantics разнесена
 по action-файлам.
+
+### Решённые при реализации
+
+- **Closed interface + two-phase decoder.** `Rule` — закрытый интерфейс (`model()`, `action()`,
+  `apply(*stageContext)`, unexported `isRule()`); `ruleBase` содержит только logical model
+  selector и action identity, action-specific поля живут в конкретных типах. `RoutingRules`
+  (`rule_decode.go`) читает минимальный envelope, выбирает тип через `ruleRegistry`
+  (единственная точка регистрации action) и декодирует тот же объект с
+  `DisallowUnknownFields`: unknown action / unknown field / поле чужого action отклоняются на
+  decode boundary, ошибка несёт индекс rule, logical model и конкретную причину.
+- **Typed compiler dispatch.** Большой `switch` в `compilePlans` удалён. Каждый action
+  реализует `apply(*stageContext)`; общий compiler (`rule_compile.go`) ведёт только stage/order
+  bookkeeping (`advance`: открытие fallback stage первым `map` после `race`, канонический
+  порядок по rank из registry, разрешённые action внутри fallback stage) и финальную проверку
+  per-model (race snapshot, dangling fallback map). Добавление action = запись в `ruleRegistry` +
+  файл `rule_<action>.go` + Nix-подмодуль + тест; общего union-struct и центрального switch нет
+  (`TestRuleRegistryIsTheOnlyExtensionPoint`).
+- **Nix discriminated union.** `types.oneOf` из закреплённого nixpkgs не диспатчит submodule по
+  discriminator (unknown-field throw внутри альтернативы не ловится), поэтому
+  `lattice.llm-gateway.routingRules` реализован как checked union: значением типа `routingRule`
+  является результат `lib.evalModules` над action-specific submodule, который задаёт только
+  поля выбранного action (с требуемыми полями и типами). Unknown action/field/foreign field и
+  missing required ловятся на Nix evaluation; `_public`-проекция генерирует в public JSON ровно
+  поля конкретного action. Mytecor-homelab assertions и `llm-gateway-service` проходят
+  evaluation без изменения описания правил.
+
+### Валидация
+
+- `gofmt`, `go vet`, `go test ./...`, `go test -race ./...` в `packages/llm-gateway` — зелёные;
+- генерированный из typed Nix union конфиг mytecor-homelab проходит
+  `TestValidateExternalGeneratedConfig` end-to-end (strict decoder + compile);
+- проверки Nix: `.drvPath` для `mytecor-homelab`, `example` и `llm-gateway-service` eвалятся,
+  регрессионные assertions по routing rules проходят.
