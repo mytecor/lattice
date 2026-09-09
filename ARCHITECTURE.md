@@ -156,8 +156,12 @@ ID преобразуется в native target до вызова Bifrost, а и�
 не входят в клиентскую поверхность. Непубличные upstream keys подаются отдельно от client key.
 
 Provider-конфигурация разделяет `inference_url` и опциональный `models_url`. Поэтому
-`api.openbroker.gonka.gg` может обслуживать inference, а каталог той же access group — загружаться с
-`proxy.gonka.gg/v1/models`; наличие `/v1/models` на inference endpoint не требуется.
+`api.openbroker.gonka.gg/v1` может обслуживать inference, а каталог той же access group — загружаться с
+`proxy.gonka.gg/v1/models`. Если `models_url` отсутствует, gateway выводит catalog endpoint как
+`${inference_url}/models`; явный URL остаётся способом использовать независимый источник.
+`inference_url` задаёт полный путь до OpenAI-совместимой точки входа, включая версионный сегмент:
+gateway добавляет только операцию (`/chat/completions`), не вставляя `/v1` автоматически, так что
+provider может хостить API под произвольным маршрутизированным префиксом.
 
 Маршрут строится из плоского упорядоченного `routing_rules` pipeline. Один rule выполняет одно
 действие (`race`, `hedge`, `retry`, `timeout` или `fallback`) и преобразует route, построенный
@@ -166,8 +170,8 @@ Provider-конфигурация разделяет `inference_url` и опци
 победитель выбирается по первому meaningful content, reasoning или tool-call event; проигравшие
 вызовы отменяются через context cancellation.
 
-В production Gonka route Proxy и OpenBroker входят в access group `gonka`, которую `race`
-раскрывает в обе параллельные ветки. `hedge` делает три retries перекрывающимися: новые полные
+В production все настроенные Gonka providers входят в access group `gonka`, которую `race`
+раскрывает в параллельные ветки. `hedge` делает три retries перекрывающимися: новые полные
 race-поколения стартуют после exponential backoff 200/400/800 ms, а предыдущие остаются активны до
 появления winner. Для этой hedged-группы каждый retry повторяет полный настроенный race даже при
 cooldown отдельного provider. Без `hedge` provider с retryable failure временно пропускается, пока

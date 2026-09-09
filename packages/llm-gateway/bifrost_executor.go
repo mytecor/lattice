@@ -74,6 +74,25 @@ func newBifrostExecutor(ctx context.Context, config *compiledConfig) (*BifrostEx
 			return nil, fmt.Errorf("provider %q has unsupported Bifrost base_provider %q", provider.ID, provider.BaseProvider)
 		}
 		account.providers = append(account.providers, providerKey)
+		customConfig := &schemas.CustomProviderConfig{
+			BaseProviderType: baseProvider,
+			IsKeyLess:        provider.APIKey == "",
+		}
+		// The OpenAI-compatible adapter pads a hard-coded "/v1" onto the base URL
+		// unless a path override is supplied. We pin the request paths to their
+		// "/v1"-free form so provider.InferenceURL fully decides the version
+		// prefix: a provider may serve its OpenAI API under "/v1" or under an
+		// arbitrary routed path (e.g. "/functions/v1/gonka"). The override is
+		// scoped to the OpenAI adapter so other base providers keep their native
+		// paths (e.g. Anthropic's "/v1/messages").
+		if baseProvider == schemas.OpenAI {
+			customConfig.RequestPathOverrides = map[schemas.RequestType]string{
+				schemas.ChatCompletionRequest:       "/chat/completions",
+				schemas.ChatCompletionStreamRequest: "/chat/completions",
+				schemas.ResponsesRequest:            "/responses",
+				schemas.ResponsesStreamRequest:      "/responses",
+			}
+		}
 		account.configs[providerKey] = &schemas.ProviderConfig{
 			NetworkConfig: schemas.NetworkConfig{
 				BaseURL:                        provider.InferenceURL,
@@ -82,10 +101,7 @@ func newBifrostExecutor(ctx context.Context, config *compiledConfig) (*BifrostEx
 				MaxRetries:                     provider.BifrostMaxRetries,
 				AllowPrivateNetwork:            provider.AllowPrivateNetwork,
 			},
-			CustomProviderConfig: &schemas.CustomProviderConfig{
-				BaseProviderType: baseProvider,
-				IsKeyLess:        provider.APIKey == "",
-			},
+			CustomProviderConfig:    customConfig,
 			SendBackRawRequest:      false,
 			SendBackRawResponse:     false,
 			StoreRawRequestResponse: false,

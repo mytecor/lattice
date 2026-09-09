@@ -156,7 +156,9 @@ func TestServerStreamsWinnerWithLogicalModel(t *testing.T) {
 func TestManualRefreshDoesNotExposeGroupNames(t *testing.T) {
 	compiled := raceOnlyConfig(t)
 	compiled.raw.ClientAPIKey = "client-secret"
-	compiled.groupSource["internal-provider-group"] = catalogSource{URL: "://invalid"}
+	compiled.groupSources = map[string][]catalogSource{
+		"internal-provider-group": {{URL: "://invalid"}},
+	}
 	catalog := newCatalog(compiled)
 	executor := &fakeExecutor{
 		do:     func(context.Context, Target, ExecuteRequest) ([]byte, *CallError) { return nil, nil },

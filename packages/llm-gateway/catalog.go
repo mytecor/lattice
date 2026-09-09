@@ -14,7 +14,7 @@ import (
 )
 
 type Catalog struct {
-	sources map[string]catalogSource
+	sources map[string][]catalogSource
 	client  *http.Client
 	mu      sync.RWMutex
 	models  map[string][]string
@@ -23,7 +23,7 @@ type Catalog struct {
 
 func newCatalog(config *compiledConfig) *Catalog {
 	return &Catalog{
-		sources: config.groupSource,
+		sources: config.groupSources,
 		client:  &http.Client{Timeout: 30 * time.Second},
 		models:  make(map[string][]string),
 		updated: make(map[string]time.Time),
@@ -31,11 +31,8 @@ func newCatalog(config *compiledConfig) *Catalog {
 }
 
 func (c *Catalog) Resolve(group, primary string) (string, error) {
-	sourceConfigured := false
-	if _, ok := c.sources[group]; ok {
-		sourceConfigured = true
-	}
-	if !sourceConfigured {
+	sources := c.sources[group]
+	if len(sources) == 0 {
 		if primary == "" {
 			return "", fmt.Errorf("access group %q has no primary model", group)
 		}
@@ -45,6 +42,9 @@ func (c *Catalog) Resolve(group, primary string) (string, error) {
 	models, available := c.models[group]
 	c.mu.RUnlock()
 	if !available || len(models) == 0 {
+		if !catalogRequired(sources) && primary != "" {
+			return primary, nil
+		}
 		return "", fmt.Errorf("access group %q has no last-known-good catalog", group)
 	}
 	index := sort.SearchStrings(models, primary)
@@ -56,18 +56,58 @@ func (c *Catalog) Resolve(group, primary string) (string, error) {
 
 func (c *Catalog) Refresh(ctx context.Context) map[string]error {
 	errorsByGroup := make(map[string]error)
-	for group, source := range c.sources {
-		models, err := c.fetch(ctx, source)
-		if err != nil {
-			errorsByGroup[group] = err
+	for group, sources := range c.sources {
+		type fetchResult struct {
+			source catalogSource
+			models []string
+			err    error
+		}
+		results := make(chan fetchResult, len(sources))
+		for _, source := range sources {
+			source := source
+			go func() {
+				models, err := c.fetch(ctx, source)
+				results <- fetchResult{source: source, models: models, err: err}
+			}()
+		}
+		set := make(map[string]struct{})
+		var failures []error
+		for range sources {
+			result := <-results
+			if result.err != nil {
+				failures = append(failures, fmt.Errorf("%s: %w", result.source.URL, result.err))
+				continue
+			}
+			for _, model := range result.models {
+				set[model] = struct{}{}
+			}
+		}
+		if len(set) == 0 {
+			if len(failures) != 0 {
+				errorsByGroup[group] = errors.Join(failures...)
+			}
 			continue
 		}
+		models := make([]string, 0, len(set))
+		for model := range set {
+			models = append(models, model)
+		}
+		sort.Strings(models)
 		c.mu.Lock()
 		c.models[group] = models
 		c.updated[group] = time.Now()
 		c.mu.Unlock()
 	}
 	return errorsByGroup
+}
+
+func catalogRequired(sources []catalogSource) bool {
+	for _, source := range sources {
+		if source.Explicit {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Catalog) fetch(ctx context.Context, source catalogSource) ([]string, error) {

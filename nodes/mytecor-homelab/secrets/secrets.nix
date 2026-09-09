@@ -10,4 +10,8 @@ in
   # LLM Gateway provider keys
   "llm-provider-gonka-gg-proxy.age".publicKeys = [ admin node ];
   "llm-provider-gonka-gg-openbroker.age".publicKeys = [ admin node ];
+  "llm-provider-gonka-api.age".publicKeys = [ admin node ];
+  "llm-provider-dahl.age".publicKeys = [ admin node ];
+  "llm-provider-hyperfusion.age".publicKeys = [ admin node ];
+  "llm-provider-gonkarouter.age".publicKeys = [ admin node ];
 }

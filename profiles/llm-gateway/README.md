@@ -10,8 +10,11 @@ Go proxy поверх Bifrost Core.
 - `profiles/llm-gateway/` — loopback port и production-safe defaults.
 
 Профиль оставляет `runtime`/`package` умолчаниям модуля (`pkgs.lattice.llm-gateway`); нода задаёт
-providers, logical models (через `models`) и плоские `routingRules`. Provider `inferenceUrl` не обязан
-иметь `/v1/models`: `modelsUrl` и `modelsApiKeyFile` независимы. Полный пример находится в
+providers, logical models (через `models`) и плоские `routingRules`. `inferenceUrl` — это полный путь
+до OpenAI-совместимой точки входа (включая версионный сегмент). Если `modelsUrl` не задан, gateway
+получает каталог из `${inferenceUrl}/models`; явные `modelsUrl` и `modelsApiKeyFile` позволяют
+направить discovery на независимый endpoint.
+Полный пример находится в
 [`modules/llm-gateway/README.md`](../../modules/llm-gateway/README.md).
 
 Secrets подаются через agenix/systemd credentials:

@@ -1,3 +1,6 @@
 .DS_Store
 /.cocoindex_code/
 /.secrets/
+
+# Local Go build artifact (production is built via package.nix)
+/packages/llm-gateway/llm-gateway

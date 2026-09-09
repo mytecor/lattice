@@ -31,7 +31,7 @@ func bifrostTestConfig(t *testing.T, upstreamURL string) *compiledConfig {
 
 func TestBifrostExecutorCustomProviderChat(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/v1/chat/completions" {
+		if request.URL.Path != "/chat/completions" {
 			t.Errorf("unexpected path %s", request.URL.Path)
 			writer.WriteHeader(http.StatusNotFound)
 			return
@@ -73,6 +73,36 @@ func TestBifrostExecutorCustomProviderChat(t *testing.T) {
 	}
 	if _, leaked := response["extra_fields"]; leaked {
 		t.Fatalf("Bifrost internal metadata was not removed: %s", body)
+	}
+}
+
+func TestBifrostExecutorCustomProviderChatWithVersionedBasePath(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		// A provider whose OpenAI-compatible server lives under an arbitrary
+		// routed prefix (e.g. Supabase Edge Functions at
+		// "/functions/v1/gonka") must not have a duplicate "/v1" re-appended.
+		if request.URL.Path != "/functions/v1/gonka/chat/completions" {
+			t.Errorf("unexpected path %s", request.URL.Path)
+			writer.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(writer, `{"id":"chat-1","object":"chat.completion","created":1,"model":"native-model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer upstream.Close()
+
+	compiled := bifrostTestConfig(t, upstream.URL+"/functions/v1/gonka")
+	executor, err := newBifrostExecutor(context.Background(), compiled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer executor.Close()
+	_, callErr := executor.Do(context.Background(), Target{Provider: "mock-openai", Model: "native-model"}, ExecuteRequest{
+		Kind: RequestChat,
+		Body: []byte(`{"model":"standard","messages":[{"role":"user","content":"hello"}]}`),
+	})
+	if callErr != nil {
+		t.Fatal(callErr)
 	}
 }
 
@@ -131,7 +161,7 @@ func TestBifrostExecutorStreamingMeaningfulChunk(t *testing.T) {
 
 func TestBifrostExecutorResponses(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/v1/responses" {
+		if request.URL.Path != "/responses" {
 			t.Errorf("unexpected path %s", request.URL.Path)
 			writer.WriteHeader(http.StatusNotFound)
 			return

@@ -16,14 +16,14 @@ let
             proxy = {
               id = "gonka-proxy";
               accessGroup = "gonka";
-              inferenceUrl = "https://proxy.gonka.invalid";
+              inferenceUrl = "https://proxy.gonka.invalid/v1";
               apiKeyFile = "/run/agenix/llm-provider-proxy";
               priority = 20;
             };
             openbroker = {
               id = "gonka-openbroker";
               accessGroup = "gonka";
-              inferenceUrl = "https://openbroker.gonka.invalid";
+              inferenceUrl = "https://openbroker.gonka.invalid/v1";
               modelsUrl = "https://proxy.gonka.invalid/v1/models";
               apiKeyFile = "/run/agenix/llm-provider-openbroker";
               modelsApiKeyFile = "/run/agenix/llm-provider-proxy";
@@ -60,7 +60,7 @@ assert service.serviceConfig.ProtectSystem == "strict";
 pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { } ''
   grep -q '"catalog_refresh_interval":"10m"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"log_level":"silent"' ${config.lattice.llm-gateway.publicConfigFile}
-  grep -q '"inference_url":"https://openbroker.gonka.invalid"' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"inference_url":"https://openbroker.gonka.invalid/v1"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"models_url":"https://proxy.gonka.invalid/v1/models"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"action":"race"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"attempts":10' ${config.lattice.llm-gateway.publicConfigFile}

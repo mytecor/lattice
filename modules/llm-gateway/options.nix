@@ -96,12 +96,20 @@ in
           };
           inferenceUrl = mkOption {
             type = types.str;
-            description = "Provider inference base URL, independent from model discovery.";
+            description = ''
+              Provider inference base URL. For baseProvider `openai`, this is the
+              full OpenAI-compatible base path including the version segment: the
+              gateway appends only the operation and never inserts `/v1`.
+            '';
           };
           modelsUrl = mkOption {
             type = types.nullOr types.str;
             default = null;
-            description = "Optional independent OpenAI-compatible model catalog URL.";
+            description = ''
+              Optional independent model catalog URL. For baseProvider `openai`,
+              the gateway derives it by appending `/models` to inferenceUrl when
+              unset. Other adapters require an explicit URL for discovery.
+            '';
           };
           apiKeyFile = mkOption {
             type = types.nullOr types.str;
@@ -111,7 +119,10 @@ in
           modelsApiKeyFile = mkOption {
             type = types.nullOr types.str;
             default = null;
-            description = "Optional separate credential for modelsUrl; never reuse an inference key implicitly.";
+            description = ''
+              Optional separate credential for an explicit modelsUrl. An inferred
+              same-provider catalog uses apiKeyFile.
+            '';
           };
           priority = mkOption {
             type = types.int;

@@ -37,6 +37,22 @@ in
         file = ./secrets/llm-provider-gonka-gg-openbroker.age;
         mode = "0400";
       };
+      llm-provider-gonka-api = {
+        file = ./secrets/llm-provider-gonka-api.age;
+        mode = "0400";
+      };
+      llm-provider-dahl = {
+        file = ./secrets/llm-provider-dahl.age;
+        mode = "0400";
+      };
+      llm-provider-hyperfusion = {
+        file = ./secrets/llm-provider-hyperfusion.age;
+        mode = "0400";
+      };
+      llm-provider-gonkarouter = {
+        file = ./secrets/llm-provider-gonkarouter.age;
+        mode = "0400";
+      };
     };
   };
 
@@ -89,25 +105,53 @@ in
     };
   };
 
-  # LLM Gateway: each attempt races both Gonka endpoints. Hedge keeps prior attempts alive while
+  # LLM Gateway: each attempt races all configured Gonka endpoints. Hedge keeps prior attempts alive while
   # retry controls the number of new race generations, their error classes, and backoff.
-  # Proxy owns discovery for the shared group; OpenBroker has no /v1/models.
+  # Each provider uses its inferred <inferenceUrl>/models catalog; successful catalogs are merged.
   lattice.llm-gateway = {
     # Debug logs contain routing metadata and sanitized upstream errors, never prompts or keys.
     logLevel = "debug";
     providers = {
-      proxy = {
+      gonka-proxy = {
         id = "gonka-proxy";
         accessGroup = "gonka";
-        inferenceUrl = "https://proxy.gonka.gg";
+        inferenceUrl = "https://api.proxy.gonka.gg/v1";
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
         priority = 10;
       };
-      openbroker = {
+      gonka-openbroker = {
         id = "gonka-openbroker";
         accessGroup = "gonka";
-        inferenceUrl = "https://api.openbroker.gonka.gg";
+        inferenceUrl = "https://api.openbroker.gonka.gg/v1";
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
+        priority = 10;
+      };
+      gonka-api = {
+        id = "gonka-api";
+        accessGroup = "gonka";
+        inferenceUrl = "https://hskyauefqcgbvgvxkluj.supabase.co/functions/v1/gonka";
+        apiKeyFile = config.age.secrets.llm-provider-gonka-api.path;
+        priority = 10;
+      };
+      dahl = {
+        id = "dahl";
+        accessGroup = "gonka";
+        inferenceUrl = "https://inference.dahl.global/v1";
+        apiKeyFile = config.age.secrets.llm-provider-dahl.path;
+        priority = 10;
+      };
+      hyperfusion = {
+        id = "hyperfusion";
+        accessGroup = "gonka";
+        inferenceUrl = "https://api.hyperfusion.io/v1";
+        apiKeyFile = config.age.secrets.llm-provider-hyperfusion.path;
+        priority = 10;
+      };
+      gonkarouter = {
+        id = "gonkarouter";
+        accessGroup = "gonka";
+        inferenceUrl = "https://api.gonkarouter.io/v1";
+        apiKeyFile = config.age.secrets.llm-provider-gonkarouter.path;
         priority = 10;
       };
     };

@@ -38,8 +38,14 @@ HTTP-вызовом.
 
 Открытая конфигурация разделяет providers, logical model mappings и плоский routing pipeline.
 Provider имеет независимые `inference_url` и опциональный `models_url`, поэтому OpenBroker может
-делать inference через `api.openbroker.gonka.gg`, а список той же access group загружается с
-`proxy.gonka.gg/v1/models`.
+делать inference через `api.openbroker.gonka.gg/v1`, а список той же access group загружается с
+`proxy.gonka.gg/v1/models`. `inference_url` — это полный путь до OpenAI-совместимой точки входа
+включая версионный сегмент: gateway добавляет только операцию (`/chat/completions`), не вставляя
+`/v1` автоматически, поэтому provider под произвольным маршрутизированным префиксом
+(например, супрабазовская Edge Function `…/functions/v1/gonka`) даёт upstream
+`…/functions/v1/gonka/chat/completions`.
+Если `models_url` отсутствует, catalog endpoint аналогично выводится добавлением только `/models`:
+обычная база `…/v1` даёт `…/v1/models`, а custom prefix сохраняется без дублирования `/v1`.
 
 Минимальная форма, которую нужно типизировать и валидировать:
 
@@ -47,13 +53,13 @@ Provider имеет независимые `inference_url` и опциональ
 providers:
   - id: gonka-openbroker
     name: gonka
-    inference_url: https://api.openbroker.gonka.gg
+    inference_url: https://api.openbroker.gonka.gg/v1
     models_url: https://proxy.gonka.gg/v1/models
     api_key: env.OPENBROKER_GONKA_GG_API_KEY
     models_api_key: env.PROXY_GONKA_GG_API_KEY
   - id: gonka-proxy
     name: gonka
-    inference_url: https://proxy.gonka.gg
+    inference_url: https://proxy.gonka.gg/v1
     api_key: env.PROXY_GONKA_GG_API_KEY
 
 models:

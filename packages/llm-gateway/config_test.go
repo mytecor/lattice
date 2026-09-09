@@ -92,6 +92,65 @@ func TestCompileConfigAddsHedgeToPreviousRoute(t *testing.T) {
 	}
 }
 
+func TestCompileConfigDerivesCatalogURLFromInferenceBase(t *testing.T) {
+	cfg := testConfig()
+	cfg.Providers[0].InferenceURL = "https://provider.invalid/v1/"
+	cfg.Providers[0].APIKey = "provider-a-key"
+	cfg.Providers[1].InferenceURL = "https://edge.invalid/functions/v1/gonka"
+	cfg.Providers[1].APIKey = "provider-b-key"
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources := compiled.groupSources["group"]
+	if len(sources) != 2 {
+		t.Fatalf("expected one implicit catalog per provider, got %#v", sources)
+	}
+	if sources[0].URL != "https://provider.invalid/v1/models" || sources[0].APIKey != "provider-a-key" {
+		t.Fatalf("conventional catalog URL was not derived correctly: %#v", sources[0])
+	}
+	if sources[1].URL != "https://edge.invalid/functions/v1/gonka/models" || sources[1].APIKey != "provider-b-key" {
+		t.Fatalf("custom-prefix catalog URL was not derived correctly: %#v", sources[1])
+	}
+}
+
+func TestCompileConfigPreservesExplicitCatalogURLAndCredential(t *testing.T) {
+	cfg := testConfig()
+	cfg.Providers[0].ModelsURL = "https://catalog.invalid/custom/models"
+	cfg.Providers[0].ModelsAPIKey = "catalog-key"
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources := compiled.groupSources["group"]
+	if len(sources) != 2 {
+		t.Fatalf("unexpected explicit catalogs: %#v", sources)
+	}
+	var explicit catalogSource
+	for _, source := range sources {
+		if source.Explicit {
+			explicit = source
+		}
+	}
+	if explicit.URL != cfg.Providers[0].ModelsURL || explicit.APIKey != "catalog-key" {
+		t.Fatalf("explicit catalog configuration was not preserved: %#v", sources)
+	}
+}
+
+func TestCompileConfigDoesNotInferCatalogForNonOpenAIAdapter(t *testing.T) {
+	cfg := testConfig()
+	cfg.Providers[0].BaseProvider = "anthropic"
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range compiled.groupSources["group"] {
+		if source.URL == cfg.Providers[0].InferenceURL+"/models" {
+			t.Fatalf("OpenAI catalog path was inferred for Anthropic adapter: %#v", source)
+		}
+	}
+}
+
 func TestCompileConfigRejectsAccessGroupWithoutModelMapping(t *testing.T) {
 	cfg := testConfig()
 	cfg.RoutingRules[0].AccessGroups = []string{"other-group"}

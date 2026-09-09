@@ -58,18 +58,35 @@ Provider с retryable failure получает cooldown, по умолчанию
 
 ## Model discovery
 
-`inference_url` и `models_url` независимы. Например, provider без собственного model catalog может
-использовать каталог другого совместимого endpoint:
+`models_url` может явно направить discovery на независимый совместимый endpoint:
 
 ```text
-provider-a.inference_url → https://inference-a.example
+provider-a.inference_url → https://inference-a.example/v1
 provider-a.models_url    → https://catalog.example/v1/models
-provider-b.inference_url → https://inference-b.example
-provider-b.models_url    → отсутствует
+provider-b.inference_url → https://inference-b.example/v1
+provider-b.models_url    → отсутствует; выводится как https://inference-b.example/v1/models
 ```
 
+`inference_url` задаёт **полный** путь до OpenAI-совместимой точки входа и включает версионный
+сегмент. Gateway не добавляет `/v1` автоматически: к `inference_url` приклеивается только операция
+(`/chat/completions`, `/responses`). Поэтому provider может хостить API под произвольным
+маршрутизированным префиксом, например супрабазовская Edge Function
+`https://…/functions/v1/gonka` даст upstream `/…/functions/v1/gonka/chat/completions`, а обычный
+OpenAI-прокси с `inference_url` `https://api.proxy.gonka.gg/v1` даст `/v1/chat/completions`.
+
+Для provider с `base_provider: openai`, если `models_url` не задан, gateway добавляет к той же
+полной базе только `/models`. Поэтому
+`https://api.example/v1` даёт каталог `https://api.example/v1/models`, а
+`https://…/functions/v1/gonka` — `https://…/functions/v1/gonka/models`, без повторного `/v1`.
+Неявный каталог использует provider `api_key`; явно заданный `models_url` использует только
+отдельный `models_api_key`. Успешные каталоги нескольких providers одной access group объединяются.
+Если все неявные endpoints недоступны, configured primary model остаётся рабочим; явно заданный
+catalog сохраняет fail-closed семантику до появления last-known-good snapshot.
+Для остальных Bifrost adapters discovery требует явного `models_url`, поскольку их catalog paths
+не следуют единому OpenAI-контракту.
+
 `models_api_key` задаётся отдельно от inference credential. Gateway не переиспользует
-`api_key` для другого host неявно.
+`api_key` для явно указанного другого host неявно.
 
 Catalog обновляется каждые 10 минут или вручную. Неуспешный refresh сохраняет last-known-good
 snapshot. Если primary model исчезла, gateway детерминированно выбирает первую доступную модель из
@@ -94,7 +111,7 @@ Standalone binary поддерживает literal secrets и ссылки `env.
       "id": "gonka-proxy",
       "name": "gonka",
       "base_provider": "openai",
-      "inference_url": "https://proxy.gonka.gg",
+      "inference_url": "https://proxy.gonka.gg/v1",
       "api_key": "env.PROXY_GONKA_GG_API_KEY",
       "priority": 10,
       "cooldown": "15s",
@@ -104,7 +121,7 @@ Standalone binary поддерживает literal secrets и ссылки `env.
       "id": "gonka-openbroker",
       "name": "gonka",
       "base_provider": "openai",
-      "inference_url": "https://api.openbroker.gonka.gg",
+      "inference_url": "https://api.openbroker.gonka.gg/v1",
       "models_url": "https://proxy.gonka.gg/v1/models",
       "api_key": "env.OPENBROKER_GONKA_GG_API_KEY",
       "models_api_key": "env.PROXY_GONKA_GG_API_KEY",

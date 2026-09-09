@@ -179,11 +179,21 @@ in
       homelabConfig.services.caddy.virtualHosts
         ."http://llm-gateway.mytecor-homelab.local".extraConfig;
     assert homelabConfig.lattice.llm-gateway.package == pkgs.lattice.llm-gateway;
-    assert builtins.length (builtins.attrNames homelabConfig.lattice.llm-gateway.providers) == 2;
-    assert homelabConfig.lattice.llm-gateway.providers.proxy.modelsUrl == null;
-    assert homelabConfig.lattice.llm-gateway.providers.openbroker.inferenceUrl
-      == "https://api.openbroker.gonka.gg";
-    assert homelabConfig.lattice.llm-gateway.providers.openbroker.modelsUrl == null;
+    assert builtins.attrNames homelabConfig.lattice.llm-gateway.providers == [
+      "dahl"
+      "gonka-api"
+      "gonka-openbroker"
+      "gonka-proxy"
+      "gonkarouter"
+      "hyperfusion"
+    ];
+    assert nixpkgs.lib.all
+      (provider: provider.modelsUrl == null)
+      (builtins.attrValues homelabConfig.lattice.llm-gateway.providers);
+    assert homelabConfig.lattice.llm-gateway.providers.gonka-proxy.inferenceUrl
+      == "https://api.proxy.gonka.gg/v1";
+    assert homelabConfig.lattice.llm-gateway.providers.gonka-api.inferenceUrl
+      == "https://hskyauefqcgbvgvxkluj.supabase.co/functions/v1/gonka";
     assert builtins.length (builtins.filter
       (rule: rule.action == "hedge")
       homelabConfig.lattice.llm-gateway.routingRules) == 2;

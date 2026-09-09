@@ -66,7 +66,7 @@ pkgs.testers.runNixOSTest {
       clientCredentialFile = toString clientKey;
       providers.primary = {
         accessGroup = "test";
-        inferenceUrl = "http://127.0.0.1:18080";
+        inferenceUrl = "http://127.0.0.1:18080/v1";
         modelsUrl = "http://127.0.0.1:18080/v1/models";
         apiKeyFile = toString providerKey;
         allowPrivateNetwork = true;

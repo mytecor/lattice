@@ -4,9 +4,10 @@
 service. Runtime — собственный Go proxy из `packages/llm-gateway`, использующий Bifrost Core
 через Go API.
 
-Routing, logical/native mappings, provider identities и независимые inference/discovery URLs
-являются открытой typed Nix configuration. Client key, provider inference key и отдельный catalog
-key поступают только через `LoadCredential`.
+Routing, logical/native mappings и provider identities являются открытой typed Nix configuration.
+По умолчанию discovery URL выводится как `${inferenceUrl}/models`; `modelsUrl` позволяет задать
+независимый источник. Client key, provider inference key и отдельный catalog key поступают только
+через `LoadCredential`.
 
 Модуль записывает secret-free JSON template в Nix store. `ExecStartPre` копирует его в закрытый
 runtime directory и подставляет credentials через `jq`; итоговый `/run/llm-gateway/config.json`
@@ -23,13 +24,13 @@ runtime directory и подставляет credentials через `jq`; ито�
       proxy = {
         id = "gonka-proxy";
         accessGroup = "gonka";
-        inferenceUrl = "https://proxy.gonka.gg";
+        inferenceUrl = "https://proxy.gonka.gg/v1";
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
       };
       openbroker = {
         id = "gonka-openbroker";
         accessGroup = "gonka";
-        inferenceUrl = "https://api.openbroker.gonka.gg";
+        inferenceUrl = "https://api.openbroker.gonka.gg/v1";
         modelsUrl = "https://proxy.gonka.gg/v1/models";
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
         modelsApiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;

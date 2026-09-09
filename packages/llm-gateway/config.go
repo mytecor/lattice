@@ -95,18 +95,19 @@ type BackoffConfig struct {
 }
 
 type compiledConfig struct {
-	raw         Config
-	logger      *slog.Logger
-	providers   map[string]Provider
-	mappings    map[string]map[string]string
-	plans       map[string]Plan
-	logicalIDs  []string
-	groupSource map[string]catalogSource
+	raw          Config
+	logger       *slog.Logger
+	providers    map[string]Provider
+	mappings     map[string]map[string]string
+	plans        map[string]Plan
+	logicalIDs   []string
+	groupSources map[string][]catalogSource
 }
 
 type catalogSource struct {
-	URL    string
-	APIKey string
+	URL      string
+	APIKey   string
+	Explicit bool
 }
 
 func loadConfig(path string) (Config, error) {
@@ -192,12 +193,12 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 	}
 
 	compiled := &compiledConfig{
-		raw:         cfg,
-		logger:      newGatewayLogger(cfg.LogLevel),
-		providers:   make(map[string]Provider, len(cfg.Providers)),
-		mappings:    make(map[string]map[string]string),
-		plans:       make(map[string]Plan),
-		groupSource: make(map[string]catalogSource),
+		raw:          cfg,
+		logger:       newGatewayLogger(cfg.LogLevel),
+		providers:    make(map[string]Provider, len(cfg.Providers)),
+		mappings:     make(map[string]map[string]string),
+		plans:        make(map[string]Plan),
+		groupSources: make(map[string][]catalogSource),
 	}
 	for _, provider := range cfg.Providers {
 		provider.ID = strings.TrimSpace(provider.ID)
@@ -230,11 +231,18 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 		}
 		compiled.providers[provider.ID] = provider
 		if provider.ModelsURL != "" {
-			source := catalogSource{URL: provider.ModelsURL, APIKey: provider.ModelsAPIKey}
-			if previous, exists := compiled.groupSource[provider.Name]; exists && previous != source {
-				return nil, fmt.Errorf("access group %q has conflicting model catalog sources", provider.Name)
-			}
-			compiled.groupSource[provider.Name] = source
+			compiled.groupSources[provider.Name] = appendCatalogSource(
+				compiled.groupSources[provider.Name],
+				catalogSource{URL: provider.ModelsURL, APIKey: provider.ModelsAPIKey, Explicit: true},
+			)
+		} else if provider.BaseProvider == "openai" {
+			// inference_url is the complete OpenAI-compatible base path. Appending
+			// only /models therefore produces /v1/models for a conventional base
+			// and preserves arbitrary routed prefixes without duplicating /v1.
+			compiled.groupSources[provider.Name] = appendCatalogSource(
+				compiled.groupSources[provider.Name],
+				catalogSource{URL: provider.InferenceURL + "/models", APIKey: provider.APIKey},
+			)
 		}
 	}
 
@@ -274,6 +282,19 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 	}
 	compiled.plans = plans
 	return compiled, nil
+}
+
+func appendCatalogSource(sources []catalogSource, candidate catalogSource) []catalogSource {
+	for index, source := range sources {
+		if source.URL != candidate.URL || source.APIKey != candidate.APIKey {
+			continue
+		}
+		if candidate.Explicit && !source.Explicit {
+			sources[index].Explicit = true
+		}
+		return sources
+	}
+	return append(sources, candidate)
 }
 
 func validateEndpoint(value string) error {
