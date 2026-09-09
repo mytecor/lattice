@@ -13,10 +13,10 @@
 | Endpoint | Назначение |
 | --- | --- |
 | `GET /healthz` | Минимальный health check без раскрытия topology |
-| `GET /v1/models` | Только logical models, настроенные в `models` |
+| `GET /v1/models` | Только logical models, выведенные из скомпилированных routing plans |
 | `POST /v1/chat/completions` | OpenAI Chat Completions, streaming и non-streaming |
 | `POST /v1/responses` | OpenAI Responses API, streaming и non-streaming |
-| `POST /admin/models/refresh` | Немедленное обновление внутренних model catalogs |
+| `POST /admin/models/refresh` | Немедленное обновление provider-scoped model catalogs |
 
 Если `client_api_key` непустой, все `/v1/*` и `/admin/*` endpoints требуют:
 
@@ -32,13 +32,23 @@ Authorization: Bearer <client_api_key>
 ответственностью и преобразует compiled route. Канонический порядок:
 
 ```text
-pool → rank → lease → affinity → race → retry → hedge → semaphore → timeout
+map → rank → lease → affinity → race → retry → hedge → semaphore → timeout
 ```
 
-- `pool` формирует candidate pool из перечисленных `access_groups`; элементом pool является
-  готовая target-пара (provider instance, resolved native model);
-- `rank` сортирует pool по `strategy = "priority"` (порядок гарантирует контракт для будущих
-  ранжирований по наблюдаемому meaningful TTFT);
+Опциональный fallback — отдельный второй stage:
+
+```text
+map → [rank] → fallback
+```
+
+- `map` связывает один native model ID с явным набором provider IDs и добавляет готовые
+  target-пары `(provider ID, native model)` в pending candidate pool. Один или несколько
+  последовательных `map` формируют pool; один provider не может встретиться в одном pool более
+  одного раза даже с разными native IDs. Разные providers одного logical model могут получать
+  разные native IDs через последовательные `map`;
+- `rank` сортирует pending pool по `strategy = "priority"` (порядок гарантирует контракт для
+  будущих ранжирований по наблюдаемому meaningful TTFT). Route-creating action (`race`, или
+  `fallback` для второго stage) сохраняет immutable snapshot pool;
 - `lease` временно поднимает победителя в начало ranking. Lease scoped по logical model,
   продлевается успешным ответом (`renew_on_success`) и освобождается по настроенным hard
   failures (`release_on`) либо после `release_after_slow_starts` последовательных превышений
@@ -51,7 +61,7 @@ pool → rank → lease → affinity → race → retry → hedge → semaphore 
   Unknown identifier игнорируется (`on_missing = "ignore"`). Поддержка `conversation` ограничена
   идентификаторами, которые gateway уже записал из своих ответов: `/v1/conversations` proxy не
   реализован, поэтому незнакомый conversation_id трактуется как unknown и не закрепляет route;
-- `race` берёт первые `count` unused targets из подготовленного pool и запускает их одновременно
+- `race` берёт первые `count` unused targets из snapshot и запускает их одновременно
   (first-success semantics);
 - `retry` остаётся отдельным действием: `scope = "same"` повторяет исходную выборку,
   `scope = "next"` берёт следующие unused targets из ranked pool (provider никогда не
@@ -64,30 +74,47 @@ pool → rank → lease → affinity → race → retry → hedge → semaphore 
   полный pool и не повторяет used providers;
 - `semaphore` — request-wide safety action: `max_calls`, `max_in_flight`,
   `max_calls_per_provider` ограничивают суммарные/одновременные/на-провайдера upstream calls,
-  включая legacy fallback;
+  включая fallback;
 - `timeout` ограничивает весь скомпилированный route, включая retry backoff и fallback. Для
   streaming он ограничивает выбор winner, но не обрывает уже выбранный успешный stream.
+
+Второй stage (fallback) начинается с нового набора `map` после завершения описания предыдущего
+stage. Новое mapping не меняет уже скомпилированный primary snapshot. `fallback` использует
+snapshot нового pending pool и одновременно задаёт классы ошибок, переводящие с предыдущего
+stage:
+
+```nix
+{ model = "standard"; action = "map"; native = "deepseek-ai/DeepSeek-V4-Flash-0731";
+  providers = [ "gonka-proxy" "hyperfusion" ]; }
+{ model = "standard"; action = "race"; count = 2; }
+{ model = "standard"; action = "retry"; scope = "next"; count = 1; attempts = 2;
+  on = [ "429" "5xx" "timeout" "connection_error" ]; }
+
+{ model = "standard"; action = "map"; native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731";
+  providers = [ "hyperfusion" ]; }
+{ model = "standard"; action = "fallback"; fallbackStrategy = "race";
+  on = [ "model_not_found" "429" "5xx" "timeout" "connection_error" ]; }
+```
 
 Одна ветка, вернувшая ошибку при живой другой ветке, сама по себе не создаёт новый call: ранний
 overlap контролирует только `hedge`. Streaming и non-streaming пути гарантируют одинаковые
 invariants: initial race получает только top `count`, retry next — только unused targets, hedge —
 следующий batch, и после winner/cancellation/timeout/исчерпания semaphore budget новые upstream
-calls не стартуют.
-
-Legacy-нормализация:
-
-- старый `{ action = "race"; access_groups = [...]; }` компилируется в implicit
-  `pool(access_groups) → rank(priority) → race(count=all)`;
-- старый `retry` без `scope` получает `scope = "same"` и повторяет исходную выборку;
-- `{ action = "hedge"; }` без `after` отклоняется с точной migration error — целевой конфиг
-  переведён на явные actions.
+calls не стартуют. Локально отклонённые каталогом target-пары (см. discovery ниже) никогда не
+стартуют upstream call и не расходуют `max_calls`/`max_calls_per_provider`, поэтому провайдер с
+другим native alias в fallback stage всё ещё достижим.
 
 Provider с retryable failure получает cooldown, по умолчанию 15 секунд. Охлаждённые providers не
-попадают в candidate pool; если охлаждаются все, gateway fail-open пробует группу снова.
-Отменённые losers не влияют ни на cooldown, ни на lease.
+входят в candidate pool; если охлаждаются все, gateway fail-open пробует pool снова. Отменённые
+losers не влияют ни на cooldown, ни на lease.
+
+Compilation строго валидирует порядок `map`, `rank`, `race`, `fallback` и модификаторов: пустой
+pool, duplicate provider, dangling `map`, mapping после stage и отсутствие предыдущего stage дают
+точную configuration error с logical model и индексом rule.
 
 ## Model discovery
 
+Discovery provider-scoped: каждый provider владеет своим catalog snapshot и refresh state.
 `models_url` может явно направить discovery на независимый совместимый endpoint:
 
 ```text
@@ -100,28 +127,33 @@ provider-b.models_url    → отсутствует; выводится как h
 `inference_url` задаёт **полный** путь до OpenAI-совместимой точки входа и включает версионный
 сегмент. Gateway не добавляет `/v1` автоматически: к `inference_url` приклеивается только операция
 (`/chat/completions`, `/responses`). Поэтому provider может хостить API под произвольным
-маршрутизированным префиксом, например супрабазовская Edge Function
-`https://…/functions/v1/gonka` даст upstream `/…/functions/v1/gonka/chat/completions`, а обычный
-OpenAI-прокси с `inference_url` `https://api.proxy.gonka.gg/v1` даст `/v1/chat/completions`.
+маршрутизированным префиксом: `https://…/functions/v1/gonka` даст upstream
+`/…/functions/v1/gonka/chat/completions`, а обычный OpenAI-прокси с `inference_url`
+`https://api.proxy.gonka.gg/v1` даст `/v1/chat/completions`.
 
 Для provider с `base_provider: openai`, если `models_url` не задан, gateway добавляет к той же
-полной базе только `/models`. Поэтому
-`https://api.example/v1` даёт каталог `https://api.example/v1/models`, а
-`https://…/functions/v1/gonka` — `https://…/functions/v1/gonka/models`, без повторного `/v1`.
-Неявный каталог использует provider `api_key`; явно заданный `models_url` использует только
-отдельный `models_api_key`. Успешные каталоги нескольких providers одной access group объединяются.
-Если все неявные endpoints недоступны, configured primary model остаётся рабочим; явно заданный
-catalog сохраняет fail-closed семантику до появления last-known-good snapshot.
-Для остальных Bifrost adapters discovery требует явного `models_url`, поскольку их catalog paths
-не следуют единому OpenAI-контракту.
+полной базе только `/models`. Неявный каталог использует provider `api_key`; явно заданный
+`models_url` использует только отдельный `models_api_key`. Для остальных Bifrost adapters
+discovery требует явного `models_url`.
 
-`models_api_key` задаётся отдельно от inference credential. Gateway не переиспользует
-`api_key` для явно указанного другого host неявно.
+Каждый executable target валидируется по точному совпадению native ID с каталогом конкретного
+provider перед dispatch:
+
+- last-known-good snapshot есть и native присутствует — target допустим;
+- snapshot есть, native отсутствует — target завершается typed классом `model_not_found` и может
+  активировать настроенный fallback;
+- inferred catalog недоступен и snapshot ещё не получен — сохраняется optimistic вызов явно
+  настроенного native ID;
+- explicit `models_url` недоступен без last-known-good — fail closed;
+- неудачный refresh не уничтожает last-known-good конкретного provider.
+
+Лексикографический fallback на произвольную модель из каталога удалён полностью: resolver никогда
+не выбирает несвязанный native ID. `model_not_found` — явный опт-ин класс в `on` для retry и
+fallback; отсутствие native в snapshot классифицируется надёжно, без поиска подстрок в тексте
+ошибок.
 
 Catalog обновляется каждые 10 минут или вручную. Неуспешный refresh сохраняет last-known-good
-snapshot. Если primary model исчезла, gateway детерминированно выбирает первую доступную модель из
-той же access group после нормализации, дедупликации и сортировки. Пустая группа работает
-fail-closed.
+snapshot.
 
 ## Пример конфигурации: Gonka
 
@@ -139,7 +171,6 @@ Standalone binary поддерживает literal secrets и ссылки `env.
   "providers": [
     {
       "id": "gonka-proxy",
-      "name": "gonka",
       "base_provider": "openai",
       "inference_url": "https://proxy.gonka.gg/v1",
       "api_key": "env.PROXY_GONKA_GG_API_KEY",
@@ -149,7 +180,6 @@ Standalone binary поддерживает literal secrets и ссылки `env.
     },
     {
       "id": "gonka-openbroker",
-      "name": "gonka",
       "base_provider": "openai",
       "inference_url": "https://api.openbroker.gonka.gg/v1",
       "models_url": "https://proxy.gonka.gg/v1/models",
@@ -160,21 +190,12 @@ Standalone binary поддерживает literal secrets и ссылки `env.
       "request_timeout": "60s"
     }
   ],
-  "models": [
-    {
-      "match": {"provider": "gonka", "id": "MiniMaxAI/MiniMax-M2.7"},
-      "override": {"id": "stupid"}
-    },
-    {
-      "match": {"provider": "gonka", "id": "deepseek-ai/DeepSeek-V4-Flash-0731"},
-      "override": {"id": "standard"}
-    }
-  ],
   "routing_rules": [
     {
       "match": {"model": "stupid"},
-      "action": "pool",
-      "access_groups": ["gonka"]
+      "action": "map",
+      "native": "MiniMaxAI/MiniMax-M2.7",
+      "providers": ["gonka-proxy", "gonka-openbroker"]
     },
     {
       "match": {"model": "stupid"},
@@ -232,8 +253,9 @@ Standalone binary поддерживает literal secrets и ссылки `env.
     },
     {
       "match": {"model": "standard"},
-      "action": "pool",
-      "access_groups": ["gonka"]
+      "action": "map",
+      "native": "deepseek-ai/DeepSeek-V4-Flash-0731",
+      "providers": ["gonka-proxy", "gonka-openbroker"]
     },
     {
       "match": {"model": "standard"},
@@ -288,6 +310,18 @@ Standalone binary поддерживает literal secrets и ссылки `env.
       "match": {"model": "standard"},
       "action": "timeout",
       "duration": "60s"
+    },
+    {
+      "match": {"model": "standard"},
+      "action": "map",
+      "native": "gonka/deepseek-ai/DeepSeek-V4-Flash-0731",
+      "providers": ["gonka-openbroker"]
+    },
+    {
+      "match": {"model": "standard"},
+      "action": "fallback",
+      "fallback_strategy": "race",
+      "on": ["model_not_found", "429", "5xx", "timeout", "connection_error"]
     }
   ]
 }
@@ -321,6 +355,8 @@ nix flake check --no-build
 
 - реальный Bifrost custom-provider path для Chat и Responses;
 - оба streaming API;
+- `map` binding: разные providers одного logical model получают разные natives, последовательные
+  `map` аккумулируют pool, duplicate provider в одном pool отклоняется;
 - bounded race: ровно top-`count` targets, first-success и игнорирование первой ошибки;
 - cancellation проигравшего provider и client disconnect;
 - retry `scope = "same"` / `scope = "next"`, отсутствие повторного использования provider,
@@ -328,13 +364,18 @@ nix flake check --no-build
 - hedge, стартующий только следующий retry batch, а не полный pool;
 - semaphore bounds `max_calls`, `max_in_flight`, `max_calls_per_provider` при race, retry, hedge,
   timeout и client cancellation;
+- provider-scoped catalog semantics: exact-match-only, partial refresh независим по provider,
+  last-known-good, inferred optimistic и explicit fail-closed;
+- `model_not_found` переводит выполнение на явно настроенный fallback и никогда не выбирает
+  несвязанную модель; dual-alias provider (один native в primary, другой в fallback) не вызывает
+  один endpoint дважды;
 - lease acquire/renew/expire/release, slow-start threshold и нейтральность loser cancellations;
 - Responses affinity: Chat без affinity, `previous_response_id`, conversation boundary,
   missing/expired mapping, pinned success/failure (fail-closed) и отсутствие cross-provider
   stateful retry;
 - persistence opaque affinity mapping через файл mode 0600;
-- config validation (поля/порядок), legacy normalization `race accessGroups` и `retry` без `scope`;
-- independent discovery URL, manual refresh, last-known-good и fail-closed;
+- config validation (поля/порядок, empty pool, duplicate provider, dangling map, mapping после
+  stage, отсутствие предыдущего stage);
 - logical/native model rewrite и удаление Bifrost routing metadata из client responses;
 - отсутствие новых upstream calls после winner/cancellation/timeout/semaphore exhaustion.
 
@@ -346,6 +387,8 @@ nix flake check --no-build
   структурированные логи gateway не содержат request body, prompt, headers или credentials.
 - Ошибки клиенту содержат только безопасный error class, без internal URL, key или native ID.
 - Provider-facing raw OpenAI body получает native model только после проверки logical model.
+- `/v1/models` публикует только logical IDs, выведенные из скомпилированных plans; native IDs и
+  provider metadata не попадают в client responses и безопасные ошибки.
 
 Полный план и незавершённые шаги cutover находятся в
 [`f7-07-bifrost-go-proxy.md`](../../docs/roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md).

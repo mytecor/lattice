@@ -72,7 +72,6 @@ lattice.llm-gateway = {
   package = pkgs.lattice.llm-gateway;
   clientCredentialFile = config.age.secrets.llm-gateway-client-key.path;
   providers.primary = {
-    accessGroup = "primary";
     inferenceUrl = "https://inference.example.invalid";
     modelsUrl = "https://catalog.example.invalid/v1/models";
     apiKeyFile = config.age.secrets.llm-provider-primary-key.path;

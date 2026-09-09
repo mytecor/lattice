@@ -11,13 +11,14 @@ import (
 type ErrorClass string
 
 const (
-	ErrorTimeout    ErrorClass = "timeout"
-	ErrorConnection ErrorClass = "connection_error"
-	ErrorRateLimit  ErrorClass = "429"
-	ErrorNotFound   ErrorClass = "404"
-	ErrorUpstream   ErrorClass = "5xx"
-	ErrorInvalid    ErrorClass = "invalid_response"
-	ErrorCancelled  ErrorClass = "cancelled"
+	ErrorTimeout       ErrorClass = "timeout"
+	ErrorConnection    ErrorClass = "connection_error"
+	ErrorRateLimit     ErrorClass = "429"
+	ErrorNotFound      ErrorClass = "404"
+	ErrorModelNotFound ErrorClass = "model_not_found"
+	ErrorUpstream      ErrorClass = "5xx"
+	ErrorInvalid       ErrorClass = "invalid_response"
+	ErrorCancelled     ErrorClass = "cancelled"
 )
 
 type CallError struct {
@@ -153,8 +154,11 @@ func (r *Runner) runPrimary(ctx context.Context, logical string, plan Plan, requ
 // buildPool produces the candidate target pool for the request. A known
 // affinity mapping narrows the route to the pinned provider; an unknown state
 // identifier is ignored (on_missing = "ignore") and results in the normal
-// pool. Cooling and unresolvable providers are skipped; an all-cooling pool
-// fail-opens so the route is never artificially idle.
+// pool. Cooling providers are skipped; an all-cooling pool fail-opens so the
+// route is never artificially idle. Pool elements are ready target pairs
+// (provider ID, native model) compiled from map rules; exact catalog
+// validation happens at branch execution so a missing native produces a
+// model_not_found failure that can activate the configured fallback.
 func (r *Runner) buildPool(logical string, plan Plan, request ExecuteRequest) ([]Target, bool, *CallError) {
 	if plan.Affinity.Enabled && request.Kind == RequestResponses {
 		if id := requestAffinityID(request.Body, request.Kind, plan.Affinity.Sources); id != "" {
@@ -165,25 +169,26 @@ func (r *Runner) buildPool(logical string, plan Plan, request ExecuteRequest) ([
 					// missing affinity; runtime resolution failures stay fail-closed.
 					r.affinity.Forget(id)
 				} else {
-					target, targetErr := r.target(logical, provider)
-					if targetErr == nil {
-						return []Target{target}, true, nil
+					for _, target := range plan.Pool {
+						if target.Provider == provider {
+							return []Target{target}, true, nil
+						}
 					}
-					return nil, true, targetErr
+					// The pinned provider is not a member of the compiled pool: treat
+					// the mapping as stale and forget it (same structural boundary).
+					r.affinity.Forget(id)
 				}
 			}
 		}
 	}
-	ids := r.availableProviders(plan.Pool)
-	if len(ids) == 0 {
-		ids = append([]string(nil), plan.Pool...)
+	pool := make([]Target, 0, len(plan.Pool))
+	for _, target := range r.availableTargets(plan.Pool) {
+		pool = append(pool, target)
 	}
-	pool := make([]Target, 0, len(ids))
-	for _, id := range ids {
-		target, targetErr := r.target(logical, id)
-		if targetErr == nil {
-			pool = append(pool, target)
-		}
+	if len(pool) == 0 {
+		// All targets are cooling; fail-open with the full compiled pool so the
+		// route is not artificially idle.
+		pool = append([]Target(nil), plan.Pool...)
 	}
 	if len(pool) == 0 {
 		return nil, false, &CallError{Class: ErrorInvalid, Status: 502, Cause: errors.New("provider pool is empty")}
@@ -212,27 +217,24 @@ func (r *Runner) applyLease(logical string, plan Plan, pool []Target) []Target {
 	return pool
 }
 
-func (r *Runner) target(logical, providerID string) (Target, *CallError) {
-	provider, ok := r.config.providers[providerID]
-	if !ok {
-		return Target{}, &CallError{Class: ErrorInvalid, Status: 502}
-	}
-	primary := r.config.mappings[logical][provider.Name]
-	model, err := r.catalog.Resolve(provider.Name, primary)
-	if err != nil {
-		return Target{}, &CallError{Class: ErrorInvalid, Status: 503, Cause: err}
-	}
-	return Target{Provider: providerID, Model: model}, nil
+// validateTarget checks the explicit native model of a target against the
+// provider's last-known-good catalog snapshot before dispatch:
+//   - snapshot available, native present: valid;
+//   - snapshot available, native absent: model_not_found (may activate fallback);
+//   - implicit catalog not yet available: optimistic call of the configured ID;
+//   - explicit catalog unavailable without a snapshot: fail closed.
+func (r *Runner) validateTarget(target Target) *CallError {
+	return r.catalog.Validate(target.Provider, target.Model)
 }
 
-func (r *Runner) availableProviders(ids []string) []string {
+func (r *Runner) availableTargets(targets []Target) []Target {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := r.now()
-	available := make([]string, 0, len(ids))
-	for _, id := range ids {
-		if until, ok := r.cooling[id]; !ok || !now.Before(until) {
-			available = append(available, id)
+	available := make([]Target, 0, len(targets))
+	for _, target := range targets {
+		if until, ok := r.cooling[target.Provider]; !ok || !now.Before(until) {
+			available = append(available, target)
 		}
 	}
 	return available

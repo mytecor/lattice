@@ -38,20 +38,18 @@ func (d *Duration) UnmarshalJSON(data []byte) error {
 }
 
 type Config struct {
-	Host                   string         `json:"host"`
-	Port                   int            `json:"port"`
-	LogLevel               string         `json:"log_level"`
-	ClientAPIKey           string         `json:"client_api_key"`
-	CatalogRefreshInterval Duration       `json:"catalog_refresh_interval"`
-	AffinityFile           string         `json:"affinity_file,omitempty"`
-	Providers              []Provider     `json:"providers"`
-	Models                 []ModelMapping `json:"models"`
-	RoutingRules           []RoutingRule  `json:"routing_rules"`
+	Host                   string        `json:"host"`
+	Port                   int           `json:"port"`
+	LogLevel               string        `json:"log_level"`
+	ClientAPIKey           string        `json:"client_api_key"`
+	CatalogRefreshInterval Duration      `json:"catalog_refresh_interval"`
+	AffinityFile           string        `json:"affinity_file,omitempty"`
+	Providers              []Provider    `json:"providers"`
+	RoutingRules           []RoutingRule `json:"routing_rules"`
 }
 
 type Provider struct {
 	ID                  string            `json:"id"`
-	Name                string            `json:"name"`
 	BaseProvider        string            `json:"base_provider"`
 	InferenceURL        string            `json:"inference_url"`
 	ModelsURL           string            `json:"models_url,omitempty"`
@@ -65,16 +63,6 @@ type Provider struct {
 	Headers             map[string]string `json:"headers,omitempty"`
 }
 
-type ModelMapping struct {
-	Match struct {
-		Provider string `json:"provider"`
-		ID       string `json:"id"`
-	} `json:"match"`
-	Override struct {
-		ID string `json:"id"`
-	} `json:"override"`
-}
-
 // RoutingRule is one entry of the flat routing pipeline. Each action accepts
 // only its own fields; validation rejects unknown or misplaced fields.
 type RoutingRule struct {
@@ -83,8 +71,9 @@ type RoutingRule struct {
 	} `json:"match"`
 	Action string `json:"action"`
 
-	// pool
-	AccessGroups []string `json:"access_groups,omitempty"`
+	// map
+	Native    string   `json:"native,omitempty"`
+	Providers []string `json:"providers,omitempty"`
 	// rank
 	Strategy string `json:"strategy,omitempty"`
 	// lease
@@ -105,13 +94,13 @@ type RoutingRule struct {
 	Attempts int            `json:"attempts,omitempty"`
 	On       []string       `json:"on,omitempty"`
 	Backoff  *BackoffConfig `json:"backoff,omitempty"`
-	// hedge / timeout
+	// hedge / fallback
 	After Duration `json:"after,omitempty"`
 	// semaphore
 	MaxCalls            int `json:"max_calls,omitempty"`
 	MaxInFlight         int `json:"max_in_flight,omitempty"`
 	MaxCallsPerProvider int `json:"max_calls_per_provider,omitempty"`
-	// legacy fallback
+	// fallback
 	FallbackStrategy string `json:"fallback_strategy,omitempty"`
 
 	// presentFields records fields explicitly present at the JSON boundary so
@@ -149,11 +138,14 @@ type BackoffConfig struct {
 	Max     Duration `json:"max"`
 }
 
-// Routing action names. The canonical pipeline order is pool → rank → lease →
-// affinity → race → retry → hedge → semaphore → timeout; fallback is a legacy
-// terminal action.
+// Routing action names. The canonical pipeline order is map → rank → lease →
+// affinity → race → retry → hedge → semaphore → timeout; fallback is a
+// terminal route-creating action of an optional second stage. One or more
+// consecutive map actions build the pending candidate pool of ready target
+// pairs (provider ID, native model); rank transforms it and the route-creating
+// action (race, or fallback for the second stage) keeps an immutable snapshot.
 const (
-	ActionPool      = "pool"
+	ActionMap       = "map"
 	ActionRank      = "rank"
 	ActionLease     = "lease"
 	ActionAffinity  = "affinity"
@@ -162,13 +154,13 @@ const (
 	ActionHedge     = "hedge"
 	ActionSemaphore = "semaphore"
 	ActionTimeout   = "timeout"
-	ActionFallback  = "fallback" // legacy, terminal
+	ActionFallback  = "fallback"
 )
 
 // actionRank returns the canonical pipeline position of an action.
 func actionRank(action string) int {
 	switch action {
-	case ActionPool:
+	case ActionMap:
 		return 1
 	case ActionRank:
 		return 2
@@ -194,15 +186,15 @@ func actionRank(action string) int {
 
 // compiledConfig separates external rules from the compiled candidate pool,
 // ranking, dispatch batches, retry/hedge schedule, semaphore limits and lease
-// and affinity policy.
+// and affinity policy. Catalog sources are indexed by provider ID: each
+// provider owns its last-known-good snapshot and exact native validation.
 type compiledConfig struct {
-	raw          Config
-	logger       *slog.Logger
-	providers    map[string]Provider
-	mappings     map[string]map[string]string
-	plans        map[string]Plan
-	logicalIDs   []string
-	groupSources map[string][]catalogSource
+	raw            Config
+	logger         *slog.Logger
+	providers      map[string]Provider
+	plans          map[string]Plan
+	logicalIDs     []string
+	catalogSources map[string][]catalogSource
 }
 
 type catalogSource struct {
@@ -213,13 +205,15 @@ type catalogSource struct {
 
 // Plan is the compiled, immutable routing contract for one logical model.
 // External Nix/JSON rules are fully normalized here; the runtime scheduler
-// consumes only this structure.
+// consumes only this structure. Pool elements are ready target pairs
+// (provider ID, native model) produced by map rules and ranked by rank.
 type Plan struct {
 	LogicalModel string
-	// Pool is the ranked candidate provider IDs after pool() and rank().
-	Pool []string
+	// Pool is the ranked candidate target pairs of the primary stage after
+	// map() and rank(); it is an immutable snapshot kept at the race action.
+	Pool []Target
 	// RaceCount is the size of the initial race batch; 0 means all pool
-	// candidates (legacy normalized routes).
+	// candidates.
 	RaceCount int
 	Lease     LeaseConfig
 	Affinity  AffinityConfig
@@ -230,14 +224,15 @@ type Plan struct {
 	Semaphore  SemaphoreConfig
 	// RouteTimeout bounds the entire compiled route.
 	RouteTimeout time.Duration
-	// Fallback is the optional legacy terminal fallback route.
+	// Fallback is the optional terminal fallback route of a second stage: an
+	// immutable target-pool snapshot plus the error classes that transition
+	// from the primary stage.
 	Fallback *FallbackRoute
 }
 
 type RetryConfig struct {
 	// Scope is "same" (repeat the original race selection) or "next" (use the
-	// next unused ranked targets). Legacy rules without scope compile to
-	// "same".
+	// next unused ranked targets).
 	Scope    string
 	Count    int // batch size for scope=next; 0 falls back to the race count.
 	Attempts int
@@ -270,9 +265,9 @@ type AffinityConfig struct {
 }
 
 type FallbackRoute struct {
-	Groups []string
-	Mode   string // "serial" | "race" | "hedge"
-	On     map[ErrorClass]bool
+	Pool []Target
+	Mode string // "serial" | "race" | "hedge"
+	On   map[ErrorClass]bool
 }
 
 func loadConfig(path string) (Config, error) {
@@ -358,21 +353,19 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 	}
 
 	compiled := &compiledConfig{
-		raw:          cfg,
-		logger:       newGatewayLogger(cfg.LogLevel),
-		providers:    make(map[string]Provider, len(cfg.Providers)),
-		mappings:     make(map[string]map[string]string),
-		plans:        make(map[string]Plan),
-		groupSources: make(map[string][]catalogSource),
+		raw:            cfg,
+		logger:         newGatewayLogger(cfg.LogLevel),
+		providers:      make(map[string]Provider, len(cfg.Providers)),
+		plans:          make(map[string]Plan),
+		catalogSources: make(map[string][]catalogSource),
 	}
 	for _, provider := range cfg.Providers {
 		provider.ID = strings.TrimSpace(provider.ID)
-		provider.Name = strings.TrimSpace(provider.Name)
 		provider.BaseProvider = strings.TrimSpace(provider.BaseProvider)
 		provider.InferenceURL = strings.TrimRight(strings.TrimSpace(provider.InferenceURL), "/")
 		provider.ModelsURL = strings.TrimSpace(provider.ModelsURL)
-		if provider.ID == "" || provider.Name == "" || provider.InferenceURL == "" {
-			return nil, errors.New("every provider requires id, name, and inference_url")
+		if provider.ID == "" || provider.InferenceURL == "" {
+			return nil, errors.New("every provider requires id and inference_url")
 		}
 		if err := validateEndpoint(provider.InferenceURL); err != nil {
 			return nil, fmt.Errorf("provider %q inference_url: %w", provider.ID, err)
@@ -395,55 +388,35 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 			provider.Cooldown.Duration = 15 * time.Second
 		}
 		compiled.providers[provider.ID] = provider
+		// Discovery is provider-scoped: each provider contributes exactly one
+		// catalog source (explicit models_url or the inferred
+		// openai-convention <inference_url>/models), and snapshots are indexed
+		// by provider ID.
 		if provider.ModelsURL != "" {
-			compiled.groupSources[provider.Name] = appendCatalogSource(
-				compiled.groupSources[provider.Name],
+			compiled.catalogSources[provider.ID] = appendCatalogSource(
+				compiled.catalogSources[provider.ID],
 				catalogSource{URL: provider.ModelsURL, APIKey: provider.ModelsAPIKey, Explicit: true},
 			)
 		} else if provider.BaseProvider == "openai" {
 			// inference_url is the complete OpenAI-compatible base path. Appending
 			// only /models therefore produces /v1/models for a conventional base
 			// and preserves arbitrary routed prefixes without duplicating /v1.
-			compiled.groupSources[provider.Name] = appendCatalogSource(
-				compiled.groupSources[provider.Name],
+			compiled.catalogSources[provider.ID] = appendCatalogSource(
+				compiled.catalogSources[provider.ID],
 				catalogSource{URL: provider.InferenceURL + "/models", APIKey: provider.APIKey},
 			)
 		}
 	}
 
-	logicalSet := make(map[string]struct{})
-	for _, mapping := range cfg.Models {
-		group := strings.TrimSpace(mapping.Match.Provider)
-		nativeID := strings.TrimSpace(mapping.Match.ID)
-		logicalID := strings.TrimSpace(mapping.Override.ID)
-		if group == "" || nativeID == "" || logicalID == "" {
-			return nil, errors.New("every model mapping requires match.provider, match.id, and override.id")
-		}
-		if compiled.mappings[logicalID] == nil {
-			compiled.mappings[logicalID] = make(map[string]string)
-		}
-		if _, duplicate := compiled.mappings[logicalID][group]; duplicate {
-			return nil, fmt.Errorf("logical model %q has more than one primary in group %q", logicalID, group)
-		}
-		compiled.mappings[logicalID][group] = nativeID
-		logicalSet[logicalID] = struct{}{}
-	}
-	if len(logicalSet) == 0 {
-		return nil, errors.New("at least one logical model mapping is required")
-	}
-	for id := range logicalSet {
-		compiled.logicalIDs = append(compiled.logicalIDs, id)
-	}
-	sort.Strings(compiled.logicalIDs)
-
-	plans, err := compilePlans(cfg.RoutingRules, compiled.providers, compiled.mappings)
+	plans, err := compilePlans(cfg.RoutingRules, compiled.providers)
 	if err != nil {
 		return nil, err
 	}
-	for _, logicalID := range compiled.logicalIDs {
-		if _, ok := plans[logicalID]; !ok {
-			return nil, fmt.Errorf("logical model %q has no routing rules", logicalID)
-		}
+	if len(plans) == 0 {
+		return nil, errors.New("at least one logical model with routing rules is required")
+	}
+	for _, id := range sortedKeys(plans) {
+		compiled.logicalIDs = append(compiled.logicalIDs, id)
 	}
 	compiled.plans = plans
 	return compiled, nil
@@ -482,8 +455,11 @@ func (r RoutingRule) present() map[string]bool {
 	for name := range r.presentFields {
 		p[name] = true
 	}
-	if len(r.AccessGroups) > 0 {
-		p["access_groups"] = true
+	if r.Native != "" {
+		p["native"] = true
+	}
+	if len(r.Providers) > 0 {
+		p["providers"] = true
 	}
 	if r.Strategy != "" {
 		p["strategy"] = true
@@ -572,22 +548,41 @@ func ruleErrf(index int, model, action, format string, args ...any) error {
 		index, model, action, fmt.Sprintf(format, args...))
 }
 
+// stageState tracks the per-model compilation of the pending candidate pool
+// across the primary and optional fallback stages.
+type stageState struct {
+	pending          []Target
+	sawMap           bool
+	ranked           bool
+	primaryRace      bool
+	inFallback       bool
+	fallbackDeclared bool
+	lastRank         int
+}
+
+func (st *stageState) beginFallbackStage() {
+	st.pending = nil
+	st.sawMap = false
+	st.ranked = false
+	st.inFallback = true
+	st.lastRank = 1
+}
+
 // compilePlans validates the flat pipeline and produces the compiled per-model
 // Plan. Errors carry the rule index, model, action and the concrete cause.
-func compilePlans(rules []RoutingRule, providers map[string]Provider, mappings map[string]map[string]string) (map[string]Plan, error) {
+// One or more consecutive map actions form the pending candidate pool; rank
+// transforms it, and the route-creating action (race for the primary stage,
+// fallback for the optional second stage) keeps an immutable snapshot. A
+// provider may appear in a pending pool only once; a new map set after race
+// belongs to the fallback stage and never changes the compiled primary stage.
+func compilePlans(rules []RoutingRule, providers map[string]Provider) (map[string]Plan, error) {
 	plans := make(map[string]Plan)
-	lastRanks := make(map[string]int)
-	hasRace := make(map[string]bool)
+	states := make(map[string]*stageState)
 	for index, rule := range rules {
 		model := strings.TrimSpace(rule.Match.Model)
 		if model == "" {
 			return nil, fmt.Errorf("routing rule %d has no match.model", index)
 		}
-		if _, ok := mappings[model]; !ok {
-			return nil, fmt.Errorf("routing rule %d references unknown logical model %q", index, model)
-		}
-		plan := plans[model]
-		plan.LogicalModel = model
 		action := strings.ToLower(strings.TrimSpace(rule.Action))
 		if action == "" {
 			return nil, fmt.Errorf("routing rule %d (model %q) has no action", index, model)
@@ -596,43 +591,83 @@ func compilePlans(rules []RoutingRule, providers map[string]Provider, mappings m
 		if rank == 0 {
 			return nil, fmt.Errorf("routing rule %d (model %q) has unsupported action %q", index, model, action)
 		}
-		if lastRank := lastRanks[model]; rank < lastRank {
-			return nil, ruleErrf(index, model, action, "actions out of pipeline order: %q must not follow an action at position %d", action, lastRank)
+		st := states[model]
+		if st == nil {
+			st = &stageState{}
+			states[model] = st
+		}
+		plan := plans[model]
+		plan.LogicalModel = model
+
+		// A map after the primary race begins the optional fallback stage.
+		if action == ActionMap && st.primaryRace && !st.fallbackDeclared && !st.inFallback {
+			st.beginFallbackStage()
+		} else if !st.inFallback && rank < st.lastRank {
+			return nil, ruleErrf(index, model, action, "actions out of pipeline order: %q must not follow an action at position %d", action, st.lastRank)
+		} else if st.inFallback && action != ActionMap && action != ActionRank && action != ActionFallback {
+			return nil, ruleErrf(index, model, action, "only map, rank and fallback are allowed in the fallback stage")
 		}
 
 		switch action {
-		case ActionPool:
-			if extra := rule.forbidden("access_groups"); len(extra) != 0 {
+		case ActionMap:
+			if st.fallbackDeclared {
+				return nil, ruleErrf(index, model, action, "map is not allowed after a declared fallback stage")
+			}
+			if st.ranked {
+				return nil, ruleErrf(index, model, action, "map must precede rank within a stage")
+			}
+			if extra := rule.forbidden("native", "providers"); len(extra) != 0 {
 				return nil, ruleErrf(index, model, action, "unexpected field(s): %s", strings.Join(extra, ", "))
 			}
-			if len(rule.AccessGroups) == 0 {
-				return nil, ruleErrf(index, model, action, "pool requires at least one access_group")
+			if strings.TrimSpace(rule.Native) == "" {
+				return nil, ruleErrf(index, model, action, "map requires a non-empty native model id")
 			}
-			ids, err := expandAccessGroups(rule.AccessGroups, providers, mappings[model])
-			if err != nil {
-				return nil, ruleErrf(index, model, action, "%v", err)
+			if len(rule.Providers) == 0 {
+				return nil, ruleErrf(index, model, action, "map requires at least one provider id")
 			}
-			if len(plan.Pool) != 0 {
-				return nil, ruleErrf(index, model, action, "pool already declared for this model")
+			seen := make(map[string]struct{}, len(st.pending))
+			for _, target := range st.pending {
+				seen[target.Provider] = struct{}{}
 			}
-			plan.Pool = append([]string(nil), ids...)
+			for _, providerID := range rule.Providers {
+				providerID = strings.TrimSpace(providerID)
+				if _, exists := providers[providerID]; !exists {
+					return nil, ruleErrf(index, model, action, "map references unknown provider %q", providerID)
+				}
+				if _, duplicate := seen[providerID]; duplicate {
+					return nil, ruleErrf(index, model, action, "provider %q appears more than once in the pending pool", providerID)
+				}
+				seen[providerID] = struct{}{}
+				st.pending = append(st.pending, Target{Provider: providerID, Model: strings.TrimSpace(rule.Native)})
+			}
+			st.sawMap = true
 		case ActionRank:
 			if extra := rule.forbidden("strategy"); len(extra) != 0 {
 				return nil, ruleErrf(index, model, action, "unexpected field(s): %s", strings.Join(extra, ", "))
 			}
-			if len(plan.Pool) == 0 {
-				return nil, ruleErrf(index, model, action, "rank requires a preceding pool action")
+			if !st.sawMap {
+				return nil, ruleErrf(index, model, action, "rank requires a preceding map action")
+			}
+			if st.ranked {
+				return nil, ruleErrf(index, model, action, "rank already declared for this stage")
 			}
 			if rule.Strategy != "priority" {
 				return nil, ruleErrf(index, model, action, "unsupported rank strategy %q (only \"priority\" is implemented)", rule.Strategy)
 			}
-			// Priority ranking is already applied during pool expansion.
+			sort.SliceStable(st.pending, func(i, j int) bool {
+				left, right := providers[st.pending[i].Provider], providers[st.pending[j].Provider]
+				if left.Priority != right.Priority {
+					return left.Priority > right.Priority
+				}
+				return st.pending[i].Provider < st.pending[j].Provider
+			})
+			st.ranked = true
 		case ActionLease:
 			if extra := rule.forbidden("source", "duration", "renew_on_success", "release_on", "release_after_slow_starts", "slow_start"); len(extra) != 0 {
 				return nil, ruleErrf(index, model, action, "unexpected field(s): %s", strings.Join(extra, ", "))
 			}
-			if len(plan.Pool) == 0 {
-				return nil, ruleErrf(index, model, action, "lease requires a preceding pool action")
+			if !st.sawMap {
+				return nil, ruleErrf(index, model, action, "lease requires a preceding map action")
 			}
 			if rule.Source != "winner" {
 				return nil, ruleErrf(index, model, action, "unsupported lease source %q (only \"winner\")", rule.Source)
@@ -657,8 +692,8 @@ func compilePlans(rules []RoutingRule, providers map[string]Provider, mappings m
 			if extra := rule.forbidden("sources", "ttl", "on_missing", "on_provider_failure"); len(extra) != 0 {
 				return nil, ruleErrf(index, model, action, "unexpected field(s): %s", strings.Join(extra, ", "))
 			}
-			if len(plan.Pool) == 0 {
-				return nil, ruleErrf(index, model, action, "affinity requires a preceding pool action")
+			if !st.sawMap {
+				return nil, ruleErrf(index, model, action, "affinity requires a preceding map action")
 			}
 			if len(rule.Sources) == 0 {
 				return nil, ruleErrf(index, model, action, "affinity requires at least one source")
@@ -684,53 +719,32 @@ func compilePlans(rules []RoutingRule, providers map[string]Provider, mappings m
 				TTL: rule.TTL.Duration, OnMissing: "ignore", OnProviderFailure: "fail-closed",
 			}
 		case ActionRace:
-			hasRace[model] = true
-			if len(rule.AccessGroups) > 0 {
-				// Legacy normalization: { action = "race"; access_groups = [...]; }
-				// compiles to implicit pool(groups) → rank(priority) → race(all).
-				if extra := rule.forbidden("access_groups", "count"); len(extra) != 0 {
-					return nil, ruleErrf(index, model, action, "unexpected field(s): %s; legacy race accepts only access_groups", strings.Join(extra, ", "))
-				}
-				if len(plan.Pool) != 0 {
-					return nil, ruleErrf(index, model, action, "legacy race with access_groups conflicts with an existing pool action")
-				}
-				ids, err := expandAccessGroups(rule.AccessGroups, providers, mappings[model])
-				if err != nil {
-					return nil, ruleErrf(index, model, action, "%v", err)
-				}
-				plan.Pool = append([]string(nil), ids...)
-				if rule.Count > 0 {
-					plan.RaceCount = rule.Count
-				}
-				// RaceCount == 0 means the whole pool (legacy "race all").
-			} else {
-				// An explicitly present but empty access_groups (as emitted by the
-				// NixOS module before the pool rewrite, and by older configs) is
-				// inert: non-empty groups are handled by the legacy branch above.
-				// Accept the empty field so a race that follows pool is not
-				// rejected for a no-op.
-				if extra := rule.forbidden("count", "access_groups"); len(extra) != 0 {
-					return nil, ruleErrf(index, model, action, "unexpected field(s): %s", strings.Join(extra, ", "))
-				}
-				if len(plan.Pool) == 0 {
-					return nil, ruleErrf(index, model, action, "race requires a preceding pool action (or legacy access_groups)")
-				}
-				if rule.Count < 0 {
-					return nil, ruleErrf(index, model, action, "race count must not be negative")
-				}
-				plan.RaceCount = rule.Count
+			if extra := rule.forbidden("count"); len(extra) != 0 {
+				return nil, ruleErrf(index, model, action, "unexpected field(s): %s", strings.Join(extra, ", "))
 			}
+			if st.primaryRace {
+				return nil, ruleErrf(index, model, action, "race already declared for this model")
+			}
+			if !st.sawMap {
+				return nil, ruleErrf(index, model, action, "race requires a preceding map action")
+			}
+			if rule.Count < 0 {
+				return nil, ruleErrf(index, model, action, "race count must not be negative")
+			}
+			// The route-creating action keeps an immutable snapshot of the
+			// pending pool; later fallback maps never change it.
+			plan.Pool = append([]Target(nil), st.pending...)
+			plan.RaceCount = rule.Count
+			st.primaryRace = true
 		case ActionRetry:
 			if extra := rule.forbidden("scope", "count", "attempts", "on", "backoff"); len(extra) != 0 {
 				return nil, ruleErrf(index, model, action, "unexpected field(s): %s", strings.Join(extra, ", "))
 			}
-			if len(plan.Pool) == 0 {
-				return nil, ruleErrf(index, model, action, "retry requires a preceding race/pool route")
+			if !st.primaryRace {
+				return nil, ruleErrf(index, model, action, "retry requires a preceding race action")
 			}
 			scope := rule.Scope
 			if scope == "" {
-				// Legacy normalization: a retry without scope repeats the
-				// original selection.
 				scope = "same"
 			}
 			if scope != "same" && scope != "next" {
@@ -758,8 +772,8 @@ func compilePlans(rules []RoutingRule, providers map[string]Provider, mappings m
 			if extra := rule.forbidden("after"); len(extra) != 0 {
 				return nil, ruleErrf(index, model, action, "unexpected field(s): %s", strings.Join(extra, ", "))
 			}
-			if len(plan.Pool) == 0 {
-				return nil, ruleErrf(index, model, action, "hedge requires a preceding race/pool route")
+			if !st.primaryRace {
+				return nil, ruleErrf(index, model, action, "hedge requires a preceding race action")
 			}
 			if rule.After.Duration <= 0 {
 				return nil, ruleErrf(index, model, action, "hedge requires a positive after duration (migration from f7-09: parameterless hedge is no longer supported; add after=<delay>)")
@@ -769,8 +783,8 @@ func compilePlans(rules []RoutingRule, providers map[string]Provider, mappings m
 			if extra := rule.forbidden("max_calls", "max_in_flight", "max_calls_per_provider"); len(extra) != 0 {
 				return nil, ruleErrf(index, model, action, "unexpected field(s): %s", strings.Join(extra, ", "))
 			}
-			if len(plan.Pool) == 0 {
-				return nil, ruleErrf(index, model, action, "semaphore requires a preceding race/pool route")
+			if !st.primaryRace {
+				return nil, ruleErrf(index, model, action, "semaphore requires a preceding race action")
 			}
 			if rule.MaxCalls < 1 || rule.MaxInFlight < 1 || rule.MaxCallsPerProvider < 1 {
 				return nil, ruleErrf(index, model, action, "max_calls, max_in_flight and max_calls_per_provider must all be positive")
@@ -782,21 +796,24 @@ func compilePlans(rules []RoutingRule, providers map[string]Provider, mappings m
 			if extra := rule.forbidden("duration"); len(extra) != 0 {
 				return nil, ruleErrf(index, model, action, "unexpected field(s): %s", strings.Join(extra, ", "))
 			}
-			if len(plan.Pool) == 0 {
-				return nil, ruleErrf(index, model, action, "timeout requires a preceding race/pool route")
+			if !st.primaryRace {
+				return nil, ruleErrf(index, model, action, "timeout requires a preceding race action")
 			}
 			if rule.Duration.Duration <= 0 {
 				return nil, ruleErrf(index, model, action, "timeout duration must be positive")
 			}
 			plan.RouteTimeout = rule.Duration.Duration
-		case ActionFallback: // legacy terminal action
-			if extra := rule.forbidden("access_groups", "on", "fallback_strategy", "after"); len(extra) != 0 {
+		case ActionFallback: // terminal action of the optional second stage
+			if extra := rule.forbidden("on", "fallback_strategy", "after"); len(extra) != 0 {
 				return nil, ruleErrf(index, model, action, "unexpected field(s): %s", strings.Join(extra, ", "))
 			}
-			if len(rule.AccessGroups) == 0 {
-				return nil, ruleErrf(index, model, action, "fallback requires at least one access_group")
+			if !st.primaryRace {
+				return nil, ruleErrf(index, model, action, "fallback requires a preceding primary race stage")
 			}
-			if plan.Fallback != nil {
+			if !st.inFallback || !st.sawMap {
+				return nil, ruleErrf(index, model, action, "fallback requires a preceding map action that starts the fallback stage")
+			}
+			if plan.Fallback != nil || st.fallbackDeclared {
 				return nil, ruleErrf(index, model, action, "fallback already declared for this model")
 			}
 			mode := rule.FallbackStrategy
@@ -807,21 +824,25 @@ func compilePlans(rules []RoutingRule, providers map[string]Provider, mappings m
 				return nil, ruleErrf(index, model, action, "unsupported fallback_strategy %q", mode)
 			}
 			plan.Fallback = &FallbackRoute{
-				Groups: append([]string(nil), rule.AccessGroups...),
-				Mode:   mode,
-				On:     parseErrorClasses(rule.On),
+				Pool: append([]Target(nil), st.pending...),
+				Mode: mode,
+				On:   parseErrorClasses(rule.On),
 			}
+			st.fallbackDeclared = true
 		}
-		lastRanks[model] = rank
+		st.lastRank = rank
 		plans[model] = plan
 	}
 
 	for model, plan := range plans {
 		if len(plan.Pool) == 0 {
-			return nil, fmt.Errorf("logical model %q has no route-creating pool/race action", model)
+			return nil, fmt.Errorf("logical model %q has no route-creating race action", model)
 		}
-		if !hasRace[model] {
+		if !states[model].primaryRace {
 			return nil, fmt.Errorf("logical model %q has no race action", model)
+		}
+		if states[model].inFallback && !states[model].fallbackDeclared {
+			return nil, fmt.Errorf("logical model %q has a dangling map without a route-creating fallback action", model)
 		}
 		if plan.LogicalModel == "" {
 			plan.LogicalModel = model
@@ -831,43 +852,13 @@ func compilePlans(rules []RoutingRule, providers map[string]Provider, mappings m
 	return plans, nil
 }
 
-// expandAccessGroups resolves access group names into provider IDs ordered by
-// provider priority (descending). Each referenced group must exist among the
-// providers and must have a primary model mapping.
-func expandAccessGroups(groups []string, providers map[string]Provider, mappings map[string]string) ([]string, error) {
-	if len(groups) == 0 {
-		return nil, errors.New("route requires at least one access group")
+func sortedKeys[V any](values map[string]V) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
 	}
-	providerIDs := make([]string, 0, len(providers))
-	for id := range providers {
-		providerIDs = append(providerIDs, id)
-	}
-	sort.Strings(providerIDs)
-	seenGroups := make(map[string]struct{}, len(groups))
-	ordered := make([]string, 0, len(providerIDs))
-	for _, group := range groups {
-		if _, duplicate := seenGroups[group]; duplicate {
-			return nil, fmt.Errorf("duplicate access group %q", group)
-		}
-		seenGroups[group] = struct{}{}
-		if _, ok := mappings[group]; !ok {
-			return nil, fmt.Errorf("logical model has no mapping for access group %q", group)
-		}
-		found := false
-		for _, id := range providerIDs {
-			if providers[id].Name == group {
-				ordered = append(ordered, id)
-				found = true
-			}
-		}
-		if !found {
-			return nil, fmt.Errorf("unknown access group %q", group)
-		}
-	}
-	sort.SliceStable(ordered, func(i, j int) bool {
-		return providers[ordered[i]].Priority > providers[ordered[j]].Priority
-	})
-	return ordered, nil
+	sort.Strings(keys)
+	return keys
 }
 
 func parseErrorClasses(values []string) map[ErrorClass]bool {

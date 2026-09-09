@@ -4,10 +4,14 @@
 service. Runtime — собственный Go proxy из `packages/llm-gateway`, использующий Bifrost Core
 через Go API.
 
-Routing, logical/native mappings и provider identities являются открытой typed Nix configuration.
-По умолчанию discovery URL выводится как `${inferenceUrl}/models`; `modelsUrl` позволяет задать
-независимый источник. Client key, provider inference key и отдельный catalog key поступают только
-через `LoadCredential`.
+Routing и logical/native mappings являются открытой typed Nix configuration. Provider registry
+описывает только transport и shared runtime identity (inference/catalog URL, Bifrost adapter,
+credentials, priority, timeout, cooldown); выбор provider и native model находится в routing
+rules через action `map`, который связывает один native ID с явным набором provider IDs.
+Отдельного списка `models` и access groups нет: logical model registry выводится runtime из
+скомпилированных plans. По умолчанию discovery URL выводится как `${inferenceUrl}/models`;
+`modelsUrl` позволяет задать независимый источник. Client key, provider inference key и отдельный
+catalog key поступают только через `LoadCredential`.
 
 Модуль записывает secret-free JSON template в Nix store. `ExecStartPre` копирует его в закрытый
 runtime directory и подставляет credentials через `jq`; итоговый `/run/llm-gateway/config.json`
@@ -23,13 +27,11 @@ runtime directory и подставляет credentials через `jq`; ито�
     providers = {
       proxy = {
         id = "gonka-proxy";
-        accessGroup = "gonka";
         inferenceUrl = "https://proxy.gonka.gg/v1";
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
       };
       openbroker = {
         id = "gonka-openbroker";
-        accessGroup = "gonka";
         inferenceUrl = "https://api.openbroker.gonka.gg/v1";
         modelsUrl = "https://proxy.gonka.gg/v1/models";
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
@@ -37,15 +39,16 @@ runtime directory и подставляет credentials через `jq`; ито�
       };
     };
 
-    models = [
-      { logical = "stupid"; accessGroup = "gonka"; native = "MiniMaxAI/MiniMax-M2.7"; }
-      { logical = "standard"; accessGroup = "gonka"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
-    ];
-    routingRules = builtins.concatMap (model: [
-      { inherit model; action = "pool"; accessGroups = [ "gonka" ]; }
-      { inherit model; action = "rank"; strategy = "priority"; }
+    routingRules = [
       {
-        inherit model;
+        model = "standard";
+        action = "map";
+        native = "deepseek-ai/DeepSeek-V4-Flash-0731";
+        providers = [ "gonka-proxy" "gonka-openbroker" "hyperfusion" ];
+      }
+      { model = "standard"; action = "rank"; strategy = "priority"; }
+      {
+        model = "standard";
         action = "lease";
         source = "winner";
         duration = "10m";
@@ -55,16 +58,16 @@ runtime directory и подставляет credentials через `jq`; ито�
         slowStart = "3s";
       }
       {
-        inherit model;
+        model = "standard";
         action = "affinity";
         sources = [ "responses.conversation" "responses.previous_response_id" ];
         ttl = "24h";
         onMissing = "ignore";
         onProviderFailure = "fail-closed";
       }
-      { inherit model; action = "race"; count = 2; }
+      { model = "standard"; action = "race"; count = 2; }
       {
-        inherit model;
+        model = "standard";
         action = "retry";
         scope = "next";
         count = 1;
@@ -73,25 +76,48 @@ runtime directory и подставляет credentials через `jq`; ито�
         backoffInitial = "200ms";
         backoffMax = "1s";
       }
-      { inherit model; action = "hedge"; after = "3s"; }
+      { model = "standard"; action = "hedge"; after = "3s"; }
       {
-        inherit model;
+        model = "standard";
         action = "semaphore";
         maxCalls = 4;
         maxInFlight = 3;
         maxCallsPerProvider = 1;
       }
-      { inherit model; action = "timeout"; duration = "60s"; }
-    ]) [ "stupid" "standard" ];
+      { model = "standard"; action = "timeout"; duration = "60s"; }
+      # Fallback stage: if Hyperfusion does not serve the unprefixed alias,
+      # fail over to its prefixed catalog alias with a model_not_found-classed
+      # local rejection (never an unrelated model).
+      {
+        model = "standard";
+        action = "map";
+        native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731";
+        providers = [ "hyperfusion" ];
+      }
+      {
+        model = "standard";
+        action = "fallback";
+        fallbackStrategy = "race";
+        on = [ "model_not_found" "429" "5xx" "timeout" "connection_error" ];
+      }
+    ];
   };
 }
 ```
 
-Production configuration must provide mappings and rules for every logical model. Rules follow the
-canonical action order `pool → rank → lease → affinity → race → retry → hedge → semaphore →
-timeout`; each action owns only its own fields and the gateway rejects unknown or misplaced fields
-at startup. Legacy `race access_groups` and `retry` without `scope` are still normalized;
-parameterless `hedge` is rejected with a migration error.
+Production configuration must provide map/race rules for every advertised logical model. Rules
+follow the canonical action order `map → rank → lease → affinity → race → retry → hedge →
+semaphore → timeout`; each action owns only its own fields and the gateway rejects unknown or
+misplaced fields at startup. A new set of `map` after `race` starts the fallback stage and must
+end with `fallback`. An empty pool, a duplicate provider in one pool, a dangling `map`, a mapping
+after a completed stage, or a fallback without a preceding primary stage are all rejected at
+startup with the rule index. Legacy `race access_groups`, an independent `models` list and
+access-group routing are removed; provider transport and credentials stay in the registry.
+
+Discovery validation is provider-scoped and exact: each target `(provider, native)` is checked
+against the provider's last-known-good catalog before dispatch. Missing native → `model_not_found`
+(may activate fallback), implicit catalog without snapshot → optimistic, explicit catalog without
+snapshot → fail closed. No lexicographic substitution ever sends an unrelated model upstream.
 
 The service listens on loopback by default and does not open a firewall port. Caddy remains the only
 LAN ingress. The unit keeps systemd hardening enabled except for `MemoryDenyWriteExecute`: Bifrost's

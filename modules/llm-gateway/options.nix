@@ -84,11 +84,6 @@ in
             default = name;
             description = "Stable Bifrost custom-provider instance ID.";
           };
-          accessGroup = mkOption {
-            type = types.strMatching "[A-Za-z0-9][A-Za-z0-9_.-]*";
-            default = name;
-            description = "Access group used for logical model mappings and same-group fallback.";
-          };
           baseProvider = mkOption {
             type = types.enum [ "openai" "anthropic" "cohere" "gemini" "huggingface" "replicate" ];
             default = "openai";
@@ -158,41 +153,34 @@ in
       }));
     };
 
-    models = mkOption {
-      default = [ ];
-      description = "Logical model primaries, one native model per logical ID and access group.";
-      type = types.listOf (types.submodule {
-        options = {
-          logical = mkOption { type = types.str; };
-          accessGroup = mkOption { type = types.str; };
-          native = mkOption { type = types.str; };
-        };
-      });
-    };
-
     routingRules = mkOption {
       default = [ ];
       description = ''
         Flat ordered routing pipeline for logical models. The canonical order is
-        pool → rank → lease → affinity → race → retry → hedge → semaphore → timeout.
-        Each action accepts only its own fields; the gateway binary rejects
-        unknown or misplaced fields at startup.
+        map → rank → lease → affinity → race → retry → hedge → semaphore → timeout,
+        optionally followed by the fallback stage map(s) → fallback. map binds
+        one native model id to a set of provider IDs; each action accepts only
+        its own fields and the gateway binary rejects unknown or misplaced
+        fields at startup.
       '';
       type = types.listOf (types.submodule {
         options = {
           model = mkOption { type = types.str; };
           action = mkOption {
             type = types.enum [
-              "pool" "rank" "lease" "affinity"
+              "map" "rank" "lease" "affinity"
               "race" "retry" "hedge" "semaphore" "timeout"
               "fallback"
             ];
           };
-          # pool / legacy fallback
-          accessGroups = mkOption {
+          # map
+          native = mkOption {
+            type = types.str;
+            description = "Provider-native model id bound to the listed providers.";
+          };
+          providers = mkOption {
             type = types.listOf types.str;
-            default = [ ];
-            description = "Virtual provider access groups selected by pool and legacy fallback.";
+            description = "Provider IDs receiving this native model in this stage.";
           };
           # rank
           strategy = mkOption {
@@ -270,9 +258,9 @@ in
           };
           attempts = mkOption { type = types.ints.unsigned; default = 0; };
           on = mkOption {
-            type = types.listOf (types.enum [ "timeout" "connection_error" "429" "5xx" "404" "invalid_response" ]);
+            type = types.listOf (types.enum [ "timeout" "connection_error" "429" "5xx" "404" "invalid_response" "model_not_found" ]);
             default = [ ];
-            description = "Error classes that trigger retry or legacy fallback.";
+            description = "Error classes that trigger retry or fallback.";
           };
           backoffType = mkOption { type = types.enum [ "constant" "exponential" ]; default = "exponential"; };
           backoffInitial = mkOption { type = types.strMatching "[0-9]+(ms|s|m|h)"; default = "100ms"; };

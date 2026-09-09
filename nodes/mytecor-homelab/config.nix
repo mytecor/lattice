@@ -106,106 +106,131 @@ in
   };
 
   # LLM Gateway: bounded routing splits the flat pipeline into single-purpose
-  # actions. The candidate pool is ranked by provider priority, a winner lease
-  # promotes the current leader, Responses affinity pins stateful chains to
-  # their originating provider, and race/retry/hedge consume only the next
-  # unused targets within the semaphore budget. One request never creates more
-  # than four upstream calls (race 2 + two next-retries of 1), more than three
-  # concurrent calls, or a repeated call to one provider.
+  # actions. Each stage starts from explicit map actions that bind one native
+  # model id to a set of provider IDs; the candidate pool is ranked by provider
+  # priority, a winner lease promotes the current leader, Responses affinity
+  # pins stateful chains to their originating provider, and race/retry/hedge
+  # consume only the next unused targets within the semaphore budget. One
+  # request never creates more than four upstream calls (race 2 + two
+  # next-retries of 1), more than three concurrent calls, or a repeated call to
+  # one provider. Provider transport and credentials stay in the registry;
+  # routing never references access groups.
   lattice.llm-gateway = {
     # Debug logs contain routing metadata and sanitized upstream errors, never prompts or keys.
     logLevel = "debug";
     providers = {
       gonka-proxy = {
         id = "gonka-proxy";
-        accessGroup = "gonka";
         inferenceUrl = "https://api.proxy.gonka.gg/v1";
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
         priority = 50;
       };
       gonka-openbroker = {
         id = "gonka-openbroker";
-        accessGroup = "gonka";
         inferenceUrl = "https://api.openbroker.gonka.gg/v1";
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
         priority = 40;
       };
       gonka-api = {
         id = "gonka-api";
-        accessGroup = "gonka";
         inferenceUrl = "https://hskyauefqcgbvgvxkluj.supabase.co/functions/v1/gonka";
         apiKeyFile = config.age.secrets.llm-provider-gonka-api.path;
         priority = 30;
       };
       dahl = {
         id = "dahl";
-        accessGroup = "gonka";
         inferenceUrl = "https://inference.dahl.global/v1";
         apiKeyFile = config.age.secrets.llm-provider-dahl.path;
         priority = 20;
       };
       hyperfusion = {
         id = "hyperfusion";
-        accessGroup = "gonka";
         inferenceUrl = "https://api.hyperfusion.io/v1";
         apiKeyFile = config.age.secrets.llm-provider-hyperfusion.path;
         priority = 100;
       };
       gonkarouter = {
         id = "gonkarouter";
-        accessGroup = "gonka";
         inferenceUrl = "https://api.gonkarouter.io/v1";
         apiKeyFile = config.age.secrets.llm-provider-gonkarouter.path;
         priority = 10;
       };
     };
-    models = [
-      { logical = "stupid"; accessGroup = "gonka"; native = "MiniMaxAI/MiniMax-M2.7"; }
-      { logical = "standard"; accessGroup = "gonka"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
-    ];
-    # The same bounded pipeline applies to both logical models.
-    routingRules = builtins.concatMap (model: [
-      { inherit model; action = "pool"; accessGroups = [ "gonka" ]; }
-      { inherit model; action = "rank"; strategy = "priority"; }
-      {
-        inherit model;
-        action = "lease";
-        source = "winner";
-        duration = "10m";
-        renewOnSuccess = true;
-        releaseOn = [ "429" "5xx" "timeout" "connection_error" ];
-        releaseAfterSlowStarts = 3;
-        slowStart = "3s";
-      }
-      {
-        inherit model;
-        action = "affinity";
-        sources = [ "responses.conversation" "responses.previous_response_id" ];
-        ttl = "24h";
-        onMissing = "ignore";
-        onProviderFailure = "fail-closed";
-      }
-      { inherit model; action = "race"; count = 2; }
-      {
-        inherit model;
-        action = "retry";
-        scope = "next";
-        count = 1;
-        attempts = 2;
-        on = [ "429" "5xx" "timeout" "connection_error" "invalid_response" ];
-        backoffInitial = "200ms";
-        backoffMax = "1s";
-      }
-      { inherit model; action = "hedge"; after = "3s"; }
-      {
-        inherit model;
-        action = "semaphore";
-        maxCalls = 4;
-        maxInFlight = 3;
-        maxCallsPerProvider = 1;
-      }
-      { inherit model; action = "timeout"; duration = "60s"; }
-    ]) [ "stupid" "standard" ];
+    # The primary stage maps one native per logical model to the full provider
+    # set; the fallback stage for `standard` gives Hyperfusion its second
+    # catalog alias so a model_not_found in the primary alias can fail over to
+    # the prefixed native Hyperfusion actually serves.
+    routingRules = let
+      allProviders = [
+        "gonka-proxy"
+        "gonka-openbroker"
+        "gonka-api"
+        "dahl"
+        "hyperfusion"
+        "gonkarouter"
+      ];
+      # The bounded primary pipeline used by both logical models.
+      primaryRules = model: native: [
+        { inherit model; action = "map"; native = native; providers = allProviders; }
+        { inherit model; action = "rank"; strategy = "priority"; }
+        {
+          inherit model;
+          action = "lease";
+          source = "winner";
+          duration = "10m";
+          renewOnSuccess = true;
+          releaseOn = [ "429" "5xx" "timeout" "connection_error" ];
+          releaseAfterSlowStarts = 3;
+          slowStart = "3s";
+        }
+        {
+          inherit model;
+          action = "affinity";
+          sources = [ "responses.conversation" "responses.previous_response_id" ];
+          ttl = "24h";
+          onMissing = "ignore";
+          onProviderFailure = "fail-closed";
+        }
+        { inherit model; action = "race"; count = 2; }
+        {
+          inherit model;
+          action = "retry";
+          scope = "next";
+          count = 1;
+          attempts = 2;
+          on = [ "429" "5xx" "timeout" "connection_error" "invalid_response" ];
+          backoffInitial = "200ms";
+          backoffMax = "1s";
+        }
+        { inherit model; action = "hedge"; after = "3s"; }
+        {
+          inherit model;
+          action = "semaphore";
+          maxCalls = 4;
+          maxInFlight = 3;
+          maxCallsPerProvider = 1;
+        }
+        { inherit model; action = "timeout"; duration = "60s"; }
+      ];
+      # Fallback stage for standard: Hyperfusion accepts both catalog aliases.
+      standardFallback = [
+        {
+          model = "standard";
+          action = "map";
+          native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731";
+          providers = [ "hyperfusion" ];
+        }
+        {
+          model = "standard";
+          action = "fallback";
+          fallbackStrategy = "race";
+          on = [ "model_not_found" "429" "5xx" "timeout" "connection_error" ];
+        }
+      ];
+    in
+    primaryRules "stupid" "MiniMaxAI/MiniMax-M2.7"
+    ++ primaryRules "standard" "deepseek-ai/DeepSeek-V4-Flash-0731"
+    ++ standardFallback;
   };
 
   lattice.rnsh = {

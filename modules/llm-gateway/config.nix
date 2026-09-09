@@ -6,7 +6,6 @@ let
 
   publicProvider = _name: provider: {
     inherit (provider) id priority headers;
-    name = provider.accessGroup;
     base_provider = provider.baseProvider;
     inference_url = provider.inferenceUrl;
     models_url = provider.modelsUrl;
@@ -18,14 +17,11 @@ let
     allow_private_network = provider.allowPrivateNetwork;
   };
 
-  publicModel = model: {
-    match = { provider = model.accessGroup; id = model.native; };
-    override.id = model.logical;
-  };
-
   # Emits exactly the fields a routing action owns. This keeps the generated
   # public JSON clean (no spurious defaulted fields) and mirrors the gateway's
-  # per-action field validation.
+  # per-action field validation. map binds one native model id to a set of
+  # provider IDs; the logical model registry is derived from compiled plans, so
+  # there is no separate native-model config field.
   publicRule = rule:
     let
       base = {
@@ -33,7 +29,7 @@ let
         action = rule.action;
       };
       byAction = {
-        pool = { access_groups = rule.accessGroups; };
+        map = { native = rule.native; providers = rule.providers; };
         rank = { strategy = rule.strategy; };
         lease = {
           source = rule.source;
@@ -49,17 +45,7 @@ let
           on_missing = rule.onMissing;
           on_provider_failure = rule.onProviderFailure;
         };
-        race = {
-          count = rule.count;
-        } // lib.optionalAttrs (rule.accessGroups != []) {
-          # Legacy shorthand { action = "race"; access_groups = [...]; } is
-          # normalized by the gateway into pool → rank → race(all). Only emit
-          # the field when it carries groups: an empty access_groups (the
-          # default when pool already declares the groups) is rejected by the
-          # gateway's race validation, which accepts the field only on the
-          # legacy path.
-          access_groups = rule.accessGroups;
-        };
+        race = { count = rule.count; };
         retry = {
           scope = rule.scope;
           count = rule.count;
@@ -78,11 +64,12 @@ let
           max_calls_per_provider = rule.maxCallsPerProvider;
         };
         timeout = { duration = rule.duration; };
-        # Legacy terminal fallback.
+        # Terminal action of the optional fallback stage: the target pool is the
+        # snapshot of the fallback-stage map rules that precede it.
         fallback = {
-          access_groups = rule.accessGroups;
           on = rule.on;
           fallback_strategy = rule.fallbackStrategy;
+          after = rule.after;
         };
       };
     in
@@ -97,7 +84,6 @@ let
     catalog_refresh_interval = cfg.catalogRefreshInterval;
     affinity_file = if (cfg.affinityFile != null) then cfg.affinityFile else "${dataDir}/affinity.json";
     providers = lib.mapAttrsToList publicProvider activeProviders;
-    models = map publicModel cfg.models;
     routing_rules = map publicRule cfg.routingRules;
   };
 
@@ -167,11 +153,9 @@ let
   '';
 
   providerIds = map (provider: provider.id) (builtins.attrValues activeProviders);
-  providerGroups = lib.unique (map (provider: provider.accessGroup) (builtins.attrValues activeProviders));
-  modelKeys = map (model: "${model.logical}:${model.accessGroup}") cfg.models;
-  mappedLogicalModels = lib.unique (map (model: model.logical) cfg.models);
   ruleModels = lib.unique (map (rule: rule.model) cfg.routingRules);
-  ruleAccessGroups = lib.concatMap (rule: rule.accessGroups) cfg.routingRules;
+  mappedProviderIds = lib.unique (lib.concatMap (rule: rule.providers) cfg.routingRules);
+  fallbackRules = lib.filter (rule: rule.action == "fallback") cfg.routingRules;
 in
 {
   config = lib.mkIf cfg.enable {
@@ -187,20 +171,16 @@ in
         message = "Bifrost provider IDs must be unique.";
       }
       {
-        assertion = builtins.length modelKeys == builtins.length (lib.unique modelKeys);
-        message = "Each logical model may have only one primary per access group.";
+        assertion = lib.all
+          (id: builtins.elem id providerIds)
+          mappedProviderIds;
+        message = "Every routing map must reference an enabled provider ID.";
       }
       {
-        assertion = lib.all (model: builtins.elem model.accessGroup providerGroups) cfg.models;
-        message = "Every Bifrost model mapping must reference an enabled provider access group.";
-      }
-      {
-        assertion = lib.all (model: builtins.elem model mappedLogicalModels) ruleModels;
-        message = "Bifrost routing rules must reference mapped logical models.";
-      }
-      {
-        assertion = lib.all (group: builtins.elem group providerGroups) ruleAccessGroups;
-        message = "Bifrost routing rules must reference enabled provider access groups.";
+        assertion = lib.all
+          (rule: rule.action != "fallback" || rule.providers == [ ])
+          cfg.routingRules;
+        message = "Bifrost fallback declares its target pool via preceding map rules, not providers.";
       }
       {
         assertion = lib.all

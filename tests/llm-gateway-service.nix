@@ -1,6 +1,7 @@
-{ pkgs, gatewayModule, gatewayProfile }:
+{ pkgs, nixpkgs, gatewayModule, gatewayProfile }:
 
 let
+  inherit (nixpkgs) lib;
   fakeUpstream = pkgs.writeText "fake-llm-upstream.py" ''
     import json
     from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -65,46 +66,33 @@ pkgs.testers.runNixOSTest {
     lattice.llm-gateway = {
       clientCredentialFile = toString clientKey;
       providers.primary = {
-        accessGroup = "test";
+        id = "primary";
         inferenceUrl = "http://127.0.0.1:18080/v1";
         modelsUrl = "http://127.0.0.1:18080/v1/models";
         apiKeyFile = toString providerKey;
         allowPrivateNetwork = true;
       };
-      models = [
-        { logical = "stupid"; accessGroup = "test"; native = "MiniMaxAI/MiniMax-M2.7"; }
-        { logical = "standard"; accessGroup = "test"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
-      ];
-      routingRules = [
-        {
-          model = "stupid";
-          action = "pool";
-          accessGroups = [ "test" ];
-        }
-        { model = "stupid"; action = "rank"; strategy = "priority"; }
-        { model = "stupid"; action = "race"; count = 2; }
-        {
-          model = "stupid";
-          action = "semaphore";
-          maxCalls = 4;
-          maxInFlight = 3;
-          maxCallsPerProvider = 1;
-        }
-        {
-          model = "standard";
-          action = "pool";
-          accessGroups = [ "test" ];
-        }
-        { model = "standard"; action = "rank"; strategy = "priority"; }
-        { model = "standard"; action = "race"; count = 2; }
-        {
-          model = "standard";
-          action = "semaphore";
-          maxCalls = 4;
-          maxInFlight = 3;
-          maxCallsPerProvider = 1;
-        }
-      ];
+      routingRules = lib.concatMap (model:
+        let
+          native = if model == "standard" then "deepseek-ai/DeepSeek-V4-Flash-0731" else "MiniMaxAI/MiniMax-M2.7";
+        in
+        [
+          {
+            inherit model;
+            action = "map";
+            inherit native;
+            providers = [ "primary" ];
+          }
+          { inherit model; action = "rank"; strategy = "priority"; }
+          { inherit model; action = "race"; count = 2; }
+          {
+            inherit model;
+            action = "semaphore";
+            maxCalls = 4;
+            maxInFlight = 3;
+            maxCallsPerProvider = 1;
+          }
+        ]) [ "stupid" "standard" ];
     };
 
     systemd.services.fake-llm-upstream = {

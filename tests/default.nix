@@ -40,7 +40,7 @@ in
   };
 
   llm-gateway-service = import ./llm-gateway-service.nix {
-    inherit pkgs;
+    inherit pkgs nixpkgs;
     gatewayModule = self.nixosModules.llm-gateway;
     gatewayProfile = "${profiles}/llm-gateway/config.nix";
   };
@@ -194,18 +194,36 @@ in
       == "https://api.proxy.gonka.gg/v1";
     assert homelabConfig.lattice.llm-gateway.providers.gonka-api.inferenceUrl
       == "https://hskyauefqcgbvgvxkluj.supabase.co/functions/v1/gonka";
-    # f7-09: target bounded pipeline and priorities for both logical models.
-    assert homelabConfig.lattice.llm-gateway.providers.hyperfusion.priority == 100;
-    assert homelabConfig.lattice.llm-gateway.providers.gonka-proxy.priority == 50;
-    assert homelabConfig.lattice.llm-gateway.providers.gonka-openbroker.priority == 40;
-    assert homelabConfig.lattice.llm-gateway.providers.gonka-api.priority == 30;
-    assert homelabConfig.lattice.llm-gateway.providers.dahl.priority == 20;
-    assert homelabConfig.lattice.llm-gateway.providers.gonkarouter.priority == 10;
+    # f7-10: the homelab route is built exclusively from explicit map actions
+    # (native -> provider ids); no access groups or separate models registry.
+    assert !(builtins.hasAttr "models" homelabConfig.lattice.llm-gateway);
     assert builtins.length (builtins.filter
-      (rule: rule.action == "pool")
-      homelabConfig.lattice.llm-gateway.routingRules) == 2;
+      (rule: rule.action == "map")
+      homelabConfig.lattice.llm-gateway.routingRules) == 3;
     assert nixpkgs.lib.all
-      (rule: rule.action != "pool" || rule.accessGroups == [ "gonka" ])
+      (rule: rule.action != "map" || (rule.native != "" && builtins.length rule.providers >= 1))
+      homelabConfig.lattice.llm-gateway.routingRules;
+    # The primary maps bind the base native to every provider; the fallback
+    # stage gives only hyperfusion the prefixed DeepSeek alias.
+    assert nixpkgs.lib.any
+      (rule: rule.action == "map" && rule.model == "standard"
+        && rule.native == "deepseek-ai/DeepSeek-V4-Flash-0731"
+        && builtins.length rule.providers == 6)
+      homelabConfig.lattice.llm-gateway.routingRules;
+    assert nixpkgs.lib.any
+      (rule: rule.action == "map" && rule.model == "standard"
+        && rule.native == "gonka/deepseek-ai/DeepSeek-V4-Flash-0731"
+        && rule.providers == [ "hyperfusion" ])
+      homelabConfig.lattice.llm-gateway.routingRules;
+    assert nixpkgs.lib.any
+      (rule: rule.action == "map" && rule.model == "stupid"
+        && rule.native == "MiniMaxAI/MiniMax-M2.7"
+        && builtins.length rule.providers == 6)
+      homelabConfig.lattice.llm-gateway.routingRules;
+    # One pending pool per provider: no provider appears twice in one stage.
+    assert nixpkgs.lib.all
+      (rule: rule.action != "map" || (builtins.length rule.providers
+        == builtins.length (nixpkgs.lib.unique rule.providers)))
       homelabConfig.lattice.llm-gateway.routingRules;
     assert builtins.length (builtins.filter
       (rule: rule.action == "rank")
@@ -238,7 +256,7 @@ in
       (rule: rule.action == "race")
       homelabConfig.lattice.llm-gateway.routingRules) == 2;
     assert nixpkgs.lib.all
-      (rule: rule.action != "race" || (rule.count == 2 && rule.accessGroups == [ ]))
+      (rule: rule.action != "race" || rule.count == 2)
       homelabConfig.lattice.llm-gateway.routingRules;
     assert builtins.length (builtins.filter
       (rule: rule.action == "retry")
@@ -271,10 +289,22 @@ in
     assert nixpkgs.lib.all
       (rule: rule.action != "timeout" || rule.duration == "60s")
       homelabConfig.lattice.llm-gateway.routingRules;
-    # The migrated homelab config uses no legacy access_groups outside pool.
+    # The fallback stage is declared exactly once (standard) and routes only
+    # errors listed in its on filter, including model_not_found.
+    assert builtins.length (builtins.filter
+      (rule: rule.action == "fallback")
+      homelabConfig.lattice.llm-gateway.routingRules) == 1;
+    assert builtins.length (builtins.filter
+      (rule: rule.action == "fallback" && rule.model == "standard"
+        && rule.fallbackStrategy == "race"
+        && builtins.elem "model_not_found" rule.on)
+      homelabConfig.lattice.llm-gateway.routingRules) == 1;
+    # No access_groups anywhere (the option was removed) and no separate
+    # models list.
     assert nixpkgs.lib.all
-      (rule: rule.action == "pool" || rule.accessGroups == [ ])
+      (rule: (rule.accessGroups or [ ]) == [ ])
       homelabConfig.lattice.llm-gateway.routingRules;
+
     assert nixpkgs.lib.hasInfix "lattice-llm-gateway"
       homelabConfig.systemd.services.llm-gateway.serviceConfig.ExecStart;
     assert homelabConfig.systemd.services.llm-gateway.serviceConfig.RuntimeDirectoryPreserve

@@ -15,14 +15,12 @@ let
           providers = {
             proxy = {
               id = "gonka-proxy";
-              accessGroup = "gonka";
               inferenceUrl = "https://proxy.gonka.invalid/v1";
               apiKeyFile = "/run/agenix/llm-provider-proxy";
               priority = 20;
             };
             openbroker = {
               id = "gonka-openbroker";
-              accessGroup = "gonka";
               inferenceUrl = "https://openbroker.gonka.invalid/v1";
               modelsUrl = "https://proxy.gonka.invalid/v1/models";
               apiKeyFile = "/run/agenix/llm-provider-openbroker";
@@ -30,12 +28,13 @@ let
               priority = 10;
             };
           };
-          models = [
-            { logical = "stupid"; accessGroup = "gonka"; native = "MiniMaxAI/MiniMax-M2.7"; }
-            { logical = "standard"; accessGroup = "gonka"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
-          ];
           routingRules = lib.concatMap (model: [
-            { inherit model; action = "pool"; accessGroups = [ "gonka" ]; }
+            {
+              inherit model;
+              action = "map";
+              native = if model == "standard" then "deepseek-ai/DeepSeek-V4-Flash-0731" else "MiniMaxAI/MiniMax-M2.7";
+              providers = [ "gonka-proxy" "gonka-openbroker" ];
+            }
             { inherit model; action = "rank"; strategy = "priority"; }
             { inherit model; action = "race"; count = 2; }
             {
@@ -70,7 +69,7 @@ pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ 
   grep -q '"log_level":"silent"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"inference_url":"https://openbroker.gonka.invalid/v1"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"models_url":"https://proxy.gonka.invalid/v1/models"' ${config.lattice.llm-gateway.publicConfigFile}
-  grep -q '"action":"pool"' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"action":"map"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"action":"rank"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"action":"semaphore"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"max_calls":4' ${config.lattice.llm-gateway.publicConfigFile}
@@ -79,9 +78,19 @@ pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ 
   grep -q '"strategy":"priority"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"affinity_file":"/run/llm-gateway/affinity.json"' ${config.lattice.llm-gateway.publicConfigFile}
 
-  # access_groups must appear only on pool rules (no legacy race shorthand).
-  if ! jq -e '[.routing_rules[] | select(((."access_groups" // []) | length) > 0) | .action] | all(. == "pool")' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
-    echo "legacy access_groups outside pool rules" >&2
+  # Every map action must carry a native id and explicit provider ids; no
+  # access_groups remain anywhere in the routing contract.
+  if ! jq -e '.routing_rules | all(if .action == "map" then ((.native | type) == "string" and (.providers | type) == "array" and (.providers | length) > 0) else true end)' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+    echo "a map action lacks native/providers" >&2
+    exit 1
+  fi
+  if jq -e 'any(.routing_rules[]; has("access_groups")) or has("models")' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+    echo "legacy access_groups/models remain in the routing contract" >&2
+    exit 1
+  fi
+  # Logical models must be derived from the rules (no separate models key).
+  if jq -e '(.models // null) != null' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+    echo "public config still carries a separate models registry" >&2
     exit 1
   fi
 

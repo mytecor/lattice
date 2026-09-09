@@ -15,7 +15,11 @@ import (
 func TestServerAuthModelsAndLogicalRewrite(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules = cfg.RoutingRules[:3]
+	cfg.RoutingRules = []RoutingRule{
+		mapRule("standard", "native-model", "a"),
+		rankRule("standard"),
+		raceRule("standard", 1),
+	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -119,7 +123,11 @@ func TestUnknownModelFailsBeforeExecutor(t *testing.T) {
 func TestServerStreamsWinnerWithLogicalModel(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules = cfg.RoutingRules[:3]
+	cfg.RoutingRules = []RoutingRule{
+		mapRule("standard", "native-model", "a"),
+		rankRule("standard"),
+		raceRule("standard", 1),
+	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -155,11 +163,11 @@ func TestServerStreamsWinnerWithLogicalModel(t *testing.T) {
 	}
 }
 
-func TestManualRefreshDoesNotExposeGroupNames(t *testing.T) {
+func TestManualRefreshDoesNotExposeProviderNamespace(t *testing.T) {
 	compiled := raceOnlyConfig(t)
 	compiled.raw.ClientAPIKey = "client-secret"
-	compiled.groupSources = map[string][]catalogSource{
-		"internal-provider-group": {{URL: "://invalid"}},
+	compiled.catalogSources = map[string][]catalogSource{
+		"internal-provider-id": {{URL: "://invalid"}},
 	}
 	catalog := newCatalog(compiled)
 	executor := &fakeExecutor{
@@ -176,7 +184,7 @@ func TestManualRefreshDoesNotExposeGroupNames(t *testing.T) {
 	}
 	body, _ := io.ReadAll(response.Body)
 	response.Body.Close()
-	if response.StatusCode != http.StatusBadGateway || strings.Contains(string(body), "internal-provider-group") {
+	if response.StatusCode != http.StatusBadGateway || strings.Contains(string(body), "internal-provider-id") {
 		t.Fatalf("refresh response leaked topology: status=%d body=%s", response.StatusCode, body)
 	}
 }
@@ -184,7 +192,11 @@ func TestManualRefreshDoesNotExposeGroupNames(t *testing.T) {
 func TestServerReportsFailureAfterStreamingWinner(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
-	cfg.RoutingRules = cfg.RoutingRules[:3]
+	cfg.RoutingRules = []RoutingRule{
+		mapRule("standard", "native-model", "a"),
+		rankRule("standard"),
+		raceRule("standard", 1),
+	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -219,7 +231,7 @@ func affinityServerConfig(t *testing.T) *compiledConfig {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
 	cfg.RoutingRules = []RoutingRule{
-		poolRule("standard", "group"),
+		mapRule("standard", "native-model", "a"),
 		rankRule("standard"),
 		rule("affinity", "standard", func(r *RoutingRule) {
 			r.Sources = []string{"responses.conversation", "responses.previous_response_id"}

@@ -156,25 +156,31 @@ ID преобразуется в native target до вызова Bifrost, а и�
 не входят в клиентскую поверхность. Непубличные upstream keys подаются отдельно от client key.
 
 Provider-конфигурация разделяет `inference_url` и опциональный `models_url`. Поэтому
-`api.openbroker.gonka.gg/v1` может обслуживать inference, а каталог той же access group — загружаться с
+`api.openbroker.gonka.gg/v1` может обслуживать inference, а каталог того же provider загружаться с
 `proxy.gonka.gg/v1/models`. Если `models_url` отсутствует, gateway выводит catalog endpoint как
 `${inference_url}/models`; явный URL остаётся способом использовать независимый источник.
 `inference_url` задаёт полный путь до OpenAI-совместимой точки входа, включая версионный сегмент:
 gateway добавляет только операцию (`/chat/completions`), не вставляя `/v1` автоматически, так что
-provider может хостить API под произвольным маршрутизированным префиксом.
+provider может хостить API под произвольным маршрутизированным префиксом. Discovery provider-scoped:
+каждый provider владеет собственным last-known-good snapshot, а точная валидация native ID против
+каталога конкретного provider выполняется перед dispatch.
 
 Маршрут строится из плоского упорядоченного `routing_rules` pipeline. Каждый rule выполняет одно
 action с одной ответственностью, а compiled route отделён от внешних rules: кандидатный pool,
 ranking, dispatch batches, retry/hedge schedule, semaphore limits, lease и affinity state
 компилируются в отдельную структуру. Канонический порядок actions:
-`pool → rank → lease → affinity → race → retry → hedge → semaphore → timeout`.
+`map → rank → lease → affinity → race → retry → hedge → semaphore → timeout`, за которым может
+следовать опциональный второй stage `map → rank → fallback`.
 
-`pool` собирает candidate pool из access groups (элемент — готовая target-пара provider instance и
-resolved native model), `rank` сортирует его по priority. `lease` поднимает текущего победителя в
-начало ranking, продлевается успешным ответом и освобождается по настроенным hard failures либо
-после последовательных превышений meaningful TTFT. `affinity` закрепляет stateful Responses chain
-(по `conversation` / `previous_response_id`) за вернувшим её provider и fail-closed при его отказе;
-Chat affinity никогда не получает. `race` запускает только top-`count` unused targets; `retry`
+`map` связывает один native model ID с явным набором provider IDs и добавляет готовые
+target-пары `(provider ID, native model)` в pending pool; `rank` сортирует pool по priority, а
+route-creating action (`race` или `fallback`) сохраняет immutable snapshot. Провайдеры остаются
+registry: rules ссылаются только на стабильные provider IDs, а access group больше не является
+routing identity. `lease` поднимает текущего победителя в начало ranking, продлевается успешным
+ответом и освобождается по настроенным hard failures либо после последовательных превышений
+meaningful TTFT. `affinity` закрепляет stateful Responses chain (по `conversation` /
+`previous_response_id`) за вернувшим её provider и fail-closed при его отказе; Chat affinity
+никогда не получает. `race` запускает только top-`count` unused targets; `retry`
 `scope = "next"` берёт следующие unused targets и не повторяет provider; `hedge` разрешает
 следующему retry batch начаться до завершения текущих branches; `semaphore` ограничивает
 суммарные/одновременные/на-провайдера upstream calls во всём request, включая fallback;
@@ -185,15 +191,17 @@ streaming победитель выбирается по первому meaningf
 отменённые losers не влияют на cooldown и lease. После winner, client cancellation, timeout или
 исчерпания semaphore budget новые upstream calls не стартуют.
 
-В production все настроенные Gonka providers входят в access group `gonka`, ранжируются по
-priority (hyperfusion 100, gonka-proxy 50, gonka-openbroker 40, gonka-api 30, dahl 20, gonkarouter
-10), а race/retry/hedge потребляют топ-2 и по одному следующему unused target при целевом
-semaphore `max_calls = 4`, `max_in_flight = 3`, `max_calls_per_provider = 1` — один запрос никогда
-не создаёт больше четырёх upstream calls, больше трёх concurrent calls или повторный call к
-одному provider. Provider с retryable failure получает cooldown и временно пропускается; если
-охлаждаются все ветки, gateway fail-open пробует группу снова. Старые `race accessGroups` и
-`retry` без `scope` нормализуются в legacy-совместимые формы; parameterless `hedge` отклоняется
-с точной migration error.
+В production все настроенные Gonka providers входят в primary `map` обоих logical models,
+ранжируются по priority (hyperfusion 100, gonka-proxy 50, gonka-openbroker 40, gonka-api 30, dahl
+20, gonkarouter 10), а race/retry/hedge потребляют топ-2 и по одному следующему unused target при
+целевом semaphore `max_calls = 4`, `max_in_flight = 3`, `max_calls_per_provider = 1` — один запрос
+никогда не создаёт больше четырёх upstream calls, больше трёх concurrent calls или повторный
+call к одному provider. Для `standard` второй stage даёт Hyperfusion второй catalog alias
+(`gonka/deepseek-ai/DeepSeek-V4-Flash-0731`): локальное отсутствие первичного alias в каталоге
+классифицируется как `model_not_found` и переводит выполнение на fallback без
+лексикографической подстановки произвольной модели. Provider с retryable failure получает
+cooldown и временно пропускается; если охлаждаются все ветки, gateway fail-open пробует pool
+снова. Legacy `race accessGroups`, отдельный `models` registry и access-group routing удалены.
 
 Executable spike [f7-01](./docs/roadmap/f7-llm-gateway/f7-01-token-proxy-spike.md) остаётся историческим
 подтверждением требуемого поведения и источником regression tests. NixOS-модуль, безопасная сборка
@@ -204,23 +212,24 @@ runtime-specific legacy config удалены после подтверждён�
 
 ### Контракт логических моделей
 
-До появления дополнительных provider classes клиентская поверхность содержит два имени:
+До появления дополнительных provider classes клиентская поверхность содержит два имени. Logical model registry выводится runtime из успешно скомпилированных executable plans, а не из отдельного конфигурационного списка:
 
-| Имя | Семантика |
+| Имя | Семантика (native через `map`) |
 | --- | --- |
-| `stupid` | `MiniMaxAI/MiniMax-M2.7` в access group `gonka`; дешёвые и простые шаги. |
-| `standard` | `deepseek-ai/DeepSeek-V4-Flash-0731` в access group `gonka`; основной рабочий класс. |
+| `stupid` | `MiniMaxAI/MiniMax-M2.7`, назначен всем provider primary stage; дешёвые и простые шаги. |
+| `standard` | `deepseek-ai/DeepSeek-V4-Flash-0731` в primary stage, плюс `model_not_found`-fallback на `gonka/deepseek-ai/DeepSeek-V4-Flash-0731` (Hyperfusion); основной рабочий класс. |
 
 Mappings можно менять без изменения клиента, если новое назначение сохраняет смысл класса,
 поддерживает нужный OpenAI-compatible protocol и проходит контрактные/resilience checks. Изменение
 цены, provider ID, priority или fallback внутри класса не меняет API. Перенос модели в другой класс
 является изменением эксплуатационной политики и требует проверки качества, но не нового имени.
 
-Профиль задаёт `logicalModels` этим списком, а модуль проверяет, что `/v1/models` не включает
-upstream prefixes, каждый advertised ID входит в контракт, оба имени представлены хотя бы
-одним upstream и каждое имеет явный mapping. Неизвестное или provider-specific имя отклоняется с
-404 до обращения к upstream. Ошибки клиентской авторизации остаются 401; исчерпание retry/fallback
-возвращает gateway error без credentials и без раскрытия внутреннего model ID.
+Профиль задаёт `logicalModels` этим списком, а runtime проверяет, что `/v1/models` не включает
+upstream prefixes, каждый advertised ID выводится из скомпилированного плана и имеет явный
+`map(native, providers)`. Неизвестное или provider-specific имя отклоняется с 404 до обращения
+к upstream. Ошибки клиентской авторизации остаются 401; исчерпание retry/fallback возвращает
+gateway error без credentials и без раскрытия внутреннего model ID. Native/provider данные не
+попадают в client responses, SSE и безопасные ошибки.
 
 ## Стираемый root
 

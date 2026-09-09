@@ -13,6 +13,10 @@ import (
 	"time"
 )
 
+// Catalog holds per-provider model discovery state. Catalogs, snapshots and
+// refresh state are indexed by provider ID: every provider owns its own
+// last-known-good snapshot and its explicit or inferred source, so exact
+// native-model validation never depends on an unrelated provider.
 type Catalog struct {
 	sources map[string][]catalogSource
 	client  *http.Client
@@ -23,40 +27,49 @@ type Catalog struct {
 
 func newCatalog(config *compiledConfig) *Catalog {
 	return &Catalog{
-		sources: config.groupSources,
+		sources: config.catalogSources,
 		client:  &http.Client{Timeout: 30 * time.Second},
 		models:  make(map[string][]string),
 		updated: make(map[string]time.Time),
 	}
 }
 
-func (c *Catalog) Resolve(group, primary string) (string, error) {
-	sources := c.sources[group]
+// Validate checks the explicit native model of a target against the provider's
+// last-known-good catalog snapshot before dispatch. It returns nil when the
+// target is valid, a fail-closed error when an explicit catalog has not
+// produced a snapshot yet, and model_not_found when a snapshot exists but does
+// not contain the native ID. A provider without discovery or with an inferred
+// catalog that has not produced a snapshot yet is optimistic: the explicitly
+// configured native ID is called as configured. The lexicographic arbitrary
+// fallback is removed entirely.
+func (c *Catalog) Validate(providerID, native string) *CallError {
+	sources := c.sources[providerID]
 	if len(sources) == 0 {
-		if primary == "" {
-			return "", fmt.Errorf("access group %q has no primary model", group)
-		}
-		return primary, nil
+		return nil // no discovery configured: the explicit native stays authoritative
 	}
 	c.mu.RLock()
-	models, available := c.models[group]
+	models, available := c.models[providerID]
 	c.mu.RUnlock()
 	if !available || len(models) == 0 {
-		if !catalogRequired(sources) && primary != "" {
-			return primary, nil
+		if catalogRequired(sources) {
+			return &CallError{Class: ErrorInvalid, Status: 503, Cause: fmt.Errorf("provider %q has no last-known-good catalog (explicit models_url)", providerID)}
 		}
-		return "", fmt.Errorf("access group %q has no last-known-good catalog", group)
+		// Inferred catalog not yet available: optimistic call of the explicit ID.
+		return nil
 	}
-	index := sort.SearchStrings(models, primary)
-	if index < len(models) && models[index] == primary {
-		return primary, nil
+	index := sort.SearchStrings(models, native)
+	if index < len(models) && models[index] == native {
+		return nil
 	}
-	return models[0], nil
+	return &CallError{Class: ErrorModelNotFound, Status: 404, Cause: fmt.Errorf("native model %q is not in the catalog of provider %q", native, providerID)}
 }
 
+// Refresh fetches every provider's catalog source concurrently and updates
+// per-provider last-known-good snapshots. A failed refresh never destroys an
+// existing snapshot for that provider. Returns errors keyed by provider ID.
 func (c *Catalog) Refresh(ctx context.Context) map[string]error {
-	errorsByGroup := make(map[string]error)
-	for group, sources := range c.sources {
+	errorsByProvider := make(map[string]error)
+	for providerID, sources := range c.sources {
 		type fetchResult struct {
 			source catalogSource
 			models []string
@@ -84,7 +97,7 @@ func (c *Catalog) Refresh(ctx context.Context) map[string]error {
 		}
 		if len(set) == 0 {
 			if len(failures) != 0 {
-				errorsByGroup[group] = errors.Join(failures...)
+				errorsByProvider[providerID] = errors.Join(failures...)
 			}
 			continue
 		}
@@ -94,11 +107,11 @@ func (c *Catalog) Refresh(ctx context.Context) map[string]error {
 		}
 		sort.Strings(models)
 		c.mu.Lock()
-		c.models[group] = models
-		c.updated[group] = time.Now()
+		c.models[providerID] = models
+		c.updated[providerID] = time.Now()
 		c.mu.Unlock()
 	}
-	return errorsByGroup
+	return errorsByProvider
 }
 
 func catalogRequired(sources []catalogSource) bool {
@@ -169,16 +182,18 @@ func (c *Catalog) Start(ctx context.Context, interval time.Duration, report func
 	}()
 }
 
+// Status reports per-provider catalog state for diagnostics. Provider IDs are
+// internal identities and never reach client responses.
 func (c *Catalog) Status() map[string]any {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	groups := make(map[string]any, len(c.sources))
-	for group := range c.sources {
-		groups[group] = map[string]any{
-			"available":  len(c.models[group]) > 0,
-			"models":     len(c.models[group]),
-			"updated_at": c.updated[group],
+	providers := make(map[string]any, len(c.sources))
+	for providerID := range c.sources {
+		providers[providerID] = map[string]any{
+			"available":  len(c.models[providerID]) > 0,
+			"models":     len(c.models[providerID]),
+			"updated_at": c.updated[providerID],
 		}
 	}
-	return groups
+	return providers
 }

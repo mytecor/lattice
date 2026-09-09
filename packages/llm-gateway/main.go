@@ -82,8 +82,8 @@ func run(arguments []string) error {
 	}
 }
 
-func reportCatalogErrors(logger *slog.Logger, errorsByGroup map[string]error) {
-	for group, err := range errorsByGroup {
-		logger.Warn("catalog refresh failed", "access_group", group, "detail", safeLogDetail(err.Error()))
+func reportCatalogErrors(logger *slog.Logger, errorsByProvider map[string]error) {
+	for providerID, err := range errorsByProvider {
+		logger.Warn("catalog refresh failed", "provider", providerID, "detail", safeLogDetail(err.Error()))
 	}
 }

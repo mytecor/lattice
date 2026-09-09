@@ -130,41 +130,41 @@ provider metadata.
 
 ## Что сделать
 
-- [ ] Заменить `models` и access-group mapping на action `map` в Nix и runtime JSON contract.
-- [ ] Перевести compiled pool/stages с provider IDs на immutable target-пары `(provider, native)`.
-- [ ] Реализовать validation порядка `map`, `rank`, `race`, `fallback` и modifiers: пустой pool,
+- [x] Заменить `models` и access-group mapping на action `map` в Nix и runtime JSON contract.
+- [x] Перевести compiled pool/stages с provider IDs на immutable target-пары `(provider, native)`.
+- [x] Реализовать validation порядка `map`, `rank`, `race`, `fallback` и modifiers: пустой pool,
   duplicate provider, dangling `map`, mapping после stage и отсутствие предыдущего stage должны
   давать точную configuration error с logical model и индексом rule.
-- [ ] Перевести primary и fallback execution на единый target-pool path без legacy group resolver.
-- [ ] Удалить access-group routing и мигрировать все repository configurations на явные provider
+- [x] Перевести primary и fallback execution на единый target-pool path без legacy group resolver.
+- [x] Удалить access-group routing и мигрировать все repository configurations на явные provider
   IDs; provider transport/credentials оставить в registry.
-- [ ] Сделать discovery, last-known-good и exact native validation provider-scoped.
-- [ ] Удалить лексикографический fallback на произвольную модель.
-- [ ] Добавить `model_not_found` и подключить его к fallback/error policy.
-- [ ] Сохранить bounded scheduler, priority, lease, affinity, cooldown, semaphore, timeout,
+- [x] Сделать discovery, last-known-good и exact native validation provider-scoped.
+- [x] Удалить лексикографический fallback на произвольную модель.
+- [x] Добавить `model_not_found` и подключить его к fallback/error policy.
+- [x] Сохранить bounded scheduler, priority, lease, affinity, cooldown, semaphore, timeout,
   streaming winner и cancellation semantics из [f7-09](./f7-09-bounded-provider-routing.md).
-- [ ] Вывести public logical model registry из compiled plans и сохранить sanitization boundary.
-- [ ] Мигрировать homelab mappings `stupid` и `standard`, включая оба DeepSeek native alias только
+- [x] Вывести public logical model registry из compiled plans и сохранить sanitization boundary.
+- [x] Мигрировать homelab mappings `stupid` и `standard`, включая оба DeepSeek native alias только
   для тех providers, которым они действительно назначены.
-- [ ] Обновить module/package документацию и migration examples.
+- [x] Обновить module/package документацию и migration examples.
 
 ## Критерий готовности (Definition of Done)
 
-- [ ] В конфигурации отсутствуют отдельные `models` и routing `accessGroups`; каждый executable
+- [x] В конфигурации отсутствуют отдельные `models` и routing `accessGroups`; каждый executable
   target получен из явного `map(native, providers)`.
-- [ ] Один stage не вызывает один provider дважды под разными aliases; разные providers одного
+- [x] Один stage не вызывает один provider дважды под разными aliases; разные providers одного
   logical model могут получать разные native IDs.
-- [ ] Hyperfusion с двумя catalog IDs однозначно получает native, выбранный его `map`, без
+- [x] Hyperfusion с двумя catalog IDs однозначно получает native, выбранный его `map`, без
   лексикографической подстановки и без дублирующего race call.
-- [ ] Provider-scoped catalog tests доказывают exact-match-only, partial refresh,
+- [x] Provider-scoped catalog tests доказывают exact-match-only, partial refresh,
   last-known-good, inferred optimistic и explicit fail-closed semantics.
-- [ ] `model_not_found` переводит выполнение на явно настроенный fallback и никогда не выбирает
+- [x] `model_not_found` переводит выполнение на явно настроенный fallback и никогда не выбирает
   несвязанную модель.
-- [ ] `/v1/models`, Chat Completions и Responses продолжают публиковать только logical IDs;
+- [x] `/v1/models`, Chat Completions и Responses продолжают публиковать только logical IDs;
   native/provider data не попадают в client responses и безопасные ошибки.
-- [ ] Ограничения calls/request, concurrency, retry-next, hedge, cooldown, lease и affinity из
+- [x] Ограничения calls/request, concurrency, retry-next, hedge, cooldown, lease и affinity из
   [f7-09](./f7-09-bounded-provider-routing.md) подтверждены regression tests.
-- [ ] `gofmt`, gateway `go test ./...`, `go test -race ./...`, доступные Nix evaluation/service
+- [x] `gofmt`, gateway `go test ./...`, `go test -race ./...`, доступные Nix evaluation/service
   checks и code index проходят после миграции.
 
 ## Затрагиваемые файлы / слои
@@ -177,5 +177,23 @@ provider metadata.
 
 ## Открытые вопросы
 
-_нет_. Политика provider definitions, exact catalog matching, duplicate provider и fallback
+_нет._ Политика provider definitions, exact catalog matching, duplicate provider и fallback
 зафиксирована выше; конкретная внутренняя форма compiled stage выбирается реализацией.
+
+### Решённые при реализации
+
+- **Catalog validation point.** Exact native validation выполняется перед dispatch в `launch`
+  (и в serial fallback loop) через provider-scoped `Catalog.Validate`. Локально отклонённая
+  target-пара (`model_not_found` или explicit fail-closed) не стартует upstream call и не
+  расходует `max_calls`/`max_calls_per_provider`, поэтому dual-alias provider (например Hyperfusion
+  с `deepseek-ai/...` в primary и `gonka/deepseek-ai/...` в fallback) всё ещё достижим в
+  fallback stage при `max_calls_per_provider = 1`.
+- **Stage boundary.** Первый `map` после `race` открывает fallback stage; внутри него разрешены
+  только `map`, `rank` и `fallback`. `map` после declared fallback, memory stage modifiers
+  (`lease`/`affinity`/`retry`/`hedge`/`semaphore`/`timeout`) в fallback stage, dangling `map` без
+  `fallback`, fallback без предшествующего primary `race` и duplicate provider в одном pending
+  pool отклоняются с точной ошибкой (model + rule index).
+- **`retry` без `scope`** по-прежнему нормализуется в `scope = "same"`; legacy `race
+  access_groups`, отдельный `models` registry и access-group routing удалены полностью.
+- **Logical model registry** выводится из ключей скомпилированных планов; `/v1/models` публикует
+  только unique sorted logical IDs, и неизвестный logical ID отклоняется до upstream call.

@@ -219,10 +219,10 @@ func writeStreamEvent(writer http.ResponseWriter, flusher http.Flusher, logical 
 }
 
 func (s *Server) refresh(writer http.ResponseWriter, request *http.Request) {
-	errorsByGroup := s.catalog.Refresh(request.Context())
-	failed := make([]string, 0, len(errorsByGroup))
-	for group := range errorsByGroup {
-		failed = append(failed, group)
+	errorsByProvider := s.catalog.Refresh(request.Context())
+	failed := make([]string, 0, len(errorsByProvider))
+	for providerID := range errorsByProvider {
+		failed = append(failed, providerID)
 	}
 	slicesSort(failed)
 	status := http.StatusOK

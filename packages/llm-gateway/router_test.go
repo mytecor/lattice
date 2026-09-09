@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -53,14 +55,12 @@ func rulesConfig(t *testing.T, n int, rules []RoutingRule) *compiledConfig {
 		letter := rune('a' + i)
 		providers = append(providers, Provider{
 			ID:           string(letter),
-			Name:         "group",
 			BaseProvider: "openai",
 			InferenceURL: fmt.Sprintf("https://%c.invalid", letter),
 			Priority:     100 - i,
 		})
 	}
 	cfg.Providers = providers
-	cfg.Models = cfg.Models[:1]
 	cfg.RoutingRules = rules
 	compiled, err := compileConfig(cfg)
 	if err != nil {
@@ -216,7 +216,7 @@ func TestBoundedRaceCancelsLosers(t *testing.T) {
 
 func TestRetryNextUsesOnlyUnusedTargetsWithinBudget(t *testing.T) {
 	compiled := rulesConfig(t, 3, []RoutingRule{
-		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		mapRule("standard", "native-model", "a", "b", "c"), rankRule("standard"), raceRule("standard", 2),
 		retryNextRule("standard", 1, 2),
 	})
 	var mu sync.Mutex
@@ -382,7 +382,7 @@ func TestRouteTimeoutInterruptsRetryBackoff(t *testing.T) {
 
 func TestHedgeStartsOnlyNextBatchAfterDelay(t *testing.T) {
 	compiled := rulesConfig(t, 3, []RoutingRule{
-		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		mapRule("standard", "native-model", "a", "b", "c"), rankRule("standard"), raceRule("standard", 2),
 		retryNextRule("standard", 1, 2),
 		rule("hedge", "standard", func(r *RoutingRule) { r.After = Duration{40 * time.Millisecond} }),
 	})
@@ -480,7 +480,7 @@ func TestHedgeNewWaveDespiteCooledProvider(t *testing.T) {
 
 func TestSemaphoreMaxCallsBoundsTotalCalls(t *testing.T) {
 	compiled := rulesConfig(t, 4, []RoutingRule{
-		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		mapRule("standard", "native-model", "a", "b", "c", "d"), rankRule("standard"), raceRule("standard", 2),
 		retryNextRule("standard", 1, 6),
 		rule("semaphore", "standard", func(r *RoutingRule) {
 			r.MaxCalls = 3
@@ -621,6 +621,11 @@ func TestStreamingRaceIgnoresErrorBeforeWinner(t *testing.T) {
 func TestSelectedStreamHonorsClientCancellation(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
+	cfg.RoutingRules = []RoutingRule{
+		mapRule("standard", "native-model", "a"),
+		rankRule("standard"),
+		raceRule("standard", 1),
+	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -658,7 +663,7 @@ func TestStreamingRouteTimeoutKeepsWinnerStreamAlive(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
 	cfg.RoutingRules = []RoutingRule{
-		poolRule("standard", "group"),
+		mapRule("standard", "native-model", "a"),
 		rankRule("standard"),
 		raceRule("standard", 1),
 		rule("timeout", "standard", func(r *RoutingRule) { r.Duration = Duration{30 * time.Millisecond} }),
@@ -704,7 +709,7 @@ func TestNonStreamingRouteTimeoutClassified(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
 	cfg.RoutingRules = []RoutingRule{
-		poolRule("standard", "group"),
+		mapRule("standard", "native-model", "a"),
 		rankRule("standard"),
 		raceRule("standard", 1),
 		rule("timeout", "standard", func(r *RoutingRule) { r.Duration = Duration{20 * time.Millisecond} }),
@@ -764,7 +769,8 @@ func TestCooldownSkipsRecentlyFailedProvider(t *testing.T) {
 
 func TestFallbackRunsOnlyAfterMatchingFailure(t *testing.T) {
 	cfg := testConfig()
-	cfg.RoutingRules = []RoutingRule{cfg.RoutingRules[0], cfg.RoutingRules[1], cfg.RoutingRules[2], cfg.RoutingRules[4]}
+	// map(group), rank, race plus the compiled fallback stage (map(backup), fallback).
+	cfg.RoutingRules = []RoutingRule{cfg.RoutingRules[0], cfg.RoutingRules[1], cfg.RoutingRules[2], cfg.RoutingRules[4], cfg.RoutingRules[5]}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -796,8 +802,8 @@ func TestFallbackSharesPrimarySemaphoreBudget(t *testing.T) {
 			r.MaxInFlight = 2
 			r.MaxCallsPerProvider = 1
 		}),
+		poolRule("standard", "backup"),
 		rule("fallback", "standard", func(r *RoutingRule) {
-			r.AccessGroups = []string{"backup"}
 			r.On = []string{"5xx"}
 			r.FallbackStrategy = "serial"
 		}),
@@ -833,8 +839,8 @@ func TestRouteTimeoutBoundsSerialFallback(t *testing.T) {
 	cfg.RoutingRules = []RoutingRule{
 		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
 		rule("timeout", "standard", func(r *RoutingRule) { r.Duration = Duration{40 * time.Millisecond} }),
+		poolRule("standard", "backup"),
 		rule("fallback", "standard", func(r *RoutingRule) {
-			r.AccessGroups = []string{"backup"}
 			r.On = []string{"5xx"}
 			r.FallbackStrategy = "serial"
 		}),
@@ -913,8 +919,8 @@ func TestSerialStreamingFallbackReturnsCancellationHandle(t *testing.T) {
 	cfg := testConfig()
 	cfg.RoutingRules = []RoutingRule{
 		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		poolRule("standard", "backup"),
 		rule("fallback", "standard", func(r *RoutingRule) {
-			r.AccessGroups = []string{"backup"}
 			r.On = []string{"5xx"}
 			r.FallbackStrategy = "serial"
 		}),
@@ -1263,7 +1269,7 @@ func TestChatNeverUsesAffinity(t *testing.T) {
 
 func TestSemaphoreMaxInFlightGatesNextBatch(t *testing.T) {
 	compiled := rulesConfig(t, 3, []RoutingRule{
-		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		mapRule("standard", "native-model", "a", "b", "c"), rankRule("standard"), raceRule("standard", 2),
 		retryNextRule("standard", 1, 2),
 		rule("semaphore", "standard", func(r *RoutingRule) {
 			r.MaxCalls = 3
@@ -1311,7 +1317,7 @@ func TestSemaphoreMaxInFlightGatesNextBatch(t *testing.T) {
 
 func TestSemaphoreRefillsPartiallyStartedInitialRace(t *testing.T) {
 	compiled := rulesConfig(t, 3, []RoutingRule{
-		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 3),
+		mapRule("standard", "native-model", "a", "b", "c"), rankRule("standard"), raceRule("standard", 3),
 		rule("semaphore", "standard", func(r *RoutingRule) {
 			r.MaxCalls = 3
 			r.MaxInFlight = 1
@@ -1390,8 +1396,8 @@ func TestAffinityPinnedRouteNeverUsesFallback(t *testing.T) {
 			r.OnProviderFailure = "fail-closed"
 		}),
 		raceRule("standard", 2),
+		poolRule("standard", "backup"),
 		rule("fallback", "standard", func(r *RoutingRule) {
-			r.AccessGroups = []string{"backup"}
 			r.On = []string{"5xx", "timeout"}
 			r.FallbackStrategy = "serial"
 		}),
@@ -1442,8 +1448,8 @@ func TestAffinityResolutionFailureRemainsPinned(t *testing.T) {
 			r.OnProviderFailure = "fail-closed"
 		}),
 		raceRule("standard", 2),
+		poolRule("standard", "backup"),
 		rule("fallback", "standard", func(r *RoutingRule) {
-			r.AccessGroups = []string{"backup"}
 			r.On = []string{"invalid_response"}
 			r.FallbackStrategy = "serial"
 		}),
@@ -1519,7 +1525,7 @@ func TestAffinityStaleMappingFallsBackToPool(t *testing.T) {
 
 func TestHedgeRetriesPermitBlockedBatchMembers(t *testing.T) {
 	compiled := rulesConfig(t, 4, []RoutingRule{
-		poolRule("standard", "group"), rankRule("standard"), raceRule("standard", 2),
+		mapRule("standard", "native-model", "a", "b", "c", "d"), rankRule("standard"), raceRule("standard", 2),
 		retryNextRule("standard", 2, 1),
 		rule("hedge", "standard", func(r *RoutingRule) { r.After = Duration{30 * time.Millisecond} }),
 		rule("semaphore", "standard", func(r *RoutingRule) {
@@ -1588,5 +1594,255 @@ func TestHedgeRetriesPermitBlockedBatchMembers(t *testing.T) {
 	}
 	if n := calls.Load(); n != 4 {
 		t.Fatalf("semaphore budget violated: %d calls", n)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// f7-10: route-native-provider mapping (map action, exact catalogs, fallback
+// through model_not_found, and per-provider native aliases).
+// ---------------------------------------------------------------------------
+
+// catalogServer returns a provider-scoped catalog serving the given model ids.
+func catalogServer(t *testing.T, ids ...string) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(writer, `{"object":"list","data":[%s]}`, func() string {
+			items := make([]string, 0, len(ids))
+			for _, id := range ids {
+				items = append(items, `{"id":"`+id+`"}`)
+			}
+			return strings.Join(items, ",")
+		}())
+	}))
+	return server
+}
+
+// compiledWithCatalogs builds a compiled config whose catalog sources are set
+// directly so tests can prove exact native validation without real HTTP. It
+// returns the shared catalog instance so the runner uses the same snapshots.
+func compiledWithCatalogs(t *testing.T, rules []RoutingRule, catalogs map[string][]string) (*compiledConfig, *Catalog) {
+	t.Helper()
+	cfg := testConfig()
+	cfg.Providers = []Provider{
+		{ID: "a", BaseProvider: "openai", InferenceURL: "https://a.invalid", Priority: 20},
+		{ID: "b", BaseProvider: "openai", InferenceURL: "https://b.invalid", Priority: 10},
+		{ID: "c", BaseProvider: "openai", InferenceURL: "https://c.invalid", Priority: 5},
+	}
+	cfg.RoutingRules = rules
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Replace every catalog source Keyed by provider with the test servers.
+	compiled.catalogSources = make(map[string][]catalogSource, len(catalogs))
+	for providerID, ids := range catalogs {
+		server := catalogServer(t, ids...)
+		t.Cleanup(server.Close)
+		compiled.catalogSources[providerID] = []catalogSource{{URL: server.URL, Explicit: true}}
+	}
+	catalog := newCatalog(compiled)
+	if failures := catalog.Refresh(context.Background()); len(failures) != 0 {
+		t.Fatalf("catalog refresh failed: %v", failures)
+	}
+	return compiled, catalog
+}
+
+func TestMapGivesDifferentProvidersDifferentNatives(t *testing.T) {
+	compiled, catalog := compiledWithCatalogs(t, []RoutingRule{
+		mapRule("standard", "native-a", "a"),
+		mapRule("standard", "native-b", "b"),
+		rankRule("standard"),
+		raceRule("standard", 2),
+	}, map[string][]string{"a": {"native-a"}, "b": {"native-b"}})
+	called := make(chan Target, 2)
+	release := make(chan struct{})
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		// Record the dispatched target before any winner can cancel the loser,
+		// so the per-provider native mapping is asserted deterministically.
+		called <- target
+		<-release
+		if target.Provider == "a" {
+			return nil, &CallError{Class: ErrorUpstream, Status: 503}
+		}
+		return successBody(target.Provider), nil
+	}}
+	runner := newRunner(compiled, catalog, executor)
+	result := make(chan *CallError, 1)
+	go func() {
+		_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+		result <- callErr
+	}()
+	dispatched := map[string]string{}
+	for len(dispatched) < 2 {
+		select {
+		case target := <-called:
+			dispatched[target.Provider] = target.Model
+		case <-time.After(time.Second):
+			t.Fatalf("both mapped providers did not dispatch: %#v", dispatched)
+		}
+	}
+	if dispatched["a"] != "native-a" || dispatched["b"] != "native-b" {
+		t.Fatalf("each provider must receive its own mapped native: %#v", dispatched)
+	}
+	close(release)
+	if callErr := <-result; callErr != nil {
+		t.Fatalf("route failed: %v", callErr)
+	}
+}
+
+func TestModelNotFoundTriggersExplicitFallback(t *testing.T) {
+	// Provider a's snapshot lacks the primary alias but carries the fallback
+	// alias; provider b lacks both. All primary targets locally fail
+	// model_not_found, which must activate the configured fallback stage and
+	// dispatch the fallback target with its own native, never an unrelated one.
+	compiled, catalog := compiledWithCatalogs(t, []RoutingRule{
+		mapRule("standard", "alias-a", "a", "b"),
+		rankRule("standard"),
+		raceRule("standard", 2),
+		mapRule("standard", "alias-b", "a"),
+		rule("fallback", "standard", func(r *RoutingRule) {
+			r.On = []string{"model_not_found"}
+			r.FallbackStrategy = "race"
+		}),
+	}, map[string][]string{"a": {"alias-b"}, "b": {"unrelated"}})
+	var mu sync.Mutex
+	var called []Target
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		mu.Lock()
+		called = append(called, target)
+		mu.Unlock()
+		return successBody(target.Provider), nil
+	}}
+	runner := newRunner(compiled, catalog, executor)
+	body, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr != nil {
+		t.Fatalf("fallback did not recover: %v", callErr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil || payload["winner"] != "a" {
+		t.Fatalf("fallback winner mismatch: %s", body)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(called) != 1 {
+		t.Fatalf("expected exactly one upstream call (fallback a with alias-b), got %#v", called)
+	}
+	if got := called[0]; got.Provider != "a" || got.Model != "alias-b" {
+		t.Fatalf("fallback must use the mapped native of its stage: %#v", got)
+	}
+}
+
+func TestModelNotFoundWithMatchingRetryStaysBounded(t *testing.T) {
+	// All primary targets fail model_not_found and retry.on opts in: the next
+	// retry wave uses only unused targets, stays inside the semaphore budget
+	// and never dispatches a provider twice.
+	compiled, catalog := compiledWithCatalogs(t, []RoutingRule{
+		mapRule("standard", "alias-a", "a", "b", "c"),
+		rankRule("standard"),
+		raceRule("standard", 2),
+		rule("retry", "standard", func(r *RoutingRule) {
+			r.Scope = "next"
+			r.Count = 1
+			r.Attempts = 1
+			r.On = []string{"model_not_found"}
+		}),
+		rule("semaphore", "standard", func(r *RoutingRule) {
+			r.MaxCalls = 4
+			r.MaxInFlight = 3
+			r.MaxCallsPerProvider = 1
+		}),
+	}, map[string][]string{"a": {"other"}, "b": {"other"}, "c": {"other"}})
+	var calls atomic.Int32
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		calls.Add(1)
+		return successBody(target.Provider), nil
+	}}
+	runner := newRunner(compiled, catalog, executor)
+	_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr == nil || callErr.Class != ErrorModelNotFound {
+		t.Fatalf("expected model_not_found after bounded retry, got %v", callErr)
+	}
+	// Pre-validated failures must not consume the upstream call budget, so the
+	// executor never runs for any target.
+	if calls.Load() != 0 {
+		t.Fatalf("catalog-rejected targets were dispatched upstream: %d calls", calls.Load())
+	}
+}
+
+func TestModelNotFoundNeverSelectsUnrelatedModel(t *testing.T) {
+	// A missing native must surface as model_not_found to the caller, never as
+	// a lexicographic substitution to an arbitrary catalog id.
+	compiled, catalog := compiledWithCatalogs(t, []RoutingRule{
+		mapRule("standard", "deepseek-ai/DeepSeek-V4", "a"),
+		rankRule("standard"),
+		raceRule("standard", 1),
+	}, map[string][]string{"a": {"alpha", "zeta"}})
+	var calls atomic.Int32
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		calls.Add(1)
+		return successBody(target.Provider), nil
+	}}
+	runner := newRunner(compiled, catalog, executor)
+	_, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr == nil || callErr.Class != ErrorModelNotFound {
+		t.Fatalf("expected model_not_found, got %v (never substitute alpha/zeta)", callErr)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("unrelated model was dispatched to upstream: %d calls", calls.Load())
+	}
+}
+
+func TestDualAliasFallbackUsesSameProviderOnce(t *testing.T) {
+	// Hyperfusion-style scenario: the provider appears in the primary stage
+	// with one alias and in the fallback stage with a second alias. When the
+	// primary alias is locally absent, the fallback reaches the same provider
+	// once with its other native; the per-provider budget is not burned by the
+	// pre-validated primary target.
+	compiled, catalog := compiledWithCatalogs(t, []RoutingRule{
+		mapRule("standard", "deepseek-ai/DeepSeek-V4", "a", "b"),
+		rankRule("standard"),
+		raceRule("standard", 2),
+		rule("semaphore", "standard", func(r *RoutingRule) {
+			r.MaxCalls = 4
+			r.MaxInFlight = 3
+			r.MaxCallsPerProvider = 1
+		}),
+		mapRule("standard", "gonka/deepseek-ai/DeepSeek-V4", "a"),
+		rule("fallback", "standard", func(r *RoutingRule) {
+			r.On = []string{"model_not_found", "5xx"}
+			r.FallbackStrategy = "race"
+		}),
+	}, map[string][]string{
+		"a": {"gonka/deepseek-ai/DeepSeek-V4"},
+		"b": {"deepseek-ai/DeepSeek-V3"},
+	})
+	var mu sync.Mutex
+	var called []Target
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		mu.Lock()
+		called = append(called, target)
+		mu.Unlock()
+		return successBody(target.Provider), nil
+	}}
+	runner := newRunner(compiled, catalog, executor)
+	body, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	if callErr != nil {
+		t.Fatalf("dual-alias fallback failed: %v", callErr)
+	}
+	mu.Lock()
+	// The primary arrays both fail model_not_found locally, so the fallback
+	// dispatches provider a once with its second native. The catalog-rejected
+	// primary never burned the per-provider call budget (maxCallsPerProvider=1).
+	if len(called) != 1 {
+		t.Fatalf("expected exactly one upstream call, got %#v", called)
+	}
+	if got := called[0]; got.Provider != "a" || got.Model != "gonka/deepseek-ai/DeepSeek-V4" {
+		t.Fatalf("fallback must use the mapped native of its own stage once: %#v", got)
+	}
+	mu.Unlock()
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil || payload["winner"] != "a" {
+		t.Fatalf("fallback winner mismatch: %s", body)
 	}
 }

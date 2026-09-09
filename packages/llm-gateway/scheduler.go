@@ -7,17 +7,19 @@ import (
 )
 
 // branchResult is the terminal outcome of one upstream call produced by a
-// branch goroutine. It is delivered exactly once through the schedule results
-// channel.
+// branch goroutine (or a locally catalog-rejected target reported without an
+// upstream call, see prefailed). It is delivered exactly once through the
+// schedule results channel.
 type branchResult struct {
-	id       int
-	provider string
-	winner   bool
-	body     []byte
-	selected *SelectedStream
-	started  time.Time
-	finished time.Time
-	err      *CallError
+	id        int
+	provider  string
+	winner    bool
+	prefailed bool // catalog-rejected before dispatch: no upstream call, no semaphore slot
+	body      []byte
+	selected  *SelectedStream
+	started   time.Time
+	finished  time.Time
+	err       *CallError
 }
 
 // routeOutcome carries the winner and its payload out of the scheduler.
@@ -334,7 +336,9 @@ func (r *Runner) runSchedule(ctx context.Context, logical string, plan Plan, bat
 				}
 				return outcome
 			}
-			sc.active--
+			if !res.prefailed {
+				sc.active--
+			}
 			failures.add(res.id, res.err, plan.Retry.On)
 			// Refill a semaphore-limited initial race as soon as a slot is
 			// released. These are members of the original batch, not retries,
@@ -413,15 +417,30 @@ type schedule struct {
 // semaphore permit. Members denied a permit stay pending: the batch is marked
 // exhausted only when every member has started, so a later hedge (or a retry
 // wave after a slot frees) can start the denied members instead of dropping
-// them silently.
+// them silently. Locally catalog-rejected members are reported as pre-failed
+// results without starting an upstream call or consuming a semaphore slot.
 func (sc *schedule) launch(idx int) bool {
 	if sc.runtime.expired() || idx < 0 || idx >= len(sc.batches) || sc.launched[idx] {
 		return false
 	}
 	started := false
+	delivered := false
 	allStarted := true
 	for i, target := range sc.batches[idx] {
 		if sc.startedTargets[idx][i] {
+			continue
+		}
+		// Exact catalog validation happens before any semaphore slot is
+		// consumed: a locally rejected target (model_not_found in the
+		// snapshot, or an explicit catalog without a snapshot) is not an
+		// upstream call, so the total and per-provider call budgets stay
+		// available for a different native alias of the same provider in a
+		// later stage.
+		if callErr := sc.r.validateTarget(target); callErr != nil {
+			sc.startedTargets[idx][i] = true
+			delivered = true
+			sc.seq++
+			sc.deliverPreFailed(sc.seq, target, callErr)
 			continue
 		}
 		if !sc.sem.acquire(target.Provider, sc.active) {
@@ -440,7 +459,23 @@ func (sc *schedule) launch(idx int) bool {
 	if allStarted {
 		sc.launched[idx] = true
 	}
-	return started
+	return started || delivered
+}
+
+// deliverPreFailed reports a catalog-rejected target as a terminal branch
+// result without an upstream call or a semaphore slot. Pre-failed results are
+// not counted against sc.active or the call budgets, so a provider with a
+// different native alias can still be reached in a later stage.
+func (sc *schedule) deliverPreFailed(id int, target Target, callErr *CallError) {
+	started := sc.r.now()
+	res := &branchResult{
+		id: id, provider: target.Provider, winner: false, prefailed: true,
+		err: callErr, started: started, finished: started,
+	}
+	select {
+	case sc.results <- res:
+	case <-sc.ctx.Done():
+	}
 }
 
 // complete reports whether every member of batch idx has started, i.e. no
@@ -536,27 +571,19 @@ func (sc *schedule) runBranch(ctx context.Context, id int, cancel context.Cancel
 	}
 }
 
-// runFallback executes the legacy terminal fallback route after the primary
-// route failed with a matching class: the fallback pool is dispatched serially
-// or as one parallel batch.
+// runFallback executes the compiled terminal fallback route after the primary
+// route failed with a matching class. The fallback pool is already a compiled
+// snapshot of target pairs from the fallback-stage map rules (no legacy group
+// resolver); it is dispatched serially or as one parallel batch, sharing the
+// request-wide semaphore budget and route deadline.
 func (r *Runner) runFallback(ctx context.Context, logical string, fb FallbackRoute, request ExecuteRequest, streamMode bool, runtime *routeRuntime) *routeOutcome {
 	if runtime.expired() {
 		return &routeOutcome{err: routeTimeoutError()}
 	}
-	ids, err := expandAccessGroups(fb.Groups, r.config.providers, r.config.mappings[logical])
-	if err != nil {
-		return &routeOutcome{err: &CallError{Class: ErrorInvalid, Status: 502, Cause: err}}
-	}
-	available := r.availableProviders(ids)
-	if len(available) == 0 {
-		available = append([]string(nil), ids...)
-	}
-	targets := make([]Target, 0, len(available))
-	for _, id := range available {
-		target, targetErr := r.target(logical, id)
-		if targetErr == nil {
-			targets = append(targets, target)
-		}
+	available := r.availableTargets(fb.Pool)
+	targets := available
+	if len(targets) == 0 {
+		targets = append([]Target(nil), fb.Pool...)
 	}
 	if len(targets) == 0 {
 		return &routeOutcome{err: &CallError{Class: ErrorInvalid, Status: 502}}
@@ -567,6 +594,13 @@ func (r *Runner) runFallback(ctx context.Context, logical string, fb FallbackRou
 		for _, target := range targets {
 			if runtime.expired() {
 				return &routeOutcome{err: routeTimeoutError()}
+			}
+			// Exact catalog validation stays in front of semaphore and dispatch
+			// for the serial path too: model_not_found and explicit fail-closed
+			// targets never reach the upstream and do not consume the budget.
+			if callErr := r.validateTarget(target); callErr != nil {
+				last = callErr
+				continue
 			}
 			if !runtime.sem.acquire(target.Provider, 0) {
 				continue
@@ -624,7 +658,7 @@ func (r *Runner) runFallback(ctx context.Context, logical string, fb FallbackRou
 	// race mode (hedge mode is treated as one parallel batch for legacy routes).
 	fallbackPlan := Plan{
 		LogicalModel: logical,
-		Pool:         ids,
+		Pool:         targets,
 		RaceCount:    len(targets),
 	}
 	return r.runSchedule(ctx, logical, fallbackPlan, [][]Target{targets}, request, streamMode, false, runtime)
