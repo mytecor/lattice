@@ -12,6 +12,8 @@ let
     (config.lattice.rns-server.server.http.enabled or false) &&
     (config.lattice.rns-server.server.http.port or null != null);
   llmGatewayEnabled = config.lattice.llm-gateway.enable or false;
+  piAcpEnabled = config.lattice.pi-acp-daemon.enable or false;
+  piAcpCfg = config.lattice.pi-acp-daemon;
 
   mdnsPublisher = service: {
     description = "Publish the ${service} mDNS alias";
@@ -63,6 +65,20 @@ let
         '';
       };
     })
+
+    # 4. Authenticated LAN WebSocket ingress for the loopback-only Pi ACP daemon.
+    (lib.mkIf piAcpEnabled {
+      ${siteAddress piAcpCfg.serviceName} = {
+        extraConfig = ''
+          handle {
+            rewrite * /acp?token=${piAcpCfg.internalToken}
+            reverse_proxy ${piAcpCfg.host}:${toString piAcpCfg.port} {
+              header_up -Authorization
+            }
+          }
+        '';
+      };
+    })
   ];
 in
 {
@@ -89,6 +105,9 @@ in
       (lib.mkIf radicleEnabled { radicle-mdns = mdnsPublisher "radicle"; })
       (lib.mkIf rnsServerEnabled { rns-server-mdns = mdnsPublisher "rns-server"; })
       (lib.mkIf llmGatewayEnabled { llm-gateway-mdns = mdnsPublisher "llm-gateway"; })
+      (lib.mkIf piAcpEnabled {
+        "${piAcpCfg.serviceName}-mdns" = mdnsPublisher piAcpCfg.serviceName;
+      })
     ];
   };
 }

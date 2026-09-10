@@ -42,3 +42,14 @@ peer, общий реестр в flake и исходящие TCP-соедине�
 
 2. **Reticulum interface discovery / auto-connect** — проверить поддержку в закреплённом
    `rns-rs`, затем использовать публичные peers как bootstrap для обнаружения других соседей.
+
+3. **Stdio shim для Zed поверх no-auth LAN ACP endpoint** — stock-клиент
+   [`@hydra-acp/cli`](../../packages/hydra-acp/README.md) несовместим с безаутентичным endpoint
+   `ws://acp.<nodename>.local/`: для не-loopback хоста требует credential из `remotes.json`, который
+   выдаётся только через `/v1/auth/login`, а daemon без master password отвечает `403`. Caddy host
+   при этом переписывает любой path во внутренний `/acp`, так что HTTP API клиента недостижимо в
+   принципе (отрицательный результат зафиксирован в
+   [f8-06](f8-pi-runtime/f8-06-network-acp-daemon.md#отрицательный-результат-stock-hydra-acp-client-как-local-stdio-shim-для-zed)).
+   Открытая работа — auth-задача вместе с LAN boundary: выбрать либо включение Hydra master
+   password + пересмотр «host целиком ACP-endpoint», либо собственный минимальный
+   stdio→WebSocket shim (форма соединения Ferngeist), который не трогает HTTP API гидры.

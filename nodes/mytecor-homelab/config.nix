@@ -326,6 +326,7 @@ in
     { directory = "/var/lib/rns"; user = "rns"; group = "rns"; mode = "0750"; }
     { directory = "/var/lib/rnsh"; user = "rnsh"; group = "rnsh"; mode = "0700"; }
     { directory = "/var/lib/radicle"; user = "radicle"; group = "radicle"; mode = "0750"; }
+    { directory = "/var/lib/hydra-acp"; user = "root"; group = "root"; mode = "0700"; }
   ];
 
   system.stateVersion = "26.05";

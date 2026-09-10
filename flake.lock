@@ -192,6 +192,18 @@
       },
       "parent": []
     },
+    "module-pi-acp-daemon": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/pi-acp-daemon",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/pi-acp-daemon",
+        "type": "path"
+      },
+      "parent": []
+    },
     "module-rns-server": {
       "flake": false,
       "locked": {
@@ -314,6 +326,7 @@
         "module-ephemeral-root": "module-ephemeral-root",
         "module-llm-gateway": "module-llm-gateway",
         "module-pi": "module-pi",
+        "module-pi-acp-daemon": "module-pi-acp-daemon",
         "module-rns-server": "module-rns-server",
         "module-rnsh": "module-rnsh",
         "module-wireless": "module-wireless",

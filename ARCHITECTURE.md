@@ -129,6 +129,15 @@ Backend-порты не открываются в firewall и не являют�
 в mDNS. Для будущих динамических приложений этот профиль остаётся точкой композиции, а Caddy —
 единственным внешним ingress.
 
+Интерактивный ACP-сервис Pi использует тот же контракт как WebSocket: `ws://acp.<node>.local/`
+через Caddy из [`profiles/tcp-gateway`](./profiles/tcp-gateway/README.md), при этом
+[`hydra-acp daemon`](./modules/pi-acp-daemon/README.md) слушает только loopback, а все сессии живут
+в одном daemon. Внутренний Hydra-path `/acp` и внутренний token остаются деталью loopback upstream
+(Caddy-rewrite) и не видны клиенту; клиентское соединение — чистый ACP WebSocket с subprotocol
+`acp.v1`. Daemon и его session metadata описаны в
+[f8-06](./docs/roadmap/f8-pi-runtime/f8-06-network-acp-daemon.md) и в
+[`modules/pi-acp-daemon`](./modules/pi-acp-daemon/README.md).
+
 ## LLM gateway
 
 Runtime F7 — собственный небольшой Go HTTP proxy поверх Bifrost Core, собранный пакетом

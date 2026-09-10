@@ -58,6 +58,12 @@ in
     piModule = self.nixosModules.pi;
   };
 
+  pi-acp-daemon = import ./pi-acp-daemon.nix {
+    inherit nixpkgs pkgs;
+    acpModule = self.nixosModules.pi-acp-daemon;
+    gatewayProfile = "${profiles}/tcp-gateway/config.nix";
+  };
+
   comin-source-sync = import ./comin-source-sync.nix {
     inherit pkgs;
     syncPackage = pkgs.lattice.comin-source-sync;

@@ -60,6 +60,11 @@
       flake = false;
     };
 
+    module-pi-acp-daemon = {
+      url = "path:./modules/pi-acp-daemon";
+      flake = false;
+    };
+
     module-wireless = {
       url = "path:./modules/wireless";
       flake = false;
@@ -90,6 +95,7 @@
     module-rnsh,
     module-llm-gateway,
     module-pi,
+    module-pi-acp-daemon,
     module-wireless,
     profiles,
     rns-rs,
@@ -110,8 +116,12 @@
           };
           rns-server = final.callPackage "${rns-rs}/package.nix" { bin = "rns-server"; };
           rnsh = final.callPackage "${rns-rs}/package.nix" { bin = "rnsh"; };
+          hydra-acp = final.callPackage ./packages/hydra-acp/package.nix { };
           llm-gateway = final.callPackage ./packages/llm-gateway/package.nix { };
           pi = final.callPackage ./packages/pi/package.nix { };
+          pi-acp = final.callPackage ./packages/pi-acp/package.nix {
+            pi = final.lattice.pi;
+          };
 
           # f8-03: воспроизводимый tool profile для Pi-рантайма.
           pi-tool-profile = final.buildEnv {
@@ -162,7 +172,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) llm-gateway pi pi-tool-profile rns-server rnsh;
+          inherit (pkgs.lattice) hydra-acp llm-gateway pi pi-acp pi-tool-profile rns-server rnsh;
           default = pkgs.lattice.rns-server;
         });
 
@@ -189,6 +199,7 @@
         rnsh.imports = [ "${module-rnsh}" ];
         llm-gateway.imports = [ "${module-llm-gateway}" ];
         pi.imports = [ "${module-pi}" ];
+        pi-acp-daemon.imports = [ "${module-pi-acp-daemon}" ];
         wireless.imports = [ "${module-wireless}" ];
 
         default.imports = [
@@ -197,6 +208,7 @@
           self.nixosModules.rnsh
           self.nixosModules.llm-gateway
           self.nixosModules.pi
+          self.nixosModules.pi-acp-daemon
           self.nixosModules.wireless
         ];
       };
@@ -209,6 +221,7 @@
           ./nodes/mytecor-homelab
           "${profiles}/app-services/config.nix"
           "${profiles}/llm-gateway/config.nix"
+          "${profiles}/pi-acp/config.nix"
           "${profiles}/radicle/config.nix"
           "${profiles}/rns-network/config.nix"
           "${profiles}/rnsh/config.nix"
