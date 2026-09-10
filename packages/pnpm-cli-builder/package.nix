@@ -26,6 +26,10 @@
   versionCheck ? true,
   versionCheckArgs ? [ "--version" ],
   versionCheckOutput ? version,
+  # Optional shell snippet appended to the installed package after the wrappers
+  # are created (runs via the builder's `runHook postInstall`). Used by package
+  # callers to patch the shipped JS bundles, e.g. packages/hydra-acp.
+  postInstall ? "",
 }:
 
 let
@@ -91,6 +95,8 @@ stdenvNoCC.mkDerivation (finalAttrs: {
 
     runHook postInstallCheck
   '';
+
+  inherit postInstall;
 
   passthru = {
     inherit package packageJson pnpmLock source;
