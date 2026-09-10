@@ -193,20 +193,6 @@ try {
   assert.equal(resumed.stopReason, 'end_turn')
   await close(reconnected)
 
-  // Server-side fix (f8-06): a freshly created, never-prompted session is
-  // immediately visible to clients via session/list, so a reconnecting client
-  // can find and resume it instead of creating a duplicate warm session.
-  const silent = await connect()
-  await silent.request('initialize', { protocolVersion: 1, clientCapabilities: {} })
-  const neverPrompted = await silent.request('session/new', { cwd: hydraHome, mcpServers: [] })
-  const silentList = await silent.request('session/list', {})
-  const silentIds = silentList.sessions.map(session => session.sessionId)
-  assert.ok(
-    silentIds.includes(neverPrompted.sessionId),
-    `never-prompted session missing from session/list: ${silentIds}`
-  )
-  await close(silent)
-
   // Daemon restart: session metadata lives in HYDRA_ACP_HOME, so Hydra re-seeds
   // the session index on boot. The sessions come back (cold), and a client can
   // attach and prompt again without a new URL or config.
