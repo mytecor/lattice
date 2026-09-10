@@ -105,16 +105,17 @@ in
     };
   };
 
-  # LLM Gateway: bounded routing splits the flat pipeline into single-purpose
-  # actions. Each stage starts from explicit map actions that bind one native
-  # model id to a set of provider IDs; the candidate pool is ranked by provider
-  # priority, a winner lease promotes the current leader, Responses affinity
-  # pins stateful chains to their originating provider, and race/retry/hedge
-  # consume only the next unused targets within the semaphore budget. One
-  # request never creates more than four upstream calls (race 2 + two
-  # next-retries of 1), more than three concurrent calls, or a repeated call to
-  # one provider. Provider transport and credentials stay in the registry;
-  # routing never references access groups.
+  # LLM Gateway: flat routing_rules with named routes. Every rule belongs to a
+  # named route; a filter with where.model makes the route the entry route for
+  # a logical model, filter provider builds the provider selection, map binds it
+  # to one native model, rank orders the pool, lease promotes the winner,
+  # affinity pins stateful chains, race defines the parallel batch, and
+  # retry/hedge are explicit transitions to named subroutes (standard.retry,
+  # standard.hedge) whose own error/provider filters decide when they apply.
+  # One request never creates more than four upstream calls (race 2 + one
+  # hedged target, or race 2 + two retries of one target), more than three
+  # concurrent calls, or a repeated call to one provider (the unused provider
+  # routing policy). Provider transport and credentials stay in the registry.
   lattice.llm-gateway = {
     # Debug logs contain routing metadata and sanitized upstream errors, never prompts or keys.
     logLevel = "debug";
@@ -156,10 +157,11 @@ in
         priority = 10;
       };
     };
-    # The primary stage maps one native per logical model to the full provider
-    # set; the fallback stage for `standard` gives Hyperfusion its second
-    # catalog alias so a model_not_found in the primary alias can fail over to
-    # the prefixed native Hyperfusion actually serves.
+    # The entry route maps one native per logical model to the full provider
+    # set; the retry and hedge subroutes re-select unused providers. The
+    # fallback subroute for `standard` gives Hyperfusion its second catalog
+    # alias so a model_not_found in the primary alias can fail over to the
+    # prefixed native Hyperfusion actually serves.
     routingRules = let
       allProviders = [
         "gonka-proxy"
@@ -171,10 +173,12 @@ in
       ];
       # The bounded primary pipeline used by both logical models.
       primaryRules = model: native: [
-        { inherit model; action = "map"; native = native; providers = allProviders; }
-        { inherit model; action = "rank"; strategy = "priority"; }
+        { route = model; action = "filter"; where = { model = { eq = model; }; }; }
+        { route = model; action = "filter"; where = { provider = { "in" = allProviders; }; }; }
+        { route = model; action = "map"; native = native; }
+        { route = model; action = "rank"; strategy = "priority"; }
         {
-          inherit model;
+          route = model;
           action = "lease";
           source = "winner";
           duration = "10m";
@@ -184,48 +188,85 @@ in
           slowStart = "3s";
         }
         {
-          inherit model;
+          route = model;
           action = "affinity";
           sources = [ "responses.conversation" "responses.previous_response_id" ];
           ttl = "24h";
           onMissing = "ignore";
           onProviderFailure = "fail-closed";
         }
-        { inherit model; action = "race"; count = 2; }
+        { route = model; action = "race"; count = 2; }
         {
-          inherit model;
+          route = model;
           action = "retry";
-          scope = "next";
-          count = 1;
+          target = "${model}.retry";
           attempts = 2;
-          on = [ "429" "5xx" "timeout" "connection_error" "invalid_response" ];
+          backoffType = "exponential";
           backoffInitial = "200ms";
           backoffMax = "1s";
         }
-        { inherit model; action = "hedge"; after = "3s"; }
+        { route = model; action = "hedge"; after = "3s"; target = "${model}.hedge"; }
         {
-          inherit model;
+          route = model;
           action = "semaphore";
           maxCalls = 4;
           maxInFlight = 3;
           maxCallsPerProvider = 1;
         }
-        { inherit model; action = "timeout"; duration = "60s"; }
+        { route = model; action = "timeout"; duration = "60s"; }
+        # Retry subroute: applies only to the listed failures and re-selects
+        # unused providers, one target per retry entry.
+        {
+          route = "${model}.retry";
+          action = "filter";
+          where = {
+            error = { "in" = [ "429" "5xx" "timeout" "connection_error" "invalid_response" ]; };
+          };
+        }
+        {
+          route = "${model}.retry";
+          action = "filter";
+          where = { provider = { "in" = allProviders; unused = true; }; };
+        }
+        { route = "${model}.retry"; action = "map"; native = native; }
+        { route = "${model}.retry"; action = "rank"; strategy = "priority"; }
+        { route = "${model}.retry"; action = "race"; count = 1; }
+        # Hedge subroute: latency alternative that races one unused target.
+        {
+          route = "${model}.hedge";
+          action = "filter";
+          where = { provider = { "in" = allProviders; unused = true; }; };
+        }
+        { route = "${model}.hedge"; action = "map"; native = native; }
+        { route = "${model}.hedge"; action = "rank"; strategy = "priority"; }
+        { route = "${model}.hedge"; action = "race"; count = 1; }
       ];
-      # Fallback stage for standard: Hyperfusion accepts both catalog aliases.
+      # Fallback subroute for standard: Hyperfusion accepts both catalog aliases.
       standardFallback = [
         {
-          model = "standard";
-          action = "map";
-          native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731";
-          providers = [ "hyperfusion" ];
+          route = "standard";
+          action = "fallback";
+          target = "standard.fallback";
         }
         {
-          model = "standard";
-          action = "fallback";
-          fallbackStrategy = "race";
-          on = [ "model_not_found" "429" "5xx" "timeout" "connection_error" ];
+          route = "standard.fallback";
+          action = "filter";
+          where = {
+            error = { "in" = [ "model_not_found" "429" "5xx" "timeout" "connection_error" ]; };
+          };
         }
+        {
+          route = "standard.fallback";
+          action = "filter";
+          where = { provider = { "in" = [ "hyperfusion" ]; }; };
+        }
+        {
+          route = "standard.fallback";
+          action = "map";
+          native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731";
+        }
+        { route = "standard.fallback"; action = "rank"; strategy = "priority"; }
+        { route = "standard.fallback"; action = "race"; count = 1; }
       ];
     in
     primaryRules "stupid" "MiniMaxAI/MiniMax-M2.7"

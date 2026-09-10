@@ -29,16 +29,21 @@ let
             };
           };
           routingRules = lib.concatMap (model: [
+            { route = model; action = "filter"; where = { model = { eq = model; }; }; }
             {
-              inherit model;
+              route = model;
+              action = "filter";
+              where = { provider = { "in" = [ "gonka-proxy" "gonka-openbroker" ]; }; };
+            }
+            {
+              route = model;
               action = "map";
               native = if model == "standard" then "deepseek-ai/DeepSeek-V4-Flash-0731" else "MiniMaxAI/MiniMax-M2.7";
-              providers = [ "gonka-proxy" "gonka-openbroker" ];
             }
-            { inherit model; action = "rank"; strategy = "priority"; }
-            { inherit model; action = "race"; count = 2; }
+            { route = model; action = "rank"; strategy = "priority"; }
+            { route = model; action = "race"; count = 2; }
             {
-              inherit model;
+              route = model;
               action = "semaphore";
               maxCalls = 4;
               maxInFlight = 3;
@@ -69,6 +74,7 @@ pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ 
   grep -q '"log_level":"silent"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"inference_url":"https://openbroker.gonka.invalid/v1"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"models_url":"https://proxy.gonka.invalid/v1/models"' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"action":"filter"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"action":"map"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"action":"rank"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"action":"semaphore"' ${config.lattice.llm-gateway.publicConfigFile}
@@ -78,10 +84,19 @@ pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ 
   grep -q '"strategy":"priority"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"affinity_file":"/run/llm-gateway/affinity.json"' ${config.lattice.llm-gateway.publicConfigFile}
 
-  # Every map action must carry a native id and explicit provider ids; no
-  # access_groups remain anywhere in the routing contract.
-  if ! jq -e '.routing_rules | all(if .action == "map" then ((.native | type) == "string" and (.providers | type) == "array" and (.providers | length) > 0) else true end)' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
-    echo "a map action lacks native/providers" >&2
+  # Every filter provider action must carry explicit provider ids and every
+  # map action exactly a native id (no provider list: provider selection lives
+  # exclusively in the filter). No access_groups remain anywhere.
+  if ! jq -e '.routing_rules | all(if .action == "filter" and (.where | has("provider")) then ((.where.provider["in"] | type) == "array" and (.where.provider["in"] | length) > 0) else true end)' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+    echo "a filter provider action lacks an in list" >&2
+    exit 1
+  fi
+  if ! jq -e '.routing_rules | all(if .action == "map" then ((.native | type) == "string") and (((.providers // null) == null) or (.providers | type) != "array") else true end)' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+    echo "a map action lacks native or still carries providers" >&2
+    exit 1
+  fi
+  if ! jq -e '.routing_rules | all(.action == "filter" or (.route | type) == "string")' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+    echo "a routing rule lacks a named route" >&2
     exit 1
   fi
   if jq -e 'any(.routing_rules[]; has("access_groups")) or has("models")' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then

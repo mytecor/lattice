@@ -2,7 +2,8 @@ package main
 
 // AffinityRule pins a successful Responses route to the provider that last
 // served the conversation or response id, for the configured TTL. Unknown ids
-// are ignored (on_missing) and pinned-provider failures stay fail-closed.
+// are ignored (on_missing) and pinned-provider failures stay fail-closed:
+// a known affinity mapping suppresses every transition of the route graph.
 type AffinityRule struct {
 	ruleBase
 	Sources           []string `json:"sources"`
@@ -12,8 +13,11 @@ type AffinityRule struct {
 }
 
 // apply validates the affinity policy and normalizes it into the compiled
-// plan.
+// route.
 func (r *AffinityRule) apply(ctx *stageContext) error {
+	if ctx.st.sawRace {
+		return ctx.errf("affinity must precede the race action within a route")
+	}
 	if !ctx.st.sawMap {
 		return ctx.errf("affinity requires a preceding map action")
 	}

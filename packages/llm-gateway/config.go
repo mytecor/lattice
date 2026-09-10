@@ -69,15 +69,17 @@ type BackoffConfig struct {
 	Max     Duration `json:"max"`
 }
 
-// compiledConfig separates external rules from the compiled candidate pool,
-// ranking, dispatch batches, retry/hedge schedule, semaphore limits and lease
-// and affinity policy. Catalog sources are indexed by provider ID: each
-// provider owns its last-known-good snapshot and exact native validation.
+// compiledConfig separates external rules from the compiled immutable routing
+// graph: named routes, their candidate pools, dispatch batches, explicit
+// transition references, semaphore limits and lease and affinity policy.
+// Catalog sources are indexed by provider ID: each provider owns its
+// last-known-good snapshot and exact native validation.
 type compiledConfig struct {
 	raw            Config
 	logger         *slog.Logger
 	providers      map[string]Provider
-	plans          map[string]Plan
+	routes         map[string]*compiledRoute
+	models         map[string]*compiledRoute // logical model → entry route
 	logicalIDs     []string
 	catalogSources map[string][]catalogSource
 }
@@ -88,41 +90,84 @@ type catalogSource struct {
 	Explicit bool
 }
 
-// Plan is the compiled, immutable routing contract for one logical model.
-// External Nix/JSON rules are fully normalized here; the runtime scheduler
-// consumes only this structure. Pool elements are ready target pairs
-// (provider ID, native model) produced by map rules and ranked by rank.
-type Plan struct {
-	LogicalModel string
-	// Pool is the ranked candidate target pairs of the primary stage after
-	// map() and rank(); it is an immutable snapshot kept at the race action.
+// compiledRoute is the compiled, immutable routing-graph node for one named
+// route. External Nix/JSON rules are fully normalized into this structure at
+// compile time; the runtime scheduler consumes only these immutable routes and
+// never touches the JSON DTOs. Target names are resolved to pointers at the
+// compile stage, so a missing target or a routing cycle already fails there.
+type compiledRoute struct {
+	Name string
+	// Entry is true when the route carries a request-level model filter: it is
+	// a discoverable logical entry route. Subroutes (retry/fallback/hedge
+	// targets) are not Entry and never become logical models.
+	Entry   bool
+	ModelEq string // request-level model filter, non-empty for entry routes
+	// ErrorIn gates a transition into this route on the incoming terminal
+	// failure class; empty means the route is applicable on any failure.
+	ErrorIn map[ErrorClass]bool
+	// AttemptLT gates entry into this route on the current attempt number
+	// (0 >= AttemptLT blocks the transition). Zero means no bound.
+	AttemptLT int
+	// ProviderUnused restricts the compiled pool at runtime to providers not
+	// yet used by the current request graph (explicit routing policy).
+	ProviderUnused bool
+	// Pool is the ranked candidate target pairs of the route after the
+	// filter/map/rank sequence; an immutable snapshot kept at the race action.
 	Pool []Target
-	// RaceCount is the size of the initial race batch; 0 means all pool
+	// RaceCount is the size of the route race batch; 0 means all pool
 	// candidates.
 	RaceCount int
 	Lease     LeaseConfig
 	Affinity  AffinityConfig
 	Retry     RetryConfig
-	// HedgeAfter is the delay after which the next retry batch may start even
-	// though the current branches have not completed.
-	HedgeAfter time.Duration
-	Semaphore  SemaphoreConfig
-	// RouteTimeout bounds the entire compiled route.
+	Fallback  FallbackConfig
+	Hedge     HedgeConfig
+	Semaphore SemaphoreConfig
+	// RouteTimeout bounds the entire route graph.
 	RouteTimeout time.Duration
-	// Fallback is the optional terminal fallback route of a second stage: an
-	// immutable target-pool snapshot plus the error classes that transition
-	// from the primary stage.
-	Fallback *FallbackRoute
+
+	// Resolved transitions (compile stage).
+	retryTarget    *compiledRoute
+	fallbackTarget *compiledRoute
+	hedgeTarget    *compiledRoute
 }
 
+// applicable evaluates the destination-owned applicability of the route for an
+// incoming terminal failure at the given attempt index. An empty error filter
+// applies to any failure; a failure matching no class makes the route not
+// applicable, which must never mask the original terminal failure.
+func (rt *compiledRoute) applicable(callErr *CallError, attempt int) bool {
+	if callErr == nil {
+		return true
+	}
+	if len(rt.ErrorIn) > 0 && !rt.ErrorIn[callErr.Class] {
+		return false
+	}
+	if rt.AttemptLT > 0 && attempt >= rt.AttemptLT {
+		return false
+	}
+	return true
+}
+
+// RetryConfig is a bounded repeated transition to a named route. The retry
+// condition lives in the target route's own filter; here only the lifecycle
+// (attempts, backoff) plus the unresolved target name at decode time.
 type RetryConfig struct {
-	// Scope is "same" (repeat the original race selection) or "next" (use the
-	// next unused ranked targets).
-	Scope    string
-	Count    int // batch size for scope=next; 0 falls back to the race count.
+	Target   string // resolved to retryTarget at compile stage
 	Attempts int
-	On       map[ErrorClass]bool
 	Backoff  BackoffConfig
+}
+
+// FallbackConfig is a one-shot transition to a named route.
+type FallbackConfig struct {
+	Target string // resolved to fallbackTarget at compile stage
+}
+
+// HedgeConfig is a latency transition: after the delay the target route's
+// batch may start while the current route is still executing.
+type HedgeConfig struct {
+	After  time.Duration
+	Target string // resolved to hedgeTarget at compile stage
 }
 
 type SemaphoreConfig struct {
@@ -147,12 +192,6 @@ type AffinityConfig struct {
 	TTL               time.Duration
 	OnMissing         string // "ignore"
 	OnProviderFailure string // "fail-closed"
-}
-
-type FallbackRoute struct {
-	Pool []Target
-	Mode string // "serial" | "race" | "hedge"
-	On   map[ErrorClass]bool
 }
 
 func loadConfig(path string) (Config, error) {
@@ -241,7 +280,6 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 		raw:            cfg,
 		logger:         newGatewayLogger(cfg.LogLevel),
 		providers:      make(map[string]Provider, len(cfg.Providers)),
-		plans:          make(map[string]Plan),
 		catalogSources: make(map[string][]catalogSource),
 	}
 	for _, provider := range cfg.Providers {
@@ -293,17 +331,16 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 		}
 	}
 
-	plans, err := compilePlans(cfg.RoutingRules, compiled.providers)
+	result, err := compileRoutes(cfg.RoutingRules, compiled.providers)
 	if err != nil {
 		return nil, err
 	}
-	if len(plans) == 0 {
-		return nil, errors.New("at least one logical model with routing rules is required")
+	if len(result.models) == 0 {
+		return nil, errors.New("at least one logical model with an entry route is required")
 	}
-	for _, id := range sortedKeys(plans) {
-		compiled.logicalIDs = append(compiled.logicalIDs, id)
-	}
-	compiled.plans = plans
+	compiled.routes = result.routes
+	compiled.models = result.entries
+	compiled.logicalIDs = result.models
 	return compiled, nil
 }
 

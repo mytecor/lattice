@@ -17,16 +17,17 @@ let
     allow_private_network = provider.allowPrivateNetwork;
   };
 
-  # Emits exactly the fields a routing action owns. The action-specific fields
-  # come from the discriminated submodule's internal `_public` projection, so
-  # the generated public JSON stays clean (no spurious defaulted fields from
-  # other actions) and mirrors the gateway's per-action strict decoder. map
-  # binds one native model id to a set of provider IDs; the logical model
-  # registry is derived from compiled plans, so there is no separate
-  # native-model config field.
+  # Emits exactly the fields a routing action owns plus the rule envelope
+  # (route + action). The action-specific fields come from the discriminated
+  # submodule's internal `_public` projection, so the generated public JSON
+  # stays clean (no spurious defaulted fields from other actions) and mirrors
+  # the gateway's per-action strict decoder. A filter carries its single
+  # `where` dimension; a transition (retry/fallback/hedge) points at a named
+  # subroute through `target`. The logical model registry is derived from the
+  # entry route filters, so there is no separate native-model config field.
   publicRule = rule:
     {
-      match.model = rule.model;
+      route = rule.route;
       action = rule.action;
     }
     // rule._public;
@@ -109,11 +110,14 @@ let
   '';
 
   providerIds = map (provider: provider.id) (builtins.attrValues activeProviders);
-  # Only map rules carry a provider list; the other discriminated actions own
-  # none, so the registry lookup is guarded by action.
-  mappedProviderIds = lib.unique (lib.concatMap
-    (rule: if rule.action == "map" then rule.providers else [ ])
-    cfg.routingRules);
+  # Only filter provider actions carry a provider list; the other discriminated
+  # actions own none, so the registry lookup is guarded by action. Both the
+  # in (selection) and not_in (exclusion) lists reference provider IDs.
+  filterProviderIDs = rule:
+    if rule.action == "filter" && builtins.hasAttr "provider" rule.where
+    then (rule.where.provider."in" or [ ]) ++ (rule.where.provider.not_in or [ ])
+    else [ ];
+  mappedProviderIds = lib.unique (lib.concatMap filterProviderIDs cfg.routingRules);
 in
 {
   config = lib.mkIf cfg.enable {
@@ -132,11 +136,12 @@ in
         assertion = lib.all
           (id: builtins.elem id providerIds)
           mappedProviderIds;
-        message = "Every routing map must reference an enabled provider ID.";
+        message = "Every routing filter must reference an enabled provider ID.";
       }
-      # The fallback target pool is declared via preceding map rules only: the
-      # discriminated fallback submodule owns no providers field, so this is
-      # guaranteed structurally at Nix evaluation time.
+      # The fallback/retry/hedge target pools come from their own subroute
+      # filter+map rules only: the discriminated transition actions own no
+      # providers field, so this is guaranteed structurally at Nix evaluation
+      # time.
       {
         assertion = lib.all
           (provider: provider.modelsApiKeyFile == null || provider.modelsUrl != null)

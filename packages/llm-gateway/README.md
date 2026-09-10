@@ -28,98 +28,131 @@ Authorization: Bearer <client_api_key>
 
 ## Routing
 
-`routing_rules` — плоский упорядоченный pipeline. Каждый rule выполняет одно действие с одной
-ответственностью и преобразует compiled route. Канонический порядок:
+`routing_rules` — плоская упорядоченная таблица rules. Каждый rule принадлежит именованному
+route (поле `route`) и выполняет одно действие с одной ответственностью; физически конфигурация
+остаётся плоским массивом, никаких вложенных `routes`/`plans`/`children` нет. Route — просто
+строковый scope (`standard`, `standard.retry`, `standard.fallback`); точки в имени не имеют
+runtime-семантики. Rules одного route выполняются в порядке появления в глобальном списке.
+Retry/fallback/hedge — явные переходы на другой именованный route через `target`; целевой route
+сам описывает свои фильтры, providers, mapping и race.
+
+Канонический порядок внутри route:
 
 ```text
-map → rank → lease → affinity → race → retry → hedge → semaphore → timeout
+filter → map → rank → lease → affinity → race → retry/hedge → semaphore → timeout
 ```
 
-Опциональный fallback — отдельный второй stage:
+Transition graph (`standard → standard.retry` for retry, `standard → standard.fallback` for
+fallback, `standard → standard.hedge` for a latency alternative):
 
 ```text
-map → [rank] → fallback
+request(model=standard) → standard → timeout? → standard.retry → (attempts) → timeout? → standard.fallback
+                                         └──────────────→ standard.hedge (concurrently, after `after`)
 ```
 
-- `map` связывает один native model ID с явным набором provider IDs и добавляет готовые
-  target-пары `(provider ID, native model)` в pending candidate pool. Один или несколько
-  последовательных `map` формируют pool; один provider не может встретиться в одном pool более
-  одного раза даже с разными native IDs. Разные providers одного logical model могут получать
-  разные native IDs через последовательные `map`;
-- `rank` сортирует pending pool по `strategy = "priority"` (порядок гарантирует контракт для
-  будущих ранжирований по наблюдаемому meaningful TTFT). Route-creating action (`race`, или
-  `fallback` для второго stage) сохраняет immutable snapshot pool;
+- `filter` ограничивает применимость route или текущую provider selection; это typed declarative
+  primitive без expression language. Одна rule объявляет ровно одну dimension в `where`:
+  - `where.model = {"eq": "standard"}` делает route entry route для logical model `standard`
+    (request-level applicability и discovery);
+  - `where.provider = {"in": [...], "not_in": [...], "unused": true}` строит свежую selection из
+    provider universe route: `in` выбирает из universe, `not_in` исключает, `unused` (routing
+    policy, не скрытое свойство retry) ограничивает pool providers, ещё не использованными
+    текущим request graph. Первый provider filter не удаляет остальных providers навсегда:
+    следующий `filter` снова выбирает из universe, поэтому разные provider groups могут получать
+    разные native модели через последовательность `filter + map`;
+  - `where.error = {"in": ["429", "5xx", "timeout", "connection_error"]}` гейтит переходы в route:
+    destination владеет применяемостью (not substring matching; строго typed failure classes);
+  - `where.attempt = {"lt": N}` ограничивает вход в route номером текущей попытки.
+- `map` привязывает текущую provider selection к одному native model ID и добавляет готовые
+  target-пары `(provider ID, native model)` в route pool. Provider selection целиком остаётся в
+  предшествующем `filter`; `map` — только transformation. Один provider не может встретиться в
+  одном pool более одного раза;
+- `rank` сортирует pending pool по `strategy = "priority"`; `race` делает immutable snapshot и
+  задаёт размер race batch (0 = весь pool);
 - `lease` временно поднимает победителя в начало ranking. Lease scoped по logical model,
   продлевается успешным ответом (`renew_on_success`) и освобождается по настроенным hard
   failures (`release_on`) либо после `release_after_slow_starts` последовательных превышений
-  `slow_start` (время до первого meaningful события; для non-streaming — до валидного успешного
-  ответа);
+  `slow_start`;
 - `affinity` закрепляет stateful Responses chain за provider, вернувшим `conversation` или
   `previous_response_id`. Chat Completions никогда не получает affinity; `prompt_cache_key` не
   считается session identifier. Known affinity сужает route до одного provider и при его отказе
-  завершает request fail closed (без state replay; cross-provider stateful retry невозможен).
-  Unknown identifier игнорируется (`on_missing = "ignore"`). Поддержка `conversation` ограничена
-  идентификаторами, которые gateway уже записал из своих ответов: `/v1/conversations` proxy не
-  реализован, поэтому незнакомый conversation_id трактуется как unknown и не закрепляет route;
-- `race` берёт первые `count` unused targets из snapshot и запускает их одновременно
-  (first-success semantics);
-- `retry` остаётся отдельным действием: `scope = "same"` повторяет исходную выборку,
-  `scope = "next"` берёт следующие unused targets из ranked pool (provider никогда не
-  повторяется). `count` задаёт размер retry batch, `attempts` — число дополнительных batches.
-  Следующий batch запускается после backoff, только если все terminal failures активной wave
-  входят в `on`; смешанная wave с non-retryable ошибкой останавливает route. Возвращаемый класс
-  выбирается детерминированно, независимо от порядка завершения goroutines;
-- `hedge` разрешает следующему retry batch начаться до завершения текущих branches, если winner
-  не появился за `after`. Hedge использует только next batch из compiled route — он не клонирует
-  полный pool и не повторяет used providers;
+  завершает request fail closed (без state replay; cross-provider stateful retry невозможен) —
+  весь route graph, включая переходы, подавлен. Unknown identifier игнорируется
+  (`on_missing = "ignore"`);
+- `race` берёт первые `count` targets из snapshot и запускает их одновременно (first-success
+  semantics);
+- `retry` — bounded repeated transition в named subroute: только `target`, `attempts` и
+  `backoff`. Применимость (какие классы ошибок retryable, какие providers и native) живёт в
+  destination route (`standard.retry`), а не в retry. `scope`/`count`/`on` удалены: нужные
+  providers явно фильтруются retry route, повтор provider исключается политикой `unused`.
+  Следующий entry запускается после backoff и только если terminal failure входит в filter
+  destination. Возвращаемый класс выбирается детерминированно;
+- `fallback` — one-shot переход в named subroute через `target` (обычно `standard.fallback`);
+  это обычная точка в графе, скомпилированная тем же механизмом, что и retry, без отдельного
+  «second stage» в compiler state;
+- `hedge` — latency-переход: если winner не появился за `after`, target route (`standard.hedge`)
+  стартует параллельно, пока ветки ещё выполняются. Hedge не клонирует полный pool, не повторяет
+  used providers и не задерживает быстрый terminal failure;
 - `semaphore` — request-wide safety action: `max_calls`, `max_in_flight`,
-  `max_calls_per_provider` ограничивают суммарные/одновременные/на-провайдера upstream calls,
-  включая fallback;
-- `timeout` ограничивает весь скомпилированный route, включая retry backoff и fallback. Для
-  streaming он ограничивает выбор winner, но не обрывает уже выбранный успешный stream.
+  `max_calls_per_provider` ограничивают суммарные/одновременные/на-провайдера upstream calls на
+  весь route graph (share не сбрасывается при входе в subroute);
+- `timeout` ограничивает весь route graph, включая retry backoff и fallback. Для streaming он
+  ограничивает выбор winner, но не обрывает уже выбранный успешный stream. Абсолютный deadline
+  общий для запроса.
 
-Второй stage (fallback) начинается с нового набора `map` после завершения описания предыдущего
-stage. Новое mapping не меняет уже скомпилированный primary snapshot. `fallback` использует
-snapshot нового pending pool и одновременно задаёт классы ошибок, переводящие с предыдущего
-stage:
+Пример (Nix-форма):
 
 ```nix
-{ model = "standard"; action = "map"; native = "deepseek-ai/DeepSeek-V4-Flash-0731";
-  providers = [ "gonka-proxy" "hyperfusion" ]; }
-{ model = "standard"; action = "race"; count = 2; }
-{ model = "standard"; action = "retry"; scope = "next"; count = 1; attempts = 2;
-  on = [ "429" "5xx" "timeout" "connection_error" ]; }
+{ route = "standard"; action = "filter"; where = { model = { eq = "standard"; }; }; }
+{ route = "standard"; action = "filter"; where = { provider = { "in" = [ "gonka-proxy" "hyperfusion" ]; }; }; }
+{ route = "standard"; action = "map"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
+{ route = "standard"; action = "race"; count = 2; }
+{ route = "standard"; action = "retry"; target = "standard.retry"; attempts = 2; }
 
-{ model = "standard"; action = "map"; native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731";
-  providers = [ "hyperfusion" ]; }
-{ model = "standard"; action = "fallback"; fallbackStrategy = "race";
-  on = [ "model_not_found" "429" "5xx" "timeout" "connection_error" ]; }
+{ route = "standard.retry"; action = "filter";
+  where = { error = { "in" = [ "429" "5xx" "timeout" "connection_error" ]; }; }; }
+{ route = "standard.retry"; action = "filter"; where = { provider = { "in" = allProviders; unused = true; }; }; }
+{ route = "standard.retry"; action = "map"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
+{ route = "standard.retry"; action = "race"; count = 1; }
+
+{ route = "standard"; action = "fallback"; target = "standard.fallback"; }
+{ route = "standard.fallback"; action = "filter";
+  where = { error = { "in" = [ "model_not_found" "429" "5xx" "timeout" "connection_error" ]; }; }; }
+{ route = "standard.fallback"; action = "filter"; where = { provider = { "in" = [ "hyperfusion" ]; }; }; }
+{ route = "standard.fallback"; action = "map"; native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731"; }
+{ route = "standard.fallback"; action = "race"; count = 1; }
 ```
 
 Одна ветка, вернувшая ошибку при живой другой ветке, сама по себе не создаёт новый call: ранний
 overlap контролирует только `hedge`. Streaming и non-streaming пути гарантируют одинаковые
-invariants: initial race получает только top `count`, retry next — только unused targets, hedge —
-следующий batch, и после winner/cancellation/timeout/исчерпания semaphore budget новые upstream
-calls не стартуют. Локально отклонённые каталогом target-пары (см. discovery ниже) никогда не
-стартуют upstream call и не расходуют `max_calls`/`max_calls_per_provider`, поэтому провайдер с
-другим native alias в fallback stage всё ещё достижим.
+invariants: initial race получает только top `count`, каждый route — только свои target-пары,
+`unused` не повторяет used providers, и после winner/cancellation/timeout/исчерпания semaphore
+budget новые upstream calls не стартуют. Локально отклонённые каталогом target-пары (см.
+discovery ниже) никогда не стартуют upstream call и не расходуют `max_calls`/
+`max_calls_per_provider`, поэтому провайдер с другим native alias в subroute всё ещё достижим.
 
 Provider с retryable failure получает cooldown, по умолчанию 15 секунд. Охлаждённые providers не
 входят в candidate pool; если охлаждаются все, gateway fail-open пробует pool снова. Отменённые
 losers не влияют ни на cooldown, ни на lease.
 
-Compilation строго валидирует порядок `map`, `rank`, `race`, `fallback` и модификаторов: пустой
-pool, duplicate provider, dangling `map`, mapping после stage и отсутствие предыдущего stage дают
-точную configuration error с logical model и индексом rule.
+Compilation строго валидирует граф перед запуском: пустой `route`, route без race, `map` без
+активной provider selection, duplicate provider в pool, `race.count` сверх pool, missing target,
+orphan subroute, duplicate entry model, semaphore/timeout на subroute (эти действия request-wide и
+живут на entry route) и routing cycles дают точную configuration error с route, action и индексом
+rule.
 
 ### Typed routing rules
 
 Внешний `RoutingRule`-union отсутствует: каждый action — отдельный Go type со своими полями,
-валидацией и применением к compiler state. JSON decoder читает минимальный envelope с `action` и
-декодирует тот же объект в конкретный type с `DisallowUnknownFields` — неизвестный action,
-неизвестное поле и поле чужого action отклоняются на decode boundary. Compiled scheduler
-зависит только от immutable `Plan`, не от JSON DTO. Nix `routingRules` — discriminated union: каждый entry валидируется своим action-подмодулем при
-evaluation и генерирует только принадлежащие ему поля.
+валидацией и применением к compiler state. JSON decoder читает минимальный envelope `route` +
+`action` и декодирует тот же объект в конкретный type с `DisallowUnknownFields` — неизвестный
+action, неизвестное поле и поле чужого action отклоняются на decode boundary. `map`/`retry`/
+`fallback`/`hedge` больше не несут provider lists, `scope`, `count`, `on` или `fallback_strategy`:
+эти поля удалены и при наличии fail fast. Compiled scheduler зависит только от immutable
+routing graph (map route name → `compiledRoute`; переходы — скомпилированные ссылки на target
+route), не от JSON DTO. Nix `routingRules` — discriminated union: каждый entry валидируется своим
+action-подмодулем при evaluation и генерирует только принадлежащие ему поля плюс envelope
+`route`/`action`.
 
 Добавление нового action не трогает общий union-struct и центральный compiler switch (его нет):
 нужно только зарегистрировать action в `ruleRegistry` (`rule.go`, позиция в pipeline + factory),
@@ -205,142 +238,80 @@ Standalone binary поддерживает literal secrets и ссылки `env.
       "request_timeout": "60s"
     }
   ],
-  "routing_rules": [
-    {
-      "match": {"model": "stupid"},
-      "action": "map",
-      "native": "MiniMaxAI/MiniMax-M2.7",
-      "providers": ["gonka-proxy", "gonka-openbroker"]
-    },
-    {
-      "match": {"model": "stupid"},
-      "action": "rank",
-      "strategy": "priority"
-    },
-    {
-      "match": {"model": "stupid"},
-      "action": "lease",
-      "source": "winner",
-      "duration": "10m",
-      "renew_on_success": true,
+    "routing_rules": [
+    {"route": "stupid", "action": "filter", "where": {"model": {"eq": "stupid"}}},
+    {"route": "stupid", "action": "filter", "where": {"provider": {"in": ["gonka-proxy", "gonka-openbroker"]}}},
+    {"route": "stupid", "action": "map", "native": "MiniMaxAI/MiniMax-M2.7"},
+    {"route": "stupid", "action": "rank", "strategy": "priority"},
+    {"route": "stupid", "action": "lease",
+      "source": "winner", "duration": "10m", "renew_on_success": true,
       "release_on": ["429", "5xx", "timeout", "connection_error"],
-      "release_after_slow_starts": 3,
-      "slow_start": "3s"
-    },
-    {
-      "match": {"model": "stupid"},
-      "action": "affinity",
+      "release_after_slow_starts": 3, "slow_start": "3s"},
+    {"route": "stupid", "action": "affinity",
       "sources": ["responses.conversation", "responses.previous_response_id"],
-      "ttl": "24h",
-      "on_missing": "ignore",
-      "on_provider_failure": "fail-closed"
-    },
-    {
-      "match": {"model": "stupid"},
-      "action": "race",
-      "count": 2
-    },
-    {
-      "match": {"model": "stupid"},
-      "action": "retry",
-      "scope": "next",
-      "count": 1,
-      "attempts": 2,
-      "on": ["429", "5xx", "timeout", "connection_error", "invalid_response"],
-      "backoff": {"type": "exponential", "initial": "200ms", "max": "1s"}
-    },
-    {
-      "match": {"model": "stupid"},
-      "action": "hedge",
-      "after": "3s"
-    },
-    {
-      "match": {"model": "stupid"},
-      "action": "semaphore",
-      "max_calls": 4,
-      "max_in_flight": 3,
-      "max_calls_per_provider": 1
-    },
-    {
-      "match": {"model": "stupid"},
-      "action": "timeout",
-      "duration": "60s"
-    },
-    {
-      "match": {"model": "standard"},
-      "action": "map",
-      "native": "deepseek-ai/DeepSeek-V4-Flash-0731",
-      "providers": ["gonka-proxy", "gonka-openbroker"]
-    },
-    {
-      "match": {"model": "standard"},
-      "action": "rank",
-      "strategy": "priority"
-    },
-    {
-      "match": {"model": "standard"},
-      "action": "lease",
-      "source": "winner",
-      "duration": "10m",
-      "renew_on_success": true,
+      "ttl": "24h", "on_missing": "ignore", "on_provider_failure": "fail-closed"},
+    {"route": "stupid", "action": "race", "count": 2},
+    {"route": "stupid", "action": "retry",
+      "target": "stupid.retry", "attempts": 2,
+      "backoff": {"type": "exponential", "initial": "200ms", "max": "1s"}},
+    {"route": "stupid", "action": "hedge", "after": "3s", "target": "stupid.hedge"},
+    {"route": "stupid", "action": "semaphore",
+      "max_calls": 4, "max_in_flight": 3, "max_calls_per_provider": 1},
+    {"route": "stupid", "action": "timeout", "duration": "60s"},
+    {"route": "stupid.retry", "action": "filter",
+      "where": {"error": {"in": ["429", "5xx", "timeout", "connection_error", "invalid_response"]}}},
+    {"route": "stupid.retry", "action": "filter",
+      "where": {"provider": {"in": ["gonka-proxy", "gonka-openbroker"], "unused": true}}},
+    {"route": "stupid.retry", "action": "map", "native": "MiniMaxAI/MiniMax-M2.7"},
+    {"route": "stupid.retry", "action": "rank", "strategy": "priority"},
+    {"route": "stupid.retry", "action": "race", "count": 1},
+    {"route": "stupid.hedge", "action": "filter",
+      "where": {"provider": {"in": ["gonka-proxy", "gonka-openbroker"], "unused": true}}},
+    {"route": "stupid.hedge", "action": "map", "native": "MiniMaxAI/MiniMax-M2.7"},
+    {"route": "stupid.hedge", "action": "rank", "strategy": "priority"},
+    {"route": "stupid.hedge", "action": "race", "count": 1},
+
+    {"route": "standard", "action": "filter", "where": {"model": {"eq": "standard"}}},
+    {"route": "standard", "action": "filter", "where": {"provider": {"in": ["gonka-proxy", "gonka-openbroker"]}}},
+    {"route": "standard", "action": "map", "native": "deepseek-ai/DeepSeek-V4-Flash-0731"},
+    {"route": "standard", "action": "rank", "strategy": "priority"},
+    {"route": "standard", "action": "lease",
+      "source": "winner", "duration": "10m", "renew_on_success": true,
       "release_on": ["429", "5xx", "timeout", "connection_error"],
-      "release_after_slow_starts": 3,
-      "slow_start": "3s"
-    },
-    {
-      "match": {"model": "standard"},
-      "action": "affinity",
+      "release_after_slow_starts": 3, "slow_start": "3s"},
+    {"route": "standard", "action": "affinity",
       "sources": ["responses.conversation", "responses.previous_response_id"],
-      "ttl": "24h",
-      "on_missing": "ignore",
-      "on_provider_failure": "fail-closed"
-    },
-    {
-      "match": {"model": "standard"},
-      "action": "race",
-      "count": 2
-    },
-    {
-      "match": {"model": "standard"},
-      "action": "retry",
-      "scope": "next",
-      "count": 1,
-      "attempts": 2,
-      "on": ["429", "5xx", "timeout", "connection_error", "invalid_response"],
-      "backoff": {"type": "exponential", "initial": "200ms", "max": "1s"}
-    },
-    {
-      "match": {"model": "standard"},
-      "action": "hedge",
-      "after": "3s"
-    },
-    {
-      "match": {"model": "standard"},
-      "action": "semaphore",
-      "max_calls": 4,
-      "max_in_flight": 3,
-      "max_calls_per_provider": 1
-    },
-    {
-      "match": {"model": "standard"},
-      "action": "timeout",
-      "duration": "60s"
-    },
-    {
-      "match": {"model": "standard"},
-      "action": "map",
-      "native": "gonka/deepseek-ai/DeepSeek-V4-Flash-0731",
-      "providers": ["gonka-openbroker"]
-    },
-    {
-      "match": {"model": "standard"},
-      "action": "fallback",
-      "fallback_strategy": "race",
-      "on": ["model_not_found", "429", "5xx", "timeout", "connection_error"]
-    }
+      "ttl": "24h", "on_missing": "ignore", "on_provider_failure": "fail-closed"},
+    {"route": "standard", "action": "race", "count": 2},
+    {"route": "standard", "action": "retry",
+      "target": "standard.retry", "attempts": 2,
+      "backoff": {"type": "exponential", "initial": "200ms", "max": "1s"}},
+    {"route": "standard", "action": "hedge", "after": "3s", "target": "standard.hedge"},
+    {"route": "standard", "action": "semaphore",
+      "max_calls": 4, "max_in_flight": 3, "max_calls_per_provider": 1},
+    {"route": "standard", "action": "timeout", "duration": "60s"},
+    {"route": "standard.retry", "action": "filter",
+      "where": {"error": {"in": ["429", "5xx", "timeout", "connection_error", "invalid_response"]}}},
+    {"route": "standard.retry", "action": "filter",
+      "where": {"provider": {"in": ["gonka-proxy", "gonka-openbroker"], "unused": true}}},
+    {"route": "standard.retry", "action": "map", "native": "deepseek-ai/DeepSeek-V4-Flash-0731"},
+    {"route": "standard.retry", "action": "rank", "strategy": "priority"},
+    {"route": "standard.retry", "action": "race", "count": 1},
+    {"route": "standard.hedge", "action": "filter",
+      "where": {"provider": {"in": ["gonka-proxy", "gonka-openbroker"], "unused": true}}},
+    {"route": "standard.hedge", "action": "map", "native": "deepseek-ai/DeepSeek-V4-Flash-0731"},
+    {"route": "standard.hedge", "action": "rank", "strategy": "priority"},
+    {"route": "standard.hedge", "action": "race", "count": 1},
+
+    {"route": "standard", "action": "fallback", "target": "standard.fallback"},
+    {"route": "standard.fallback", "action": "filter",
+      "where": {"error": {"in": ["model_not_found", "429", "5xx", "timeout", "connection_error"]}}},
+    {"route": "standard.fallback", "action": "filter",
+      "where": {"provider": {"in": ["gonka-openbroker"]}}},
+    {"route": "standard.fallback", "action": "map", "native": "gonka/deepseek-ai/DeepSeek-V4-Flash-0731"},
+    {"route": "standard.fallback", "action": "rank", "strategy": "priority"},
+    {"route": "standard.fallback", "action": "race", "count": 1}
   ]
-}
-```
 
 ## Запуск
 
@@ -370,27 +341,38 @@ nix flake check --no-build
 
 - реальный Bifrost custom-provider path для Chat и Responses;
 - оба streaming API;
-- `map` binding: разные providers одного logical model получают разные natives, последовательные
-  `map` аккумулируют pool, duplicate provider в одном pool отклоняется;
+- typed `filter`: model eq, provider in/not_in/unused, error in, attempt lt, несколько
+  последовательных filters, unknown filter field, unknown operator, invalid value type,
+  unknown error class, empty in, missing где-dimension;
+- mapping: filter a,b → map X; filter c → map Y; каждый provider получает свой native, duplicate
+  provider в одном pool отклоняется;
+- entry route: model=standard → standard; model=stupid → stupid; unknown model → явная ошибка без
+  dispatch; subroutes никогда не становятся logical models;
 - bounded race: ровно top-`count` targets, first-success и игнорирование первой ошибки;
 - cancellation проигравшего provider и client disconnect;
-- retry `scope = "same"` / `scope = "next"`, отсутствие повторного использования provider,
-  исчерпание pool и backoff;
-- hedge, стартующий только следующий retry batch, а не полный pool;
+- retry subroute: 429 → retry route applicable → retry call; 400 → не applicable → оригинальный
+  terminal failure без нового call; attempts и backoff; unused pool exhaustion возвращает
+  оригинал;
+- fallback subroute: model_not_found/5xx → fallback; 400 → не applicable; общий semaphore budget;
+- nested transitions standard → standard.fallback → standard.fallback.retry;
+- hedge, стартующий только target route после delay, без клонирования pool и без задержки
+  быстрого terminal failure;
 - semaphore bounds `max_calls`, `max_in_flight`, `max_calls_per_provider` при race, retry, hedge,
   timeout и client cancellation;
 - provider-scoped catalog semantics: exact-match-only, partial refresh независим по provider,
   last-known-good, inferred optimistic и explicit fail-closed;
-- `model_not_found` переводит выполнение на явно настроенный fallback и никогда не выбирает
-  несвязанную модель; dual-alias provider (один native в primary, другой в fallback) не вызывает
-  один endpoint дважды;
+- `model_not_found` переводит выполнение на явно настроенный fallback subroute и никогда не
+  выбирает несвязанную модель; dual-alias provider (один native в entry, другой в fallback) не
+  вызывает один endpoint дважды;
 - lease acquire/renew/expire/release, slow-start threshold и нейтральность loser cancellations;
 - Responses affinity: Chat без affinity, `previous_response_id`, conversation boundary,
-  missing/expired mapping, pinned success/failure (fail-closed) и отсутствие cross-provider
-  stateful retry;
+  missing/expired mapping, pinned success/failure (fail-closed, весь граф переходов подавлен) и
+  отсутствие cross-provider stateful retry;
 - persistence opaque affinity mapping через файл mode 0600;
-- config validation (поля/порядок, empty pool, duplicate provider, dangling map, mapping после
-  stage, отсутствие предыдущего stage);
+- config validation: поля/порядок, empty pool, duplicate provider, map без selection, race без
+  pool, missing race/target, orphan route, duplicate entry model, routing cycles, semaphore/timeout
+  on subroute, cascade rejection всех legacy полей (`match`, `map.providers`, `retry.scope/count/on`,
+  `fallback.on/fallbackStrategy`);
 - logical/native model rewrite и удаление Bifrost routing metadata из client responses;
 - отсутствие новых upstream calls после winner/cancellation/timeout/semaphore exhaustion.
 

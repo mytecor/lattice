@@ -1,9 +1,8 @@
 package main
 
-// RaceRule is the primary route-creating action: it snapshots the pending
-// candidate pool and defines the size of the initial race batch (0 means the
-// whole pool). Later fallback-stage maps never change the compiled primary
-// stage.
+// RaceRule is the route-creating action: it snapshots the route pending
+// candidate pool and defines the size of the race batch (0 means the whole
+// pool).
 type RaceRule struct {
 	ruleBase
 	Count int `json:"count"`
@@ -11,8 +10,8 @@ type RaceRule struct {
 
 // apply validates the batch size and keeps an immutable pool snapshot.
 func (r *RaceRule) apply(ctx *stageContext) error {
-	if ctx.st.primaryRace {
-		return ctx.errf("race already declared for this model")
+	if ctx.st.sawRace {
+		return ctx.errf("race already declared for route %q", ctx.route)
 	}
 	if !ctx.st.sawMap {
 		return ctx.errf("race requires a preceding map action")
@@ -20,8 +19,14 @@ func (r *RaceRule) apply(ctx *stageContext) error {
 	if r.Count < 0 {
 		return ctx.errf("race count must not be negative")
 	}
-	ctx.plan.Pool = append([]Target(nil), ctx.st.pending...)
+	if len(ctx.st.pending) == 0 {
+		return ctx.errf("race requires at least one candidate provider")
+	}
+	if r.Count > len(ctx.st.pending) {
+		return ctx.errf("race count %d exceeds the route candidate pool of %d providers", r.Count, len(ctx.st.pending))
+	}
+	ctx.plan.Pool = append(ctx.plan.Pool, ctx.st.pending...)
 	ctx.plan.RaceCount = r.Count
-	ctx.st.primaryRace = true
+	ctx.st.sawRace = true
 	return nil
 }

@@ -77,16 +77,13 @@ pkgs.testers.runNixOSTest {
           native = if model == "standard" then "deepseek-ai/DeepSeek-V4-Flash-0731" else "MiniMaxAI/MiniMax-M2.7";
         in
         [
+          { route = model; action = "filter"; where = { model = { eq = model; }; }; }
+          { route = model; action = "filter"; where = { provider = { "in" = [ "primary" ]; }; }; }
+          { route = model; action = "map"; inherit native; }
+          { route = model; action = "rank"; strategy = "priority"; }
+          { route = model; action = "race"; count = 2; }
           {
-            inherit model;
-            action = "map";
-            inherit native;
-            providers = [ "primary" ];
-          }
-          { inherit model; action = "rank"; strategy = "priority"; }
-          { inherit model; action = "race"; count = 2; }
-          {
-            inherit model;
+            route = model;
             action = "semaphore";
             maxCalls = 4;
             maxInFlight = 3;

@@ -2,7 +2,7 @@ package main
 
 import "sort"
 
-// RankRule orders the pending candidate pool by provider priority
+// RankRule orders the route pending candidate pool by provider priority
 // (descending), keeping the existing relative order on ties.
 type RankRule struct {
 	ruleBase
@@ -11,11 +11,14 @@ type RankRule struct {
 
 // apply validates the ranking strategy and stably sorts the pending pool.
 func (r *RankRule) apply(ctx *stageContext) error {
+	if ctx.st.sawRace {
+		return ctx.errf("rank must precede the race action within a route")
+	}
 	if !ctx.st.sawMap {
 		return ctx.errf("rank requires a preceding map action")
 	}
 	if ctx.st.ranked {
-		return ctx.errf("rank already declared for this stage")
+		return ctx.errf("rank already declared for this route")
 	}
 	if r.Strategy != "priority" {
 		return ctx.errf("unsupported rank strategy %q (only \"priority\" is implemented)", r.Strategy)

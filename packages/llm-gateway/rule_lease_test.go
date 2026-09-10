@@ -8,7 +8,7 @@ import (
 
 func TestLeaseRuleDecode(t *testing.T) {
 	r := decodeRuleJSON(t, `{
-		"match":{"model":"standard"},"action":"lease",
+		"route":"standard","action":"lease",
 		"source":"winner","duration":"10m","renew_on_success":false,
 		"release_on":["429","5xx"],"release_after_slow_starts":3,"slow_start":"3s"
 	}`)
@@ -27,13 +27,20 @@ func TestLeaseRuleDecode(t *testing.T) {
 	}
 }
 
-// leasePipeline returns map → rank → lease → race with the given lease policy.
+// leaseRulesPipeline returns filter provider → map → rank → lease → race.
 func leaseRulesPipeline(r Rule) []Rule {
-	return []Rule{poolRule("standard", "group"), rankRule("standard"), r, raceRule("standard", 2)}
+	return []Rule{
+		filterModel("standard", "standard"),
+		filterProvider("standard", "a", "b"),
+		mapRule("standard", "native-model"),
+		rankRule("standard"),
+		r,
+		raceRule("standard", 2),
+	}
 }
 
 func TestLeaseRuleCompile(t *testing.T) {
-	plans, err := compileRules(leaseRulesPipeline(
+	result := mustCompile(t, leaseRulesPipeline(
 		leaseRule("standard", func(r *LeaseRule) {
 			r.Source = "winner"
 			r.Duration = Duration{time.Minute}
@@ -41,10 +48,7 @@ func TestLeaseRuleCompile(t *testing.T) {
 			r.ReleaseOn = []string{"429", "5xx", "timeout", "connection_error"}
 		}),
 	)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lease := plans["standard"].Lease
+	lease := entryRoute(t, result, "standard").Lease
 	if !lease.Enabled || lease.Duration != time.Minute || !lease.RenewOnSuccess {
 		t.Fatalf("lease policy mismatch: %#v", lease)
 	}
@@ -54,23 +58,20 @@ func TestLeaseRuleCompile(t *testing.T) {
 }
 
 func TestLeaseRuleRenewDefaultsTrue(t *testing.T) {
-	plans, err := compileRules(leaseRulesPipeline(
+	result := mustCompile(t, leaseRulesPipeline(
 		leaseRule("standard", func(r *LeaseRule) {
 			r.Source = "winner"
 			r.Duration = Duration{time.Minute}
 		}),
 	)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !plans["standard"].Lease.RenewOnSuccess {
-		t.Fatalf("renew_on_success must default to true: %#v", plans["standard"].Lease)
+	if !entryRoute(t, result, "standard").Lease.RenewOnSuccess {
+		t.Fatalf("renew_on_success must default to true")
 	}
 }
 
 func TestLeaseRuleDecodeRejectsForeignField(t *testing.T) {
 	decodeRuleError(t, `{
-		"match":{"model":"standard"},"action":"lease",
+		"route":"standard","action":"lease",
 		"source":"winner","duration":"10m","providers":["a"]
 	}`, "unknown field \"providers\"", `action "lease"`)
 }

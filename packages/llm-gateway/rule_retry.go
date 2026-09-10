@@ -1,41 +1,40 @@
 package main
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
-// RetryRule configures the bounded retry schedule after the initial race:
-// scope "same" repeats the original selection, scope "next" uses the next
-// unused ranked targets and never repeats a used provider. Attempts, the
-// error filter and the constant/exponential backoff are normalized here.
+// RetryRule configures a bounded repeated transition to another named route:
+// it owns only attempts, the backoff schedule and the target route. The retry
+// condition (which terminal failures are retryable) lives entirely in the
+// destination route's filter; retry no longer knows about error classes,
+// providers, scope or batch sizes. The target's own filter decides whether the
+// transition applies for the incoming failure.
 type RetryRule struct {
 	ruleBase
-	Count    int            `json:"count"`
-	Scope    string         `json:"scope"`
+	Target   string         `json:"target"`
 	Attempts int            `json:"attempts"`
-	On       []string       `json:"on"`
 	Backoff  *BackoffConfig `json:"backoff"`
 }
 
-// apply validates the retry schedule and normalizes defaults (scope "same", a
-// constant 100ms..1s backoff) into the compiled plan.
+// apply validates the retry schedule and normalizes backoff defaults (a
+// constant 100ms..1s backoff) into the compiled route.
 func (r *RetryRule) apply(ctx *stageContext) error {
-	if !ctx.st.primaryRace {
-		return ctx.errf("retry requires a preceding race action")
+	if !ctx.st.sawRace {
+		return ctx.errf("retry requires a preceding race action in the same route")
 	}
-	scope := r.Scope
-	if scope == "" {
-		scope = "same"
+	target := strings.TrimSpace(r.Target)
+	if target == "" {
+		return ctx.errf("retry requires a non-empty target route")
 	}
-	if scope != "same" && scope != "next" {
-		return ctx.errf("unsupported retry scope %q (only \"same\" and \"next\")", scope)
+	if target == ctx.route {
+		return ctx.errf("retry must not target the route it belongs to (use a named subroute)")
 	}
 	if r.Attempts < 1 {
 		return ctx.errf("retry attempts must be at least 1")
 	}
-	retry := RetryConfig{Scope: scope, Attempts: r.Attempts, On: parseErrorClasses(r.On)}
-	if scope == "next" && r.Count < 1 {
-		return ctx.errf("retry scope \"next\" requires a positive count (batch size)")
-	}
-	retry.Count = r.Count
+	retry := RetryConfig{Target: target, Attempts: r.Attempts}
 	if r.Backoff != nil {
 		retry.Backoff = *r.Backoff
 	}

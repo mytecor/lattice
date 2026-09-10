@@ -198,7 +198,9 @@ func TestCatalogFetchesDerivedProviderPaths(t *testing.T) {
 			cfg.Providers[0].InferenceURL = server.URL + test.basePath
 			cfg.Providers[0].APIKey = "provider-key"
 			cfg.RoutingRules = []Rule{
-				mapRule("standard", "native-model", "a"),
+				filterModel("standard", "standard"),
+				filterProvider("standard", "a"),
+				mapRule("standard", "native-model"),
 				rankRule("standard"),
 				raceRule("standard", 1),
 			}

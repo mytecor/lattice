@@ -16,7 +16,9 @@ func TestServerAuthModelsAndLogicalRewrite(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
 	cfg.RoutingRules = []Rule{
-		mapRule("standard", "native-model", "a"),
+		filterModel("standard", "standard"),
+		filterProvider("standard", "a"),
+		mapRule("standard", "native-model"),
 		rankRule("standard"),
 		raceRule("standard", 1),
 	}
@@ -124,7 +126,9 @@ func TestServerStreamsWinnerWithLogicalModel(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
 	cfg.RoutingRules = []Rule{
-		mapRule("standard", "native-model", "a"),
+		filterModel("standard", "standard"),
+		filterProvider("standard", "a"),
+		mapRule("standard", "native-model"),
 		rankRule("standard"),
 		raceRule("standard", 1),
 	}
@@ -193,7 +197,9 @@ func TestServerReportsFailureAfterStreamingWinner(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
 	cfg.RoutingRules = []Rule{
-		mapRule("standard", "native-model", "a"),
+		filterModel("standard", "standard"),
+		filterProvider("standard", "a"),
+		mapRule("standard", "native-model"),
 		rankRule("standard"),
 		raceRule("standard", 1),
 	}
@@ -231,7 +237,9 @@ func affinityServerConfig(t *testing.T) *compiledConfig {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
 	cfg.RoutingRules = []Rule{
-		mapRule("standard", "native-model", "a"),
+		filterModel("standard", "standard"),
+		filterProvider("standard", "a"),
+		mapRule("standard", "native-model"),
 		rankRule("standard"),
 		affinityRule("standard", func(r *AffinityRule) {
 			r.Sources = []string{"responses.conversation", "responses.previous_response_id"}

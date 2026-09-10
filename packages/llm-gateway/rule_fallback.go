@@ -1,40 +1,30 @@
 package main
 
-// FallbackRule is the terminal route-creating action of the optional second
-// stage: an immutable target-pool snapshot (built by the preceding fallback
-// stage maps) plus the error classes that transition from the primary stage
-// and the dispatch mode. It carries no provider, native, lease, hedge or
-// semaphore fields.
+import "strings"
+
+// FallbackRule is an explicit one-shot transition to another named route,
+// exactly like retry but without attempts/backoff: the current route's
+// terminal failure transitions into the fallback target when the target's own
+// filter admits it. There is no special second-stage compiler semantics; a
+// fallback subroute is compiled by the same named-route compiler as every
+// other route.
 type FallbackRule struct {
 	ruleBase
-	On               []string `json:"on"`
-	FallbackStrategy string   `json:"fallback_strategy"`
+	Target string `json:"target"`
 }
 
-// apply validates the fallback stage and keeps an immutable snapshot of the
-// fallback pool with the transition error filter and dispatch mode.
+// apply validates the fallback target and records the transition.
 func (r *FallbackRule) apply(ctx *stageContext) error {
-	if !ctx.st.primaryRace {
-		return ctx.errf("fallback requires a preceding primary race stage")
+	if !ctx.st.sawRace {
+		return ctx.errf("fallback requires a preceding race action in the same route")
 	}
-	if !ctx.st.inFallback || !ctx.st.sawMap {
-		return ctx.errf("fallback requires a preceding map action that starts the fallback stage")
+	target := strings.TrimSpace(r.Target)
+	if target == "" {
+		return ctx.errf("fallback requires a non-empty target route")
 	}
-	if ctx.plan.Fallback != nil || ctx.st.fallbackDeclared {
-		return ctx.errf("fallback already declared for this model")
+	if target == ctx.route {
+		return ctx.errf("fallback must not target the route it belongs to (use a named subroute)")
 	}
-	mode := r.FallbackStrategy
-	if mode == "" {
-		mode = "serial"
-	}
-	if mode != "serial" && mode != "race" && mode != "hedge" {
-		return ctx.errf("unsupported fallback_strategy %q", mode)
-	}
-	ctx.plan.Fallback = &FallbackRoute{
-		Pool: append([]Target(nil), ctx.st.pending...),
-		Mode: mode,
-		On:   parseErrorClasses(r.On),
-	}
-	ctx.st.fallbackDeclared = true
+	ctx.plan.Fallback = FallbackConfig{Target: target}
 	return nil
 }

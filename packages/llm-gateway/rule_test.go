@@ -15,124 +15,171 @@ var testProviders = map[string]Provider{
 }
 
 // compileRules compiles a flat rule list against the shared provider registry.
-func compileRules(rules ...Rule) (map[string]Plan, error) {
-	return compilePlans(rules, testProviders)
+func compileRules(rules ...Rule) (*routeCompileResult, error) {
+	return compileRoutes(rules, testProviders)
 }
 
-// basePipeline returns the minimal valid primary stage for a model: map → rank
-// → race over providers a,b (the "group" pool), ranked by priority.
-func basePipeline(model string) []Rule {
-	return []Rule{poolRule(model, "group"), rankRule(model), raceRule(model, 2)}
+// mustCompile compiles the rules and fails the test on error.
+func mustCompile(t *testing.T, rules ...Rule) *routeCompileResult {
+	t.Helper()
+	result, err := compileRules(rules...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
 }
 
-// mapRule builds a map action binding one native model to a set of providers.
-func mapRule(model, native string, providers ...string) Rule {
-	r := &MapRule{}
-	r.setIdentity(model, "map")
-	r.Native = native
-	r.Providers = providers
+// entryRoute returns the entry route of the compiled result for model.
+func entryRoute(t *testing.T, result *routeCompileResult, model string) *compiledRoute {
+	t.Helper()
+	route := result.entries[model]
+	if route == nil {
+		t.Fatalf("no entry route for model %q (models: %v)", model, result.models)
+	}
+	return route
+}
+
+// standardEntry returns the minimal valid entry route for logical model
+// "standard": route "standard" with an entry model filter, the a,b provider
+// selection, one native mapping, ranking and a race of 2.
+func standardEntry() []Rule {
+	return []Rule{
+		filterModel("standard", "standard"),
+		filterProvider("standard", "a", "b"),
+		mapRule("standard", "native-model"),
+		rankRule("standard"),
+		raceRule("standard", 2),
+	}
+}
+
+func filterModel(route, model string) Rule {
+	r := &FilterRule{}
+	r.setIdentity(route, "filter")
+	r.Where.Model = &filterModelCond{Eq: model}
 	return r
 }
 
-// poolRule is a test convenience that expands the virtual access-group names of
-// the shared provider registry into provider IDs with the shared native model
-// id: "group" expands to a,b and "backup" to c.
-func poolRule(model string, groups ...string) Rule {
-	var providers []string
-	for _, group := range groups {
-		switch group {
-		case "group":
-			providers = append(providers, "a", "b")
-		case "backup":
-			providers = append(providers, "c")
-		default:
-			providers = append(providers, group)
-		}
-	}
-	return mapRule(model, "native-model", providers...)
+func filterProvider(route string, in ...string) Rule {
+	r := &FilterRule{}
+	r.setIdentity(route, "filter")
+	r.Where.Provider = &filterProviderCond{In: &in}
+	return r
 }
 
-func rankRule(model string) Rule {
+func filterProviderUnused(route string, in ...string) Rule {
+	r := &FilterRule{}
+	r.setIdentity(route, "filter")
+	r.Where.Provider = &filterProviderCond{In: &in, Unused: true}
+	return r
+}
+
+func filterProviderNotIn(route string, notIn ...string) Rule {
+	r := &FilterRule{}
+	r.setIdentity(route, "filter")
+	r.Where.Provider = &filterProviderCond{NotIn: notIn}
+	return r
+}
+
+func filterError(route string, classes ...string) Rule {
+	r := &FilterRule{}
+	r.setIdentity(route, "filter")
+	r.Where.Error = &filterErrorCond{In: classes}
+	return r
+}
+
+func filterAttempt(route string, lt int) Rule {
+	r := &FilterRule{}
+	r.setIdentity(route, "filter")
+	r.Where.Attempt = &filterAttemptCond{Lt: lt}
+	return r
+}
+
+// mapRule builds a map action binding the current provider selection to the
+// native model id.
+func mapRule(route, native string) Rule {
+	r := &MapRule{}
+	r.setIdentity(route, "map")
+	r.Native = native
+	return r
+}
+
+func rankRule(route string) Rule {
 	r := &RankRule{}
-	r.setIdentity(model, "rank")
+	r.setIdentity(route, "rank")
 	r.Strategy = "priority"
 	return r
 }
 
-func raceRule(model string, count int) Rule {
+func raceRule(route string, count int) Rule {
 	r := &RaceRule{}
-	r.setIdentity(model, "race")
+	r.setIdentity(route, "race")
 	r.Count = count
 	return r
 }
 
-func retryNextRule(model string, count, attempts int) Rule {
+func retryRule(route, target string, attempts int) Rule {
 	r := &RetryRule{}
-	r.setIdentity(model, "retry")
-	r.Scope = "next"
-	r.Count = count
+	r.setIdentity(route, "retry")
+	r.Target = target
 	r.Attempts = attempts
-	r.On = []string{"429", "5xx"}
-	r.Backoff = &BackoffConfig{Type: "exponential", Initial: Duration{100 * time.Millisecond}, Max: Duration{time.Second}}
 	return r
 }
 
-// retryRule builds a retry action whose fields are set by modify.
-func retryRule(model string, modify func(*RetryRule)) Rule {
+func retryRuleBackoff(route, target string, attempts int, backoff *BackoffConfig) Rule {
 	r := &RetryRule{}
-	r.setIdentity(model, "retry")
-	if modify != nil {
-		modify(r)
-	}
+	r.setIdentity(route, "retry")
+	r.Target = target
+	r.Attempts = attempts
+	r.Backoff = backoff
 	return r
 }
 
-func leaseRule(model string, modify func(*LeaseRule)) Rule {
-	r := &LeaseRule{}
-	r.setIdentity(model, "lease")
-	if modify != nil {
-		modify(r)
-	}
+func fallbackRule(route, target string) Rule {
+	r := &FallbackRule{}
+	r.setIdentity(route, "fallback")
+	r.Target = target
 	return r
 }
 
-func affinityRule(model string, modify func(*AffinityRule)) Rule {
-	r := &AffinityRule{}
-	r.setIdentity(model, "affinity")
-	if modify != nil {
-		modify(r)
-	}
-	return r
-}
-
-func hedgeRule(model string, after time.Duration) Rule {
+func hedgeRule(route string, after time.Duration, target string) Rule {
 	r := &HedgeRule{}
-	r.setIdentity(model, "hedge")
+	r.setIdentity(route, "hedge")
 	r.After = Duration{after}
+	r.Target = target
 	return r
 }
 
-func semaphoreRule(model string, maxCalls, maxInFlight, maxCallsPerProvider int) Rule {
+func leaseRule(route string, modify func(*LeaseRule)) Rule {
+	r := &LeaseRule{}
+	r.setIdentity(route, "lease")
+	if modify != nil {
+		modify(r)
+	}
+	return r
+}
+
+func affinityRule(route string, modify func(*AffinityRule)) Rule {
+	r := &AffinityRule{}
+	r.setIdentity(route, "affinity")
+	if modify != nil {
+		modify(r)
+	}
+	return r
+}
+
+func semaphoreRule(route string, maxCalls, maxInFlight, maxCallsPerProvider int) Rule {
 	r := &SemaphoreRule{}
-	r.setIdentity(model, "semaphore")
+	r.setIdentity(route, "semaphore")
 	r.MaxCalls = maxCalls
 	r.MaxInFlight = maxInFlight
 	r.MaxCallsPerProvider = maxCallsPerProvider
 	return r
 }
 
-func timeoutRule(model string, duration time.Duration) Rule {
+func timeoutRule(route string, duration time.Duration) Rule {
 	r := &TimeoutRule{}
-	r.setIdentity(model, "timeout")
+	r.setIdentity(route, "timeout")
 	r.Duration = Duration{duration}
-	return r
-}
-
-func fallbackRule(model string, on []string, mode string) Rule {
-	r := &FallbackRule{}
-	r.setIdentity(model, "fallback")
-	r.On = on
-	r.FallbackStrategy = mode
 	return r
 }
 

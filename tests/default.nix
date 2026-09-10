@@ -7,6 +7,9 @@ let
   };
   exampleConfig = self.nixosConfigurations.example.config;
   homelabConfig = self.nixosConfigurations.mytecor-homelab.config;
+  homelabRoutingRules = homelabConfig.lattice.llm-gateway.routingRules;
+  homelabRulesWithAction = action:
+    builtins.filter (rule: rule.action == action) homelabRoutingRules;
   disabledConfig = (nixpkgs.lib.nixosSystem {
     modules = [
       { nixpkgs.hostPlatform = "x86_64-linux"; system.stateVersion = "26.05"; }
@@ -194,116 +197,129 @@ in
       == "https://api.proxy.gonka.gg/v1";
     assert homelabConfig.lattice.llm-gateway.providers.gonka-api.inferenceUrl
       == "https://hskyauefqcgbvgvxkluj.supabase.co/functions/v1/gonka";
-    # f7-10: the homelab route is built exclusively from explicit map actions
-    # (native -> provider ids); no access groups or separate models registry.
+    # f7-12: the homelab routing table is a flat named-route graph. Provider
+    # filters own selection, maps own only native IDs, and retry/fallback/hedge
+    # point at explicit subroutes.
     assert !(builtins.hasAttr "models" homelabConfig.lattice.llm-gateway);
-    assert builtins.length (builtins.filter
-      (rule: rule.action == "map")
-      homelabConfig.lattice.llm-gateway.routingRules) == 3;
+    assert nixpkgs.lib.all (rule: rule.route != "") homelabRoutingRules;
+    assert builtins.length (homelabRulesWithAction "map") == 7;
     assert nixpkgs.lib.all
-      (rule: rule.action != "map" || (rule.native != "" && builtins.length rule.providers >= 1))
-      homelabConfig.lattice.llm-gateway.routingRules;
-    # The primary maps bind the base native to every provider; the fallback
-    # stage gives only hyperfusion the prefixed DeepSeek alias.
+      (rule: rule.native != ""
+        && !(builtins.hasAttr "providers" rule)
+        && !(builtins.hasAttr "model" rule))
+      (homelabRulesWithAction "map");
+    # Entry/retry/hedge routes keep the base native; the standard fallback
+    # route alone carries Hyperfusion's prefixed alias.
     assert nixpkgs.lib.any
-      (rule: rule.action == "map" && rule.model == "standard"
-        && rule.native == "deepseek-ai/DeepSeek-V4-Flash-0731"
-        && builtins.length rule.providers == 6)
-      homelabConfig.lattice.llm-gateway.routingRules;
+      (rule: rule.route == "standard"
+        && rule.native == "deepseek-ai/DeepSeek-V4-Flash-0731")
+      (homelabRulesWithAction "map");
     assert nixpkgs.lib.any
-      (rule: rule.action == "map" && rule.model == "standard"
-        && rule.native == "gonka/deepseek-ai/DeepSeek-V4-Flash-0731"
-        && rule.providers == [ "hyperfusion" ])
-      homelabConfig.lattice.llm-gateway.routingRules;
+      (rule: rule.route == "standard.fallback"
+        && rule.native == "gonka/deepseek-ai/DeepSeek-V4-Flash-0731")
+      (homelabRulesWithAction "map");
     assert nixpkgs.lib.any
-      (rule: rule.action == "map" && rule.model == "stupid"
-        && rule.native == "MiniMaxAI/MiniMax-M2.7"
-        && builtins.length rule.providers == 6)
-      homelabConfig.lattice.llm-gateway.routingRules;
-    # One pending pool per provider: no provider appears twice in one stage.
-    assert nixpkgs.lib.all
-      (rule: rule.action != "map" || (builtins.length rule.providers
-        == builtins.length (nixpkgs.lib.unique rule.providers)))
-      homelabConfig.lattice.llm-gateway.routingRules;
+      (rule: rule.route == "stupid"
+        && rule.native == "MiniMaxAI/MiniMax-M2.7")
+      (homelabRulesWithAction "map");
+    # Two entry model filters, seven provider selections and three transition
+    # error filters describe the graph without legacy match/map fields.
+    assert builtins.length (homelabRulesWithAction "filter") == 12;
     assert builtins.length (builtins.filter
-      (rule: rule.action == "rank")
-      homelabConfig.lattice.llm-gateway.routingRules) == 2;
-    assert nixpkgs.lib.all
-      (rule: rule.action != "rank" || rule.strategy == "priority")
-      homelabConfig.lattice.llm-gateway.routingRules;
+      (rule: builtins.hasAttr "model" rule.where)
+      (homelabRulesWithAction "filter")) == 2;
+    assert nixpkgs.lib.any
+      (rule: (rule.where.model.eq or null) == "standard")
+      (homelabRulesWithAction "filter");
+    assert nixpkgs.lib.any
+      (rule: (rule.where.model.eq or null) == "stupid")
+      (homelabRulesWithAction "filter");
     assert builtins.length (builtins.filter
-      (rule: rule.action == "lease")
-      homelabConfig.lattice.llm-gateway.routingRules) == 2;
+      (rule: builtins.hasAttr "provider" rule.where)
+      (homelabRulesWithAction "filter")) == 7;
     assert nixpkgs.lib.all
-      (rule: rule.action != "lease" || (rule.source == "winner"
+      (rule:
+        let selected = rule.where.provider."in" or [ ]; in
+        selected != [ ] && builtins.length selected
+          == builtins.length (nixpkgs.lib.unique selected))
+      (builtins.filter
+        (rule: builtins.hasAttr "provider" rule.where)
+        (homelabRulesWithAction "filter"));
+    assert builtins.length (builtins.filter
+      (rule: builtins.hasAttr "provider" rule.where
+        && (rule.where.provider.unused or false))
+      (homelabRulesWithAction "filter")) == 4;
+    assert builtins.length (builtins.filter
+      (rule: builtins.hasAttr "error" rule.where)
+      (homelabRulesWithAction "filter")) == 3;
+    assert nixpkgs.lib.all
+      (rule: !nixpkgs.lib.hasSuffix ".retry" rule.route
+        || rule.where.error."in"
+          == [ "429" "5xx" "timeout" "connection_error" "invalid_response" ])
+      (builtins.filter
+        (rule: builtins.hasAttr "error" rule.where)
+        (homelabRulesWithAction "filter"));
+    assert nixpkgs.lib.any
+      (rule: rule.route == "standard.fallback"
+        && builtins.elem "model_not_found" rule.where.error."in")
+      (homelabRulesWithAction "filter");
+    assert builtins.length (homelabRulesWithAction "rank") == 7;
+    assert nixpkgs.lib.all
+      (rule: rule.strategy == "priority")
+      (homelabRulesWithAction "rank");
+    assert builtins.length (homelabRulesWithAction "lease") == 2;
+    assert nixpkgs.lib.all
+      (rule: rule.source == "winner"
         && rule.duration == "10m"
         && rule.renewOnSuccess
         && rule.releaseOn == [ "429" "5xx" "timeout" "connection_error" ]
         && rule.releaseAfterSlowStarts == 3
-        && rule.slowStart == "3s"))
-      homelabConfig.lattice.llm-gateway.routingRules;
-    assert builtins.length (builtins.filter
-      (rule: rule.action == "affinity")
-      homelabConfig.lattice.llm-gateway.routingRules) == 2;
+        && rule.slowStart == "3s")
+      (homelabRulesWithAction "lease");
+    assert builtins.length (homelabRulesWithAction "affinity") == 2;
     assert nixpkgs.lib.all
-      (rule: rule.action != "affinity" || (rule.sources
+      (rule: rule.sources
         == [ "responses.conversation" "responses.previous_response_id" ]
         && rule.ttl == "24h"
         && rule.onMissing == "ignore"
-        && rule.onProviderFailure == "fail-closed"))
-      homelabConfig.lattice.llm-gateway.routingRules;
-    assert builtins.length (builtins.filter
-      (rule: rule.action == "race")
-      homelabConfig.lattice.llm-gateway.routingRules) == 2;
+        && rule.onProviderFailure == "fail-closed")
+      (homelabRulesWithAction "affinity");
+    assert builtins.length (homelabRulesWithAction "race") == 7;
     assert nixpkgs.lib.all
-      (rule: rule.action != "race" || rule.count == 2)
-      homelabConfig.lattice.llm-gateway.routingRules;
-    assert builtins.length (builtins.filter
-      (rule: rule.action == "retry")
-      homelabConfig.lattice.llm-gateway.routingRules) == 2;
+      (rule: rule.count == (if builtins.elem rule.route [ "standard" "stupid" ] then 2 else 1))
+      (homelabRulesWithAction "race");
+    assert builtins.length (homelabRulesWithAction "retry") == 2;
     assert nixpkgs.lib.all
-      (rule: rule.action != "retry" || (rule.scope == "next"
-        && rule.count == 1
+      (rule: rule.target == "${rule.route}.retry"
         && rule.attempts == 2
-        && rule.on == [ "429" "5xx" "timeout" "connection_error" "invalid_response" ]
+        && rule.backoffType == "exponential"
         && rule.backoffInitial == "200ms"
-        && rule.backoffMax == "1s"))
-      homelabConfig.lattice.llm-gateway.routingRules;
-    assert builtins.length (builtins.filter
-      (rule: rule.action == "hedge")
-      homelabConfig.lattice.llm-gateway.routingRules) == 2;
+        && rule.backoffMax == "1s")
+      (homelabRulesWithAction "retry");
+    assert builtins.length (homelabRulesWithAction "hedge") == 2;
     assert nixpkgs.lib.all
-      (rule: rule.action != "hedge" || rule.after == "3s")
-      homelabConfig.lattice.llm-gateway.routingRules;
-    assert builtins.length (builtins.filter
-      (rule: rule.action == "semaphore")
-      homelabConfig.lattice.llm-gateway.routingRules) == 2;
+      (rule: rule.after == "3s" && rule.target == "${rule.route}.hedge")
+      (homelabRulesWithAction "hedge");
+    assert builtins.length (homelabRulesWithAction "semaphore") == 2;
     assert nixpkgs.lib.all
-      (rule: rule.action != "semaphore" || (rule.maxCalls == 4
+      (rule: rule.maxCalls == 4
         && rule.maxInFlight == 3
-        && rule.maxCallsPerProvider == 1))
-      homelabConfig.lattice.llm-gateway.routingRules;
-    assert builtins.length (builtins.filter
-      (rule: rule.action == "timeout")
-      homelabConfig.lattice.llm-gateway.routingRules) == 2;
+        && rule.maxCallsPerProvider == 1)
+      (homelabRulesWithAction "semaphore");
+    assert builtins.length (homelabRulesWithAction "timeout") == 2;
     assert nixpkgs.lib.all
-      (rule: rule.action != "timeout" || rule.duration == "60s")
-      homelabConfig.lattice.llm-gateway.routingRules;
-    # The fallback stage is declared exactly once (standard) and routes only
-    # errors listed in its on filter, including model_not_found.
-    assert builtins.length (builtins.filter
-      (rule: rule.action == "fallback")
-      homelabConfig.lattice.llm-gateway.routingRules) == 1;
-    assert builtins.length (builtins.filter
-      (rule: rule.action == "fallback" && rule.model == "standard"
-        && rule.fallbackStrategy == "race"
-        && builtins.elem "model_not_found" rule.on)
-      homelabConfig.lattice.llm-gateway.routingRules) == 1;
-    # No access_groups anywhere (the option was removed) and no separate
-    # models list.
+      (rule: rule.duration == "60s")
+      (homelabRulesWithAction "timeout");
+    assert builtins.length (homelabRulesWithAction "fallback") == 1;
     assert nixpkgs.lib.all
-      (rule: (rule.accessGroups or [ ]) == [ ])
-      homelabConfig.lattice.llm-gateway.routingRules;
+      (rule: rule.route == "standard" && rule.target == "standard.fallback")
+      (homelabRulesWithAction "fallback");
+    # Removed routing fields are absent from every typed rule.
+    assert nixpkgs.lib.all
+      (rule: nixpkgs.lib.all
+        (field: !(builtins.hasAttr field rule))
+        [ "model" "match" "providers" "scope" "on" "fallbackStrategy" "accessGroups" ])
+      homelabRoutingRules;
 
     assert nixpkgs.lib.hasInfix "lattice-llm-gateway"
       homelabConfig.systemd.services.llm-gateway.serviceConfig.ExecStart;

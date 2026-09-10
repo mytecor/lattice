@@ -8,8 +8,8 @@ import (
 
 // branchResult is the terminal outcome of one upstream call produced by a
 // branch goroutine (or a locally catalog-rejected target reported without an
-// upstream call, see prefailed). It is delivered exactly once through the
-// schedule results channel.
+// upstream call, see deliverPreFailed). It is delivered exactly once through
+// the schedule results channel.
 type branchResult struct {
 	id        int
 	provider  string
@@ -24,13 +24,23 @@ type branchResult struct {
 
 // routeOutcome carries the winner and its payload out of the scheduler.
 // pinned marks a route narrowed by a known affinity mapping so the caller can
-// keep the request fail-closed (no fallback, no cross-provider state replay).
+// keep the request fail-closed (no transitions). empty marks a transition
+// route whose dynamic pool had no available targets: the transition is not
+// applicable and must never mask the original terminal failure.
 type routeOutcome struct {
 	provider string
 	body     []byte
 	selected *SelectedStream
 	err      *CallError
 	pinned   bool
+	empty    bool
+}
+
+// emptyPoolError is the distinguishable terminal result of a transition route
+// whose dynamic pool has no available targets for the current request (for
+// example every provider is already used by this request graph).
+func emptyPoolError() *CallError {
+	return &CallError{Class: ErrorInvalid, Status: 502, Cause: errors.New("route has no available targets")}
 }
 
 // semaphore enforces the per-request safety bounds. It is owned by the single
@@ -43,23 +53,25 @@ type semaphore struct {
 	perProvider         map[string]int
 }
 
-// routeRuntime owns request-wide state shared by the primary and fallback
-// routes. The deadline is absolute so backoff and every fallback stage consume
-// the same timeout budget; semaphore counters are monotonic for the request.
+// routeRuntime owns request-wide state shared by the whole route graph. The
+// deadline is absolute so backoff and every transition consume the same
+// timeout budget; semaphore counters and the used-provider set are monotonic
+// for the request and never reset when entering a subroute.
 type routeRuntime struct {
 	deadline time.Time
 	sem      semaphore
+	used     map[string]bool
 }
 
-func newRouteRuntime(plan Plan) *routeRuntime {
-	runtime := &routeRuntime{}
-	if plan.RouteTimeout > 0 {
-		runtime.deadline = time.Now().Add(plan.RouteTimeout)
+func newRouteRuntime(entry *compiledRoute) *routeRuntime {
+	runtime := &routeRuntime{used: make(map[string]bool)}
+	if entry != nil && entry.RouteTimeout > 0 {
+		runtime.deadline = time.Now().Add(entry.RouteTimeout)
 	}
 	runtime.sem = semaphore{
-		maxCalls:            plan.Semaphore.MaxCalls,
-		maxInFlight:         plan.Semaphore.MaxInFlight,
-		maxCallsPerProvider: plan.Semaphore.MaxCallsPerProvider,
+		maxCalls:            entry.Semaphore.MaxCalls,
+		maxInFlight:         entry.Semaphore.MaxInFlight,
+		maxCallsPerProvider: entry.Semaphore.MaxCallsPerProvider,
 		perProvider:         make(map[string]int),
 	}
 	return runtime
@@ -120,32 +132,26 @@ func (r *routeRuntime) waitBackoff(ctx context.Context, duration time.Duration, 
 	}
 }
 
+// failureAggregate collects the terminal failures of one route execution and
+// selects the externally observed error deterministically, independent of the
+// completion order of the branch goroutines. A non-retryable failure dominates
+// a retryable one; ties use a stable class priority and finally launch order.
 type failureAggregate struct {
-	count        int
-	allRetryable bool
-	selectedID   int
-	selected     *CallError
+	count      int
+	selectedID int
+	selected   *CallError
 }
 
-func (f *failureAggregate) add(id int, callErr *CallError, retryOn map[ErrorClass]bool) {
+func (f *failureAggregate) add(id int, callErr *CallError, retryable func(ErrorClass) bool) {
 	if callErr == nil {
 		callErr = &CallError{Class: ErrorInvalid, Status: 502}
 	}
-	retryable := retryOn[callErr.Class]
-	if f.count == 0 {
-		f.allRetryable = retryable
-	} else {
-		f.allRetryable = f.allRetryable && retryable
-	}
-	f.count++
-	if f.selected == nil || preferFailure(callErr, retryable, id, f.selected, retryOn[f.selected.Class], f.selectedID) {
+	candidateRetryable := retryable != nil && retryable(callErr.Class)
+	if f.selected == nil || preferFailure(callErr, candidateRetryable, id, f.selected, retryable != nil && retryable(f.selected.Class), f.selectedID) {
 		f.selected = callErr
 		f.selectedID = id
 	}
-}
-
-func (f *failureAggregate) reset() {
-	*f = failureAggregate{}
+	f.count++
 }
 
 func (f *failureAggregate) err() *CallError {
@@ -206,266 +212,117 @@ func (s *semaphore) acquire(provider string, inFlight int) bool {
 	return true
 }
 
-// planBatches slices the ranked pool into the initial race batch and the
-// retry batches. scope="same" repeats the original selection; scope="next"
-// takes the next unused ranked targets and never repeats a used provider.
-// Pool exhaustion truncates the schedule.
-func planBatches(plan Plan, ordered []Target) [][]Target {
-	raceN := plan.RaceCount
-	if raceN <= 0 || raceN > len(ordered) {
-		raceN = len(ordered)
-	}
-	batches := [][]Target{append([]Target(nil), ordered[:raceN]...)}
-	used := make(map[string]bool, len(ordered))
-	for _, target := range ordered[:raceN] {
-		used[target.Provider] = true
-	}
-	for i := 0; i < plan.Retry.Attempts; i++ {
-		if plan.Retry.Scope == "same" {
-			batches = append(batches, append([]Target(nil), ordered[:raceN]...))
-			continue
-		}
-		count := plan.Retry.Count
-		if count <= 0 {
-			count = 1
-		}
-		batch := make([]Target, 0, count)
-		for _, target := range ordered {
-			if used[target.Provider] {
-				continue
-			}
-			batch = append(batch, target)
-			used[target.Provider] = true
-			count--
-			if count == 0 {
-				break
-			}
-		}
-		if len(batch) == 0 {
-			break
-		}
-		batches = append(batches, batch)
-	}
-	return batches
-}
-
-// runSchedule executes the bounded route for both streaming and non-streaming
-// paths with identical invariants:
-//   - the initial race launches only the top batch;
-//   - hedge launches only the next retry batch, never the full pool;
-//   - a retryable completion of the whole active set continues the route
-//     before the hedge timer after backoff;
-//   - no new upstream calls start after a winner, cancellation, timeout, or
-//     semaphore exhaustion;
-//   - the schedule never hangs on pool exhaustion, partial permits, or a slow
-//     cancelled executor call.
-func (r *Runner) runSchedule(ctx context.Context, logical string, plan Plan, batches [][]Target, request ExecuteRequest, streamMode, pinned bool, runtime *routeRuntime) *routeOutcome {
-	if len(batches) == 0 || len(batches[0]) == 0 {
-		return &routeOutcome{err: &CallError{Class: ErrorInvalid, Status: 502, Cause: errors.New("empty route pool")}}
-	}
-	if pinned {
-		batches = batches[:1]
-	}
-
-	sc := &schedule{
-		r:        r,
-		ctx:      ctx,
-		logical:  logical,
-		plan:     plan,
-		batches:  batches,
-		request:  request,
-		stream:   streamMode,
-		cancels:  make(map[int]context.CancelFunc),
-		launched: make([]bool, len(batches)),
-		sem:      &runtime.sem,
-		runtime:  runtime,
-	}
-	sc.startedTargets = make([][]bool, len(batches))
-	for i, batch := range batches {
-		sc.startedTargets[i] = make([]bool, len(batch))
-	}
-	// The absolute request-wide deadline is observed by every schedule without
-	// attaching it to the winning stream's context, so a stream selected before
-	// the deadline remains usable after selection.
-	deadlineCh, stopDeadline := runtime.deadlineTimer()
-	defer stopDeadline()
-
-	// Buffer the results channel so a cancelled branch never blocks the loop:
-	// total slot count (or the semaphore cap) bounds the number of messages.
-	capacity := 0
-	for _, batch := range batches {
-		capacity += len(batch)
-	}
-	sc.results = make(chan *branchResult, capacity)
-
-	if !sc.launch(0) {
-		sc.cancelAll()
-		if runtime.expired() {
-			return &routeOutcome{err: routeTimeoutError()}
-		}
-		return &routeOutcome{err: &CallError{Class: ErrorInvalid, Status: 502, Cause: errors.New("no upstream branch could start")}}
-	}
-	// Keep the cursor on a partially permitted initial batch. Otherwise
-	// race.count > max_in_flight would silently discard the denied targets.
-	if sc.complete(0) {
-		sc.next = 1
-	}
-	sc.armHedge()
-
-	var failures failureAggregate
-	for {
-		select {
-		case res := <-sc.results:
-			if !res.winner && res.err == nil {
-				res.err = &CallError{Class: ErrorInvalid, Status: 502}
-			}
-			// Cancellations (route timeout, client cancel, loser cancel) are
-			// neutral for health and lease state.
-			if res.err == nil || res.err.Class != ErrorCancelled {
-				r.record(res.provider, res.err)
-				r.observeLeaseFailure(logical, plan, res.provider, res.err)
-			}
-			if res.winner {
-				r.observeLeaseWinner(logical, plan, res.provider, res)
-				sc.cancelOthers(res.id)
-				outcome := &routeOutcome{provider: res.provider}
-				if streamMode {
-					outcome.selected = res.selected
-				} else {
-					outcome.body = res.body
-				}
-				return outcome
-			}
-			if !res.prefailed {
-				sc.active--
-			}
-			failures.add(res.id, res.err, plan.Retry.On)
-			// Refill a semaphore-limited initial race as soon as a slot is
-			// released. These are members of the original batch, not retries,
-			// so their launch is independent of the retry error filter/backoff.
-			if sc.next == 0 {
-				if sc.launchRemaining(sc.active == 0) {
-					continue
-				}
-				if sc.active > 0 {
-					continue
-				}
-			}
-			if sc.active == 0 {
-				aggregateErr := failures.err()
-				if sc.next < len(sc.batches) && failures.allRetryable {
-					if callErr := runtime.waitBackoff(ctx, backoffDuration(plan.Retry.Backoff, sc.next-1), r.sleep); callErr != nil {
-						sc.cancelAll()
-						return &routeOutcome{err: callErr}
-					}
-					if !sc.launchRemaining(true) {
-						sc.cancelAll()
-						if runtime.expired() {
-							return &routeOutcome{err: routeTimeoutError()}
-						}
-						return &routeOutcome{err: aggregateErr}
-					}
-					failures.reset()
-				} else {
-					sc.cancelAll()
-					return &routeOutcome{err: aggregateErr}
-				}
-			}
-		case <-sc.hedgeC:
-			sc.hedgeC = nil
-			if runtime.expired() {
-				sc.cancelAll()
-				return &routeOutcome{err: routeTimeoutError()}
-			}
-			if sc.next < len(sc.batches) {
-				sc.launchRemaining(false)
-			}
-		case <-deadlineCh:
-			sc.cancelAll()
-			return &routeOutcome{err: routeTimeoutError()}
-		case <-ctx.Done():
-			sc.cancelAll()
-			return &routeOutcome{err: streamSelectionContextError(ctx)}
-		}
-	}
-}
-
-// schedule carries the per-request scheduler state. It is owned by the single
-// scheduler goroutine except for branch goroutines sending on results.
+// schedule owns the per-request branch launcher of one route execution: the
+// route's race batch (group 0) plus, when configured and armed, the hedge
+// target batch (group 1). It is owned by the single scheduler goroutine except
+// for branch goroutines sending on results.
 type schedule struct {
-	r              *Runner
-	ctx            context.Context
-	logical        string
-	plan           Plan
-	batches        [][]Target
-	request        ExecuteRequest
-	stream         bool
-	results        chan *branchResult
-	cancels        map[int]context.CancelFunc
-	sem            *semaphore
-	runtime        *routeRuntime
-	launched       []bool
-	startedTargets [][]bool
-	next           int
-	active         int
-	seq            int
-	hedgeC         <-chan time.Time
-	hedgeTimer     *time.Timer
+	r       *Runner
+	ctx     context.Context
+	logical string
+	route   *compiledRoute
+	groups  [][]Target
+	// armed[g] says whether group g may launch: the race group is armed from
+	// the start, the hedge group only after its delay elapses.
+	armed []bool
+	// excludeUsed[g] skips members whose provider is already used by the
+	// request graph (the hedge target's unused routing policy, applied at
+	// launch time because the used set grows while the source races).
+	excludeUsed []bool
+	// hedgeG limits how many hedge members may actually launch: the unused
+	// policy is applied at launch time, so the hedge group carries the full
+	// ordered pool and the race count caps the launches.
+	limits     []int
+	started    [][]bool
+	launched   []bool
+	request    ExecuteRequest
+	stream     bool
+	results    chan *branchResult
+	cancels    map[int]context.CancelFunc
+	sem        *semaphore
+	runtime    *routeRuntime
+	active     int
+	seq        int
+	hedgeG     int
+	hedgeC     <-chan time.Time
+	hedgeTimer *time.Timer
 }
 
-// launch starts the not-yet-started members of batch idx that still have a
-// semaphore permit. Members denied a permit stay pending: the batch is marked
-// exhausted only when every member has started, so a later hedge (or a retry
-// wave after a slot frees) can start the denied members instead of dropping
-// them silently. Locally catalog-rejected members are reported as pre-failed
-// results without starting an upstream call or consuming a semaphore slot.
-func (sc *schedule) launch(idx int) bool {
-	if sc.runtime.expired() || idx < 0 || idx >= len(sc.batches) || sc.launched[idx] {
+// launch starts the not-yet-started members of group g that still have a
+// semaphore permit. Members denied a permit stay pending: the group is marked
+// exhausted only when every member has started, so a later slot release (or
+// the hedge) can start the denied members instead of dropping them silently.
+// Locally catalog-rejected members are reported as pre-failed results without
+// an upstream call or a semaphore slot. Returns whether any branch started or
+// was reported pre-failed.
+func (sc *schedule) launch(g int) bool {
+	if sc.runtime.expired() || g < 0 || g >= len(sc.groups) || !sc.armed[g] || sc.launched[g] {
 		return false
 	}
 	started := false
 	delivered := false
 	allStarted := true
-	for i, target := range sc.batches[idx] {
-		if sc.startedTargets[idx][i] {
+	launchedN := 0
+	limit := len(sc.groups[g])
+	if sc.limits[g] > 0 && sc.limits[g] < limit {
+		limit = sc.limits[g]
+	}
+	for i, target := range sc.groups[g] {
+		if sc.started[g][i] {
+			continue
+		}
+		if sc.excludeUsed[g] && sc.runtime.used[target.Provider] {
+			// The member's provider is already used by the request graph: the
+			// unused routing policy of this group permanently skips it.
+			sc.started[g][i] = true
+			continue
+		}
+		if launchedN >= limit {
+			// Beyond the race-count limit of this group: consume the member so
+			// the group can be exhausted. The amount actually launched is
+			// bounded by the race count even when earlier members were skipped
+			// by the unused policy.
+			sc.started[g][i] = true
 			continue
 		}
 		// Exact catalog validation happens before any semaphore slot is
 		// consumed: a locally rejected target (model_not_found in the
 		// snapshot, or an explicit catalog without a snapshot) is not an
-		// upstream call, so the total and per-provider call budgets stay
-		// available for a different native alias of the same provider in a
-		// later stage.
+		// upstream call, so the call budgets stay available for a different
+		// native alias of the same provider in a later route.
 		if callErr := sc.r.validateTarget(target); callErr != nil {
-			sc.startedTargets[idx][i] = true
+			sc.started[g][i] = true
 			delivered = true
 			sc.seq++
 			sc.deliverPreFailed(sc.seq, target, callErr)
+			launchedN++
 			continue
 		}
 		if !sc.sem.acquire(target.Provider, sc.active) {
 			allStarted = false
 			continue
 		}
-		sc.startedTargets[idx][i] = true
+		sc.started[g][i] = true
 		started = true
+		launchedN++
 		sc.active++
 		sc.seq++
 		id := sc.seq
+		sc.runtime.used[target.Provider] = true
 		branchCtx, cancel := context.WithCancel(sc.ctx)
 		sc.cancels[id] = cancel
 		go sc.runBranch(branchCtx, id, cancel, target)
 	}
 	if allStarted {
-		sc.launched[idx] = true
+		sc.launched[g] = true
 	}
 	return started || delivered
 }
 
 // deliverPreFailed reports a catalog-rejected target as a terminal branch
-// result without an upstream call or a semaphore slot. Pre-failed results are
-// not counted against sc.active or the call budgets, so a provider with a
-// different native alias can still be reached in a later stage.
+// result without an upstream call or a semaphore slot. Pre-failed results do
+// not mark the provider as used, so a provider with a different native alias
+// can still be reached in a later route.
 func (sc *schedule) deliverPreFailed(id int, target Target, callErr *CallError) {
 	started := sc.r.now()
 	res := &branchResult{
@@ -478,53 +335,33 @@ func (sc *schedule) deliverPreFailed(id int, target Target, callErr *CallError) 
 	}
 }
 
-// complete reports whether every member of batch idx has started, i.e. no
-// permit-denied member is still waiting for a later launch attempt.
-func (sc *schedule) complete(idx int) bool {
-	for _, started := range sc.startedTargets[idx] {
-		if !started {
-			return false
-		}
-	}
-	return true
-}
-
-// launchRemaining attempts to launch the next unlaunched batch. When
-// advanceOnZilch is true (no active branches, so permits are free and only
-// total budget exhaustion can block) batches that cannot start a branch are
-// skipped permanently; otherwise a blocked batch is kept for a later hedge.
-// Returns whether any branch started.
-func (sc *schedule) launchRemaining(advanceOnZilch bool) bool {
-	for sc.next < len(sc.batches) {
-		if sc.launch(sc.next) {
-			// Keep the cursor on a partially started batch so its denied members
-			// can still be launched by a later hedge or a retry wave.
-			if sc.complete(sc.next) {
-				sc.next++
-			}
-			sc.armHedge()
-			return true
-		}
-		if advanceOnZilch {
-			sc.launched[sc.next] = true
-			sc.next++
+// refill attempts to launch the still-pending members of every armed,
+// not-yet-exhausted group (a semaphore slot was just released). Returns
+// whether any branch started.
+func (sc *schedule) refill() bool {
+	started := false
+	for g := range sc.groups {
+		if !sc.armed[g] || sc.launched[g] {
 			continue
 		}
-		sc.armHedge()
-		return false
+		if sc.launch(g) {
+			started = true
+		}
 	}
-	sc.armHedge()
-	return false
+	return started
 }
 
 func (sc *schedule) armHedge() {
+	if sc.hedgeG < 0 {
+		return
+	}
 	if sc.hedgeTimer != nil {
 		sc.hedgeTimer.Stop()
 		sc.hedgeTimer = nil
 	}
 	sc.hedgeC = nil
-	if sc.plan.HedgeAfter > 0 && sc.next < len(sc.batches) {
-		sc.hedgeTimer = time.NewTimer(sc.plan.HedgeAfter)
+	if !sc.armed[sc.hedgeG] && !sc.launched[sc.hedgeG] && sc.route.Hedge.After > 0 {
+		sc.hedgeTimer = time.NewTimer(sc.route.Hedge.After)
 		sc.hedgeC = sc.hedgeTimer.C
 	}
 }
@@ -571,95 +408,178 @@ func (sc *schedule) runBranch(ctx context.Context, id int, cancel context.Cancel
 	}
 }
 
-// runFallback executes the compiled terminal fallback route after the primary
-// route failed with a matching class. The fallback pool is already a compiled
-// snapshot of target pairs from the fallback-stage map rules (no legacy group
-// resolver); it is dispatched serially or as one parallel batch, sharing the
-// request-wide semaphore budget and route deadline.
-func (r *Runner) runFallback(ctx context.Context, logical string, fb FallbackRoute, request ExecuteRequest, streamMode bool, runtime *routeRuntime) *routeOutcome {
-	if runtime.expired() {
-		return &routeOutcome{err: routeTimeoutError()}
-	}
-	available := r.availableTargets(fb.Pool)
-	targets := available
-	if len(targets) == 0 {
-		targets = append([]Target(nil), fb.Pool...)
-	}
-	if len(targets) == 0 {
-		return &routeOutcome{err: &CallError{Class: ErrorInvalid, Status: 502}}
-	}
-	if fb.Mode == "serial" {
-		var last *CallError
-		started := false
-		for _, target := range targets {
-			if runtime.expired() {
-				return &routeOutcome{err: routeTimeoutError()}
+// drain buffered terminal results into the aggregate. At the terminal point no
+// branch is in flight, so everything still buffered was reported as pre-failed
+// (catalog-rejected) and never consumed a slot.
+func (sc *schedule) drainPrefailed(failures *failureAggregate, retryable func(ErrorClass) bool) {
+	for {
+		select {
+		case res := <-sc.results:
+			if !res.winner && res.err == nil {
+				res.err = &CallError{Class: ErrorInvalid, Status: 502}
 			}
-			// Exact catalog validation stays in front of semaphore and dispatch
-			// for the serial path too: model_not_found and explicit fail-closed
-			// targets never reach the upstream and do not consume the budget.
-			if callErr := r.validateTarget(target); callErr != nil {
-				last = callErr
-				continue
-			}
-			if !runtime.sem.acquire(target.Provider, 0) {
-				continue
-			}
-			started = true
-			branchCtx, cancel := context.WithCancel(ctx)
-			results := make(chan *branchResult, 1)
-			go func() {
-				if streamMode {
-					results <- r.probeStream(branchCtx, target, request)
-					return
-				}
-				body, callErr := r.executor.Do(branchCtx, target, request)
-				callErr = normalizeContextError(branchCtx, callErr)
-				results <- &branchResult{winner: callErr == nil, body: body, err: callErr}
-			}()
+			failures.add(res.id, res.err, retryable)
+		default:
+			return
+		}
+	}
+}
 
-			deadline, stopDeadline := runtime.deadlineTimer()
-			var res *branchResult
-			select {
-			case res = <-results:
-				stopDeadline()
-			case <-deadline:
-				stopDeadline()
-				cancel()
-				return &routeOutcome{err: routeTimeoutError()}
-			case <-ctx.Done():
-				stopDeadline()
-				cancel()
-				return &routeOutcome{err: streamSelectionContextError(ctx)}
+// raceRoute executes one compiled route: its race batch (group 0) plus an
+// optional latency hedge batch (group 1) that starts only while branches are
+// still in flight. It returns the winner or the deterministic terminal failure
+// of the route execution. No retry/fallback scheduling lives here: those are
+// explicit transitions owned by the caller (see executeRoute).
+func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledRoute, request ExecuteRequest, streamMode bool, runtime *routeRuntime) *routeOutcome {
+	pool, pinned, callErr := r.buildPool(logical, route, request, runtime)
+	if callErr != nil {
+		return &routeOutcome{err: callErr, pinned: pinned}
+	}
+	if len(pool) == 0 {
+		return &routeOutcome{err: emptyPoolError(), empty: true}
+	}
+	ordered := r.applyLease(logical, route, pool)
+	raceN := route.RaceCount
+	if raceN <= 0 || raceN > len(ordered) {
+		raceN = len(ordered)
+	}
+	raceBatch := append([]Target(nil), ordered[:raceN]...)
+	if len(raceBatch) == 0 {
+		return &routeOutcome{err: &CallError{Class: ErrorInvalid, Status: 502, Cause: errors.New("empty route pool")}}
+	}
+
+	groups := [][]Target{raceBatch}
+	hedgeG := -1
+	if route.hedgeTarget != nil && !pinned {
+		hedgeBatch := r.buildHedgeBatch(logical, route.hedgeTarget, request, runtime)
+		if len(hedgeBatch) > 0 {
+			hedgeG = len(groups)
+			groups = append(groups, hedgeBatch)
+		}
+	}
+
+	totalTargets := 0
+	for _, group := range groups {
+		totalTargets += len(group)
+	}
+	sc := &schedule{
+		r:       r,
+		ctx:     ctx,
+		logical: logical,
+		route:   route,
+		groups:  groups,
+		request: request,
+		stream:  streamMode,
+		results: make(chan *branchResult, totalTargets),
+		cancels: make(map[int]context.CancelFunc),
+		sem:     &runtime.sem,
+		runtime: runtime,
+		hedgeG:  hedgeG,
+	}
+	sc.armed = make([]bool, len(groups))
+	sc.excludeUsed = make([]bool, len(groups))
+	sc.limits = make([]int, len(groups))
+	sc.started = make([][]bool, len(groups))
+	sc.launched = make([]bool, len(groups))
+	for g := range groups {
+		sc.started[g] = make([]bool, len(groups[g]))
+		sc.limits[g] = len(groups[g])
+	}
+	sc.armed[0] = true
+	if hedgeG >= 0 && route.hedgeTarget != nil {
+		// The hedge target's unused routing policy is enforced at launch time,
+		// because the request's used set grows while the source route races;
+		// the race count caps how many hedge members may actually launch.
+		sc.excludeUsed[hedgeG] = route.hedgeTarget.ProviderUnused
+		if route.hedgeTarget.RaceCount > 0 {
+			sc.limits[hedgeG] = route.hedgeTarget.RaceCount
+		}
+	}
+
+	// The absolute request-wide deadline is observed by every schedule without
+	// attaching it to the winning stream's context, so a stream selected before
+	// the deadline remains usable after selection.
+	deadlineCh, stopDeadline := runtime.deadlineTimer()
+	defer stopDeadline()
+
+	if !sc.launch(0) {
+		sc.cancelAll()
+		if runtime.expired() {
+			return &routeOutcome{err: routeTimeoutError()}
+		}
+		// Every member is blocked by the request-wide semaphore budget: the
+		// route has no available targets for this request.
+		return &routeOutcome{err: emptyPoolError(), empty: true}
+	}
+	sc.armHedge()
+
+	// A failure admits a retry transition when it matches the retry target's
+	// own error filter; the flag only orders the deterministic selection below.
+	retryable := func(ErrorClass) bool { return false }
+	if route.retryTarget != nil {
+		retryable = func(class ErrorClass) bool { return route.retryTarget.ErrorIn[class] }
+	}
+
+	failures := &failureAggregate{}
+	for {
+		select {
+		case res := <-sc.results:
+			if !res.winner && res.err == nil {
+				res.err = &CallError{Class: ErrorInvalid, Status: 502}
+			}
+			// Cancellations (route timeout, client cancel, loser cancel) are
+			// neutral for health and lease state.
+			if res.err == nil || res.err.Class != ErrorCancelled {
+				r.record(res.provider, res.err)
+				r.observeLeaseFailure(logical, route, res.provider, res.err)
 			}
 			if res.winner {
-				r.record(target.Provider, nil)
+				r.observeLeaseWinner(logical, route, res.provider, res)
+				sc.cancelOthers(res.id)
+				outcome := &routeOutcome{provider: res.provider}
 				if streamMode {
-					res.selected.Provider = target.Provider
-					res.selected.Cancel = cancel
-					return &routeOutcome{provider: target.Provider, selected: res.selected}
+					outcome.selected = res.selected
+				} else {
+					outcome.body = res.body
 				}
-				cancel()
-				return &routeOutcome{provider: target.Provider, body: res.body}
+				return outcome
 			}
-			cancel()
-			if res.err == nil || res.err.Class != ErrorCancelled {
-				r.record(target.Provider, res.err)
+			if !res.prefailed {
+				sc.active--
 			}
-			last = res.err
+			failures.add(res.id, res.err, retryable)
+			// A slot just freed: try to start members of an armed group that were
+			// denied a permit while it was held (refills the race batch and the
+			// hedge batch alike).
+			sc.refill()
+			if sc.active == 0 {
+				// No branch is in flight and the refill started nothing: no
+				// future event can free another slot, so the route is terminal.
+				// An as-yet-unarmed hedge is abandoned by design (hedge is
+				// latency-only and must not delay a fast terminal failure).
+				sc.drainPrefailed(failures, retryable)
+				sc.cancelAll()
+				return &routeOutcome{err: failures.err(), pinned: pinned}
+			}
+		case <-sc.hedgeC:
+			sc.hedgeC = nil
+			if runtime.expired() {
+				sc.cancelAll()
+				return &routeOutcome{err: routeTimeoutError()}
+			}
+			if sc.hedgeG >= 0 {
+				sc.armed[sc.hedgeG] = true
+				sc.launch(sc.hedgeG)
+			}
+		case <-deadlineCh:
+			sc.cancelAll()
+			return &routeOutcome{err: routeTimeoutError()}
+		case <-ctx.Done():
+			sc.cancelAll()
+			return &routeOutcome{err: streamSelectionContextError(ctx)}
 		}
-		if !started {
-			last = &CallError{Class: ErrorInvalid, Status: 502, Cause: errors.New("fallback semaphore budget exhausted")}
-		} else if last == nil {
-			last = &CallError{Class: ErrorInvalid, Status: 502}
-		}
-		return &routeOutcome{err: last}
 	}
-	// race mode (hedge mode is treated as one parallel batch for legacy routes).
-	fallbackPlan := Plan{
-		LogicalModel: logical,
-		Pool:         targets,
-		RaceCount:    len(targets),
-	}
-	return r.runSchedule(ctx, logical, fallbackPlan, [][]Target{targets}, request, streamMode, false, runtime)
 }
+
+// collectFailures is unused: prefailed results are accumulated through the
+// main loop and drained at the terminal point.

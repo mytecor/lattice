@@ -8,7 +8,7 @@ import (
 
 func TestAffinityRuleDecode(t *testing.T) {
 	r := decodeRuleJSON(t, `{
-		"match":{"model":"standard"},"action":"affinity",
+		"route":"standard","action":"affinity",
 		"sources":["responses.conversation","responses.previous_response_id"],
 		"ttl":"24h","on_missing":"ignore","on_provider_failure":"fail-closed"
 	}`)
@@ -21,13 +21,20 @@ func TestAffinityRuleDecode(t *testing.T) {
 	}
 }
 
-// affinityPipeline returns map → rank → affinity → race with the given policy.
+// affinityRulesPipeline returns filter provider → map → rank → affinity → race.
 func affinityRulesPipeline(r Rule) []Rule {
-	return []Rule{poolRule("standard", "group"), rankRule("standard"), r, raceRule("standard", 2)}
+	return []Rule{
+		filterModel("standard", "standard"),
+		filterProvider("standard", "a", "b"),
+		mapRule("standard", "native-model"),
+		rankRule("standard"),
+		r,
+		raceRule("standard", 2),
+	}
 }
 
 func TestAffinityRuleCompile(t *testing.T) {
-	plans, err := compileRules(affinityRulesPipeline(
+	result := mustCompile(t, affinityRulesPipeline(
 		affinityRule("standard", func(r *AffinityRule) {
 			r.Sources = []string{"responses.conversation"}
 			r.TTL = Duration{time.Hour}
@@ -35,10 +42,7 @@ func TestAffinityRuleCompile(t *testing.T) {
 			r.OnProviderFailure = "fail-closed"
 		}),
 	)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	affinity := plans["standard"].Affinity
+	affinity := entryRoute(t, result, "standard").Affinity
 	if !affinity.Enabled || affinity.TTL != time.Hour || len(affinity.Sources) != 1 {
 		t.Fatalf("affinity policy mismatch: %#v", affinity)
 	}
@@ -49,7 +53,7 @@ func TestAffinityRuleCompile(t *testing.T) {
 
 func TestAffinityRuleDecodeRejectsForeignField(t *testing.T) {
 	decodeRuleError(t, `{
-		"match":{"model":"standard"},"action":"affinity",
+		"route":"standard","action":"affinity",
 		"sources":["responses.conversation"],"ttl":"24h","max_calls":4
 	}`, "unknown field \"max_calls\"", `action "affinity"`)
 }

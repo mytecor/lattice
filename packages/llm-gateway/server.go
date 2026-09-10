@@ -97,7 +97,7 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 		writeAPIError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	if _, exists := s.config.plans[metadata.Model]; !exists {
+	if _, exists := s.config.models[metadata.Model]; !exists {
 		s.logger.Warn("request rejected", "request_id", requestID, "kind", kind, "logical_model", metadata.Model, "status", http.StatusNotFound, "reason", "model_not_found")
 		writeAPIError(writer, http.StatusNotFound, "model_not_found")
 		return

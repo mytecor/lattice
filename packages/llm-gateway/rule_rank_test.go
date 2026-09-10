@@ -6,7 +6,7 @@ import (
 )
 
 func TestRankRuleDecode(t *testing.T) {
-	r := decodeRuleJSON(t, `{"match":{"model":"standard"},"action":"rank","strategy":"priority"}`)
+	r := decodeRuleJSON(t, `{"route":"standard","action":"rank","strategy":"priority"}`)
 	ranked, ok := r.(*RankRule)
 	if !ok {
 		t.Fatalf("decoded rule is %T, want *RankRule", r)
@@ -17,22 +17,22 @@ func TestRankRuleDecode(t *testing.T) {
 }
 
 func TestRankRuleCompileOrdersByPriority(t *testing.T) {
-	plans, err := compileRules(
-		mapRule("standard", "native-model", "c", "a", "b"),
+	result := mustCompile(t,
+		filterModel("standard", "standard"),
+		filterProvider("standard", "c", "a", "b"),
+		mapRule("standard", "native-model"),
 		rankRule("standard"),
 		raceRule("standard", 3),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := targetIDs(plans["standard"].Pool); got != "a,b,c" {
+	route := entryRoute(t, result, "standard")
+	if got := targetIDs(route.Pool); got != "a,b,c" {
 		t.Fatalf("priority ranking mismatch: %s", got)
 	}
 }
 
 func TestRankRuleDecodeRejectsForeignField(t *testing.T) {
 	decodeRuleError(t, `{
-		"match":{"model":"standard"},"action":"rank","strategy":"priority","count":2
+		"route":"standard","action":"rank","strategy":"priority","count":2
 	}`, "unknown field \"count\"", `action "rank"`)
 }
 
@@ -41,7 +41,9 @@ func TestRankRuleRejectsUnsupportedStrategy(t *testing.T) {
 	r.setIdentity("standard", "rank")
 	r.Strategy = "random"
 	_, err := compileRules(
-		mapRule("standard", "native-model", "a"),
+		filterModel("standard", "standard"),
+		filterProvider("standard", "a"),
+		mapRule("standard", "native-model"),
 		r,
 		raceRule("standard", 1),
 	)
@@ -52,6 +54,8 @@ func TestRankRuleRejectsUnsupportedStrategy(t *testing.T) {
 
 func TestRankRuleRequiresPrecedingMap(t *testing.T) {
 	_, err := compileRules(
+		filterModel("standard", "standard"),
+		filterProvider("standard", "a"),
 		rankRule("standard"),
 		raceRule("standard", 1),
 	)

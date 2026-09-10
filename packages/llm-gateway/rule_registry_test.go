@@ -9,12 +9,12 @@ import "testing"
 // strawman action reuses race semantics so the pipeline stays valid.
 func TestRuleRegistryIsTheOnlyExtensionPoint(t *testing.T) {
 	const strawAction = "straw"
-	ruleRegistry[strawAction] = ruleDescriptor{rank: 5, new: func() Rule { return &RaceRule{} }}
+	ruleRegistry[strawAction] = ruleDescriptor{rank: 6, new: func() Rule { return &RaceRule{} }}
 	defer delete(ruleRegistry, strawAction)
 
 	// Decode path: the envelope discriminates into the registered concrete
 	// type without any switch extension.
-	decoded := decodeRuleJSON(t, `{"match":{"model":"standard"},"action":"straw","count":1}`)
+	decoded := decodeRuleJSON(t, `{"route":"standard","action":"straw","count":1}`)
 	if _, ok := decoded.(*RaceRule); !ok {
 		t.Fatalf("registered action did not decode into its factory type: %T", decoded)
 	}
@@ -23,11 +23,14 @@ func TestRuleRegistryIsTheOnlyExtensionPoint(t *testing.T) {
 	r := &RaceRule{}
 	r.setIdentity("standard", strawAction)
 	r.Count = 1
-	plans, err := compileRules(poolRule("standard", "group"), rankRule("standard"), r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plans["standard"].RaceCount != 1 {
-		t.Fatalf("new action was not dispatched through typed apply: %#v", plans["standard"])
+	result := mustCompile(t,
+		filterModel("standard", "standard"),
+		filterProvider("standard", "a", "b"),
+		mapRule("standard", "native-model"),
+		rankRule("standard"),
+		r,
+	)
+	if entryRoute(t, result, "standard").RaceCount != 1 {
+		t.Fatalf("new action was not dispatched through typed apply")
 	}
 }

@@ -104,7 +104,8 @@ func (r *Runner) Close() error {
 	return nil
 }
 
-// Run executes the bounded non-streaming route and returns the winner body.
+// Run executes the bounded non-streaming route graph and returns the winner
+// body.
 func (r *Runner) Run(ctx context.Context, logical string, request ExecuteRequest) ([]byte, *CallError) {
 	outcome := r.runPlan(ctx, logical, request, false)
 	if outcome.err != nil {
@@ -113,8 +114,8 @@ func (r *Runner) Run(ctx context.Context, logical string, request ExecuteRequest
 	return outcome.body, nil
 }
 
-// RunWithResult executes the non-streaming route and also reports the winning
-// provider, needed for lease and affinity bookkeeping.
+// RunWithResult executes the non-streaming route graph and also reports the
+// winning provider, needed for lease and affinity bookkeeping.
 func (r *Runner) RunWithResult(ctx context.Context, logical string, request ExecuteRequest) (*RunOutcome, *CallError) {
 	outcome := r.runPlan(ctx, logical, request, false)
 	if outcome.err != nil {
@@ -123,82 +124,153 @@ func (r *Runner) RunWithResult(ctx context.Context, logical string, request Exec
 	return &RunOutcome{Body: outcome.body, Provider: outcome.provider}, nil
 }
 
+// runPlan resolves the request-level entry route for the logical model and
+// executes the compiled route graph with one request-wide runtime: the
+// deadline, the semaphore budget and the used-provider set are shared by every
+// transition and never reset when entering a subroute.
 func (r *Runner) runPlan(ctx context.Context, logical string, request ExecuteRequest, streamMode bool) *routeOutcome {
-	plan, ok := r.config.plans[logical]
+	entry, ok := r.config.models[logical]
 	if !ok {
 		return &routeOutcome{err: &CallError{Class: ErrorInvalid, Status: 404}}
 	}
-	runtime := newRouteRuntime(plan)
-	outcome := r.runPrimary(ctx, logical, plan, request, streamMode, runtime)
-	// A known affinity mapping narrows the route to one provider and must fail
-	// closed on its failure: a legacy fallback group would move the stateful
-	// chain to another provider without a state replay, so it is suppressed.
-	if !outcome.pinned && plan.Fallback != nil && outcome.err != nil && plan.Fallback.On[outcome.err.Class] {
-		return r.runFallback(ctx, logical, *plan.Fallback, request, streamMode, runtime)
+	runtime := newRouteRuntime(entry)
+	return r.executeRoute(ctx, logical, entry, request, streamMode, runtime)
+}
+
+// executeRoute runs one compiled route and applies its explicit transitions on
+// a terminal failure: retry is a bounded repeated transition into the retry
+// target (with backoff), fallback a one-shot alternate transition. The
+// destination owns its applicability through its own filter; a non-applicable
+// destination returns the current terminal failure unchanged, and a destination
+// with no available targets (empty) never masks the original failure. A
+// cancellation or a known affinity pin (fail-closed) terminates the graph.
+func (r *Runner) executeRoute(ctx context.Context, logical string, route *compiledRoute, request ExecuteRequest, streamMode bool, runtime *routeRuntime) *routeOutcome {
+	outcome := r.raceRoute(ctx, logical, route, request, streamMode, runtime)
+	if outcome.err == nil || outcome.err.Class == ErrorCancelled || outcome.pinned {
+		return outcome
+	}
+	if outcome.empty {
+		return outcome
+	}
+	original := outcome.err
+
+	if route.Retry.Attempts > 0 && route.retryTarget != nil {
+		for attempt := 0; attempt < route.Retry.Attempts; attempt++ {
+			if !route.retryTarget.applicable(outcome.err, attempt) {
+				break
+			}
+			if callErr := runtime.waitBackoff(ctx, backoffDuration(route.Retry.Backoff, attempt), r.sleep); callErr != nil {
+				return &routeOutcome{err: callErr}
+			}
+			next := r.executeRoute(ctx, logical, route.retryTarget, request, streamMode, runtime)
+			if next.err == nil || next.err.Class == ErrorCancelled {
+				return next
+			}
+			if next.empty {
+				// The retry route has no available targets for this request:
+				// the transition is not usable, so restore the original failure
+				// and continue to any sibling fallback transition.
+				outcome = &routeOutcome{err: original}
+				break
+			}
+			outcome = next
+		}
+	}
+	if route.fallbackTarget != nil && route.fallbackTarget.applicable(outcome.err, 0) {
+		next := r.executeRoute(ctx, logical, route.fallbackTarget, request, streamMode, runtime)
+		if !next.empty {
+			return next
+		}
 	}
 	return outcome
 }
 
-func (r *Runner) runPrimary(ctx context.Context, logical string, plan Plan, request ExecuteRequest, streamMode bool, runtime *routeRuntime) *routeOutcome {
-	pool, pinned, callErr := r.buildPool(logical, plan, request)
-	if callErr != nil {
-		return &routeOutcome{err: callErr, pinned: pinned}
-	}
-	ordered := r.applyLease(logical, plan, pool)
-	batches := planBatches(plan, ordered)
-	outcome := r.runSchedule(ctx, logical, plan, batches, request, streamMode, pinned, runtime)
-	outcome.pinned = pinned
-	return outcome
-}
-
-// buildPool produces the candidate target pool for the request. A known
-// affinity mapping narrows the route to the pinned provider; an unknown state
-// identifier is ignored (on_missing = "ignore") and results in the normal
-// pool. Cooling providers are skipped; an all-cooling pool fail-opens so the
-// route is never artificially idle. Pool elements are ready target pairs
-// (provider ID, native model) compiled from map rules; exact catalog
-// validation happens at branch execution so a missing native produces a
-// model_not_found failure that can activate the configured fallback.
-func (r *Runner) buildPool(logical string, plan Plan, request ExecuteRequest) ([]Target, bool, *CallError) {
-	if plan.Affinity.Enabled && request.Kind == RequestResponses {
-		if id := requestAffinityID(request.Body, request.Kind, plan.Affinity.Sources); id != "" {
+// buildPool produces the runtime candidate pool of a route for the request. A
+// known affinity mapping narrows the route to the pinned provider for the
+// whole request graph; an unknown state identifier is ignored (on_missing =
+// "ignore"). The unused-provider routing policy excludes providers already
+// used by this request graph; cooling providers are skipped with fail-open so
+// the route is never artificially idle. Exact catalog validation happens at
+// branch execution, so a missing native produces a model_not_found failure
+// that can activate the configured fallback.
+func (r *Runner) buildPool(logical string, route *compiledRoute, request ExecuteRequest, runtime *routeRuntime) ([]Target, bool, *CallError) {
+	if route.Affinity.Enabled && request.Kind == RequestResponses {
+		if id := requestAffinityID(request.Body, request.Kind, route.Affinity.Sources); id != "" {
 			if provider, ok := r.affinity.Lookup(id); ok {
 				if _, exists := r.config.providers[provider]; !exists {
-					// A mapping can outlive a configuration change that removes or
-					// renames its provider. Only that structural case is treated as
-					// missing affinity; runtime resolution failures stay fail-closed.
+					// A mapping can outlive a configuration change that removes
+					// or renames its provider. Only that structural case is
+					// treated as missing affinity; runtime resolution failures
+					// stay fail-closed.
 					r.affinity.Forget(id)
 				} else {
-					for _, target := range plan.Pool {
+					for _, target := range route.Pool {
 						if target.Provider == provider {
 							return []Target{target}, true, nil
 						}
 					}
-					// The pinned provider is not a member of the compiled pool: treat
-					// the mapping as stale and forget it (same structural boundary).
+					// The pinned provider is not a member of the compiled pool:
+					// treat the mapping as stale and forget it (same structural
+					// boundary).
 					r.affinity.Forget(id)
 				}
 			}
 		}
 	}
-	pool := make([]Target, 0, len(plan.Pool))
-	for _, target := range r.availableTargets(plan.Pool) {
-		pool = append(pool, target)
-	}
-	if len(pool) == 0 {
-		// All targets are cooling; fail-open with the full compiled pool so the
-		// route is not artificially idle.
-		pool = append([]Target(nil), plan.Pool...)
-	}
-	if len(pool) == 0 {
-		return nil, false, &CallError{Class: ErrorInvalid, Status: 502, Cause: errors.New("provider pool is empty")}
+	pool, callErr := r.buildDynamicPool(route, request, runtime)
+	if callErr != nil {
+		return nil, false, callErr
 	}
 	return pool, false, nil
 }
 
+// buildDynamicPool applies the route's own runtime selection: the
+// unused-provider policy (explicit routing policy, not a hidden retry
+// property) and the cooling fail-open. An all-used pool returns empty with no
+// error, so the caller can report the route as not applicable.
+func (r *Runner) buildDynamicPool(route *compiledRoute, _ ExecuteRequest, runtime *routeRuntime) ([]Target, *CallError) {
+	pool := route.Pool
+	if route.ProviderUnused {
+		filtered := make([]Target, 0, len(pool))
+		for _, target := range pool {
+			if !runtime.used[target.Provider] {
+				filtered = append(filtered, target)
+			}
+		}
+		if len(filtered) == 0 {
+			return nil, nil
+		}
+		pool = filtered
+	}
+	return r.availableFailOpen(pool), nil
+}
+
+// availableFailOpen skips cooling providers and fails open with the full pool
+// when every target is cooling, so the route is never artificially idle.
+func (r *Runner) availableFailOpen(pool []Target) []Target {
+	available := r.availableTargets(pool)
+	if len(available) == 0 {
+		return append([]Target(nil), pool...)
+	}
+	return available
+}
+
+// buildHedgeBatch derives the hedge target route's runtime pool (the full
+// ordered selection, not yet capped): the hedge target's unused routing policy
+// and race count are applied at launch time, because the request's used set
+// grows while the source route races. Here only cooling (with fail-open) and
+// the lease promotion are applied.
+func (r *Runner) buildHedgeBatch(logical string, target *compiledRoute, _ ExecuteRequest, runtime *routeRuntime) []Target {
+	pool := r.availableFailOpen(target.Pool)
+	if len(pool) == 0 {
+		return nil
+	}
+	return r.applyLease(logical, target, pool)
+}
+
 // applyLease promotes the current lease holder to the top of the ranking.
-func (r *Runner) applyLease(logical string, plan Plan, pool []Target) []Target {
-	if !plan.Lease.Enabled {
+func (r *Runner) applyLease(logical string, route *compiledRoute, pool []Target) []Target {
+	if !route.Lease.Enabled {
 		return pool
 	}
 	holder, ok := r.leases.Holder(logical)
@@ -254,27 +326,27 @@ func (r *Runner) record(providerID string, callErr *CallError) {
 
 // observeLeaseFailure releases the model lease when its holder fails with a
 // configured hard-failure class. Cancelled losers never reach this method.
-func (r *Runner) observeLeaseFailure(logical string, plan Plan, provider string, callErr *CallError) {
-	if !plan.Lease.Enabled || callErr == nil || callErr.Class == ErrorCancelled {
+func (r *Runner) observeLeaseFailure(logical string, route *compiledRoute, provider string, callErr *CallError) {
+	if !route.Lease.Enabled || callErr == nil || callErr.Class == ErrorCancelled {
 		return
 	}
-	if plan.Lease.ReleaseOn[callErr.Class] {
+	if route.Lease.ReleaseOn[callErr.Class] {
 		r.leases.ReleaseIfHolder(logical, provider)
 	}
 }
 
 // observeLeaseWinner renews or acquires the lease for the winner and accounts
 // its start-to-meaningful time for the consecutive slow-start counter.
-func (r *Runner) observeLeaseWinner(logical string, plan Plan, provider string, res *branchResult) {
-	if !plan.Lease.Enabled {
+func (r *Runner) observeLeaseWinner(logical string, route *compiledRoute, provider string, res *branchResult) {
+	if !route.Lease.Enabled {
 		return
 	}
-	if plan.Lease.RenewOnSuccess || !r.leases.Exists(logical) {
-		r.leases.Renew(logical, provider, plan.Lease.Duration)
+	if route.Lease.RenewOnSuccess || !r.leases.Exists(logical) {
+		r.leases.Renew(logical, provider, route.Lease.Duration)
 	}
-	if plan.Lease.ReleaseAfterSlowStarts > 0 && plan.Lease.SlowStart > 0 {
-		if res.finished.Sub(res.started) > plan.Lease.SlowStart {
-			r.leases.ObserveSlowStart(logical, provider, plan.Lease.ReleaseAfterSlowStarts)
+	if route.Lease.ReleaseAfterSlowStarts > 0 && route.Lease.SlowStart > 0 {
+		if res.finished.Sub(res.started) > route.Lease.SlowStart {
+			r.leases.ObserveSlowStart(logical, provider, route.Lease.ReleaseAfterSlowStarts)
 		} else {
 			r.leases.ResetSlowStarts(logical, provider)
 		}
@@ -284,11 +356,11 @@ func (r *Runner) observeLeaseWinner(logical string, plan Plan, provider string, 
 // affinityBindTTL returns the affinity TTL for a logical model when affinity is
 // enabled, so the server can persist response id mappings.
 func (r *Runner) affinityBindTTL(logical string) (time.Duration, bool) {
-	plan, ok := r.config.plans[logical]
-	if !ok || !plan.Affinity.Enabled {
+	entry, ok := r.config.models[logical]
+	if !ok || !entry.Affinity.Enabled {
 		return 0, false
 	}
-	return plan.Affinity.TTL, true
+	return entry.Affinity.TTL, true
 }
 
 func backoffDuration(config BackoffConfig, retryIndex int) time.Duration {

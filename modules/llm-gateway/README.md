@@ -6,12 +6,12 @@ service. Runtime — собственный Go proxy из `packages/llm-gateway`
 
 Routing и logical/native mappings являются открытой typed Nix configuration. Provider registry
 описывает только transport и shared runtime identity (inference/catalog URL, Bifrost adapter,
-credentials, priority, timeout, cooldown); выбор provider и native model находится в routing
-rules через action `map`, который связывает один native ID с явным набором provider IDs.
-Отдельного списка `models` и access groups нет: logical model registry выводится runtime из
-скомпилированных plans. По умолчанию discovery URL выводится как `${inferenceUrl}/models`;
-`modelsUrl` позволяет задать независимый источник. Client key, provider inference key и отдельный
-catalog key поступают только через `LoadCredential`.
+credentials, priority, timeout, cooldown); выбор provider находится в filter action, а native
+model — в action `map`, который привязывает текущую selection к одному native ID. Отдельного
+списка `models` и access groups нет: logical model registry выводится runtime из entry route
+filters. По умолчанию discovery URL выводится как `${inferenceUrl}/models`; `modelsUrl`
+позволяет задать независимый источник. Client key, provider inference key и отдельный catalog
+key поступают только через `LoadCredential`.
 
 Модуль записывает secret-free JSON template в Nix store. `ExecStartPre` копирует его в закрытый
 runtime directory и подставляет credentials через `jq`; итоговый `/run/llm-gateway/config.json`
@@ -39,16 +39,18 @@ runtime directory и подставляет credentials через `jq`; ито�
       };
     };
 
-    routingRules = [
+    routingRules = let
+      allProviders = [ "gonka-proxy" "gonka-openbroker" "hyperfusion" ];
+    in
+    [
+      # Entry route for the logical model "standard": filter model selects it,
+      # filter provider builds the selection, map binds one native model.
+      { route = "standard"; action = "filter"; where = { model = { eq = "standard"; }; }; }
+      { route = "standard"; action = "filter"; where = { provider = { "in" = allProviders; }; }; }
+      { route = "standard"; action = "map"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
+      { route = "standard"; action = "rank"; strategy = "priority"; }
       {
-        model = "standard";
-        action = "map";
-        native = "deepseek-ai/DeepSeek-V4-Flash-0731";
-        providers = [ "gonka-proxy" "gonka-openbroker" "hyperfusion" ];
-      }
-      { model = "standard"; action = "rank"; strategy = "priority"; }
-      {
-        model = "standard";
+        route = "standard";
         action = "lease";
         source = "winner";
         duration = "10m";
@@ -58,65 +60,85 @@ runtime directory и подставляет credentials через `jq`; ито�
         slowStart = "3s";
       }
       {
-        model = "standard";
+        route = "standard";
         action = "affinity";
         sources = [ "responses.conversation" "responses.previous_response_id" ];
         ttl = "24h";
         onMissing = "ignore";
         onProviderFailure = "fail-closed";
       }
-      { model = "standard"; action = "race"; count = 2; }
+      { route = "standard"; action = "race"; count = 2; }
       {
-        model = "standard";
+        route = "standard";
         action = "retry";
-        scope = "next";
-        count = 1;
+        target = "standard.retry";
         attempts = 2;
-        on = [ "429" "5xx" "timeout" "connection_error" "invalid_response" ];
         backoffInitial = "200ms";
         backoffMax = "1s";
       }
-      { model = "standard"; action = "hedge"; after = "3s"; }
+      { route = "standard"; action = "hedge"; after = "3s"; target = "standard.hedge"; }
       {
-        model = "standard";
+        route = "standard";
         action = "semaphore";
         maxCalls = 4;
         maxInFlight = 3;
         maxCallsPerProvider = 1;
       }
-      { model = "standard"; action = "timeout"; duration = "60s"; }
-      # Fallback stage: if Hyperfusion does not serve the unprefixed alias,
-      # fail over to its prefixed catalog alias with a model_not_found-classed
-      # local rejection (never an unrelated model).
+      { route = "standard"; action = "timeout"; duration = "60s"; }
+      # Retry subroute: applies only to the listed failures, re-selects unused
+      # providers (one target per entry).
       {
-        model = "standard";
-        action = "map";
-        native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731";
-        providers = [ "hyperfusion" ];
+        route = "standard.retry";
+        action = "filter";
+        where = { error = { "in" = [ "429" "5xx" "timeout" "connection_error" "invalid_response" ]; }; };
       }
       {
-        model = "standard";
-        action = "fallback";
-        fallbackStrategy = "race";
-        on = [ "model_not_found" "429" "5xx" "timeout" "connection_error" ];
+        route = "standard.retry";
+        action = "filter";
+        where = { provider = { "in" = allProviders; unused = true; }; };
       }
+      { route = "standard.retry"; action = "map"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
+      { route = "standard.retry"; action = "rank"; strategy = "priority"; }
+      { route = "standard.retry"; action = "race"; count = 1; }
+      # Fallback subroute: if Hyperfusion does not serve the unprefixed alias,
+      # fail over to its prefixed catalog alias (model_not_found-classed local
+      # rejection, never an unrelated model).
+      { route = "standard"; action = "fallback"; target = "standard.fallback"; }
+      {
+        route = "standard.fallback";
+        action = "filter";
+        where = { error = { "in" = [ "model_not_found" "429" "5xx" "timeout" "connection_error" ]; }; };
+      }
+      {
+        route = "standard.fallback";
+        action = "filter";
+        where = { provider = { "in" = [ "hyperfusion" ]; }; };
+      }
+      { route = "standard.fallback"; action = "map"; native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731"; }
+      { route = "standard.fallback"; action = "rank"; strategy = "priority"; }
+      { route = "standard.fallback"; action = "race"; count = 1; }
     ];
   };
 }
 ```
 
-Production configuration must provide map/race rules for every advertised logical model. Rules
-follow the canonical action order `map → rank → lease → affinity → race → retry → hedge →
-semaphore → timeout`; each entry is a discriminated rule for exactly one action and owns only
-that action's fields. An unknown action, an unknown field, or a field owned by another action
-(e.g. `count` on `map`, `providers` on `fallback`) fails during Nix evaluation; the gateway
-binary independently re-validates the generated JSON at startup, so JSON produced outside Nix
-receives the same strict per-action checks. Generated JSON contains only the fields of the
-chosen action, never implicit defaults borrowed from other actions. A new set of `map` after
-`race` starts the fallback stage and must end with `fallback`. An empty pool, a duplicate
-provider in one pool, a dangling `map`, a mapping after a completed stage, or a fallback
-without a preceding primary stage are all rejected at startup with the rule index. Legacy
-`race access_groups`, an independent `models` list and access-group routing are removed;
+Production configuration must provide filter/map/race rules for every advertised logical model.
+Rules follow the canonical per-route order `filter → map → rank → lease → affinity → race →
+retry/hedge → semaphore → timeout`; each entry is a discriminated rule for exactly one action and
+owns only that action's fields. An unknown action, an unknown field, or a field owned by another
+action (e.g. `providers` on `map`, `scope`/`on` on `retry`, `fallback_strategy` on `fallback`
+— all removed with the old model) fails during Nix evaluation; the gateway binary independently
+re-validates the generated JSON at startup, so JSON produced outside Nix receives the same strict
+per-action checks. Generated JSON contains only the fields of the chosen action plus the rule
+envelope `route`/`action`, never implicit defaults borrowed from other actions.
+
+Retry, fallback and hedge own no applicability: each is an explicit transition to a named subroute
+through `target`, and the destination route's own `filter` decides whether it applies. An empty
+pool, a duplicate provider in one pool, a `map` without a preceding provider filter, a route
+without a race, a missing target, an orphan subroute, a duplicate entry model, semaphore/timeout
+on a subroute, or a routing cycle are all rejected at startup with the rule index. Legacy
+`match.model`, `map.providers`, `retry.scope/count/on`, `fallback.on/fallbackStrategy`, `race
+access_groups`, an independent `models` list and access-group routing are removed and fail fast;
 provider transport and credentials stay in the registry.
 
 Discovery validation is provider-scoped and exact: each target `(provider, native)` is checked

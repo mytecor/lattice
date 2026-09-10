@@ -1,8 +1,9 @@
 package main
 
-// SemaphoreRule sets the per-request safety bounds shared by the primary and
-// fallback routes: total calls, simultaneously executing calls and calls to
-// one provider.
+// SemaphoreRule sets the per-request safety bounds shared by the whole route
+// graph: total calls, simultaneously executing calls and calls to one
+// provider. It is request-wide and may be declared only on an entry route,
+// so entering a subroute never resets the counters.
 type SemaphoreRule struct {
 	ruleBase
 	MaxCalls            int `json:"max_calls"`
@@ -11,9 +12,9 @@ type SemaphoreRule struct {
 }
 
 // apply validates that every bound is positive and stores them in the
-// compiled plan.
+// compiled entry route.
 func (r *SemaphoreRule) apply(ctx *stageContext) error {
-	if !ctx.st.primaryRace {
+	if !ctx.st.sawRace {
 		return ctx.errf("semaphore requires a preceding race action")
 	}
 	if r.MaxCalls < 1 || r.MaxInFlight < 1 || r.MaxCallsPerProvider < 1 {

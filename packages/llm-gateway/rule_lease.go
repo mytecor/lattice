@@ -3,6 +3,7 @@ package main
 // LeaseRule configures the winner lease: the leased provider is promoted to
 // the top of the ranking, the lease is renewed on success, and released on
 // configured hard failures or after a number of consecutive slow starts.
+// The lease is scoped by logical model and shared across the route graph.
 type LeaseRule struct {
 	ruleBase
 	Source                 string   `json:"source"`
@@ -13,9 +14,12 @@ type LeaseRule struct {
 	SlowStart              Duration `json:"slow_start"`
 }
 
-// apply validates the lease policy and normalizes it into the compiled plan.
+// apply validates the lease policy and normalizes it into the compiled route.
 // renew_on_success defaults to true when omitted.
 func (r *LeaseRule) apply(ctx *stageContext) error {
+	if ctx.st.sawRace {
+		return ctx.errf("lease must precede the race action within a route")
+	}
 	if !ctx.st.sawMap {
 		return ctx.errf("lease requires a preceding map action")
 	}
