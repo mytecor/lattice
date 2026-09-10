@@ -52,7 +52,12 @@ in
           apiKey = mkOption {
             type = types.nullOr types.str;
             default = null;
-            description = "Secret-free value: omit, a literal, or an env/command reference ('$VAR', '!cmd').";
+            description = ''
+              Secret-free value: omit, a literal, or an env/command reference ('$VAR', '!cmd').
+              Real credentials are never literals; a literal is only appropriate as a "placeholder
+              but non-empty" value so Pi resolves the provider's models at all — required for a
+              keyless loopback gateway that ignores the Bearer (see mytecor-homelab).
+            '';
           };
           discoverModels = mkOption {
             type = types.bool;

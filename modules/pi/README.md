@@ -52,9 +52,15 @@ Smoke check из чистого окружения — [`tests/pi-tool-profile.n
 ## Граница секретности
 
 Секреты в Nix store не попадают. `apiKey`/`headers` подаются как env/command ссылки
-(`"$VAR"`, `"!cmd"`) либо вообще отсутствуют — в этом случае Pi выводит auth из
-`/login`/`auth.json`. Для f8-02 (Pi подключается к gateway без client auth по loopback)
-credentials в конфиге нет; upstream provider keys остаются только внутри `llm-gateway`.
+(`"$VAR"`, `"!cmd"`) либо отсутствуют — в этом случае Pi выводит auth из `/login`/`auth.json`.
+Реальные credentials всегда остаются вне store: для f8-02 они живут только внутри `llm-gateway`
+(agenix-секреты upstream провайдеров).
+
+Особый случай — keyless loopback gateway без client auth: сама Pi считает провайдера пригодным
+только при непустом `apiKey` (иначе список доступных моделей пуст и `session/new` завершается
+`authRequired`). Поэтому для такого провайдера полагается **несекретный placeholder-literal**
+(например `lattice-loopback-gateway` на `mytecor-homelab`) — gateway игнорирует Bearer,
+в store не попадает ничего секретного, а `pi --terminal-login` на ноде не требуется.
 
 Имя npm-пакета, версия, lock-файл и сборка принадлежат [`packages/pi`](../../packages/pi/README.md).
 Общий механизм сборки pnpm CLI находится в

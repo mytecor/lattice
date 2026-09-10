@@ -79,8 +79,11 @@ in
     models.llm-gateway = {
       baseUrl = "http://127.0.0.1:9208/v1";
       api = "openai-completions";
-      # f8-02: без client auth. Если включим clientKey позже — apiKey задаётся env-ссылкой,
-      # не литералом в store.
+      # Несекретный placeholder: gateway работает без client auth (clientCredentialFile не
+      # задан) и игнорирует Bearer, но Pi считает провайдера пригодным только при непустом
+      # apiKey — иначе список доступных моделей пуст и ACP session/new завершается
+      # authRequired. Это не credential; реальные ключи остаются в agenix-секретах gateway.
+      apiKey = "lattice-loopback-gateway";
       discoverModels = false;
       models = [
         { id = "standard"; }

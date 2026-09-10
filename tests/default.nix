@@ -131,7 +131,10 @@ in
     assert homelabConfig.lattice.pi.models.llm-gateway.baseUrl == "http://127.0.0.1:9208/v1";
     assert homelabConfig.lattice.pi.models.llm-gateway.api == "openai-completions";
     assert homelabConfig.lattice.pi.models.llm-gateway.discoverModels == false;
-    assert homelabConfig.lattice.pi.models.llm-gateway.apiKey == null;
+    # Несекретный placeholder вместо null: Pi резолвит модели провайдера только при
+    # непустом apiKey (иначе session/new падает с authRequired). Реальный секрет —
+    # только внутри llm-gateway; это значение не credential.
+    assert homelabConfig.lattice.pi.models.llm-gateway.apiKey == "lattice-loopback-gateway";
     assert map (m: m.id) homelabConfig.lattice.pi.models.llm-gateway.models == [ "standard" "stupid" ];
     # f8-03: воспроизводимый tool profile — базовый контракт + расширение попадают
     # в systemPackages, контракт окружения фиксируется в /etc/pi.env.
