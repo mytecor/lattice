@@ -88,6 +88,11 @@ ws://acp.<nodename>.local/
   ни URL сессии. Session identity задаётся внутри ACP (`session/new`, `session/attach`).
 - Так подключается Ferngeist и любой ACP WebSocket-клиент, способный работать с LAN-URL.
 
+`session/list` отдаёт все сессии, включая ещё не получившие ни одного промпта (в upstream `0.1.183`
+они скрыты — daemon-сторона получает `includeNonInteractive: !0` через Lattice-патч пакета; см.
+[`packages/hydra-acp`](../../../packages/hydra-acp/README.md)). Без этого свежесозданная сессия
+была невидима до первого промпта, и переподключающийся клиент плодил новые сессии вместо resume.
+
 ### Отрицательный результат: stock `hydra-acp` client как local stdio shim для Zed
 
 Стандартный CLI [`@hydra-acp/cli`](../../../packages/hydra-acp/README.md) (режимы `acp`/`shim`/`cat`)
