@@ -20,6 +20,9 @@
 - [`rns-server/`](./rns-server/README.md) - Reticulum node server с AutoInterface, TCP listener и шаблоном TCP uplink.
 - [`rns-network/`](./rns-network/README.md) - исходящие TCP-подключения к публичным узлам из общего реестра.
 - [`rnsh/`](./rnsh/config.nix) - listener remote shell через Reticulum с общим RNS configDir.
+- [`pi/`](./pi/README.md) - воспроизводимый tool profile для Pi-рантайма (f8-03): единый базовый
+  контракт `bash/git/tools`, расширение проекта без изменения рантайма, фиксированные
+  PATH/locale/git-identity и smoke check из чистого окружения.
 - [`tcp-gateway/`](./tcp-gateway/README.md) - единый Caddy ingress на порту 80 для LAN-адресов
   `service.node-name.local`, публикуемых через mDNS/Avahi.
 - [`base/`](./base/default.nix) - базовый профиль: GitOps через `comin`, необходимые

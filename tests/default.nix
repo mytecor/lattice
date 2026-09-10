@@ -53,6 +53,11 @@ in
     piModule = self.nixosModules.pi;
   };
 
+  pi-tool-profile = import ./pi-tool-profile.nix {
+    inherit nixpkgs pkgs;
+    piModule = self.nixosModules.pi;
+  };
+
   comin-source-sync = import ./comin-source-sync.nix {
     inherit pkgs;
     syncPackage = pkgs.lattice.comin-source-sync;
@@ -122,6 +127,16 @@ in
     assert homelabConfig.lattice.pi.models.llm-gateway.discoverModels == false;
     assert homelabConfig.lattice.pi.models.llm-gateway.apiKey == null;
     assert map (m: m.id) homelabConfig.lattice.pi.models.llm-gateway.models == [ "standard" "stupid" ];
+    # f8-03: воспроизводимый tool profile — базовый контракт + расширение попадают
+    # в systemPackages, контракт окружения фиксируется в /etc/pi.env.
+    assert homelabConfig.lattice.pi.tools == [ ];
+    assert builtins.hasAttr "pi.env" homelabConfig.environment.etc;
+    assert nixpkgs.lib.hasInfix "GIT_CONFIG_NOSYSTEM=1"
+      homelabConfig.environment.etc."pi.env".text;
+    assert nixpkgs.lib.hasInfix "LANG=C.UTF-8"
+      homelabConfig.environment.etc."pi.env".text;
+    assert builtins.elem homelabConfig.lattice.pi.toolProfile
+      homelabConfig.environment.systemPackages;
     # Активация материализует immutable JSON в store как симлинки ~/.pi/agent.
     assert builtins.hasAttr "pi-config" homelabConfig.system.activationScripts;
     assert nixpkgs.lib.hasInfix ".pi/agent"

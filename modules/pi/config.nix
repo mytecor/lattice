@@ -33,13 +33,57 @@ let
 
   # База .pi/agent для целевого пользователя: раскрываем $HOME через getent.
   homeFromUser = builtins.toString (config.users.users.${cfg.user}.home or "/root");
+
+  # --- f8-03: reproducible tool profile ------------------------------------
+  # Единый базовый контракт bash/git/tools. Один источник и для системного
+  # профиля, и для flake devShell — интерактивная нода и будущий worker
+  # получают одинаковый набор, а проектные зависимости добавляются сверху
+  # (`lattice.pi.tools` на ноде, packages в devShell), не меняя рантайм Pi.
+  baseTools = (import ../../profiles/pi/base-tools.nix { inherit pkgs; }).base;
+
+  # Нормализация значений `lattice.pi.tools`: строки — имена атрибутов `pkgs`,
+  # package-значения используются как есть.
+  resolveTool = tool:
+    if lib.isString tool then
+      pkgs.${tool}
+    else
+      tool;
+  extraTools = map resolveTool cfg.tools;
+
+  # Итоговый состав tool profile: базовый контракт + расширение проекта.
+  toolProfile = pkgs.buildEnv {
+    name = "lattice-pi-tool-profile";
+    paths = baseTools ++ extraTools;
+  };
+
+  # PATH из одного места: тот же список, что и в systemPackages, но как
+  # bin-path для контракта /etc/pi.env.
+  toolBinPath = lib.makeBinPath (baseTools ++ extraTools);
+
+  gitConfigHome = "${homeFromUser}/.gitconfig";
 in
 {
   config = lib.mkIf cfg.enable {
     lattice.pi.generatedSettingsJson = settingsJson;
     lattice.pi.generatedModelsJson = modelsJson;
 
-    environment.systemPackages = [ pkgs.lattice.pi ];
+    # f8-03: на ноде есть ровно декларированный tool profile (базовый контракт
+    # + `lattice.pi.tools`) — без зависимости от случайных user/global пакетов.
+    environment.systemPackages = [ pkgs.lattice.pi toolProfile ];
+
+    # f8-03: документированный, инспектируемый контракт окружения рантайма —
+    # PATH, locale, git identity boundary и рабочие каталоги. Файл read-only;
+    # не meant to be sourced пользовательскими оболочками.
+    environment.etc."pi.env" = lib.mkIf cfg.envContract {
+      text = ''
+        # Pi runtime environment contract (f8-03). Read-only, inspect only.
+        export PATH=${toolBinPath}$''${PATH:+:$PATH}
+        export LANG=C.UTF-8
+        export LC_ALL=C.UTF-8
+        export GIT_CONFIG_NOSYSTEM=1
+        export GIT_CONFIG_GLOBAL=${gitConfigHome}
+      '';
+    };
 
     system.activationScripts.pi-config = lib.stringAfter [ "users" ] ''
       set -eu
@@ -49,5 +93,8 @@ in
       ln -sfn ${settingsJson} "$pi_dir/settings.json"
       ln -sfn ${modelsJson} "$pi_dir/models.json"
     '';
+
+    # Read-only вывод: готовый tool profile как derivation (для инспекции/тестов).
+    lattice.pi.toolProfile = toolProfile;
   };
 }

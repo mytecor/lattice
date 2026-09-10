@@ -1,7 +1,7 @@
 { lib, ... }:
 
 let
-  inherit (lib) mkOption types;
+  inherit (lib) mkOption mkEnableOption types;
 in
 {
   options.lattice.pi = {
@@ -85,8 +85,24 @@ in
       description = "Declarative contents of ~/.pi/agent/models.json (providers mapping).";
     };
 
-    # Read-only outputs: готовые JSON-файлы в Nix store, на которые модуль цепляет
-    # симлинки ~/.pi/agent. Полезны для инспекции и проверок.
+    # --- f8-03: reproducible tool profile ---------------------------------
+
+    # Дополнительные tools поверх базового контракта. Значения — имена атрибутов
+    # `pkgs` (например `"nodejs"`) или package-значения/прямые store-пути.
+    # Секретов и provider-specific настроек здесь нет.
+    tools = mkOption {
+      type = types.listOf (types.either types.str types.package);
+      default = [ ];
+      description = "Extra tools added on top of the reproducible f8-03 base tool profile.";
+    };
+
+    # Генерация /etc/pi.env — документированный, инспектируемый контракт
+    # окружения (PATH, locale, git identity boundary, рабочие каталоги).
+    envContract = lib.mkEnableOption "generation of /etc/pi.env environment contract" // {
+      default = true;
+    };
+
+    # Read-only outputs: готовые JSON в store, на которые модуль цепляет симлинки.
     generatedSettingsJson = mkOption {
       type = types.path;
       readOnly = true;
@@ -97,5 +113,12 @@ in
       readOnly = true;
       description = "Generated ~/.pi/agent/models.json in the Nix store.";
     };
+    # Необязательный вывод: итоговый состав tool profile (base + tools) как пакет.
+    toolProfile = mkOption {
+      type = types.nullOr types.package;
+      readOnly = true;
+      description = "Derivation combining the base tool set with lattice.pi.tools.";
+    };
+
   };
 }

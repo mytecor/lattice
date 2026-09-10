@@ -54,7 +54,12 @@ runtime**; f8-01 завершена: Pi закреплён и устанавли
 `discoverModels = false`, только логические классы `standard`/`stupid` по loopback, с NixOS-проверкой
 `tests/pi-config.nix`. Client credential закрыт как не требующийся (client auth в gateway выключен,
 соединение loopback-only, порт `9208` един в `profiles/networking/ports.nix`); интерактивная проверка
-streaming остаётся за f8-04 (TUI).
+streaming остаётся за f8-04 (TUI). В f8-03 выполнен воспроизводимый tool profile: единый базовый
+контракт `bash/git/tools` в `profiles/pi/base-tools.nix` (нода и devShell), расширение проекта через
+`lattice.pi.tools` / `pkgs.mkShell { inputsFrom = [ pkgs.lattice.pi-develop-shell ]; }` без изменения
+рантайма, контракт окружения (PATH, locale, git identity boundary) в `/etc/pi.env`, и smoke check
+`tests/pi-tool-profile.nix`, проходящий на x86_64-linux. Следующая задача — f8-04 (интерактивная
+acceptance).
 Основной маршрут дальше:
 Pi → cache/artifact plane → disposable worker → controller.
 Незакрытые вопросы отслеживаются в

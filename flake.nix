@@ -112,6 +112,22 @@
           rnsh = final.callPackage "${rns-rs}/package.nix" { bin = "rnsh"; };
           llm-gateway = final.callPackage ./packages/llm-gateway/package.nix { };
           pi = final.callPackage ./packages/pi/package.nix { };
+
+          # f8-03: воспроизводимый tool profile для Pi-рантайма.
+          pi-tool-profile = final.buildEnv {
+            name = "lattice-pi-tool-profile";
+            paths = (import ./profiles/pi/base-tools.nix { pkgs = final; }).base;
+          };
+
+          # devShell контракт: тот же базовый набор bash/git/tools, что и на ноде.
+          pi-develop-shell = final.mkShell {
+            packages = (import ./profiles/pi/base-tools.nix { pkgs = final; }).base;
+            shellHook = ''
+              # f8-03: фиксируем контракт окружения в интерактивной оболочке.
+              export LANG=C.UTF-8
+              export LC_ALL=C.UTF-8
+            '';
+          };
         };
       };
 
@@ -146,8 +162,21 @@
           };
         in
         {
-          inherit (pkgs.lattice) llm-gateway pi rns-server rnsh;
+          inherit (pkgs.lattice) llm-gateway pi pi-tool-profile rns-server rnsh;
           default = pkgs.lattice.rns-server;
+        });
+
+      devShells = forAllSystems (system:
+        let
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ overlay ];
+            config.allowUnfreePredicate = package:
+              builtins.elem (nixpkgs.lib.getName package) [ "rns-server" "rnsh" ];
+          };
+        in
+        {
+          default = pkgs.lattice.pi-develop-shell;
         });
 
       checks.x86_64-linux = import ./tests {

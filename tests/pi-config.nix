@@ -31,6 +31,8 @@ pkgs.testers.runNixOSTest {
           stupid.compat = { supportsReasoningEffort = false; };
         };
       };
+      # f8-03: расширение tool profile проекта.
+      tools = [ "nodejs" ];
     };
   };
 
@@ -66,6 +68,16 @@ pkgs.testers.runNixOSTest {
 
     # Package присутствует и запускается.
     machine.succeed("pi --version")
+
+    # f8-03: tool profile materialised into systemPackages and executable.
+    machine.succeed("bash -lc 'command -v git && command -v bash && command -v jq && command -v curl'")
+    machine.succeed("bash -lc 'test -x /run/current-system/sw/bin/git'")
+    # Project extension available without touching the Pi runtime.
+    machine.succeed("bash -lc 'command -v node'")
+    # Environment contract file is present and inspectable.
+    machine.succeed("test -f /etc/pi.env")
+    machine.succeed("grep -q 'GIT_CONFIG_NOSYSTEM=1' /etc/pi.env")
+    machine.succeed("grep -q 'LANG=C.UTF-8' /etc/pi.env")
 
     # Каталог принимает runtime-состояние Pi (sessions/trust) без перезаписи конфига.
     machine.succeed(f"install -d -m 0700 {agent}/sessions")

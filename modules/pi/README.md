@@ -22,6 +22,32 @@
 - `lattice.pi.models` — содержимое `models.json`: attrsOf providers. У каждого
   provider есть `baseUrl`, `api`, `apiKey` (nullable), `discoverModels`,
   `models` (explicit logical классы) и `modelOverrides`.
+- `lattice.pi.tools` (f8-03) — дополнительные tools поверх базового контракта.
+  Значения — имена атрибутов `pkgs` или package-значения; итог попадает в
+  `environment.systemPackages` как часть воспроизводимого tool profile.
+- `lattice.pi.envContract` (f8-03) — генерировать `/etc/pi.env` с контрактом
+  окружения (PATH из tool profile, locale, git identity boundary). Включено по
+  умолчанию через profile.
+- `lattice.pi.toolProfile` (read-only) — итоговая derivation tool profile
+  (базовый контракт из [`profiles/pi/base-tools.nix`](../../profiles/pi/base-tools.nix)
+  + `tools`), на которую ссылается `environment.systemPackages`.
+
+## Базовый контракт tools (f8-03)
+
+Единый источник базового набора `bash/git/tools` — [`profiles/pi/base-tools.nix`](../../profiles/pi/base-tools.nix):
+
+- импортируется отсюда (`modules/pi/config.nix`) и из `flake.nix` (devShell + пакет `pi-tool-profile`),
+  поэтому нода и окружение разработчика видят одинаковый набор;
+- нода получает tools в `systemPackages` ровно из декларации (базовый контракт + `lattice.pi.tools`),
+  без зависимости от случайных user/global пакетов;
+- расширение новым проектом не трогает рантайм: `lattice.pi.tools = [ "nodejs" … ]` на ноде либо
+  `pkgs.mkShell { inputsFrom = [ pkgs.lattice.pi-develop-shell ]; }` в разработке.
+
+Окружение фиксируется в `/etc/pi.env` (read-only, inspect-only): `PATH` из tool profile,
+`LANG`/`LC_ALL=C.UTF-8`, git identity boundary (`GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=…/.gitconfig`).
+
+Smoke check из чистого окружения — [`tests/pi-tool-profile.nix`](../../tests/pi-tool-profile.nix)
+и NixOS-проверки в [`tests/pi-config.nix`](../../tests/pi-config.nix).
 
 ## Граница секретности
 
