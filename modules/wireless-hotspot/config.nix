@@ -28,15 +28,24 @@ in
     wantedBy = [ "multi-user.target" ];
     path = [ pkgs.iw pkgs.iproute2 pkgs.coreutils pkgs.gawk pkgs.hostapd ];
     preStart = ''
-      # Idempotent recreation of the AP vif on every (re)start.
-      iw dev ${cfg.interfaceName} del 2>/dev/null || true
-      iw phy ${cfg.phy} interface add ${cfg.interfaceName} type __ap
-      # A unique locally-administered MAC is required: with the STA's own MAC the
-      # RTL8822CE driver refuses UP (`Name not unique on network`).
-      ip link set ${cfg.interfaceName} address ${cfg.macAddress}
-      ip link set ${cfg.interfaceName} up
-      ip addr flush dev ${cfg.interfaceName}
-      ip addr add ${cfg.ip} dev ${cfg.interfaceName}
+      # Idempotent: only (re)create the AP vif when it is missing or carries a
+      # different MAC. Recreating it unconditionally on every restart would drop
+      # the interface out from under dnsmasq, whose DHCP socket is bound to ap0,
+      # leaving hotspot clients without an IP (no leases until a manual dnsmasq
+      # restart). dnsmasq is restarted once whenever ap0 is (re)created.
+      if ! ip link show ${cfg.interfaceName} >/dev/null 2>&1 || \
+         [ "$(cat /sys/class/net/${cfg.interfaceName}/address 2>/dev/null)" != "${cfg.macAddress}" ]; then
+        iw dev ${cfg.interfaceName} del 2>/dev/null || true
+        iw phy ${cfg.phy} interface add ${cfg.interfaceName} type __ap
+        # A unique locally-administered MAC is required: with the STA's own MAC
+        # the RTL8822CE driver refuses UP (`Name not unique on network`).
+        ip link set ${cfg.interfaceName} address ${cfg.macAddress}
+        ip link set ${cfg.interfaceName} up
+        ip addr flush dev ${cfg.interfaceName}
+        ip addr add ${cfg.ip} dev ${cfg.interfaceName}
+        # Rebind the DHCP socket to the fresh ap0.
+        systemctl restart dnsmasq
+      fi
 
       # Regenerate hostapd.conf. RTL8822CE is `#channels <= 1`, so the AP must
       # share the STA's channel: prefer an explicit channel/hwMode override, else
@@ -106,6 +115,13 @@ in
   };
 
   # DHCP + DNS for the hotspot subnet.
+  # dnsmasq binds its DHCP socket to ap0, which is (re)created by the
+  # lattice-hotspot unit's preStart; make sure it starts only after ap0 exists
+  # (and is restarted there whenever ap0 is recreated).
+  systemd.services.dnsmasq = apWanted {
+    after = [ "lattice-hotspot.service" ];
+  };
+
   services.dnsmasq = apWanted {
     enable = true;
     settings = {

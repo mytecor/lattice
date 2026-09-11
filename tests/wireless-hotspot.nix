@@ -43,7 +43,14 @@ assert auto.systemd.services.lattice-hotspot.serviceConfig.Restart == "on-failur
 # Mandatory rtw88 constraints in the generated conf: unique MAC, WPA2-PSK/CCMP,
 # the SSID, and 20 MHz (`vht_oper_chwidth=0`) on the 5 GHz path.
 assert lib.hasInfix "ip link set ap0 address 02:0a:44:00:00:01" autoPre;
+# Idempotent ap0 (re)creation: only recreate when missing or with a stale MAC,
+# and restart dnsmasq afterwards so its DHCP socket stays bound to ap0.
+assert lib.hasInfix "ip link show ap0" autoPre;
 assert lib.hasInfix "iw phy phy0 interface add ap0 type __ap" autoPre;
+assert lib.hasInfix "systemctl restart dnsmasq" autoPre;
+# dnsmasq starts only after the ap0 interface exists.
+assert lib.elem "lattice-hotspot.service"
+  auto.systemd.services.dnsmasq.after;
 assert lib.hasInfix "ip addr add 10.44.0.1/24 dev ap0" autoPre;
 assert lib.hasInfix "ssid=Mytecor Homelab" autoPre;
 assert lib.hasInfix "wpa_passphrase=$psk" autoPre;
