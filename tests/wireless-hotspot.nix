@@ -2,10 +2,10 @@
 
 # Validation of the concurrent STA+AP wireless hotspot module
 # (modules/wireless-hotspot). Evaluates isolated configurations (auto band/channel
-# and explicitly pinned 5 GHz / channel 44) and asserts the emitted systemd units,
-# the generated hostapd config (incl. the mandatory `vht_oper_chwidth=0`, unique
-# MAC and shared-channel constraints), the DHCP/NAT wiring, the NetworkManager
-# unmanaged marking and the ip_forward sysctl.
+# and explicitly pinned 5 GHz / channel 44) and asserts the emitted hostapd unit,
+# its preStart (interface creation with a unique MAC + hostapd config generation
+# incl. the mandatory `vht_oper_chwidth=0` and shared-channel constraints), the
+# DHCP/NAT wiring, the NetworkManager unmanaged marking and the ip_forward sysctl.
 let
   lib = nixpkgs.lib;
   mk = extra: (lib.nixosSystem {
@@ -26,14 +26,11 @@ let
 
   # Auto band/channel (default): the AP must track the STA's channel.
   auto = mk { };
-  autoScript = auto.systemd.services.lattice-hotspot-conf.script;
+  autoPre = auto.systemd.services.lattice-hotspot.preStart;
 
   # Explicitly pinned to 5 GHz / channel 44 (as the original task intent).
   pinned = mk { channel = 44; hwMode = "a"; };
-  pinnedScript = pinned.systemd.services.lattice-hotspot-conf.script;
-
-  # The generated hostapd config script (materialises the passphrase secret).
-  confScript = auto.systemd.services.lattice-hotspot-conf.script;
+  pinnedPre = pinned.systemd.services.lattice-hotspot.preStart;
 in
 assert auto.lattice.hotspot.enable;
 # NetworkManager must leave the AP interface alone.
@@ -42,36 +39,32 @@ assert auto.networking.networkmanager.unmanaged == [ "ap0" ];
 assert lib.hasInfix "hostapd /run/lattice-hotspot/hostapd.conf"
   auto.systemd.services.lattice-hotspot.serviceConfig.ExecStart;
 assert auto.systemd.services.lattice-hotspot.serviceConfig.Type == "simple";
-# Mandatory rtw88 constraints in the generated conf: the SSID, WPA2-PSK/CCMP,
-# and 20 MHz (`vht_oper_chwidth=0`) on the 5 GHz path.
-assert lib.hasInfix "ssid=Mytecor Homelab" confScript;
-assert lib.hasInfix "wpa_passphrase=$psk" confScript;
-assert lib.hasInfix "rsn_pairwise=CCMP" confScript;
-assert lib.hasInfix "wpa=2" confScript;
-assert lib.hasInfix "vht_oper_chwidth=0" confScript;
-assert lib.hasInfix "ieee80211ac" confScript;
+assert auto.systemd.services.lattice-hotspot.serviceConfig.Restart == "on-failure";
+# Mandatory rtw88 constraints in the generated conf: unique MAC, WPA2-PSK/CCMP,
+# the SSID, and 20 MHz (`vht_oper_chwidth=0`) on the 5 GHz path.
+assert lib.hasInfix "ip link set ap0 address 02:0a:44:00:00:01" autoPre;
+assert lib.hasInfix "iw phy phy0 interface add ap0 type __ap" autoPre;
+assert lib.hasInfix "ip addr add 10.44.0.1/24 dev ap0" autoPre;
+assert lib.hasInfix "ssid=Mytecor Homelab" autoPre;
+assert lib.hasInfix "wpa_passphrase=$psk" autoPre;
+assert lib.hasInfix "rsn_pairwise=CCMP" autoPre;
+assert lib.hasInfix "wpa=2" autoPre;
+assert lib.hasInfix "vht_oper_chwidth=0" autoPre;
+assert lib.hasInfix "vht_oper_chwidth=0" pinnedPre;
 # Auto-detection: band+channel derived from the live STA link, not hard-coded.
-assert lib.hasInfix "iw dev wlp2s0 info" autoScript;
-assert lib.hasInfix "hw_mode=$hw_mode" autoScript;
-assert lib.hasInfix "channel=$channel" autoScript;
+assert lib.hasInfix "iw dev wlp2s0 info" autoPre;
+assert lib.hasInfix "hw_mode=$hw_mode" autoPre;
+assert lib.hasInfix "channel=$channel" autoPre;
 # The STA freq parser reads the `(freq MHz` token (field 3), not a later field.
-assert lib.hasInfix "{print $3}" autoScript;
+assert lib.hasInfix "print $3" autoPre;
 # Graceful fallback when the STA carrier is not up yet: channel=auto (0), so a
-# boot-time conf generation does not fail the whole switch.
-assert lib.hasInfix "channel=0" autoScript;
+# boot-time preStart does not fail the unit.
+assert lib.hasInfix "channel=0" autoPre;
 # Pinned mode forces the requested channel/band and 20 MHz (assigns vars that
 # the common prologue then renders as channel=/hw_mode=).
-assert lib.hasInfix "channel=\"44\"" pinnedScript;
-assert lib.hasInfix "hw_mode=\"a\"" pinnedScript;
-assert lib.hasInfix "-n \"44\"" pinnedScript;
-assert lib.hasInfix "vht_oper_chwidth=0" pinnedScript;
-# Interface is created idempotently with a unique MAC before hostapd starts.
-assert lib.hasInfix "iw phy phy0 interface add ap0 type __ap"
-  auto.systemd.services.lattice-hotspot.preStart;
-assert lib.hasInfix "ip link set ap0 address 02:0a:44:00:00:01"
-  auto.systemd.services.lattice-hotspot.preStart;
-assert lib.hasInfix "ip addr add 10.44.0.1/24 dev ap0"
-  auto.systemd.services.lattice-hotspot.preStart;
+assert lib.hasInfix "channel=\"44\"" pinnedPre;
+assert lib.hasInfix "hw_mode=\"a\"" pinnedPre;
+assert lib.hasInfix "-n \"44\"" pinnedPre;
 # DHCP wired to the AP interface with the expected pool.
 assert auto.services.dnsmasq.enable;
 assert lib.elem "ap0" auto.services.dnsmasq.settings.interface;

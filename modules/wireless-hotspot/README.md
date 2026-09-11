@@ -90,11 +90,11 @@ hostapd.conf` при загрузке — в Nix store он не попадае�
 
 ## Что реализует модуль
 
-- `systemd.services.lattice-hotspot-conf` — генерирует `hostapd.conf` из
-  age-секрета пароля (oneshot).
 - `systemd.services.lattice-hotspot` — создаёт `ap0` (`iw` + `ip`, уникальный
-  MAC), назначает адрес и запускает hostapd в foreground под systemd
-  (`Restart=on-failure`).
+  MAC, назначение адреса), в `preStart` генерирует `hostapd.conf` из age-секрета
+  пароля и текущего канала STA, затем запускает hostapd в foreground под systemd
+  (`Restart=on-failure`). Конфиг перегенерируется на каждом старте/рестарте,
+  поэтому канал AP всегда совпадает с текущим каналом STA.
 - `services.dnsmasq` — DHCP + DNS на `ap0`.
 - `networking.firewall.extraForwardRules` — FORWARD для клиентов hotspot.
 - `systemd.services.lattice-hotspot-nat` — идемпотентный MASQUERADE в `-t nat`
