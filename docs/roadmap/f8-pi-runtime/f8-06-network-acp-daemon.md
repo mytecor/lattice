@@ -93,6 +93,30 @@ ws://acp.<nodename>.local/
 [`packages/hydra-acp`](../../../packages/hydra-acp/README.md)). Без этого свежесозданная сессия
 была невидима до первого промпта, и переподключающийся клиент плодил новые сессии вместо resume.
 
+### Трансформер acp-normalizer: стабильный `messageId` на логическое сообщение
+
+Закреплённый daemon (`hydra-acp 0.1.183`) сам приводит каждый `agent_message_chunk` к виду со своим
+свежим `messageId`: в `recordAndBroadcast` функция `wp` инжектит недостающий id **после**
+transformer-цепочки. Клиенты, которые ключуют отрисовку по `messageId`, видят каждый чанк ответа как
+отдельное сообщение и печатают «P», «ong», «!» порознь — так рвёт ответы, например, `superlite`.
+
+Вместо форка/патча daemon добавлен Lattice-owned трансформер
+[`packages/acp-normalizer`](../../../packages/acp-normalizer/README.md), который подписывается на
+`response:session/update` **до** broadcast и переприсваивает всем чанкам одного логического
+ассистентского сообщения стабильный id (первого чанка или minted UUID, если агент стримит без id).
+Просто удалить `messageId` нельзя — `wp` заново добавит его до того, как update дойдёт до клиента.
+Границы нового логического сообщения: `prompt_received`, `tool_call`, `user_message_chunk`,
+`agent_message`, `agent_thought` (complete), `turn_complete`.
+
+Включён глобально через новые опции модуля
+[`lattice.pi-acp-daemon.transformers`/`defaultTransformers`](../../../modules/pi-acp-daemon/README.md):
+daemon спавнит трансформер из `transformers` (per-process transformer-токен), а `defaultTransformers`
+добавляет его в цепочку всех новых сессий без участия клиента. Без `defaultTransformers` трансформер
+подключает только сессия, запросившая его через `session/new` с
+`_meta: { "hydra-acp": { "transformers": ["<name>"] } }` (цепочка фиксируется при создании сессии).
+Проверено на `mytecor-homelab`: A/B до/после, смена логического сообщения (две подоперации — два
+стабильных id) и глобальная нормализация сессии без `_meta`.
+
 ### Отрицательный результат: stock `hydra-acp` client как local stdio shim для Zed
 
 Стандартный CLI [`@hydra-acp/cli`](../../../packages/hydra-acp/README.md) (режимы `acp`/`shim`/`cat`)
@@ -130,8 +154,10 @@ ACP WebSocket-клиентов (Ferngeist). Любой local stdio shim для Z
 
 ## Затрагиваемые файлы / слои
 
-- [`packages/`](../../../packages/README.md) — закреплённые пакеты `hydra-acp` и `pi-acp`.
-- [`modules/`](../../../modules/README.md) — опции и systemd unit ACP daemon.
+- [`packages/`](../../../packages/README.md) — закреплённые пакеты `hydra-acp` и `pi-acp`, а также
+  Lattice-owned трансформер [`acp-normalizer`](../../../packages/acp-normalizer/README.md).
+- [`modules/`](../../../modules/README.md) — опции и systemd unit ACP daemon, включая
+  `transformers`/`defaultTransformers`.
 - [`profiles/pi/`](../../../profiles/pi/README.md) — общий Pi package/model/tool contract.
 - [`profiles/tcp-gateway/`](../../../profiles/tcp-gateway/README.md) — WebSocket LAN ingress.
 - [`nodes/mytecor-homelab/`](../../../nodes/mytecor-homelab/README.md) — включение сервиса на ноде.

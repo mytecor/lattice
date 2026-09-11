@@ -53,3 +53,9 @@ peer, общий реестр в flake и исходящие TCP-соедине�
    Открытая работа — auth-задача вместе с LAN boundary: выбрать либо включение Hydra master
    password + пересмотр «host целиком ACP-endpoint», либо собственный минимальный
    stdio→WebSocket shim (форма соединения Ferngeist), который не трогает HTTP API гидры.
+
+   Смежная, но закрытая проблема — разрыв ответов на отдельные чанки из-за per-token `messageId`
+   (речь не про Zed): решена на стороне daemon трансформером
+   [acp-normalizer](f8-pi-runtime/f8-06-network-acp-daemon.md#трансформер-acp-normalizer-стабильный-messageid-на-логическое-сообщение)
+   и включена глобально через `lattice.pi-acp-daemon.defaultTransformers`, см.
+   [`packages/acp-normalizer`](../../packages/acp-normalizer/README.md).
