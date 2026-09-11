@@ -51,8 +51,13 @@ in
 
     sessionIdleTimeoutSeconds = mkOption {
       type = types.ints.unsigned;
-      default = 0;
-      description = "Idle lifetime in seconds; zero keeps interactive sessions warm.";
+      default = 3600;
+      description = ''
+        Idle lifetime in seconds; the daemon terminates a session's agent once it
+        has been idle (no attached client driving it) for this long. Zero keeps
+        interactive sessions warm indefinitely. The value is passed through to
+        the hydra-acp daemon config as-is — the daemon owns the timeout logic.
+      '';
     };
 
     stateDirectory = mkOption {
