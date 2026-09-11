@@ -19,6 +19,22 @@ in
       description = "Pinned pi-acp adapter spawned for every Hydra session.";
     };
 
+    path = mkOption {
+      type = types.listOf types.package;
+      default = [ ];
+      description = ''
+        Packages/drivations whose bin directories are put on the PATH of every
+        spawned Pi agent process (via the generated Hydra `agents.pi-acp.env`).
+        The daemon's own systemd service PATH (NixOS default) contains no
+        shell, so without this Pi's bash tool dies with `spawn sh ENOENT` -
+        `sh` is looked up by name on the agent's PATH. Pass the Pi tool profile
+        (e.g. `pkgs.lattice.pi-tool-profile`) here so the daemon uses the same
+        bash/git/tools contract as the local runtime (f8-03). With
+        `daemon.scrubEnv = []` the override reaches the spawned `pi --mode rpc`
+        verbatim.
+      '';
+    };
+
     user = mkOption {
       type = types.str;
       default = "root";

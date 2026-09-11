@@ -13,6 +13,9 @@ let
 
         lattice.pi-acp-daemon = {
           enable = true;
+          # The Pi tool profile must reach the spawned agent's PATH so its bash
+          # tool finds `sh` (f8-06: `spawn sh ENOENT` regression guard).
+          path = [ pkgs.lattice.pi-tool-profile ];
           # Transformers are wired into the generated Hydra config (shape-only
           # check in jq below; the daemon itself is not run by this test).
           transformers.fake-normalizer = {
@@ -55,6 +58,8 @@ pkgs.runCommand "pi-acp-daemon-evaluation" {
     .registry.pinned == true and
     .defaultAgent == "pi-acp" and
     .agents["pi-acp"].command == "${lib.getExe pkgs.lattice.pi-acp}" and
+    (.agents["pi-acp"].env.PATH != null) and
+    (.agents["pi-acp"].env.PATH | contains("pi-tool-profile")) and
     .daemon.scrubEnv == [] and
     .defaultTransformers == ["fake-normalizer"] and
     .transformers["fake-normalizer"].command == ["/bin/echo", "fake-normalizer"] and

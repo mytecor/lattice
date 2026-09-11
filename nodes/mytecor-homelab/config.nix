@@ -120,6 +120,10 @@ in
   # отдельные чанки; defaultTransformers применяет нормализатор ко всем сессиям без
   # участия клиента.
   lattice.pi-acp-daemon = {
+    # f8-06 fix: the daemon's own systemd PATH has no `sh`, so spawned Pi
+    # sessions got `spawn sh ENOENT` from the bash tool. Give every agent the
+    # same bash/git/tools contract as the local runtime.
+    path = [ pkgs.lattice.pi-tool-profile ];
     transformers.acp-normalizer.command =
       [ "${pkgs.lattice.acp-normalizer}/bin/acp-normalizer" ];
     defaultTransformers = [ "acp-normalizer" ];

@@ -13,6 +13,22 @@ Hydra слушает только loopback, хранит session metadata в `St
 Внешний LAN endpoint — `ws://acp.<nodename>.local/`. Обязательный для Hydra путь `/acp` остаётся
 внутренней деталью loopback upstream и добавляется Caddy через rewrite.
 
+## PATH агента и tool profile
+
+Опция `lattice.pi-acp-daemon.path` (listOf package) задаёт пакеты/derivations, чьи `bin`
+попадают в `PATH` каждого спавняемого Pi-агента (через сгенерированный Hydra
+`agents.pi-acp.env`). Дефолтный systemd-PATH сервиса (NixOS) не содержит ни одной
+директории с `sh`, поэтому без этой опции bash-инструмент Pi падает с `spawn sh
+ENOENT` — `sh` ищется по имени на PATH агента, а не абсолютным путём. Передайте сюда
+tool profile (`pkgs.lattice.pi-tool-profile`), чтобы демон давал сессиям тот же
+`bash/git/tools`-контракт, что и локальный runtime (f8-03). Благодаря
+`daemon.scrubEnv = []` этот override доходит до `pi --mode rpc` без изменений.
+
+```nix
+# nodes/<node>/config.nix
+lattice.pi-acp-daemon.path = [ pkgs.lattice.pi-tool-profile ];
+```
+
 ## Transformers
 
 Опции `lattice.pi-acp-daemon.transformers` (attrset с `command`/`args`/`env`/`enabled`) и

@@ -90,7 +90,7 @@ in
     environment.etc."pi.env" = lib.mkIf cfg.envContract {
       text = ''
         # Pi runtime environment contract (f8-03). Read-only, inspect only.
-        export PATH=${toolBinPath}$''${PATH:+:$PATH}
+        export PATH=${toolBinPath}:''${PATH:+:$PATH}
         export LANG=C.UTF-8
         export LC_ALL=C.UTF-8
         export GIT_CONFIG_NOSYSTEM=1

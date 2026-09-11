@@ -19,6 +19,13 @@ let
       env = {
         PI_ACP_DIR = "${stateDir}/pi-acp";
         PI_CODING_AGENT_DIR = "${userHome}/.pi/agent";
+      } // lib.optionalAttrs (cfg.path != [ ]) {
+        # f8-06 fix: the spawned `pi --mode rpc` must see a shell and the Pi
+        # tool contract. The daemon's own systemd PATH (NixOS service default)
+        # has no `sh`, so without this Pi's bash tool fails with `spawn sh
+        # ENOENT`. `daemon.scrubEnv = []` (above) lets this override reach the
+        # agent process verbatim.
+        PATH = lib.makeBinPath cfg.path;
       };
     };
     defaultAgent = "pi-acp";
