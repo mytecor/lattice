@@ -118,6 +118,20 @@ in
         RestrictRealtime = true;
         RestrictSUIDSGID = true;
         SystemCallArchitectures = "native";
+      } // lib.optionalAttrs cfg.privileged {
+        # TEMPORARY privileged network/cap access for live diagnostics
+        # (iw/ip/nl80211: open AF_NETLINK and grant CAP_NET_ADMIN so wireless
+        # tooling works, plus let setuid/caps through for sudo). This is a
+        # deliberate, documented STOPGAP — see the README "Temporary
+        # privileged access" note. The strict defaults above are the target
+        # posture; rework back to them once the diagnostics are done. Do not
+        # enable on an untrusted LAN.
+        AmbientCapabilities = [ "CAP_NET_ADMIN" "CAP_NET_RAW" "CAP_NET_BIND_SERVICE" "CAP_DAC_OVERRIDE" "CAP_SYS_ADMIN" "CAP_SETUID" "CAP_SETGID" ];
+        CapabilityBoundingSet = [ "CAP_NET_ADMIN" "CAP_NET_RAW" "CAP_NET_BIND_SERVICE" "CAP_DAC_OVERRIDE" "CAP_SYS_ADMIN" "CAP_SETUID" "CAP_SETGID" ];
+        NoNewPrivileges = false;
+        PrivateDevices = false;
+        ProtectSystem = false;
+        RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" "AF_NETLINK" ];
       };
     };
   };

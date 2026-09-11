@@ -149,6 +149,25 @@ in
       '';
     };
 
+    privileged = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        TEMPORARY wide-open network/capability access for live wireless
+        diagnostics (iw/ip/nl80211). When true, the service keeps its user but
+        stops restricting address families (adds AF_NETLINK) and grants
+        CAP_NET_ADMIN and friends, sets NoNewPrivileges = false (so setuid and
+        sudo work), and relaxes ProtectSystem/PrivateDevices so the sandbox
+        behaves as a privileged root session.
+
+        This is a stopgap, not the target posture. The strict defaults
+        (address-family restriction without netlink, no capabilities,
+        NoNewPrivileges, ProtectSystem) are what the daemon should return to.
+        See the module README "Temporary privileged access" note for the
+        rework requirement. Do not enable on an untrusted LAN.
+      '';
+    };
+
     generatedConfigFile = mkOption {
       type = types.path;
       readOnly = true;

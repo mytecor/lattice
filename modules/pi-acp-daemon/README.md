@@ -34,6 +34,25 @@ Hydra слушает только loopback, хранит session metadata в `St
 lattice.pi-acp-daemon.path = [ pkgs.lattice.pi-tool-profile ];
 ```
 
+## Временный privileged-доступ (stopgap, переработать!)
+
+Опция `lattice.pi-acp-daemon.privileged` (bool, по умолчанию `false`) — **временная** мера для
+живой диагностики сети (iw/ip/nl80211) из сессий Pi. При `true` сервис:
+
+- добавляет `AF_NETLINK` в `RestrictAddressFamilies` — открывается netlink, заработают
+  `iw`/`ip`-запросы, которые раньше падали с «Address family not supported» /
+  «Failed to connect to generic netlink»;
+- выдаёт `CAP_NET_ADMIN` (и `CAP_NET_RAW`, `CAP_NET_BIND_SERVICE`, `CAP_DAC_OVERRIDE`,
+  `CAP_SYS_ADMIN`, `CAP_SETUID`, `CAP_SETGID`) в `AmbientCapabilities`/`CapabilityBoundingSet`;
+- снимает `NoNewPrivileges` — работают `sudo`/`setuid`;
+- ослабляет `ProtectSystem`/`PrivateDevices`.
+
+**Это stopgap, а не целевая конфигурация.** Строгий песочник (restricted address families без
+netlink, пустой `CapabilityBoundingSet` → `CapEff=0`, `NoNewPrivileges=true`, `ProtectSystem=full`,
+`PrivateDevices`) — то, к чему сервис должен вернуться после завершения диагностики. Задача на
+возврат к минимальным доступам зафиксирована в [BACKLOG.md](../../docs/roadmap/BACKLOG.md). Не
+включайте `privileged` на недоверенной LAN: сессия становится root-процессом с сетевым админом.
+
 ## Transformers
 
 Опции `lattice.pi-acp-daemon.transformers` (attrset с `command`/`args`/`env`/`enabled`) и

@@ -124,6 +124,9 @@ in
     # sessions got `spawn sh ENOENT` from the bash tool. Give every agent the
     # same bash/git/tools contract as the local runtime.
     path = [ pkgs.lattice.pi-tool-profile ];
+    # TEMPORARY wide-open network/cap access (iw/ip/nl80211, sudo). This must
+    # be reverted to the strict sandbox; see modules/pi-acp-daemon README note.
+    privileged = true;
     transformers.acp-normalizer.command =
       [ "${pkgs.lattice.acp-normalizer}/bin/acp-normalizer" ];
     defaultTransformers = [ "acp-normalizer" ];

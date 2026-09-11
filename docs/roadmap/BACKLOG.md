@@ -59,3 +59,11 @@ peer, общий реестр в flake и исходящие TCP-соедине�
    [acp-normalizer](f8-pi-runtime/f8-06-network-acp-daemon.md#трансформер-acp-normalizer-стабильный-messageid-на-логическое-сообщение)
    и включена глобально через `lattice.pi-acp-daemon.defaultTransformers`, см.
    [`packages/acp-normalizer`](../../packages/acp-normalizer/README.md).
+
+4. **Вернуть pi-acp-daemon к минимальным доступам (revert privileged)** — на `mytecor-homelab`
+   временно включён `lattice.pi-acp-daemon.privileged = true` для живой диагностики
+   Wi-Fi/nl80211 (раскрытие `AF_NETLINK`, `CAP_NET_ADMIN`, снятие `NoNewPrivileges`). Это stopgap:
+   после завершения диагностики выключить опцию и восстановить строгий песочник (без netlink,
+   пустой `CapabilityBoundingSet`, `NoNewPrivileges=true`, `ProtectSystem=full`, `PrivateDevices`).
+   Смысл/границы раскрытия — в
+   [README модуля](../../modules/pi-acp-daemon/README.md#временный-privileged-доступ-stopgap-переработать).
