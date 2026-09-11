@@ -1,5 +1,7 @@
 # Опубликовать Pi как постоянный multi-session ACP daemon
 
+**Закрыта.**
+
 Фича: [F8 — интерактивный Pi runtime](./README.md). Зависит от
 [f8-02](./f8-02-pi-gateway-config.md) и
 [f8-03](./f8-03-reproducible-tool-profile.md).

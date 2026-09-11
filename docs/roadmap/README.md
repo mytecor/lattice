@@ -58,8 +58,13 @@ streaming остаётся за f8-04 (TUI). В f8-03 выполнен восп�
 контракт `bash/git/tools` в `profiles/pi/base-tools.nix` (нода и devShell), расширение проекта через
 `lattice.pi.tools` / `pkgs.mkShell { inputsFrom = [ pkgs.lattice.pi-develop-shell ]; }` без изменения
 рантайма, контракт окружения (PATH, locale, git identity boundary) в `/etc/pi.env`, и smoke check
-`tests/pi-tool-profile.nix`, проходящий на x86_64-linux. Следующая задача — f8-04 (интерактивная
-acceptance).
+`tests/pi-tool-profile.nix`, проходящий на x86_64-linux. В f8-06 закрыт надёжный сетевой путь:
+постоянный multi-session ACP daemon (`hydra-acp` + `pi-acp`) поверх одного LAN-эндпоинта
+`ws://acp.<nodename>.local/`, с трансформером `acp-normalizer` для стабильного `messageId` и
+acceptance-тестами параллельных сессий/клиентов. f8-04 и f8-05 закрыты по решению: Pi работает, а
+локальный Pi TUI не используется — вся интерактивная работа идёт через ACP (Ferngeist), отдельного
+Pi-native RPC-контракта нет (роль RPC entry point для F10 выполняет ACP endpoint из f8-06). Все
+задачи F8 закрыты; следующая фича — F9 (cache/artifact plane).
 Основной маршрут дальше:
 Pi → cache/artifact plane → disposable worker → controller.
 Незакрытые вопросы отслеживаются в
