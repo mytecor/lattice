@@ -26,6 +26,13 @@ let
     mkdir -p "$out"
     cp -R ${upstreamSource}/. "$out/"
     cp ${./pnpm-lock.yaml} "$out/pnpm-lock.yaml"
+    # Lattice patch: upstream svkozak/pi-acp accepts mcpServers (stores them, does
+    # not wire them to pi; MCP is provided inside pi by pi-mcp-adapter), but the
+    # maintained regadas fork rejects them with MCP_SERVERS_UNSUPPORTED, failing
+    # session/new for clients that cannot omit the field. Accept and warn instead.
+    chmod -R u+w "$out"
+    (cd "$out" && patch -p1 < ${./mcp-servers-accepted.patch}) \
+      || { echo "pi-acp: mcp-servers-accepted.patch did not apply" >&2; exit 1; }
   '';
 in
 stdenvNoCC.mkDerivation (finalAttrs: {

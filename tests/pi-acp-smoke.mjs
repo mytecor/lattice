@@ -66,6 +66,23 @@ try {
     prompt: [{ type: 'text', text: '/name lattice-pi-acp-smoke' }]
   })
   assert.equal(prompt.stopReason, 'end_turn')
+
+  // Lattice patch (mcp-servers-accepted): a non-empty mcpServers list must be
+  // accepted, not rejected with MCP_SERVERS_UNSUPPORTED — pi bridges MCP inside
+  // itself via pi-mcp-adapter, so clients that cannot omit the field keep
+  // working. The requested servers are stored but not connected at this layer.
+  const sessionWithMcp = await request('session/new', {
+    cwd: state,
+    mcpServers: [{ name: 'probe', command: 'true', args: [] }]
+  })
+  assert.ok(sessionWithMcp.sessionId)
+  assert.notEqual(sessionWithMcp.sessionId, session.sessionId)
+
+  const promptMcp = await request('session/prompt', {
+    sessionId: sessionWithMcp.sessionId,
+    prompt: [{ type: 'text', text: '/name lattice-pi-acp-smoke-mcp' }]
+  })
+  assert.equal(promptMcp.stopReason, 'end_turn')
 } finally {
   child.stdin.end()
   const exitCode = await new Promise(resolve => child.once('exit', resolve))
@@ -73,4 +90,4 @@ try {
   assert.equal(exitCode, 0)
 }
 
-console.log('Pi ACP smoke passed: initialize, session/new, built-in prompt')
+console.log('Pi ACP smoke passed: initialize, session/new (+ non-empty mcpServers), built-in prompts')

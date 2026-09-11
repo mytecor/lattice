@@ -1,0 +1,49 @@
+diff --git a/src/acp/agent.ts b/src/acp/agent.ts
+index dda516a..37d166e 100644
+--- a/src/acp/agent.ts
++++ b/src/acp/agent.ts
+@@ -53,18 +53,19 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
+ import type { AvailableCommand } from '@agentclientprotocol/sdk'
+ 
+ /**
+- * pi has no MCP support (an extension would be required to bridge MCP
+- * servers), so silently accepting `mcpServers` would hand the client a
+- * session that is missing its requested tools. Reject explicitly before any
+- * session side effects instead of degrading silently.
++ * MCP is bridged by the pi-mcp-adapter extension inside pi (Lattice patch):
++ * servers are configured on the host (.mcp.json / ~/.config/mcp/mcp.json /
++ * <pi agent dir>/mcp.json) and exposed by the adapter, not connected at the
++ * ACP transport layer. Rejecting `mcpServers` would fail every session/new
++ * from clients that cannot omit the field, so accept it and log a notice
++ * instead of degrading the session; MCP tools come from the adapter inside pi.
+  */
+ function assertNoMcpServers(mcpServers: readonly unknown[] | undefined): void {
+   if (!mcpServers?.length) return
+-  throw RequestError.invalidParams(
+-    { reason: 'MCP_SERVERS_UNSUPPORTED' },
+-    `pi does not support MCP servers, so pi-acp cannot connect the ${mcpServers.length} requested MCP server(s). ` +
+-      'Remove mcpServers from the session request. To use MCP tools with pi, configure them through a pi extension ' +
+-      '(e.g. https://github.com/nicobailon/pi-mcp-adapter) instead.'
++  console.warn(
++    `pi-acp: MCP is bridged by the pi-mcp-adapter extension inside pi, not at the ACP layer; ` +
++      `ignoring ${mcpServers.length} requested mcpServers for this session. Configure the servers on the host ` +
++      `(.mcp.json / ~/.config/mcp/mcp.json / <pi agent dir>/mcp.json) to make them available to the model.`
+   )
+ }
+ 
+@@ -593,10 +594,11 @@ export class PiAcpAgent implements ACPAgent {
+       // `createPiAcpAgentApp` (src/acp/app.ts): omitted capability = unsupported.
+       agentCapabilities: {
+         loadSession: true,
+-        // pi has no MCP support; non-empty mcpServers are rejected explicitly
+-        // in session/new, session/load, and session/resume (see README
+-        // limitations), and no MCP transport capability is advertised.
+-        mcpCapabilities: { http: false, sse: false },
++        // MCP transport works through the pi-mcp-adapter extension inside pi
++        // (Lattice patch): the session gets MCP tools from the adapter, so the
++        // capability is advertised and `mcpServers` is accepted (see
++        // assertNoMcpServers).
++        mcpCapabilities: { http: true, sse: true },
+         promptCapabilities: {
+           image: true,
+           audio: false,
