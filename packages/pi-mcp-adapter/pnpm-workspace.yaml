@@ -1,0 +1,8 @@
+# pnpm 11 supply-chain policies, tuned for a Nix-pinned lock.
+#
+# - minimumReleaseAge: 0 — не блокировать свежие версии; для Nix-pinned lock
+#   integrity уже закреплён в store, политика release-age избыточна.
+# - blockExoticSubdeps: false — адаптер зависит от tarball-URL (pkg.pr.new);
+#   frozen-lockfile их не переразрешает, но политику отключаем явно.
+minimumReleaseAge: 0
+blockExoticSubdeps: false

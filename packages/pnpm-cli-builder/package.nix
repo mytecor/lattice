@@ -30,6 +30,11 @@
   # are created (runs via the builder's `runHook postInstall`). Used by package
   # callers to patch the shipped JS bundles, e.g. packages/hydra-acp.
   postInstall ? "",
+  # Optional pnpm-workspace.yaml copied into the pnpm-source (consumed by
+  # `pnpm install --frozen-lockfile` in fetchPnpmDeps). Lets a package relax
+  # pnpm 11 supply-chain policies (minimumReleaseAge / blockExoticSubdeps) that
+  # are redundant for Nix-pinned locks, without touching the shared builder.
+  pnpmWorkspace ? null,
 }:
 
 let
@@ -45,6 +50,9 @@ let
     mkdir -p "$out"
     cp ${packageJson} "$out/package.json"
     cp ${pnpmLock} "$out/pnpm-lock.yaml"
+    ${lib.optionalString (pnpmWorkspace != null) ''
+      cp ${pnpmWorkspace} "$out/pnpm-workspace.yaml"
+    ''}
   '';
 
   wrappers = lib.concatStringsSep "\n" (lib.mapAttrsToList

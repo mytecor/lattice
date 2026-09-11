@@ -75,6 +75,12 @@ in
       defaultProvider = "llm-gateway";
       defaultModel = "standard";
       defaultThinkingLevel = "xhigh";
+      # pi-mcp-adapter (https://pi.dev/packages/pi-mcp-adapter): доступ к MCP-серверам
+      # через один proxy tool без раздувания контекста. Полная сборка через pnpm
+      # builder (packages/pi-mcp-adapter, lock + store-path), загружается как
+      # extension-директория из settings.extensions — на ноде не нужны ни node/npm,
+      # ни runtime-загрузки из npm registry.
+      extensions = [ pkgs.lattice.pi-mcp-adapter ];
     };
     models.llm-gateway = {
       baseUrl = "http://127.0.0.1:9208/v1";

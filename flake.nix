@@ -119,6 +119,7 @@
           hydra-acp = final.callPackage ./packages/hydra-acp/package.nix { };
           llm-gateway = final.callPackage ./packages/llm-gateway/package.nix { };
           pi = final.callPackage ./packages/pi/package.nix { };
+          pi-mcp-adapter = final.callPackage ./packages/pi-mcp-adapter/package.nix { };
           pi-acp = final.callPackage ./packages/pi-acp/package.nix {
             pi = final.lattice.pi;
           };
@@ -172,7 +173,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) hydra-acp llm-gateway pi pi-acp pi-tool-profile rns-server rnsh;
+          inherit (pkgs.lattice) hydra-acp llm-gateway pi pi-acp pi-mcp-adapter pi-tool-profile rns-server rnsh;
           default = pkgs.lattice.rns-server;
         });
 

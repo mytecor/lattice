@@ -17,6 +17,8 @@ pkgs.testers.runNixOSTest {
         defaultProvider = "llm-gateway";
         defaultModel = "standard";
         defaultThinkingLevel = "xhigh";
+        # pi extension pin: Nix-сборка через pnpm builder (store-path, симлинк-директория).
+        extensions = [ pkgs.lattice.pi-mcp-adapter ];
       };
       models.llm-gateway = {
         baseUrl = "http://127.0.0.1:9208/v1";
@@ -54,6 +56,7 @@ pkgs.testers.runNixOSTest {
         "defaultProvider": "llm-gateway",
         "defaultModel": "standard",
         "defaultThinkingLevel": "xhigh",
+        "extensions": ["${toString pkgs.lattice.pi-mcp-adapter}/extension"],
     }, settings
 
     models = json.loads(machine.succeed(f"cat {agent}/models.json"))

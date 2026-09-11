@@ -4,13 +4,26 @@ let
   cfg = config.lattice.pi;
 
   # Оставляем из настроек только не-null и включённые поля, чтобы не раздувать JSON.
+  # Упаковка pi-package: строка-спека проходит как есть, Nix-пакет — как store-path.
+  renderPackage = p: if lib.isString p then p else toString p;
+
+  # Расширение-пакет: точка входа для Pi — `${p}/extension` (симлинк-каталог на
+  # установленный пакет) при наличии `node_modules`-симлинка рядом; см. пакет.
+  renderExtension = e: if lib.isString e then e else "${e}/extension";
+
   settingsJson = pkgs.writeText "pi-settings.json" (builtins.toJSON (
-    lib.filterAttrs (name: value: value != null) {
+    (lib.filterAttrs (name: value: value != null) {
       defaultProvider = cfg.settings.defaultProvider;
       defaultModel = cfg.settings.defaultModel;
       defaultThinkingLevel = cfg.settings.defaultThinkingLevel;
       inherit (cfg.settings) theme;
-    }
+    })
+    // (lib.optionalAttrs (cfg.settings.packages != []) {
+        packages = map renderPackage cfg.settings.packages;
+      })
+    // (lib.optionalAttrs (cfg.settings.extensions != []) {
+        extensions = map renderExtension cfg.settings.extensions;
+      })
   ));
 
   # providers → models.json. Секреты не появляются здесь: apiKey подаётся как

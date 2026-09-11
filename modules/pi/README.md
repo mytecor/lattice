@@ -18,7 +18,12 @@
 - `lattice.pi.enable` — добавить Pi в системный профиль и материализовать конфиг.
 - `lattice.pi.user` — целевой пользователь для `~/.pi/agent` (по умолчанию `root`).
 - `lattice.pi.settings` — содержимое `settings.json`: `defaultProvider`,
-  `defaultModel`, `defaultThinkingLevel`, `theme`.
+  `defaultModel`, `defaultThinkingLevel`, `theme`, `packages` и `extensions`.
+  `packages` — pi packages (строка-спека `npm:`/`git:` с закреплённой версией/рефом
+  либо Nix-пакет, store-path). `extensions` — прямые пути к файлу/каталогу
+  расширения; для Nix-сборок модуль раскрывает пакет-значение в `"${p}/extension"`
+  (см. [`packages/pi-mcp-adapter`](../../packages/pi-mcp-adapter/README.md)),
+  например `extensions = [ pkgs.lattice.pi-mcp-adapter ];`.
 - `lattice.pi.models` — содержимое `models.json`: attrsOf providers. У каждого
   provider есть `baseUrl`, `api`, `apiKey` (nullable), `discoverModels`,
   `models` (explicit logical классы) и `modelOverrides`.

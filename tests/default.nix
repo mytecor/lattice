@@ -127,6 +127,9 @@ in
     assert homelabConfig.lattice.pi.settings.defaultProvider == "llm-gateway";
     assert homelabConfig.lattice.pi.settings.defaultModel == "standard";
     assert homelabConfig.lattice.pi.settings.defaultThinkingLevel == "xhigh";
+    # pi-mcp-adapter: нода пинит Nix-сборку (pnpm builder) как extension-директорию.
+    assert homelabConfig.lattice.pi.settings.extensions
+      == [ pkgs.lattice.pi-mcp-adapter ];
     assert builtins.length (builtins.attrNames homelabConfig.lattice.pi.models) == 1;
     assert homelabConfig.lattice.pi.models.llm-gateway.baseUrl == "http://127.0.0.1:9208/v1";
     assert homelabConfig.lattice.pi.models.llm-gateway.api == "openai-completions";

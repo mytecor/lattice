@@ -33,6 +33,24 @@ in
           type = types.nullOr types.str;
           default = null;
         };
+        # Pi packages (extensions/skills/themes): строка-спека (`npm:`/`git:`/URL,
+        # версия/реф в спеке — pin) либо Nix-пакет, собранный через pnpm builder
+        # (в JSON попадает его store-path — локальный pi-package без runtime-загрузок).
+        options.packages = mkOption {
+          type = types.listOf (types.either types.str types.package);
+          default = [ ];
+          example = [ "npm:pi-mcp-adapter@2.33.0" ];
+          description = "Pi packages, e.g. `npm:pi-mcp-adapter@2.33.0` (pinned spec) or a Nix-built package.";
+        };
+        # Прямая загрузка расширений по пути: локальный файл `*.ts`/`*.js` или
+        # каталог расширения (index.ts). Значение-строка идёт как есть; Nix-пакет
+        # (например симлинк-директория на установленный пакет) — как store-path.
+        options.extensions = mkOption {
+          type = types.listOf (types.either types.str types.package);
+          default = [ ];
+          example = [ "/path/to/extension.ts" ];
+          description = "Extension files or directories loaded directly, e.g. a Nix-built extension package.";
+        };
       };
       default = { };
       description = "Declarative contents of ~/.pi/agent/settings.json";
