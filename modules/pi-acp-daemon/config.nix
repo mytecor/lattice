@@ -19,13 +19,20 @@ let
       env = {
         PI_ACP_DIR = "${stateDir}/pi-acp";
         PI_CODING_AGENT_DIR = "${userHome}/.pi/agent";
-      } // lib.optionalAttrs (cfg.path != [ ]) {
         # f8-06 fix: the spawned `pi --mode rpc` must see a shell and the Pi
         # tool contract. The daemon's own systemd PATH (NixOS service default)
         # has no `sh`, so without this Pi's bash tool fails with `spawn sh
         # ENOENT`. `daemon.scrubEnv = []` (above) lets this override reach the
-        # agent process verbatim.
-        PATH = lib.makeBinPath cfg.path;
+        # agent verbatim.
+        #
+        # Prepend the declared tool profile (bash/git/tools, e.g.
+        # `pkgs.lattice.pi-tool-profile`) and APPEND the NixOS system profile,
+        # so node system tools such as `nix` stay available to the agent's
+        # shell instead of being lost when the (tool-profile-only) PATH
+        # replaces the daemon's.
+        PATH = lib.makeBinPath cfg.path
+          + ":/run/current-system/sw/bin"
+          + ":/run/current-system/sw/sbin";
       };
     };
     defaultAgent = "pi-acp";

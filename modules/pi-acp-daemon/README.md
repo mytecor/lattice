@@ -16,13 +16,18 @@ Hydra слушает только loopback, хранит session metadata в `St
 ## PATH агента и tool profile
 
 Опция `lattice.pi-acp-daemon.path` (listOf package) задаёт пакеты/derivations, чьи `bin`
-попадают в `PATH` каждого спавняемого Pi-агента (через сгенерированный Hydra
-`agents.pi-acp.env`). Дефолтный systemd-PATH сервиса (NixOS) не содержит ни одной
-директории с `sh`, поэтому без этой опции bash-инструмент Pi падает с `spawn sh
-ENOENT` — `sh` ищется по имени на PATH агента, а не абсолютным путём. Передайте сюда
-tool profile (`pkgs.lattice.pi-tool-profile`), чтобы демон давал сессиям тот же
-`bash/git/tools`-контракт, что и локальный runtime (f8-03). Благодаря
-`daemon.scrubEnv = []` этот override доходит до `pi --mode rpc` без изменений.
+**дописываются в начало** `PATH` каждого спавняемого Pi-агента (через сгенерированный Hydra
+`agents.pi-acp.env`). Дефолтный systemd-PATH сервиса (NixOS) не содержит ни одной директории с
+`sh`, поэтому без этой опции bash-инструмент Pi падает с `spawn sh ENOENT` — `sh` ищется по имени
+на PATH агента, а не абсолютным путём. Передайте сюда tool profile
+(`pkgs.lattice.pi-tool-profile`), чтобы демон давал сессиям тот же `bash/git/tools`-контракт, что и
+локальный runtime (f8-03).
+
+В конец PATH всегда дописывается системный профиль NixOS (`/run/current-system/sw/bin` и
+`/run/current-system/sw/sbin`), чтобы у агента оставались системные утилиты ноды (`nix` и
+остальные `systemPackages`) — иначе замена PATH только tool profile лишила бы сессии доступа к
+`nix`, `nixos-rebuild` и т.п. Благодаря `daemon.scrubEnv = []` этот override доходит до
+`pi --mode rpc` без изменений.
 
 ```nix
 # nodes/<node>/config.nix

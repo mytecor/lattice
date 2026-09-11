@@ -60,6 +60,7 @@ pkgs.runCommand "pi-acp-daemon-evaluation" {
     .agents["pi-acp"].command == "${lib.getExe pkgs.lattice.pi-acp}" and
     (.agents["pi-acp"].env.PATH != null) and
     (.agents["pi-acp"].env.PATH | contains("pi-tool-profile")) and
+    (.agents["pi-acp"].env.PATH | contains("/run/current-system/sw/bin")) and
     .daemon.scrubEnv == [] and
     .defaultTransformers == ["fake-normalizer"] and
     .transformers["fake-normalizer"].command == ["/bin/echo", "fake-normalizer"] and
