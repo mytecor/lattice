@@ -25,8 +25,11 @@ valid interface combinations:
 1. **AP-интерфейс создаётся с уникальным MAC** (не MAC STA-интерфейса),
    иначе драйвер отказывается поднять его:
    `RTNETLINK answers: Name not unique on network` / `Could not set interface ap0 flags (UP)`.
-2. **Ширина канала AP — 20 MHz** (`vht_oper_chwidth=0`), не 80 MHz: hostapd с
-   80 MHz падает при активном STA (`80/80+80 MHz: no second channel offset`).
+2. **AP работает в простом 802.11n (HT) формате, даже на 5 GHz** — на
+   `rtw88_8822ce` одновременный STA+AP стабилен только в HT-формате: VHT20
+   (20 MHz) роняет data path, а VHT80 (80 MHz) валит сам hostapd. Поэтому
+   модуль по умолчанию НЕ включает `ieee80211ac`; VHT — opt-in через опцию
+   `lattice.hotspot.vht = true` (с `vht_oper_chwidth=0`, 20 MHz).
 3. **Канал AP совпадает с каналом STA** — `#channels <= 1`, переключение радио
    оборвёт STA. Канал задаётся опцией `channel` и должен равняться каналу
    домашней сети.

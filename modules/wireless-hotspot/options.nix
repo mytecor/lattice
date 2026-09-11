@@ -92,5 +92,11 @@ in
       default = "wlp2s0";
       description = "Name of the station (client) interface. Kept for documentation and future checks; NetworkManager manages it as usual.";
     };
+
+    vht = mkOption {
+      type = types.bool;
+      default = false;
+      description = "Enable 802.11ac/VHT on the 5 GHz AP. Defaults to 802.11n (HT) even on 5 GHz: concurrent STA+AP on the shared RTL8822CE radio is only stable in the simpler HT frame format — VHT20 breaks the data path and VHT80 makes hostapd fail. Keep false for stability; set to true only if you need VHT rates and accept the instability.";
+    };
   };
 }

@@ -41,7 +41,10 @@ assert lib.hasInfix "hostapd /run/lattice-hotspot/hostapd.conf"
 assert auto.systemd.services.lattice-hotspot.serviceConfig.Type == "simple";
 assert auto.systemd.services.lattice-hotspot.serviceConfig.Restart == "on-failure";
 # Mandatory rtw88 constraints in the generated conf: unique MAC, WPA2-PSK/CCMP,
-# the SSID, and 20 MHz (`vht_oper_chwidth=0`) on the 5 GHz path.
+# the SSID, and 20 MHz (`vht_oper_chwidth=0`) on the 5 GHz VHT opt-in path.
+# VHT/ieee80211ac is opt-in (default off): concurrent STA+AP stays in the
+# simpler 802.11n frame format for stability, so the ac block is gated by
+# `[ "" = "1" ]` when lattice.hotspot.vht = false.
 assert lib.hasInfix "ip link set ap0 address 02:0a:44:00:00:01" autoPre;
 # Idempotent ap0 (re)creation: only recreate when missing or with a stale MAC,
 # and restart dnsmasq afterwards so its DHCP socket stays bound to ap0.
@@ -56,6 +59,8 @@ assert lib.hasInfix "ssid=Mytecor Homelab" autoPre;
 assert lib.hasInfix "wpa_passphrase=$psk" autoPre;
 assert lib.hasInfix "rsn_pairwise=CCMP" autoPre;
 assert lib.hasInfix "wpa=2" autoPre;
+# Default (vht=false): the ac/VHT lines are dead code gated off (empty lhs).
+assert lib.hasInfix "[ \"\" = \"1\" ] && [ \"$hw_mode\" = \"a\" ]" autoPre;
 assert lib.hasInfix "vht_oper_chwidth=0" autoPre;
 assert lib.hasInfix "vht_oper_chwidth=0" pinnedPre;
 # Auto-detection: band+channel derived from the live STA link, not hard-coded.

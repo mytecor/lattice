@@ -92,7 +92,7 @@ in
         echo "hw_mode=$hw_mode"
         echo "channel=$channel"
         echo "ieee80211n=1"
-        if [ "$vht" = "1" ]; then
+        if [ "${if cfg.vht then "1" else ""}" = "1" ] && [ "$hw_mode" = "a" ]; then
           echo "ieee80211ac=1"
           echo "vht_oper_chwidth=0"
         fi
