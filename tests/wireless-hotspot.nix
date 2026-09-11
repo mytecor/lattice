@@ -54,6 +54,11 @@ assert lib.hasInfix "ieee80211ac" confScript;
 assert lib.hasInfix "iw dev wlp2s0 info" autoScript;
 assert lib.hasInfix "hw_mode=$hw_mode" autoScript;
 assert lib.hasInfix "channel=$channel" autoScript;
+# The STA freq parser reads the `(freq MHz` token (field 3), not a later field.
+assert lib.hasInfix "{print $3}" autoScript;
+# Graceful fallback when the STA carrier is not up yet: channel=auto (0), so a
+# boot-time conf generation does not fail the whole switch.
+assert lib.hasInfix "channel=0" autoScript;
 # Pinned mode forces the requested channel/band and 20 MHz (assigns vars that
 # the common prologue then renders as channel=/hw_mode=).
 assert lib.hasInfix "channel=\"44\"" pinnedScript;

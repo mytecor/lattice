@@ -41,19 +41,25 @@ in
         hw_mode="${if cfg.hwMode != null then cfg.hwMode else "a"}"
       else
         # channel N (freq MHz), width: ... from `iw dev STA info`
-        freq=$(iw dev ${cfg.staInterface} info 2>/dev/null | awk '/^[[:space:]]*channel/ {print $4}' | tr -d '()')
-        if [ -z "$freq" ]; then
-            echo "lattice-hotspot: could not read STA channel from ${cfg.staInterface}; is it connected?" >&2
-            exit 1
-        fi
+        # `channel N (freq MHz), width: ...` from `iw dev STA info`: token 3 is
+        # `(freq` -> strip the paren to get the freq in MHz.
+        freq=$(iw dev ${cfg.staInterface} info 2>/dev/null | awk '/^[[:space:]]*channel/ {print $3}' | tr -d '()')
         if [ "$freq" -ge 5000 ]; then
           hw_mode="a"
           channel=$(( (freq - 5000) / 5 ))
           vht=1
-        else
+        elif [ "$freq" -ge 2400 ]; then
           hw_mode="g"
           channel=$(( (freq - 2407) / 5 ))
           vht=0
+        else
+          # STA carrier not established yet (e.g. during boot before Wi-Fi is up).
+          # Do not fail the whole switch: hand over channel=auto (0) and let
+          # hostapd retry (its Restart=on-failure re-triggers if it cannot).
+          echo "lattice-hotspot: STA channel unknown, using channel=auto (0)" >&2
+          hw_mode="a"
+          channel=0
+          vht=1
         fi
       fi
 
