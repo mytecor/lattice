@@ -11,6 +11,7 @@
 - [`rns-server/`](./rns-server/README.md) - сервис `rns-server` и typed-генерация RNS ConfigObj-конфигов.
 - [`rnsh/`](./rnsh/README.md) - listener-сервис для remote shell через Reticulum.
 - [`wireless/`](./wireless/default.nix) - настройка Wi-Fi сетей через NetworkManager и runtime secret-файлы.
+- [`wireless-hotspot/`](./wireless-hotspot/README.md) - concurrent Wi-Fi STA + AP на одном радио (hostapd + dnsmasq + NAT); см. требования rtw88 (`#channels <= 1`).
 
 ## Правило
 

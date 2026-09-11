@@ -240,6 +240,18 @@
       },
       "parent": []
     },
+    "module-wireless-hotspot": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/wireless-hotspot",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/wireless-hotspot",
+        "type": "path"
+      },
+      "parent": []
+    },
     "nixos-hardware": {
       "inputs": {
         "nixpkgs": [
@@ -330,6 +342,7 @@
         "module-rns-server": "module-rns-server",
         "module-rnsh": "module-rnsh",
         "module-wireless": "module-wireless",
+        "module-wireless-hotspot": "module-wireless-hotspot",
         "nixos-hardware": "nixos-hardware",
         "nixpkgs": "nixpkgs_2",
         "profiles": "profiles",

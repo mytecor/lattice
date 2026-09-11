@@ -70,6 +70,11 @@
       flake = false;
     };
 
+    module-wireless-hotspot = {
+      url = "path:./modules/wireless-hotspot";
+      flake = false;
+    };
+
     profiles = {
       url = "path:./profiles";
       flake = false;
@@ -97,6 +102,7 @@
     module-pi,
     module-pi-acp-daemon,
     module-wireless,
+    module-wireless-hotspot,
     profiles,
     rns-rs,
     ...
@@ -203,6 +209,7 @@
         pi.imports = [ "${module-pi}" ];
         pi-acp-daemon.imports = [ "${module-pi-acp-daemon}" ];
         wireless.imports = [ "${module-wireless}" ];
+        hotspot.imports = [ "${module-wireless-hotspot}" ];
 
         default.imports = [
           self.nixosModules.ephemeral-root
@@ -212,6 +219,7 @@
           self.nixosModules.pi
           self.nixosModules.pi-acp-daemon
           self.nixosModules.wireless
+          self.nixosModules.hotspot
         ];
       };
 

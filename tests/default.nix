@@ -64,6 +64,11 @@ in
     gatewayProfile = "${profiles}/tcp-gateway/config.nix";
   };
 
+  wireless-hotspot = import ./wireless-hotspot.nix {
+    inherit nixpkgs pkgs;
+    hotspotModule = self.nixosModules.hotspot;
+  };
+
   comin-source-sync = import ./comin-source-sync.nix {
     inherit pkgs;
     syncPackage = pkgs.lattice.comin-source-sync;

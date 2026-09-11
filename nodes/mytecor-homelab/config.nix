@@ -3,6 +3,8 @@
 let
   rootPasswordHashFile = ./secrets/root-password-hash.age;
   hasRootPassword = builtins.pathExists rootPasswordHashFile;
+  hotspotPasswordFile = ./secrets/hotspot-password.age;
+  hasHotspotPassword = builtins.pathExists hotspotPasswordFile;
 in
 {
   networking.hostName = "mytecor-homelab";
@@ -53,7 +55,26 @@ in
         file = ./secrets/llm-provider-gonkarouter.age;
         mode = "0400";
       };
+    } // lib.optionalAttrs hasHotspotPassword {
+      hotspot-password = {
+        file = hotspotPasswordFile;
+        mode = "0400";
+      };
     };
+  };
+
+  # Wi-Fi hotspot (concurrent STA+AP on the single Realtek RTL8822CE radio).
+  # Enabled automatically once nodes/mytecor-homelab/secrets/hotspot-password.age
+  # exists (see README for the generation command). Must stay on the home
+  # network's channel: with `#channels <= 1` the AP cannot switch the radio
+  # off-channel without dropping the STA link (channel 44 / 5 GHz here).
+  lattice.hotspot = lib.mkIf hasHotspotPassword {
+    enable = true;
+    ssid = "Mytecor Homelab";
+    passwordFile = config.age.secrets.hotspot-password.path;
+    channel = 44;
+    hwMode = "a";
+    staInterface = "wlp2s0";
   };
 
   lattice.wireless.networks = [
