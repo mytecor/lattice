@@ -55,19 +55,34 @@ in
         exit 1
       }
       psk=$(cat ${lib.escapeShellArg cfg.passwordFile})
+      # 5 GHz VHT fields; on 2.4 GHz / pinned mode these stay 20 MHz (chwidth=0, no seg0).
+      vht_oper_chwidth=0
+      vht_seg0=
 
       if [ -n "${hotspotChannelOverride}" ]; then
         channel="${hotspotChannelOverride}"
         hw_mode="${if cfg.hwMode != null then cfg.hwMode else "a"}"
         vht=1
       else
-        # `channel N (freq MHz), width: ...` from `iw dev STA info`: token 3 is
-        # `(freq` -> strip the paren to get the freq in MHz.
-        freq=$(iw dev ${cfg.staInterface} info 2>/dev/null | awk '/^[[:space:]]*channel/ {print $3}' | tr -d '()')
+        # `channel N (freq MHz), width: W MHz, center1: C MHz` from `iw dev STA info`.
+        # Token 3 `(freq` -> strip the paren for the freq; take the STA's channel
+        # width and center1 so the AP matches the STA's 80 MHz block (a forced 20 MHz
+        # AP inside an 80 MHz STA on the same RTL8822CE radio breaks the data path).
+        sta_info=$(iw dev ${cfg.staInterface} info 2>/dev/null)
+        freq=$(printf '%s\n' "$sta_info" | awk '/^[[:space:]]*channel/ {print $3}' | tr -d '()')
+        w=$(printf '%s\n' "$sta_info" | awk '/^[[:space:]]*channel/{for(i=1;i<=NF;i++) if($i=="width:"){gsub("MHz","",$(i+1)); print $(i+1)}}')
+        c1=$(printf '%s\n' "$sta_info" | awk '/^[[:space:]]*channel/{for(i=1;i<=NF;i++) if($i=="center1:"){print $(i+1)}}')
         if [ "$freq" -ge 5000 ]; then
           hw_mode="a"
           channel=$(( (freq - 5000) / 5 ))
           vht=1
+          if [ "$w" -ge 80 ]; then
+            vht_oper_chwidth=1
+            vht_seg0=$(( (c1 - 5000) / 5 ))
+          elif [ "$w" -ge 40 ]; then
+            vht_oper_chwidth=0
+            vht_seg0=$(( (c1 - 5000) / 5 ))
+          fi
         elif [ "$freq" -ge 2400 ]; then
           hw_mode="g"
           channel=$(( (freq - 2407) / 5 ))
@@ -94,7 +109,10 @@ in
         echo "ieee80211n=1"
         if [ "$vht" = "1" ]; then
           echo "ieee80211ac=1"
-          echo "vht_oper_chwidth=0"
+          echo "vht_oper_chwidth=$vht_oper_chwidth"
+          if [ -n "$vht_seg0" ]; then
+            echo "vht_oper_centr_freq_seg0_idx=$vht_seg0"
+          fi
         fi
         echo "wmm_enabled=1"
         echo "wpa=2"
