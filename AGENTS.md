@@ -38,3 +38,13 @@
 - Не использовать абсолютные пути, внешние файловые пути или простое
   упоминание имени файла без Markdown-ссылки.
 - Ломаные ссылки в Markdown, HTML или на живом сайте проверяются через `lychee`.
+
+## Tests
+
+Before adding or changing tests, read [tests/README.md](./tests/README.md).
+
+Tests should verify contracts, invariants, generated artifacts, and runtime behavior.
+
+Do not write snapshot-like assertions that merely duplicate values from node configuration. If changing a configuration value would be a legitimate change, a test should normally not fail because of it.
+
+Universal configuration constraints belong in NixOS module `assertions`, not in tests of a specific node.

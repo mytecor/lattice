@@ -24,5 +24,6 @@ assert lib.hasInfix "\"node\":\"node-a\"" gateway.extraConfig;
 assert config.services.avahi.publish.userServices;
 assert builtins.hasAttr "node-status-mdns" config.systemd.services;
 assert lib.hasInfix statusHost config.systemd.services.node-status-mdns.script;
-assert config.networking.firewall.allowedTCPPorts == [ 80 ];
+# HTTP-status endpoint must be reachable; extra ports may legitimately be added.
+assert builtins.elem 80 config.networking.firewall.allowedTCPPorts;
 pkgs.runCommand "app-services-profile-evaluation" { } "touch $out"
