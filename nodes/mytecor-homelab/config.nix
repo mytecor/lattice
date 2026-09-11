@@ -114,6 +114,17 @@ in
     };
   };
 
+  # acp-normalizer (packages/acp-normalizer): Hydra transformer, который до broadcast
+  # переприсваивает per-token messageId стабильным id на всё логическое ассистентское
+  # сообщение. Clients, ключующие отрисовку по messageId (superlite), рвали ответы на
+  # отдельные чанки; defaultTransformers применяет нормализатор ко всем сессиям без
+  # участия клиента.
+  lattice.pi-acp-daemon = {
+    transformers.acp-normalizer.command =
+      [ "${pkgs.lattice.acp-normalizer}/bin/acp-normalizer" ];
+    defaultTransformers = [ "acp-normalizer" ];
+  };
+
   # LLM Gateway: flat routing_rules with named routes. Every rule belongs to a
   # named route; a filter with where.model makes the route the entry route for
   # a logical model, filter provider builds the provider selection, map binds it

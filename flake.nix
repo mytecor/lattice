@@ -114,6 +114,7 @@
             runtimeInputs = [ final.coreutils final.git final.jq final.util-linux ];
             text = builtins.readFile ./profiles/gitops/comin-source-sync.sh;
           };
+          acp-normalizer = final.callPackage ./packages/acp-normalizer/package.nix { };
           rns-server = final.callPackage "${rns-rs}/package.nix" { bin = "rns-server"; };
           rnsh = final.callPackage "${rns-rs}/package.nix" { bin = "rnsh"; };
           hydra-acp = final.callPackage ./packages/hydra-acp/package.nix { };
@@ -173,7 +174,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) hydra-acp llm-gateway pi pi-acp pi-mcp-adapter pi-tool-profile rns-server rnsh;
+          inherit (pkgs.lattice) acp-normalizer hydra-acp llm-gateway pi pi-acp pi-mcp-adapter pi-tool-profile rns-server rnsh;
           default = pkgs.lattice.rns-server;
         });
 

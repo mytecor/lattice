@@ -82,6 +82,52 @@ in
       description = "Service label used for the Caddy and mDNS hostname.";
     };
 
+    transformers = mkOption {
+      type = types.attrsOf (types.submodule {
+        options = {
+          command = mkOption {
+            type = types.listOf types.str;
+            default = [ ];
+            description = "Full argv of the transformer process (empty falls back to the name).";
+          };
+          args = mkOption {
+            type = types.listOf types.str;
+            default = [ ];
+            description = "Extra argv appended after command.";
+          };
+          env = mkOption {
+            type = types.attrsOf types.str;
+            default = { };
+            description = "Extra environment variables for the transformer process.";
+          };
+          enabled = mkOption {
+            type = types.bool;
+            default = true;
+            description = "Spawn the transformer when the daemon starts.";
+          };
+        };
+      });
+      default = { };
+      description = ''
+        Hydra transformers daemon-spawned per name. Each entry becomes a
+        `transformers.<name>` entry in the generated Hydra config; the daemon
+        spawns it and mints a per-process transformer token passed via
+        `HYDRA_ACP_TOKEN`/`HYDRA_ACP_WS_URL`. See
+        [`packages/acp-normalizer`](../../../packages/acp-normalizer/README.md) for the
+        Lattice-owned normalizer.
+      '';
+    };
+
+    defaultTransformers = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      description = ''
+        Transformer names applied to every new session (Hydra
+        `defaultTransformers`). Without this, a registered transformer is only
+        used by sessions that opt in via `session/new` `_meta["hydra-acp"].transformers`.
+      '';
+    };
+
     generatedConfigFile = mkOption {
       type = types.path;
       readOnly = true;

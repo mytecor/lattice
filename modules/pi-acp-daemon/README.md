@@ -13,6 +13,21 @@ Hydra слушает только loopback, хранит session metadata в `St
 Внешний LAN endpoint — `ws://acp.<nodename>.local/`. Обязательный для Hydra путь `/acp` остаётся
 внутренней деталью loopback upstream и добавляется Caddy через rewrite.
 
+## Transformers
+
+Опции `lattice.pi-acp-daemon.transformers` (attrset с `command`/`args`/`env`/`enabled`) и
+`defaultTransformers` (list of names) передаются в сгенерированный Hydra-конфиг как есть:
+daemon спавнит каждый transformer процесс (майнит per-process transformer-токен и кладёт его
+в `HYDRA_ACP_TOKEN`/`HYDRA_ACP_WS_URL`), а `defaultTransformers` добавляет их в цепочку **всех**
+новых сессий. Без `defaultTransformers` зарегистрированный transformer подключает только сессия,
+которая явно запросила его в `session/new` через `_meta: { "hydra-acp": { "transformers": ["<name>"] } }`
+(цепочка фиксируется при создании сессии).
+
+Lattice-owned transformer — [`packages/acp-normalizer`](../../packages/acp-normalizer/README.md):
+переприсваивает per-token `messageId` на `agent_message_chunk`/`agent_thought_chunk` стабильным id в
+рамках одного логического ассистентского сообщения. Включён на `mytecor-homelab` через
+[`nodes/mytecor-homelab`](../../nodes/mytecor-homelab/README.md).
+
 ## Форма соединения клиента
 
 Единственная проверенная форма клиентского подключения — чистый ACP WebSocket с subprotocol

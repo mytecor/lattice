@@ -13,6 +13,13 @@ let
 
         lattice.pi-acp-daemon = {
           enable = true;
+          # Transformers are wired into the generated Hydra config (shape-only
+          # check in jq below; the daemon itself is not run by this test).
+          transformers.fake-normalizer = {
+            command = [ "/bin/echo" "fake-normalizer" ];
+            enabled = true;
+          };
+          defaultTransformers = [ "fake-normalizer" ];
         };
       }
     ];
@@ -48,7 +55,10 @@ pkgs.runCommand "pi-acp-daemon-evaluation" {
     .registry.pinned == true and
     .defaultAgent == "pi-acp" and
     .agents["pi-acp"].command == "${lib.getExe pkgs.lattice.pi-acp}" and
-    .daemon.scrubEnv == []
+    .daemon.scrubEnv == [] and
+    .defaultTransformers == ["fake-normalizer"] and
+    .transformers["fake-normalizer"].command == ["/bin/echo", "fake-normalizer"] and
+    .transformers["fake-normalizer"].enabled == true
   ' ${cfg.generatedConfigFile} > "$out/hydra-config.json"
 
   export XDG_DATA_HOME="$TMPDIR/caddy-data"

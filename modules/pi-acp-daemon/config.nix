@@ -23,6 +23,7 @@ let
     };
     defaultAgent = "pi-acp";
     defaultCwd = userHome;
+    inherit (cfg) transformers defaultTransformers;
   });
 
   prepareRuntime = ''
