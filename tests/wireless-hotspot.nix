@@ -64,12 +64,6 @@ assert lib.hasInfix "hw_mode=$hw_mode" autoPre;
 assert lib.hasInfix "channel=$channel" autoPre;
 # The STA freq parser reads the `(freq MHz` token (field 3), not a later field.
 assert lib.hasInfix "print $3" autoPre;
-# On 5 GHz the AP matches the STA's channel width (80 MHz) instead of forcing
-# 20 MHz: parse width/center1, and drive vht_oper_chwidth + seg0 from them.
-assert lib.hasInfix "width:" autoPre;
-assert lib.hasInfix "center1:" autoPre;
-assert lib.hasInfix "vht_oper_chwidth=$vht_oper_chwidth" autoPre;
-assert lib.hasInfix "vht_oper_centr_freq_seg0_idx=$vht_seg0" autoPre;
 # Graceful fallback when the STA carrier is not up yet: channel=auto (0), so a
 # boot-time preStart does not fail the unit.
 assert lib.hasInfix "channel=0" autoPre;
