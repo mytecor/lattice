@@ -27,6 +27,9 @@
    фиксации threat model и требований к NixOS provisioning.
 4. **Controller storage и provisioner** — конкретные реализации выбираются в F11 после
    стабилизации task specification и ручного worker lifecycle в F10.
+5. **Внешний доступ к сервисам с поддоменов `myt.su` через Yggdrasil** — открыт в
+   [f4-05](f4-payload/f4-05-yggdrasil-public-subdomain-ingress.md): хостинг/управление DNS зоны
+   `myt.su`, какие сервисы F4 выводятся наружу и каким поддоменам соответствуют.
 
 Смысл вычислений и хранилища уточнён в [f4-03](f4-payload/f4-03-shared-storage-compute.md): вычисления
 выполняются disposable workers, общей persistent FS у них нет, caches не являются source of truth,
