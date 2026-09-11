@@ -50,11 +50,19 @@ valid interface combinations:
     enable = true;
     ssid = "Mytecor Homelab";
     passwordFile = config.age.secrets.hotspot-password.path;
-    channel = 44;        # = каналу домашней 5 GHz сети
-    hwMode = "a";        # 5 GHz; "g" для 2.4 GHz
+    # Канал/полоса по умолчанию определяются автоматически из канала STA —
+    # hotspot встанет на ту же полосу и канал, что и живая STA-связь
+    # (2.4 или 5 GHz). Явный override — см. таблицу опций ниже.
   };
 }
 ```
+
+По умолчанию канал и полоса AP **авто-определяются** из текущей STA-связи
+(через `iw dev <staInterface> info`) при генерации конфига: hotspot встаёт на ту
+же полосу и канал, что и STA. Это обязательно, т.к. `#channels <= 1` — AP не
+может уйти на другой канал, чем STA (форсирование несовпадающего канала даёт
+`Failed to set beacon parameters` / `AP-DISABLED`). Если нужно жёстко зафиксировать
+(например 5 GHz / 44), задайте `channel` и `hwMode` явно.
 
 Пароль хранится в age-секрете и материализуется в `/run/lattice-hotspot/
 hostapd.conf` при загрузке — в Nix store он не попадает. `ssid` не секрет и
@@ -69,8 +77,8 @@ hostapd.conf` при загрузке — в Nix store он не попадае�
 | `phy` | `phy0` | Радио для `iw phy interface add … type __ap` |
 | `ssid` | — | Имя сети |
 | `passwordFile` | — | Файл (age-секрет) с WPA2-PSK паролем |
-| `channel` | `44` | Канал AP; **должен** равняться каналу STA |
-| `hwMode` | `a` | `a` = 5 GHz, `g` = 2.4 GHz |
+| `channel` | `null` (авто) | Канал AP; если задан — принудительно. По умолчанию берётся из канала STA |
+| `hwMode` | `null` (авто) | `a` = 5 GHz, `g` = 2.4 GHz; если задан — принудительно, иначе из канала STA |
 | `countryCode` | `US` | 802.11d country code |
 | `macAddress` | `02:0a:44:00:00:01` | Уникальный MAC AP |
 | `ip` | `10.44.0.1/24` | Адрес ноды на `ap0` |

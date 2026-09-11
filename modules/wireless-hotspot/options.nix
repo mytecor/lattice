@@ -34,15 +34,15 @@ in
     };
 
     channel = mkOption {
-      type = types.int;
-      default = 44;
-      description = "RF channel for the AP. Because the RTL8822CE radio is `#channels <= 1`, this MUST equal the channel of the running STA link (home network), otherwise the radio would be switched off-channel and break the STA. Set it to the home network's channel.";
+      type = types.nullOr types.int;
+      default = null;
+      description = "RF channel for the AP. When null, the channel and band are auto-detected from the running STA link at config-generation time (required, because RTL8822CE is `#channels <= 1` and the AP must share the STA's channel; forcing a fixed value that mismatches the STA blackens the AP with `Failed to set beacon parameters`).";
     };
 
     hwMode = mkOption {
-      type = types.enum [ "a" "g" ];
-      default = "a";
-      description = "802.11 hardware mode: `a` for 5 GHz, `g` for 2.4 GHz. Must match the band of the STA link.";
+      type = types.nullOr (types.enum [ "a" "g" ]);
+      default = null;
+      description = "802.11 hardware mode: `a` for 5 GHz, `g` for 2.4 GHz. When null, it is auto-detected from the STA link band. If `channel` is set explicitly, set this to the matching band.";
     };
 
     countryCode = mkOption {

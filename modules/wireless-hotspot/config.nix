@@ -3,6 +3,10 @@
 let
   cfg = config.lattice.hotspot;
   apWanted = lib.mkIf cfg.enable;
+  # Explicit channel override: when null the band/channel is auto-detected from
+  # the live STA link at config-generation time.
+  hotspotChannelOverride =
+    lib.optionalString (cfg.channel != null) "${toString cfg.channel}";
 in
 {
   # The AP shares the same radio as the STA link, so NetworkManager must not try
@@ -14,11 +18,16 @@ in
   # mirroring the STA wireless secret handling (modules/wireless). The passphrase
   # lives in an age secret, not in the NixOS store, so it must be materialised to
   # a fresh config at boot time.
+  # Resolve the AP's channel/band. RTL8822CE is `#channels <= 1`, so the AP must
+  # share the STA's channel. Prefer an explicit `channel`/`hwMode` when set;
+  # otherwise auto-detect the band and channel from the live STA link via iw at
+  # config-generation time so the hotspot tracks whatever the home network uses
+  # (2.4 or 5 GHz) and survives a home-network band change.
   systemd.services.lattice-hotspot-conf = apWanted {
     description = "Generate hostapd configuration for ${cfg.interfaceName} hotspot";
     wantedBy = [ "multi-user.target" ];
     before = [ "lattice-hotspot.service" ];
-    path = [ pkgs.coreutils ];
+    path = [ pkgs.coreutils pkgs.gawk pkgs.iw ];
     script = ''
       set -eu
       [ -r ${lib.escapeShellArg cfg.passwordFile} ] || {
@@ -26,26 +35,50 @@ in
         exit 1
       }
       psk=$(cat ${lib.escapeShellArg cfg.passwordFile})
+
+      if [ -n "${hotspotChannelOverride}" ]; then
+        channel="${hotspotChannelOverride}"
+        hw_mode="${if cfg.hwMode != null then cfg.hwMode else "a"}"
+      else
+        # channel N (freq MHz), width: ... from `iw dev STA info`
+        freq=$(iw dev ${cfg.staInterface} info 2>/dev/null | awk '/^[[:space:]]*channel/ {print $4}' | tr -d '()')
+        if [ -z "$freq" ]; then
+            echo "lattice-hotspot: could not read STA channel from ${cfg.staInterface}; is it connected?" >&2
+            exit 1
+        fi
+        if [ "$freq" -ge 5000 ]; then
+          hw_mode="a"
+          channel=$(( (freq - 5000) / 5 ))
+          vht=1
+        else
+          hw_mode="g"
+          channel=$(( (freq - 2407) / 5 ))
+          vht=0
+        fi
+      fi
+
       mkdir -p /run/lattice-hotspot
       umask 077
-      cat > /run/lattice-hotspot/hostapd.conf <<EOF
-      interface=${cfg.interfaceName}
-      driver=nl80211
-      ssid=${cfg.ssid}
-      hw_mode=${cfg.hwMode}
-      channel=${toString cfg.channel}
-      ieee80211n=1
-      ieee80211ac=1
-      vht_oper_chwidth=0
-      wmm_enabled=1
-      wpa=2
-      wpa_key_mgmt=WPA-PSK
-      rsn_pairwise=CCMP
-      wpa_passphrase=$psk
-      auth_algs=1
-      ignore_broadcast_ssid=0
-      country_code=${cfg.countryCode}
-      EOF
+      {
+        echo "interface=${cfg.interfaceName}"
+        echo "driver=nl80211"
+        echo "ssid=${cfg.ssid}"
+        echo "hw_mode=$hw_mode"
+        echo "channel=$channel"
+        echo "ieee80211n=1"
+        if [ "${if cfg.hwMode != null then "1" else "$vht"}" = "1" ]; then
+          echo "ieee80211ac=1"
+          echo "vht_oper_chwidth=0"
+        fi
+        echo "wmm_enabled=1"
+        echo "wpa=2"
+        echo "wpa_key_mgmt=WPA-PSK"
+        echo "rsn_pairwise=CCMP"
+        echo "wpa_passphrase=$psk"
+        echo "auth_algs=1"
+        echo "ignore_broadcast_ssid=0"
+        echo "country_code=${cfg.countryCode}"
+      } > /run/lattice-hotspot/hostapd.conf
     '';
     serviceConfig = {
       Type = "oneshot";
