@@ -3,6 +3,10 @@
 let
   rootPasswordHashFile = ./secrets/root-password-hash.age;
   hasRootPassword = builtins.pathExists rootPasswordHashFile;
+  # Non-secret SSIDs exposed as world-readable store files, matching the module's
+  # "both fields are file paths" contract. Passwords still come from a shared
+  # agenix secret (wifi-password.age); only the home SSID uses wifi-ssid.age.
+  ssidFile = name: value: "${pkgs.writeText "lattice-ssid-${name}" value}";
 in
 {
   networking.hostName = "mytecor-homelab";
@@ -65,8 +69,18 @@ in
 
   lattice.wireless.networks = [
     {
+      # Home AP ("BNF Space"), strongest signal (100%). SSID kept in wifi-ssid.age.
       ssid = config.age.secrets.wifi-ssid.path;
       password = config.age.secrets.wifi-password.path;
+      priority = 100;
+    }
+    {
+      # Only roaming AP verified to be in the same subnet (192.168.60.0/24) as
+      # the operator Mac (macbook.local reachable from it). R509/R606/R504/P 304
+      # resolved to different subnets and were removed.
+      ssid = ssidFile "r505" "R505";
+      password = config.age.secrets.wifi-password.path;
+      priority = 60;
     }
   ];
 

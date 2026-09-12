@@ -16,6 +16,8 @@ in
           connection = {
             id = network.name;
             type = "wifi";
+          } // lib.optionalAttrs (network.net.priority != null) {
+            autoconnect-priority = network.net.priority;
           };
           wifi = {
             mode = "infrastructure";

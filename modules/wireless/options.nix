@@ -17,6 +17,18 @@ in
             example = literalExpression "config.age.secrets.wifi_psk.path";
             description = "Path to a file containing the Wi-Fi password.";
           };
+
+          priority = mkOption {
+            type = types.nullOr types.int;
+            default = null;
+            example = 60;
+            description = ''
+              NetworkManager `connection.autoconnect-priority`: a higher value wins
+              when the radio auto-connects among the configured networks. Use it to
+              rank networks by signal strength (stronger AP first). `null` leaves the
+              priority unset and NetworkManager's defaults apply.
+            '';
+          };
         };
       });
       default = [ ];
