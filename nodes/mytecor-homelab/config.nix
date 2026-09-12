@@ -80,6 +80,10 @@ in
     {
       ssid = config.age.secrets.wifi-ssid.path;
       password = config.age.secrets.wifi-password.path;
+      # Keep the STA link on 2.4 GHz so the concurrent hotspot (single radio,
+      # `#channels <= 1`) can also use 2.4 GHz — the only band where RTL8822CE
+      # drives a stable STA+AP data path.
+      band = "bg";
     }
   ];
 
