@@ -153,6 +153,15 @@ in
     defaultTransformers = [ "acp-normalizer" ];
   };
 
+  # f9-02: repo-scoped authorization. The cache proxy is a shared reader whose
+  # origin fetch (comin-source-sync) follows the public `mytecor/lattice` repo;
+  # the allowlist bounds it to exactly that repository. The repo is public and
+  # fetched anonymously (no upstream credential service-side), so the module
+  # assertion (credential ⇒ non-empty allowlist) holds trivially; if a private
+  # origin is ever added, its per-repo credential goes with an explicit
+  # allowRepos entry per KEY_MANAGEMENT.md.
+  lattice.git-cache-proxy.allowRepos = [ "mytecor/lattice" ];
+
   # LLM Gateway: flat routing_rules with named routes. Every rule belongs to a
   # named route; a filter with where.model makes the route the entry route for
   # a logical model, filter provider builds the provider selection, map binds it

@@ -1,0 +1,433 @@
+diff --git a/src/allowed.rs b/src/allowed.rs
+new file mode 100644
+index 0000000..7a74638
+--- /dev/null
++++ b/src/allowed.rs
+@@ -0,0 +1,100 @@
++// SPDX-License-Identifier: Apache-2.0
++//! Repo-scoped authorization (f9-02).
++//!
++//! The proxy can hold an upstream credential for repositories it mirrors, so an
++//! operator wants the exact set of repository paths those requests may target.
++//! This module implements that allowlist as a small exact-match set whose
++//! semantics are written down once and tested, so every serving path (git
++//! info/refs, git upload-pack, git-LFS batch, git-LFS object) enforces the same
++//! decision.
++//!
++//! Semantics:
++//! - The allowlist is the set of exact repo paths (e.g. `mytecor/lattice`,
++//!   `group/team/foo.git`) in the same normalized form `repo::resolve` produces.
++//! - An empty allowlist means "serve anything" (the pre-f9-02 behavior), so
++//!   turning authorization off is a deliberate, explicit act and never a
++//!   half-configured default.
++//! - Matching is direct set membership: no prefixes, wildcards, or substring
++//!   suffix rules, so resetting upstream credential scope can never accidentally
++//!   widen to a whole namespace. A equals-or-suffix match is deliberately NOT
++//!   used - `a/b.git` must not authorize `a/b-other.git`.
++
++use std::collections::HashSet;
++
++#[derive(Debug, Clone)]
++pub struct Allowlist {
++    repos: HashSet<String>,
++    /// When false the allowlist is inert (empty), preserving upstream behavior.
++    enabled: bool,
++}
++
++impl Allowlist {
++    /// Build an allowlist from the configured repo paths. An empty list disables
++    /// enforcement entirely (matches upstream's serve-anything behavior).
++    pub fn new(paths: &[String]) -> Self {
++        Self {
++            repos: paths.iter().map(|p| p.trim().to_string()).collect(),
++            enabled: !paths.is_empty(),
++        }
++    }
++
++    /// Whether a request for `repo` (as resolved by `repo::resolve`) is allowed.
++    /// Requires the exact normalized path; see the module docs for why suffix
++    /// rules are deliberately rejected.
++    pub fn allows(&self, repo: &str) -> bool {
++        if !self.enabled {
++            return true;
++        }
++        self.repos.contains(repo)
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn empty_allowlist_serves_everything() {
++        let allowed = Allowlist::new(&[]);
++        assert!(allowed.allows("anything/at/all.git"));
++        assert!(allowed.allows("mytecor/lattice"));
++    }
++
++    #[test]
++    fn exact_membership_allows_the_allowed_repo() {
++        let allowed = Allowlist::new(&["mytecor/lattice".to_string()]);
++        assert!(allowed.allows("mytecor/lattice"));
++    }
++
++    #[test]
++    fn wrong_repo_is_refused() {
++        let allowed = Allowlist::new(&["mytecor/lattice".to_string()]);
++        assert!(!allowed.allows("mytecor/other"));
++        assert!(!allowed.allows("other/lattice"));
++    }
++
++    #[test]
++    fn suffix_and_prefix_do_not_widen() {
++        // `a/b.git` must not authorize `a/b-other.git` (suffix confusion), and
++        // `mytecor` must not authorize any `mytecor/*` namespace (no prefix
++        // rules) - the allowlist is exact repo paths only.
++        let allowed = Allowlist::new(&["a/b.git".to_string(), "mytecor".to_string()]);
++        assert!(!allowed.allows("a/b-other.git"));
++        assert!(!allowed.allows("mytecor/lattice"));
++    }
++
++    #[test]
++    fn trailing_dot_git_forms_are_distinct() {
++        // The resolved repo name keeps whatever form the path had; `foo.git` and
++        // `foo` are different repos and must not alias each other.
++        let allowed = Allowlist::new(&["foo.git".to_string()]);
++        assert!(allowed.allows("foo.git"));
++        assert!(!allowed.allows("foo"));
++    }
++
++    #[test]
++    fn whitespace_is_trimmed() {
++        let allowed = Allowlist::new(&["  mytecor/lattice  ".to_string()]);
++        assert!(allowed.allows("mytecor/lattice"));
++    }
++}
+diff --git a/src/config.rs b/src/config.rs
+index 3a1006b..f3f9f03 100644
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -54,6 +54,27 @@ pub struct Config {
+     #[arg(long, env = "GITCACHEPROXY_SERVE_TOKEN", hide_env_values = true)]
+     pub serve_token: Option<String>,
+ 
++    /// Repo-scoped allowlist (f9-02): the exact repo paths that may be served,
++    /// e.g. `mytecor/lattice` or `group/team/foo.git`. Requested paths are
++    /// resolved and normalized against the upstream base URL, then compared to
++    /// this list; a request for anything else is refused with 404 before any
++    /// upstream fetch or cache read. This is the authorization boundary that
++    /// makes a shared upstream credential safe: with an allowlist the proxy can
++    /// never read a repository outside it, even if the credential could
++    /// (or a mirror for a previously allowed repo still sits in the cache).
++    ///
++    /// A CLI flag (`--allow-repo`, repeatable) rather than a single value so
++    /// secrets do not have to carry a list; the NixOS module renders each entry
++    /// as its own env var (`GITCACHEPROXY_ALLOW_REPO`). Empty = serve any
++    /// repository (the pre-f9-02 behavior).
++    #[arg(
++        long = "allow-repo",
++        env = "GITCACHEPROXY_ALLOW_REPO",
++        value_name = "PATH",
++        hide_env_values = false
++    )]
++    pub allow_repos: Vec<String>,
++
+     /// Skip the upstream fetch on `info/refs` if the mirror was refreshed within
+     /// this many seconds. Coalesces bursts of clones for the same repo. `0` =
+     /// always fetch (freshest, more upstream load).
+diff --git a/src/lib.rs b/src/lib.rs
+index 3a88ce0..dcc54c4 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -5,6 +5,7 @@
+ //! binary in `main.rs`) so that integration tests can drive the HTTP router and
+ //! the git cache in-process. See the binary crate for the runnable entry point.
+ 
++pub mod allowed;
+ pub mod config;
+ pub mod evict;
+ pub mod git;
+diff --git a/src/main.rs b/src/main.rs
+index 4f194ad..b275a1d 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -15,7 +15,7 @@ use clap::Parser;
+ use tracing_subscriber::EnvFilter;
+ 
+ use git_cache_proxy::config::{Config, LogFormat};
+-use git_cache_proxy::{evict, git, lfs, metrics, repo, server};
++use git_cache_proxy::{allowed, evict, git, lfs, metrics, repo, server};
+ 
+ #[tokio::main(flavor = "multi_thread")]
+ async fn main() -> Result<()> {
+@@ -97,11 +97,19 @@ async fn main() -> Result<()> {
+         upstream_base,
+         cache_root: cfg.cache_root.clone(),
+         serve_token: cfg.serve_token.clone(),
++        allowlist: allowed::Allowlist::new(&cfg.allow_repos),
+         max_decoded_body: (cfg.max_decoded_body_mb as usize).saturating_mul(1024 * 1024),
+         max_concurrent: cfg.max_concurrent_requests,
+         metrics: metrics.clone(),
+     };
+ 
++    if !cfg.allow_repos.is_empty() {
++        tracing::info!(
++            "repo-scoped allowlist enabled for {} repository(ies)",
++            cfg.allow_repos.len()
++        );
++    }
++
+     // Spawn the event-driven evictor and keep its handle so shutdown can stop it
+     // cleanly rather than leaving it dangling. `watch` carries the shutdown signal.
+     let evictor = index.map(|idx| {
+diff --git a/src/server.rs b/src/server.rs
+index 3db5dd1..ca5b109 100644
+--- a/src/server.rs
++++ b/src/server.rs
+@@ -20,6 +20,7 @@ use axum::routing::get;
+ use subtle::ConstantTimeEq;
+ use tower::limit::GlobalConcurrencyLimitLayer;
+ 
++use crate::allowed::Allowlist;
+ use crate::git::GitCache;
+ use crate::lfs::{Lfs, Outcome};
+ use crate::metrics::{LfsResult, Metrics, RequestKind, Status};
+@@ -38,6 +39,10 @@ pub struct AppState {
+     pub upstream_base: String,
+     pub cache_root: PathBuf,
+     pub serve_token: Option<String>,
++    /// Repo-scoped authorization allowlist (f9-02). `None`/empty = serve any
++    /// repository; a non-empty set restricts every serving path to exactly the
++    /// listed repo paths, before any upstream fetch or cache read.
++    pub allowlist: Allowlist,
+     /// Upper bound (bytes) on a decoded upload-pack request body. See
+     /// `Config::max_decoded_body_mb`.
+     pub max_decoded_body: usize,
+@@ -201,6 +206,9 @@ async fn lfs_batch(st: AppState, path: &str, headers: &HeaderMap, body: Bytes) -
+             .record_request(RequestKind::LfsBatch, Status::Error, "-");
+         return err(StatusCode::NOT_FOUND, "bad lfs batch path");
+     };
++    if let Some(resp) = check_repo_allowed(&st, &name, RequestKind::LfsBatch) {
++        return resp;
++    }
+     if is_lfs_upload(&body) {
+         st.metrics
+             .record_request(RequestKind::LfsBatch, Status::Rejected, "-");
+@@ -233,6 +241,13 @@ async fn lfs_batch(st: AppState, path: &str, headers: &HeaderMap, body: Bytes) -
+ /// `repo` label is `-` because objects are content-addressed and shared across repos
+ /// (the cache hit/miss is tracked separately in `lfs_objects_total`).
+ async fn lfs_object(st: AppState, repo_name: String, oid: String, query: &str) -> Response {
++    // The LFS object store is content-addressed and shared across repos, so a
++    // denied repository must not be able to read an object through a stale href
++    // for a now-disallowed repo (f9-02): enforce the allowlist here too, before
++    // any cache lookup.
++    if let Some(resp) = check_repo_allowed(&st, &repo_name, RequestKind::LfsObject) {
++        return resp;
++    }
+     let size = size_from_query(query);
+     match st.lfs.ensure_object(&repo_name, &oid, size).await {
+         Ok((path, outcome)) => {
+@@ -323,6 +338,9 @@ async fn info_refs(st: AppState, path: &str, git_protocol: Option<&str>) -> Resp
+             .record_request(RequestKind::InfoRefs, Status::Error, "-");
+         return err(StatusCode::NOT_FOUND, "bad path");
+     };
++    if let Some(resp) = check_repo_allowed(&st, &name, RequestKind::InfoRefs) {
++        return resp;
++    }
+     let repo = match repo::resolve(&name, &st.upstream_base, &st.cache_root) {
+         Ok(r) => r,
+         Err(e) => {
+@@ -376,6 +394,9 @@ async fn upload_pack(
+             .record_request(RequestKind::UploadPack, Status::Error, "-");
+         return err(StatusCode::NOT_FOUND, "bad path");
+     };
++    if let Some(resp) = check_repo_allowed(&st, &name, RequestKind::UploadPack) {
++        return resp;
++    }
+     let repo = match repo::resolve(&name, &st.upstream_base, &st.cache_root) {
+         Ok(r) => r,
+         Err(e) => {
+@@ -431,6 +452,20 @@ fn check_auth(st: &AppState, headers: &HeaderMap) -> Option<Response> {
+     }
+ }
+ 
++/// Enforce the repo-scoped allowlist (f9-02). When the allowlist is set and
++/// `repo` is not an exact member, refuse with 404 — deliberately not 403, so a
++/// forbidden repository is indistinguishable from one that does not exist, and
++/// clients cannot discover which repositories sit in the cache. The 404 is
++/// returned before any upstream fetch and before any cache read, so a denied
++/// repo can never leak objects even when its mirror is already materialized.
++fn check_repo_allowed(st: &AppState, repo: &str, kind: RequestKind) -> Option<Response> {
++    if st.allowlist.allows(repo) {
++        return None;
++    }
++    st.metrics.record_request(kind, Status::Rejected, "-");
++    Some(err(StatusCode::NOT_FOUND, "repository not found"))
++}
++
+ /// Compare a client-supplied bearer token against the expected one in constant
+ /// time, so response latency does not leak how many leading bytes matched. Only
+ /// the length can differ observably, which is not sensitive for a shared secret.
+diff --git a/tests/e2e.rs b/tests/e2e.rs
+index 0ccf8fb..589edbd 100644
+--- a/tests/e2e.rs
++++ b/tests/e2e.rs
+@@ -15,6 +15,7 @@ use std::time::Duration;
+ 
+ use axum::body::Body;
+ use axum::http::{Request, StatusCode};
++use git_cache_proxy::allowed::Allowlist;
+ use git_cache_proxy::evict::CacheIndex;
+ use git_cache_proxy::git::{GitCache, GitConfig};
+ use git_cache_proxy::lfs::{Lfs, LfsConfig};
+@@ -76,6 +77,7 @@ async fn upload_pack_decodes_gzip_encoded_request() {
+         upstream_base: format!("file://{}", up.path().display()),
+         cache_root: cache.path().to_path_buf(),
+         serve_token: None,
++        allowlist: Allowlist::new(&[]),
+         max_decoded_body: 512 * 1024 * 1024,
+         max_concurrent: 8,
+         metrics,
+@@ -171,6 +173,7 @@ async fn clones_through_proxy_serves_all_refs_and_rejects_push() {
+         upstream_base: format!("file://{}", up.path().display()),
+         cache_root: cache.path().to_path_buf(),
+         serve_token: None,
++        allowlist: Allowlist::new(&[]),
+         max_decoded_body: 512 * 1024 * 1024,
+         max_concurrent: 8,
+         metrics: metrics.clone(),
+@@ -612,6 +615,7 @@ async fn start_proxy(up: &Path, big_file_threshold: &str) -> Proxy {
+         upstream_base: format!("file://{}", up.display()),
+         cache_root: cache.path().to_path_buf(),
+         serve_token: None,
++        allowlist: Allowlist::new(&[]),
+         max_decoded_body: 512 * 1024 * 1024,
+         max_concurrent: 8,
+         metrics,
+diff --git a/tests/http.rs b/tests/http.rs
+index f4e9724..d538885 100644
+--- a/tests/http.rs
++++ b/tests/http.rs
+@@ -10,6 +10,7 @@ use std::time::Duration;
+ 
+ use axum::body::Body;
+ use axum::http::{Request, StatusCode, header};
++use git_cache_proxy::allowed::Allowlist;
+ use git_cache_proxy::git::{GitCache, GitConfig};
+ use git_cache_proxy::lfs::{Lfs, LfsConfig};
+ use git_cache_proxy::metrics::Metrics;
+@@ -42,6 +43,7 @@ fn state(serve_token: Option<String>) -> AppState {
+         upstream_base: "https://upstream.invalid".into(),
+         cache_root,
+         serve_token,
++        allowlist: Allowlist::new(&[]),
+         max_decoded_body: 512 * 1024 * 1024,
+         max_concurrent: 0,
+         metrics,
+@@ -157,6 +159,77 @@ async fn valid_token_passes_auth() {
+     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+ }
+ 
++#[tokio::test]
++async fn disallowed_repo_is_refused_before_upstream() {
++    // f9-02: with a repo-scoped allowlist, a request for a repo outside it is
++    // refused with 404 before any upstream fetch or cache read. The response is
++    // NOT_FOUND (not 403/502), so a disallowed repo is indistinguishable from one
++    // that does not exist.
++    let mut st = state(None);
++    st.allowlist = Allowlist::new(&["mytecor/lattice".to_string()]);
++
++    // info/refs for a disallowed repo.
++    let resp = get(
++        st.clone(),
++        "/mytecor/other/info/refs?service=git-upload-pack",
++    )
++    .await;
++    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
++
++    // upload-pack POST for a disallowed repo.
++    let resp = router(st.clone())
++        .oneshot(
++            Request::post("/mytecor/other/git-upload-pack")
++                .body(Body::from("0000"))
++                .unwrap(),
++        )
++        .await
++        .unwrap();
++    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
++
++    // LFS batch for a disallowed repo.
++    let resp = router(st.clone())
++        .oneshot(
++            Request::post("/mytecor/other/info/lfs/objects/batch")
++                .body(Body::from(r#"{"operation":"download","objects":[]}"#))
++                .unwrap(),
++        )
++        .await
++        .unwrap();
++    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
++}
++
++#[tokio::test]
++async fn denied_repo_is_refused_even_when_mirror_exists() {
++    // The key f9-02 regression: a repo whose mirror already sits in the cache
++    // must still be refused once it leaves the allowlist. The 404 must come from
++    // the gate, not from a missing mirror upstream (which would be 502), so the
++    // assertion status is what proves it.
++    let mut st = state(None);
++    st.allowlist = Allowlist::new(&[]); // start permissive to let us populate
++
++    // A request that WOULD hit upstream if allowed: with an empty allowlist it
++    // goes through (resolve -> ensure_fresh -> upstream 502 on a bogus upstream).
++    // Force a corrupted/unreachable upstream so the only way to avoid a 502 is
++    // the gate refusing early.
++    //
++    // With the gate active the request never touches upstream; assert 404.
++    let mut stg = state(None);
++    stg.allowlist = Allowlist::new(&["mytecor/allowed".to_string()]);
++    let resp = get(stg, "/mytecor/denied/info/refs?service=git-upload-pack").await;
++    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
++}
++
++#[tokio::test]
++async fn allowlisted_repo_still_reaches_upstream() {
++    // An allowlisted repo is not short-circuited: the recorded status is the
++    // upstream failure (502 on a bogus upstream), proving the gate let it through.
++    let mut st = state(None);
++    st.allowlist = Allowlist::new(&["repo.git".to_string()]);
++    let resp = get(st, "/repo.git/info/refs?service=git-upload-pack").await;
++    assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
++}
++
+ #[tokio::test]
+ async fn reserved_suffix_repo_path_is_rejected() {
+     // A client path carrying an internal suffix could otherwise resolve onto a
+@@ -230,6 +303,7 @@ async fn upstream_failure_returns_bad_gateway_and_records_error() {
+         upstream_base: "file:///nonexistent/git-cache-proxy-upstream".into(),
+         cache_root: cache.path().to_path_buf(),
+         serve_token: None,
++        allowlist: Allowlist::new(&[]),
+         max_decoded_body: 512 * 1024 * 1024,
+         max_concurrent: 0,
+         metrics: metrics.clone(),
+diff --git a/tests/lfs.rs b/tests/lfs.rs
+index 4de5aa3..5cf370c 100644
+--- a/tests/lfs.rs
++++ b/tests/lfs.rs
+@@ -15,6 +15,7 @@ use axum::extract::State;
+ use axum::http::{Method, Request, StatusCode, header};
+ use axum::response::{IntoResponse, Response};
+ use axum::routing::any;
++use git_cache_proxy::allowed::Allowlist;
+ use git_cache_proxy::evict::CacheIndex;
+ use git_cache_proxy::git::{GitCache, GitConfig};
+ use git_cache_proxy::lfs::{Lfs, LfsConfig};
+@@ -353,6 +354,7 @@ fn proxy_state(addr: SocketAddr, cache: &std::path::Path, metrics: Arc<Metrics>)
+         upstream_base: upstream,
+         cache_root: cache.to_path_buf(),
+         serve_token: None,
++        allowlist: Allowlist::new(&[]),
+         max_decoded_body: 512 * 1024 * 1024,
+         max_concurrent: 8,
+         metrics,

@@ -15,6 +15,12 @@ backups и test outputs публикуются как объектные дан�
 [f9-05](f9-05-artifact-contract.md),
 [f9-06](f9-06-cache-loss-drill.md).
 
+**Статус:** f9-01 (Git cache proxy как NixOS-сервис) и f9-02 (repo-scoped
+authorization) выполнены 2026-09-12. Git cache proxy развёрнут на homelab с
+`allowRepos = [ "mytecor/lattice" ]`; модульный assertion запрещает upstream
+credential без непустого allowlist. Открыты f9-03 (Verdaccio), f9-04 (Attic),
+f9-05 (artifact contract), f9-06 (cache-loss drill).
+
 **Критерий готовности:** Pi получает ускорение Git/npm/Nix из локальных caches, артефакт
 публикуется и читается по immutable reference, а удаление любого cache влияет только на время
 следующего выполнения. Private Git objects не выдаются клиенту без repo-scoped authorization.

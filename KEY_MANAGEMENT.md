@@ -106,6 +106,30 @@ Bifrost поддерживает соответствующий provider flow в
 всю базу в Nix store. До отдельной typed integration используйте API keys либо оставляйте такой
 provider выключенным.
 
+## Git cache proxy: per-repo upstream credentials (f9-02)
+
+Git cache proxy — разделяемый читатель: один upstream credential читает всё, что он может достичь.
+Repo-scoped authorization (`lattice.git-cache-proxy.allowRepos`, f9-02) ограничивает, какие
+репозитории прокси может обслуживать: запрос вне allowlist отклоняется 404 до любого upstream
+fetch/чтения cache, даже если mirror уже материализован. Поэтому:
+
+- Upstream credential на прокси включается **только вместе** с непустым `allowRepos` (модульный
+  assertion запрещает иначе). Оба значения меняются одной фазой: сначала новый список репо +
+  credential в `.age`, затем пересборка и проверка, что старый репо больше не доступен.
+- Разделяйте credentials по минимально необходимым repositories: отдельный `.age` на группу
+  репо, а не один «всё читающий» токен. Если credential покрывает несколько репо, он должен
+  покрывать ровно их и никакие другие пути; `allowRepos` задаёт этот точный набор.
+- Agent/worker токены не кладутся на прокси как upstream credential; прокси-сторона остаётся
+  под оператором. Workers не получают upstream-credentials и не читают cache directory.
+- Ротация upstream credential на прокси: замените содержимое `.age`, примените конфиг
+  (сервис перезапускается через `restartIfChanged`) и проверьте clone/fetch через прокси до
+  отзыва старого значения.
+
+The post-effect of removing a repository from `allowRepos`: репозиторий сразу перестаёт
+обслуживаться (404), даже если его mirror лежит в cache — objects недоступны, cache можно
+удалить при очередном gc. Это не отзыв секрета: если credential утёк, меняйте его по обычной
+процедуре.
+
 ## Подготовка плановой ротации
 
 Работайте с доверенной машины оператора. Команды ниже выполняются в Bash; начните в корне Lattice.

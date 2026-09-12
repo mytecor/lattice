@@ -10,5 +10,9 @@ in
     port = lib.mkDefault latticePorts.git-cache-proxy;
     upstream = lib.mkDefault "https://github.com";
     cacheRoot = lib.mkDefault "/var/cache/git-cache-proxy";
+    # f9-02: repo-scoped authorization. The profile stays intentionally
+    # permissive (serve anything) so the module contract and VM tests exercise
+    # both modes; the production node sets the exact allowlist.
+    allowRepos = lib.mkDefault [ ];
   };
 }

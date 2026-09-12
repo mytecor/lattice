@@ -91,6 +91,8 @@ pkgs.testers.runNixOSTest {
       port = proxyPort;
       upstream = "http://127.0.0.1:${toString upstreamPort}";
       cacheRoot = "/var/cache/git-cache-proxy";
+      # f9-02: repo-scoped authorization — only probe.git may be served.
+      allowRepos = [ "probe.git" ];
       # Always fetch upstream before serving: the test pushes a fresh commit and
       # must deterministically observe it through the proxy (no TTL coalescing).
       fetchTtlSeconds = 0;
@@ -189,6 +191,38 @@ pkgs.testers.runNixOSTest {
       cd /tmp/cold && git push http://127.0.0.1:${toString proxyPort}/probe.git HEAD:refs/heads/bad
     """)
     assert "403" in out or "read-only" in out or "receive-pack" in out.lower()
+
+    # --- f9-02: repo-scoped authorization ---
+    # Allowlisted repo clones fine through the proxy.
+    machine.succeed("""
+      git -c url."http://127.0.0.1:${toString proxyPort}/".insteadOf="http://127.0.0.1:${toString upstreamPort}/" \
+        clone -q http://127.0.0.1:${toString upstreamPort}/probe.git /tmp/auth-allowed
+    """)
+    # A repo outside the allowlist is refused with 404 (not 403/502), before any
+    # upstream fetch or cache read.
+    out = machine.fail("""
+      git -c url."http://127.0.0.1:${toString proxyPort}/".insteadOf="http://127.0.0.1:${toString upstreamPort}/" \
+        clone http://127.0.0.1:${toString upstreamPort}/forbidden.git /tmp/auth-denied
+    """)
+    assert "404" in out, f"expected 404, got: {out}"
+    # Nothing materialized for the forbidden repo.
+    machine.fail("test -e /var/cache/git-cache-proxy/forbidden.git")
+
+    # --- f9-02: denied repo stays denied even when its mirror already exists ---
+    # Place a REAL bare mirror on disk at the denied repo's cache path (cloned
+    # from local seed content), owned by the proxy user so it is fully readable
+    # by the service. The proxy must still refuse the repo with 404: the gate
+    # fires before any upstream fetch or cache read, so a repository removed
+    # from the allowlist cannot leak its cached objects.
+    machine.succeed("""
+      git clone --bare /tmp/seed /var/cache/git-cache-proxy/stash.git
+      chown -R git-cache-proxy:git-cache-proxy /var/cache/git-cache-proxy/stash.git
+    """)
+    out = machine.fail("""
+      git -c url."http://127.0.0.1:${toString proxyPort}/".insteadOf="http://127.0.0.1:${toString upstreamPort}/" \
+        clone http://127.0.0.1:${toString upstreamPort}/stash.git /tmp/auth-stash
+    """)
+    assert "404" in out, f"expected 404 even with a pre-seeded mirror, got: {out}"
 
     # --- sandbox: proxy user cannot read upstream secrets (there are none) and
     #     cache dir is 0700 owned by the service user ---

@@ -27,6 +27,12 @@ content-addressed. Метрики Prometheus: `/healthz`, `/readyz`, `/metrics`.
   монтируется через systemd `LoadCredential`, в argv не попадает.
 - `lattice.git-cache-proxy.serveTokenFile` — runtime path к bearer-токену для
   клиентов (опционально); `null` = анонимно в пределах закрытой сети.
+- `lattice.git-cache-proxy.allowRepos` — repo-scoped authorization (f9-02):
+  список точных путей репозиториев, которые прокси может обслуживать
+  (например `[ "mytecor/lattice" ]` при `upstream = "https://github.com"`).
+  Пустое значение = обслуживать что угодно (до-f9-02 поведение). Запрос к
+  любому репозиторию вне списка отклоняется 404 до какого-либо upstream fetch
+  или чтения cache, даже если mirror уже материализован.
 - `lattice.git-cache-proxy.cacheRoot` — каталог bare mirrors (по умолчанию
   `/var/cache/git-cache-proxy`, disposable).
 - `lattice.git-cache-proxy.runtimeDirectory`, `fetchTtlSeconds`, `cacheMaxMb`,
@@ -50,7 +56,12 @@ content-addressed. Метрики Prometheus: `/healthz`, `/readyz`, `/metrics`.
    команда выполняется от отдельного system user `git-cache-proxy`.
 
 Repo-scoped authorization (f9-02) вынесен отдельной задачей — у кандидата его
-нет, и он не может быть добавлен только конфигурацией.
+нет, и он не может быть добавлен только конфигурацией. Lattice патчит pinned
+`0.1.12` (`packages/git-cache-proxy/repo-allowlist.patch`), добавляя флаг
+`--allow-repo` (repeatable). Модуль передаёт `allowRepos` как repeatable argv
+(это публичные пути, не секреты); upstream credential по-прежнему идёт только
+через `LoadCredential`/env. Модульный assertion запрещает upstream credential
+без непустого `allowRepos`.
 
 ## Кеш — не source of truth
 

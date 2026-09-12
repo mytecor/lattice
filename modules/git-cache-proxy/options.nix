@@ -70,6 +70,20 @@ in
       '';
     };
 
+    allowRepos = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      description = ''
+        Repo-scoped authorization allowlist (f9-02): the exact repository paths
+        (as appended to `upstream`) this proxy may serve, e.g.
+        `[ "mytecor/lattice" ]` for upstream `https://github.com`. A request
+        for any repository outside the list is refused with 404 before any
+        upstream fetch or cache read, even if a mirror for it already sits in
+        the cache. Empty = serve any repository (insecure with an upstream
+        credential).
+      '';
+    };
+
     cacheRoot = mkOption {
       type = types.path;
       default = "/var/cache/git-cache-proxy";

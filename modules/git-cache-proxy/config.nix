@@ -3,11 +3,20 @@
 let
   cfg = config.lattice.git-cache-proxy;
 
-  # The proxy reads every flag from an env var (GITCACHEPROXY_*). We exec it
+  # The proxy reads most flags from env vars (GITCACHEPROXY_*). We exec it
   # through a tiny wrapper so optional credentials are injected as environment
   # variables from systemd credential files — never via argv, and only when a
   # credential is actually mounted. `$CREDENTIALS_DIRECTORY` is populated by
   # systemd from LoadCredential.
+  #
+  # The repo-scoped allowlist (f9-02) is NOT secret — it is a list of public
+  # repo paths — so its entries are passed as repeatable `--allow-repo` argv,
+  # matching clap's env-attr limitation (env-based clap reading of a list would
+  # need a fixed env-var name). Upstream credentials still never touch argv.
+  allowRepoArgs = lib.concatMapStringsSep " "
+    (repo: lib.escapeShellArg "--allow-repo=${repo}")
+    cfg.allowRepos;
+
   execScript = pkgs.writeShellScript "git-cache-proxy-exec" ''
     set -eu
 
@@ -39,11 +48,25 @@ let
       export GITCACHEPROXY_SERVE_TOKEN="$token"
     fi
 
-    exec ${lib.getExe cfg.package}
+    exec ${lib.getExe cfg.package} ${allowRepoArgs}
   '';
+
 in
 {
   config = lib.mkIf cfg.enable {
+    # f9-02: with an upstream credential a shared proxy reads everything that
+    # credential can reach; the repo-scoped allowlist is what bounds that scope.
+    # This rule holds for every user of the module, so it lives here in the
+    # module's own assertions, not in a node-specific test.
+    assertions = [{
+      assertion = cfg.upstreamAuthHeaderFile == null || cfg.allowRepos != [ ];
+      message = ''
+        lattice.git-cache-proxy: upstreamAuthHeaderFile requires a non-empty
+        allowRepos (repo-scoped authorization, f9-02). Otherwise the proxy's
+        single upstream credential could read every repository it can reach.
+      '';
+    }];
+
     users.groups.${cfg.group} = { };
     users.users.${cfg.user} = {
       isSystemUser = true;
