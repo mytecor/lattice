@@ -66,6 +66,19 @@ in
     hotspotModule = self.nixosModules.hotspot;
   };
 
+  git-cache-proxy = import ./git-cache-proxy.nix {
+    inherit pkgs nixpkgs;
+    gitCacheModule = self.nixosModules.git-cache-proxy;
+    gitCacheProfile = "${profiles}/cache-plane/config.nix";
+  };
+
+  git-cache-proxy-config = import ./git-cache-proxy-config.nix {
+    inherit pkgs nixpkgs;
+    gitCacheModule = self.nixosModules.git-cache-proxy;
+    gitCacheProfile = "${profiles}/cache-plane/config.nix";
+    gatewayProfile = "${profiles}/tcp-gateway/config.nix";
+  };
+
   comin-source-sync = import ./comin-source-sync.nix {
     inherit pkgs;
     syncPackage = pkgs.lattice.comin-source-sync;
@@ -108,6 +121,12 @@ in
     assert homelabConfig.lattice.llm-gateway.enable;
     assert homelabConfig.lattice.pi.enable;
     assert homelabConfig.lattice.rnsh.enable;
+    assert homelabConfig.lattice.git-cache-proxy.enable;
+    # Cache-plane ingress stays loopback-only; the LAN exposure is Caddy's job.
+    assert homelabConfig.lattice.git-cache-proxy.host == "127.0.0.1";
+    # The proxy is a shared credentialed reader: no upstream credential may
+    # exist until per-repo authorization (f9-02) is in place.
+    assert homelabConfig.lattice.git-cache-proxy.upstreamAuthHeaderFile == null;
     assert homelabConfig.services.comin.enable;
     # SSH must stay key-only on the public-facing node.
     assert homelabConfig.services.openssh.enable;

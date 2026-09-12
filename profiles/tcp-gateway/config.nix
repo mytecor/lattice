@@ -14,6 +14,8 @@ let
   llmGatewayEnabled = config.lattice.llm-gateway.enable or false;
   piAcpEnabled = config.lattice.pi-acp-daemon.enable or false;
   piAcpCfg = config.lattice.pi-acp-daemon;
+  gitCacheProxyEnabled = config.lattice.git-cache-proxy.enable or false;
+  gitCacheProxyCfg = config.lattice.git-cache-proxy;
 
   mdnsPublisher = service: {
     description = "Publish the ${service} mDNS alias";
@@ -79,6 +81,18 @@ let
         '';
       };
     })
+
+    # 5. LAN ingress for the loopback-only Git cache proxy (F9).
+    # The proxy is a shared credentialed reader; "can reach this host" ==
+    # "can read every mirrored repo", so it is exposed only through the
+    # operator-controlled Caddy ingress on the LAN.
+    (lib.mkIf gitCacheProxyEnabled {
+      ${siteAddress "git-cache-proxy"} = {
+        extraConfig = ''
+          reverse_proxy ${gitCacheProxyCfg.host}:${toString gitCacheProxyCfg.port}
+        '';
+      };
+    })
   ];
 in
 {
@@ -107,6 +121,9 @@ in
       (lib.mkIf llmGatewayEnabled { llm-gateway-mdns = mdnsPublisher "llm-gateway"; })
       (lib.mkIf piAcpEnabled {
         "${piAcpCfg.serviceName}-mdns" = mdnsPublisher piAcpCfg.serviceName;
+      })
+      (lib.mkIf gitCacheProxyEnabled {
+        git-cache-proxy-mdns = mdnsPublisher "git-cache-proxy";
       })
     ];
   };

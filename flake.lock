@@ -168,6 +168,18 @@
       },
       "parent": []
     },
+    "module-git-cache-proxy": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/git-cache-proxy",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/git-cache-proxy",
+        "type": "path"
+      },
+      "parent": []
+    },
     "module-llm-gateway": {
       "flake": false,
       "locked": {
@@ -336,6 +348,7 @@
         "hardware-intel-n100": "hardware-intel-n100",
         "impermanence": "impermanence",
         "module-ephemeral-root": "module-ephemeral-root",
+        "module-git-cache-proxy": "module-git-cache-proxy",
         "module-llm-gateway": "module-llm-gateway",
         "module-pi": "module-pi",
         "module-pi-acp-daemon": "module-pi-acp-daemon",

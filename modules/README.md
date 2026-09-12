@@ -12,6 +12,7 @@
 - [`rnsh/`](./rnsh/README.md) - listener-сервис для remote shell через Reticulum.
 - [`wireless/`](./wireless/default.nix) - настройка Wi-Fi сетей через NetworkManager и runtime secret-файлы.
 - [`wireless-hotspot/`](./wireless-hotspot/README.md) - concurrent Wi-Fi STA + AP на одном радио (hostapd + dnsmasq + NAT); см. требования rtw88 (`#channels <= 1`).
+- [`git-cache-proxy/`](./git-cache-proxy/README.md) - read-only caching proxy для Git-репозиториев (f9-01): lazily клонирует bare mirror с origin и раздаёт дельту клиентам, cache на локальной POSIX FS не является source of truth.
 
 ## Правило
 

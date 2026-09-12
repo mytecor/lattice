@@ -6,4 +6,5 @@
   rns-auto-discovery = 29716;
   rns-auto-data = 42671;
   rns-tcp = 4242;
+  git-cache-proxy = 9211;
 }
