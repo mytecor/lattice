@@ -68,6 +68,17 @@ nix build .#checks.x86_64-linux.mytecor-homelab
 Для полной проверки нужен `x86_64-linux` builder. В pull request и при push в `main` её выполняет
 GitHub Actions.
 
+### Декларативный локальный прекоммит-чек
+
+Полный `nix flake check` (вкл. VM-тесты и сборку) требует `x86_64-linux`
+и гоняется нативно в **GitHub Actions** (`.github/workflows/nix.yml`) — это
+authoritative слой.
+
+Локальный прекоммит-хук (`.githooks/pre-commit`) — **лёгкий нативный** слой:
+он гоняет `nix flake check --all-systems --no-build` — eval всех чеков
+aрхитектурно независимо, без сборки VM-тестов. Активация — вручную
+`git config core.hooksPath .githooks`.
+
 Стираемый root дополнительно проверяется evaluation-check `checks.x86_64-linux.ephemeral-root-module`
 и привилегированным loopback-тестом `tests/ephemeral-root-loop.sh`. Loopback-тест запускается только
 на Linux и не обращается к реальным дискам.

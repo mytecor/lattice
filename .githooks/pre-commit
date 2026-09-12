@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Pre-commit hook (версионируется в репо; включается через core.hooksPath).
+#
+# Лёгкий нативный локальный чек: eval всех чеков без сборки (VM-тесты и
+# билд-продукты не строятся). Полная сборка — в GitHub Actions.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+nix flake check --all-systems --no-build

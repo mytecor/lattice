@@ -11,6 +11,15 @@ let
         networking.hostName = "node-a";
         system.stateVersion = "26.05";
 
+        # The test only validates the generated Caddy config (caddy adapt
+        # --validate) and never actually runs Caddy. The default per-vhost
+        # access-log writes to /var/log/caddy, which does not exist inside the
+        # Nix build sandbox and fails validation with `mkdir /var: permission
+        # denied`. Discard that log for the test vhost so adapt/validate does
+        # not touch the filesystem.
+        services.caddy.virtualHosts."http://acp.node-a.local".logFormat =
+          lib.mkForce "output discard";
+
         lattice.pi-acp-daemon = {
           enable = true;
           # The Pi tool profile must reach the spawned agent's PATH so its bash
