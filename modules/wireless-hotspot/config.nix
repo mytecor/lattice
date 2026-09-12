@@ -14,22 +14,6 @@ in
   # MAC and fight hostapd for the radio).
   networking.networkmanager.unmanaged = apWanted [ cfg.interfaceName ];
 
-  # Whenever the STA link comes up (or reconnects on another channel/band), re-
-  # resolve the AP channel from the STA in preStart. Without this a wireless
-  # STA reconnect to 2.4 GHz would leave hostapd serving the old 5 GHz config.
-  # `$1` is the interface name, `$2` the action (NM dispatcher conventions).
-  networking.networkmanager.dispatcherScripts = apWanted [
-    {
-      type = "basic";
-      source = pkgs.writeShellScript "lattice-hotspot-dispatcher" ''
-        # `$1` is the interface name, `$2` the action (NM dispatcher conventions).
-        if [ "$1" = "${cfg.staInterface}" ] && [ "$2" = "up" ]; then
-          systemctl --no-block restart lattice-hotspot.service
-        fi
-      '';
-    }
-  ];
-
   # hostapd does not create the interface itself. A small wrapper unit creates
   # the virtual AP interface on the shared radio (unique MAC, address), then in
   # preStart regenerates the hostapd config from the passphrase age secret and

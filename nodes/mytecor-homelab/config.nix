@@ -3,8 +3,6 @@
 let
   rootPasswordHashFile = ./secrets/root-password-hash.age;
   hasRootPassword = builtins.pathExists rootPasswordHashFile;
-  hotspotPasswordFile = ./secrets/hotspot-password.age;
-  hasHotspotPassword = builtins.pathExists hotspotPasswordFile;
 in
 {
   networking.hostName = "mytecor-homelab";
@@ -55,35 +53,20 @@ in
         file = ./secrets/llm-provider-gonkarouter.age;
         mode = "0400";
       };
-    } // lib.optionalAttrs hasHotspotPassword {
-      hotspot-password = {
-        file = hotspotPasswordFile;
-        mode = "0400";
-      };
     };
   };
 
-  # Wi-Fi hotspot (concurrent STA+AP on the single Realtek RTL8822CE radio).
-  # Enabled automatically once nodes/mytecor-homelab/secrets/hotspot-password.age
-  # exists (see README for the generation command). The AP band/channel is
-  # auto-detected from the running STA link (RTL8822CE is `#channels <= 1`, so
-  # the AP must share the STA's channel; a hard-coded mismatch drops the beacon
-  # with `Failed to set beacon parameters`).
-  lattice.hotspot = lib.mkIf hasHotspotPassword {
-    enable = true;
-    ssid = "Mytecor Homelab";
-    passwordFile = config.age.secrets.hotspot-password.path;
-    staInterface = "wlp2s0";
-  };
+  # Wi-Fi hotspot (concurrent STA+AP on the single Realtek RTL8822CE radio) is
+  # DISABLED — see modules/wireless-hotspot/README.md. RTL8822CE (#channels <= 1)
+  # only drives a stable STA+AP data path on 2.4 GHz; on 5 GHz the AP breaks in
+  # every mode (VHT20 drops data, VHT80 crashes hostapd, HT20 won't associate).
+  # The home AP is 5 GHz-only, so a working hotspot would need a separate radio.
+  lattice.hotspot.enable = false;
 
   lattice.wireless.networks = [
     {
       ssid = config.age.secrets.wifi-ssid.path;
       password = config.age.secrets.wifi-password.path;
-      # Keep the STA link on 2.4 GHz so the concurrent hotspot (single radio,
-      # `#channels <= 1`) can also use 2.4 GHz — the only band where RTL8822CE
-      # drives a stable STA+AP data path.
-      band = "bg";
     }
   ];
 

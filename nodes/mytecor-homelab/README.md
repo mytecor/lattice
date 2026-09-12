@@ -168,54 +168,16 @@ rm /tmp/mytecor-root-password.hash
 при каждой активации, в том числе после очистки root. SSH остаётся key-only: пароль предназначен
 для локальной консоли и `su`, а `services.openssh.settings.PasswordAuthentication` остаётся `false`.
 
-## Wi-Fi hotspot (STA + AP)
+## Wi-Fi hotspot (STA + AP) — отключён
 
-Нода может одновременно держать STA-подключение (`wlp2s0`, управляется NetworkManager) и
-точку доступа (`ap0`) на **одном** радио Realtek RTL8822CE. Сценарий проверен живым тестом;
-см. модуль [`modules/wireless-hotspot`](../../modules/wireless-hotspot/README.md).
+Hotspot **отключён** на этой ноде (`lattice.hotspot.enable = false`): на железе
+Realtek RTL8822CE (единый радио-чип, `#channels <= 1`) concurrent STA+AP
+работает только когда STA на 2.4 GHz, а домашняя гостовая сеть вещает на
+**5 GHz** — на 5 GHz AP нестабилен во всех режимах (см. таблицу причин в
+[`modules/wireless-hotspot/README.md`](../../modules/wireless-hotspot/README.md#почему-hotspot-отключён)).
 
-Ограничение драйвера `#channels <= 1` означает, что AP обязан работать на **том же канале**, что
-и STA-связь. Канал и полоса AP определяются **автоматически** из активного STA-подключения
-(2.4 или 5 GHz) при старте hotspot, поэтому смена домашней сети/полосы не требует правок конфига.
-AP использует ширину 20 MHz (`vht_oper_chwidth=0`) и уникальный MAC `02:0a:44:00:00:01`.
-
-Hotspot включается автоматически, как только в каталоге `nodes/mytecor-homelab/secrets/` появится
-зашифрованный `hotspot-password.age` (WPA2-PSK, 8-63 символа). Пока файла нет — hotspot выключен
-и не мешает STA.
-
-Сгенерировать секрет (пароль не попадает в shell history):
-
-```sh
-umask 077
-printf '%s' 'ВАШ_НАДЁЖНЫЙ_ПАРОЛЬ_8_63' > /tmp/mytecor-hotspot-password
-```
-
-Из каталога `nodes/mytecor-homelab/secrets/` зашифровать пароль для ноды и recovery SSH-ключа Mac:
-
-```sh
-nix shell nixpkgs#age -c age \
-  -r age1dyxfyhf8s5lj9k0pzkkjjte0dcg4yecwglh88kmv2udau0q33v0ssa4pd8 \
-  -R ~/.ssh/mytecor-homelab.pub \
-  -o hotspot-password.age \
-  /tmp/mytecor-hotspot-password
-
-rm /tmp/mytecor-hotspot-password
-```
-
-Параметры по умолчанию: SSID `Mytecor Homelab`, subnet `10.44.0.0/24`, IP ноды `10.44.0.1/24`,
-DHCP `10.44.0.10`–`10.44.0.100`, DNS `1.1.1.1`/`8.8.8.8`, NAT MASQUERADE. После применения
-проверьте:
-
-```sh
-sudo nixos-rebuild switch --flake .#mytecor-homelab
-systemctl status lattice-hotspot   # hostapd активен, нет Could not set channel / not unique
-iw dev                            # и wlp2s0 (managed), и ap0 (AP)
-ip -br addr show ap0              # 10.44.0.1/24
-```
-
-Клиент подключается к `Mytecor Homelab`, получает IP `10.44.0.x`, пингует `10.44.0.1` и имеет
-доступ в интернет. Узел отвечает на `mytecor-homelab.local` и на `ap0` (avahi слушает оба
-интерфейса), поэтому hotspot-клиент может обращаться к ноде по mDNS.
+Рабочий вариант требует отдельного Wi-Fi-радио для AP. Модуль оставлен в
+репозитории как референс-реализация подхода и его ограничений.
 
 ## Миграция
 

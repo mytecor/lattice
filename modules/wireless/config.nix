@@ -20,7 +20,7 @@ in
           wifi = {
             mode = "infrastructure";
             ssid = "${dollar}${network.ssidVar}";
-          } // (lib.optionalAttrs (network.net.band != null) { band = network.net.band; });
+          };
           wifi-security = {
             auth-alg = "open";
             key-mgmt = "wpa-psk";

@@ -54,10 +54,6 @@ assert lib.hasInfix "systemctl restart dnsmasq" autoPre;
 # dnsmasq starts only after the ap0 interface exists.
 assert lib.elem "lattice-hotspot.service"
   auto.systemd.services.dnsmasq.after;
-# A NM basic-dispatcher restarts hostapd when the STA link comes up, so the AP
-# re-resolves its channel from a (re)connected STA band (e.g. 2.4 GHz).
-assert ((builtins.length auto.networking.networkmanager.dispatcherScripts) == 1);
-assert ((builtins.elemAt auto.networking.networkmanager.dispatcherScripts 0).type == "basic");
 assert lib.hasInfix "ip addr add 10.44.0.1/24 dev ap0" autoPre;
 assert lib.hasInfix "ssid=Mytecor Homelab" autoPre;
 assert lib.hasInfix "wpa_passphrase=$psk" autoPre;
