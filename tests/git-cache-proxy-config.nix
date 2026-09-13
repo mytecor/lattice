@@ -99,8 +99,10 @@ pkgs.runCommand "git-cache-proxy-config-check" {
   mkdir -p "$out"
 
   # f9-02: сгенерированный wrapper содержит repeatable --allow-repo для каждого
-  # репозитория из allowRepos.
-  grep -qF "--allow-repo=mytecor/lattice" ${execStart} \
+  # репозитория из allowRepos. `--` перед паттерном не даёт grep трактовать
+  # "--allow-repo=..." как его собственный option-аргумент (pattern начинается
+  # с `--`).
+  grep -qF -- "--allow-repo=mytecor/lattice" ${execStart} \
     || { echo "git-cache-proxy: allowRepos not in exec wrapper" >&2; exit 1; }
 
   export XDG_DATA_HOME="$TMPDIR/caddy-data"
