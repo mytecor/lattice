@@ -61,11 +61,6 @@ in
     gatewayProfile = "${profiles}/tcp-gateway/config.nix";
   };
 
-  wireless-hotspot = import ./wireless-hotspot.nix {
-    inherit nixpkgs pkgs;
-    hotspotModule = self.nixosModules.hotspot;
-  };
-
   git-cache-proxy = import ./git-cache-proxy.nix {
     inherit pkgs nixpkgs;
     gitCacheModule = self.nixosModules.git-cache-proxy;

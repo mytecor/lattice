@@ -70,11 +70,6 @@
       flake = false;
     };
 
-    module-wireless-hotspot = {
-      url = "path:./modules/wireless-hotspot";
-      flake = false;
-    };
-
     module-git-cache-proxy = {
       url = "path:./modules/git-cache-proxy";
       flake = false;
@@ -107,7 +102,6 @@
     module-pi,
     module-pi-acp-daemon,
     module-wireless,
-    module-wireless-hotspot,
     module-git-cache-proxy,
     profiles,
     rns-rs,
@@ -216,7 +210,6 @@
         pi.imports = [ "${module-pi}" ];
         pi-acp-daemon.imports = [ "${module-pi-acp-daemon}" ];
         wireless.imports = [ "${module-wireless}" ];
-        hotspot.imports = [ "${module-wireless-hotspot}" ];
         git-cache-proxy.imports = [ "${module-git-cache-proxy}" ];
 
         default.imports = [
@@ -227,7 +220,6 @@
           self.nixosModules.pi
           self.nixosModules.pi-acp-daemon
           self.nixosModules.wireless
-          self.nixosModules.hotspot
           self.nixosModules.git-cache-proxy
         ];
       };

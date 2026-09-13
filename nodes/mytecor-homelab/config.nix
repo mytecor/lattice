@@ -60,13 +60,6 @@ in
     };
   };
 
-  # Wi-Fi hotspot (concurrent STA+AP on the single Realtek RTL8822CE radio) is
-  # DISABLED — see modules/wireless-hotspot/README.md. RTL8822CE (#channels <= 1)
-  # only drives a stable STA+AP data path on 2.4 GHz; on 5 GHz the AP breaks in
-  # every mode (VHT20 drops data, VHT80 crashes hostapd, HT20 won't associate).
-  # The home AP is 5 GHz-only, so a working hotspot would need a separate radio.
-  lattice.hotspot.enable = false;
-
   lattice.wireless.networks = [
     {
       # Home AP ("BNF Space"), strongest signal (100%). SSID kept in wifi-ssid.age.

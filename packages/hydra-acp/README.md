@@ -15,7 +15,7 @@ nix build .#packages.x86_64-linux.hydra-acp
 
 Hydra остаётся experimental dependency. Обновление считается принятым только после
 multi-session/multi-client acceptance из
-[f8-06](../../docs/roadmap/f8-pi-runtime/f8-06-network-acp-daemon.md).
+[f8-06](../../roadmap/f8-pi-runtime/f8-06-network-acp-daemon.md).
 
 ## Lattice-патч: `session/list` включает never-prompted сессии
 

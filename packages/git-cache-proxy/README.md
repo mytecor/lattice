@@ -22,7 +22,7 @@ Upstream 0.1.12 имеет только глобальный `serve-token` и н
   `a/b.git` не авторизует `a/b-other.git`; пустой список = обслуживать всё
   (до-f9-02 поведение). Логика в `src/allowed.rs` и покрыта unit-тестами.
 
-Обоснование и критерии готовности: [f9-02](../../docs/roadmap/f9-cache-artifact-plane/f9-02-git-repository-access.md),
+Обоснование и критерии готовности: [f9-02](../../roadmap/f9-cache-artifact-plane/f9-02-git-repository-access.md),
 применение через модуль — [modules/git-cache-proxy](../../modules/git-cache-proxy/README.md).
 
 Патч применяется в сборке (`patches = [ ./repo-allowlist.patch ]`). При

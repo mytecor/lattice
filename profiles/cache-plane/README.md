@@ -19,4 +19,4 @@ Not a source of truth.
 проверять обе моды. Продакшн-нода обязана задать точный allowlist; upstream
 credential без непустого `allowRepos` отклоняется module assertion. См.
 [патч пакета](../../packages/git-cache-proxy/README.md) и
-[f9-02](../../docs/roadmap/f9-cache-artifact-plane/f9-02-git-repository-access.md).
+[f9-02](../../roadmap/f9-cache-artifact-plane/f9-02-git-repository-access.md).

@@ -50,7 +50,7 @@ lattice.pi-acp-daemon.path = [ pkgs.lattice.pi-tool-profile ];
 **Это stopgap, а не целевая конфигурация.** Строгий песочник (restricted address families без
 netlink, пустой `CapabilityBoundingSet` → `CapEff=0`, `NoNewPrivileges=true`, `ProtectSystem=full`,
 `PrivateDevices`) — то, к чему сервис должен вернуться после завершения диагностики. Задача на
-возврат к минимальным доступам зафиксирована в [BACKLOG.md](../../docs/roadmap/BACKLOG.md). Не
+возврат к минимальным доступам зафиксирована в [BACKLOG.md](../../roadmap/BACKLOG.md). Не
 включайте `privileged` на недоверенной LAN: сессия становится root-процессом с сетевым админом.
 
 ## Transformers
@@ -77,11 +77,11 @@ Lattice-owned transformer — [`packages/acp-normalizer`](../../packages/acp-nor
 Stock-клиент `hydra-acp` (`acp`/`shim`/`cat`) для этого endpoint **не подходит**: он требует
 login-credential для не-loopback хоста, который без master password у daemon получить нельзя, а
 Caddy-rewrite любого path во внутренний `/acp` делает HTTP API клиента недостижимым. Задача на
-auth-границу и stdio shim для Zed вынесена в [BACKLOG.md](../../docs/roadmap/BACKLOG.md).
+auth-границу и stdio shim для Zed вынесена в [BACKLOG.md](../../roadmap/BACKLOG.md).
 
 Endpoint нельзя публиковать за пределами доверенной LAN: любой клиент с сетевым доступом может
 создать Pi-сессию и использовать доступные ей shell/tools с правами пользователя сервиса.
 
 Профиль ingress находится в
 [`profiles/tcp-gateway`](../../profiles/tcp-gateway/README.md), а задача и acceptance-контракт — в
-[f8-06](../../docs/roadmap/f8-pi-runtime/f8-06-network-acp-daemon.md).
+[f8-06](../../roadmap/f8-pi-runtime/f8-06-network-acp-daemon.md).

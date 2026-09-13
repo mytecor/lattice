@@ -135,7 +135,7 @@ Backend-порты не открываются в firewall и не являют�
 в одном daemon. Внутренний Hydra-path `/acp` и внутренний token остаются деталью loopback upstream
 (Caddy-rewrite) и не видны клиенту; клиентское соединение — чистый ACP WebSocket с subprotocol
 `acp.v1`. Daemon и его session metadata описаны в
-[f8-06](./docs/roadmap/f8-pi-runtime/f8-06-network-acp-daemon.md) и в
+[f8-06](./roadmap/f8-pi-runtime/f8-06-network-acp-daemon.md) и в
 [`modules/pi-acp-daemon`](./modules/pi-acp-daemon/README.md).
 
 ## LLM gateway
@@ -143,12 +143,12 @@ Backend-порты не открываются в firewall и не являют�
 Runtime F7 — собственный небольшой Go HTTP proxy поверх Bifrost Core, собранный пакетом
 [`packages/llm-gateway`](./packages/llm-gateway). Legacy `mxyhi/token_proxy` (input `token-proxy-src`,
 package, patches и spike-тест) удалён из активной конфигурации после подтверждённого cutover;
-исторические findings [f7-01](./docs/roadmap/f7-llm-gateway/f7-01-token-proxy-spike.md),
-[f7-05](./docs/roadmap/f7-llm-gateway/f7-05-research-gateway-alternatives.md) и
-[f7-06](./docs/roadmap/f7-llm-gateway/f7-06-go-lip-gonka-cutover.md) сохранены неизменными.
+исторические findings [f7-01](./roadmap/f7-llm-gateway/f7-01-token-proxy-spike.md),
+[f7-05](./roadmap/f7-llm-gateway/f7-05-research-gateway-alternatives.md) и
+[f7-06](./roadmap/f7-llm-gateway/f7-06-go-lip-gonka-cutover.md) сохранены неизменными.
 
 Выбранный runtime закреплён в
-[f7-07](./docs/roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md): собственный небольшой Go HTTP proxy
+[f7-07](./roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md): собственный небольшой Go HTTP proxy
 использует Bifrost через Go API как provider execution library. Bifrost отвечает за
 provider-specific adapters, schema conversion, streaming transport и поддерживаемую им
 инфраструктуру; Lattice владеет OpenAI-compatible ingress, логическими моделями, model discovery
@@ -212,12 +212,12 @@ call к одному provider. Для `standard` второй stage даёт Hyp
 cooldown и временно пропускается; если охлаждаются все ветки, gateway fail-open пробует pool
 снова. Legacy `race accessGroups`, отдельный `models` registry и access-group routing удалены.
 
-Executable spike [f7-01](./docs/roadmap/f7-llm-gateway/f7-01-token-proxy-spike.md) остаётся историческим
+Executable spike [f7-01](./roadmap/f7-llm-gateway/f7-01-token-proxy-spike.md) остаётся историческим
 подтверждением требуемого поведения и источником regression tests. NixOS-модуль, безопасная сборка
 runtime config и resilience contract из f7-02–f7-04 работают на собственном Bifrost-based proxy
-([f7-07](./docs/roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md)); старые package, patches, input и
+([f7-07](./roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md)); старые package, patches, input и
 runtime-specific legacy config удалены после подтверждённого прямого cutover
-([f7-08](./docs/roadmap/f7-llm-gateway/f7-08-remove-token-proxy.md)).
+([f7-08](./roadmap/f7-llm-gateway/f7-08-remove-token-proxy.md)).
 
 ### Контракт логических моделей
 

@@ -25,7 +25,7 @@ buildPnpmCli {
   # invisible until its first turn; a reconnecting client then creates a new session
   # instead of resuming, and warm sessions/agents accumulate silently. Forcing the
   # flag on the daemon-side manager call fixes listing on the server, independent of
-  # client support. Rationale: docs/roadmap/f8-pi-runtime/f8-06; re-verified by
+  # client support. Rationale: roadmap/f8-pi-runtime/f8-06; re-verified by
   # tests/acp-ingress-smoke.mjs (never-prompted session must appear in session/list).
   postInstall = ''
     target="$out/libexec/hydra-acp/node_modules/@hydra-acp/cli/dist/daemon.js"

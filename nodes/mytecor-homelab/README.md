@@ -10,7 +10,7 @@
 Reticulum/rnsh проверены через публичные TCP peers Sydney и ReticulumNet.
 После перезагрузки в Generation 7 (2026-09-04, `e934ee9`) подтверждены автоматическое
 подключение Wi-Fi, SSH и rnsh с прежними identity и destination; состояние Reticulum
-сохранилось в `/persist`. Подробности — в [f3-04](../../docs/roadmap/f3-reticulum-tcp/f3-04-rnsh-nat-access.md).
+сохранилось в `/persist`. Подробности — в [f3-04](../../roadmap/f3-reticulum-tcp/f3-04-rnsh-nat-access.md).
 2026-09-05 `comin` применил `ba03779` без перезагрузки: работающие `rnsh` и `rns-server`
 используют upstream snapshot `042e37047b70`, оба сервиса активны и не перезапускались.
 После переключения Mac на мобильный hotspot rnsh-доступ с прежними identity и destination
@@ -136,7 +136,7 @@ comin status
 ```
 
 Полный журнал результатов и ещё открытый drill при недоступном GitHub зафиксированы в
-[`f4-01`](../../docs/roadmap/f4-payload/f4-01-radicle-seed-comin.md).
+[`f4-01`](../../roadmap/f4-payload/f4-01-radicle-seed-comin.md).
 
 ## Root password
 
@@ -167,17 +167,6 @@ rm /tmp/mytecor-root-password.hash
 `users.users.root.hashedPasswordFile`. `users.mutableUsers = false` восстанавливает заданный hash
 при каждой активации, в том числе после очистки root. SSH остаётся key-only: пароль предназначен
 для локальной консоли и `su`, а `services.openssh.settings.PasswordAuthentication` остаётся `false`.
-
-## Wi-Fi hotspot (STA + AP) — отключён
-
-Hotspot **отключён** на этой ноде (`lattice.hotspot.enable = false`): на железе
-Realtek RTL8822CE (единый радио-чип, `#channels <= 1`) concurrent STA+AP
-работает только когда STA на 2.4 GHz, а домашняя гостовая сеть вещает на
-**5 GHz** — на 5 GHz AP нестабилен во всех режимах (см. таблицу причин в
-[`modules/wireless-hotspot/README.md`](../../modules/wireless-hotspot/README.md#почему-hotspot-отключён)).
-
-Рабочий вариант требует отдельного Wi-Fi-радио для AP. Модуль оставлен в
-репозитории как референс-реализация подхода и его ограничений.
 
 ## Миграция
 

@@ -388,4 +388,4 @@ nix flake check --no-build
   provider metadata не попадают в client responses и безопасные ошибки.
 
 Полный план и незавершённые шаги cutover находятся в
-[`f7-07-bifrost-go-proxy.md`](../../docs/roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md).
+[`f7-07-bifrost-go-proxy.md`](../../roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md).

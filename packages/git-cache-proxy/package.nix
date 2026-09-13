@@ -26,7 +26,7 @@ rustPlatform.buildRustPackage rec {
   # info/refs, upload-pack, LFS batch, LFS object) refuses a repository outside
   # the list with 404 before any upstream fetch or cache read — even when the
   # mirror is already materialized. See packages/git-cache-proxy/README.md and
-  # docs/roadmap/f9-cache-artifact-plane/f9-02-git-repository-access.md.
+  # roadmap/f9-cache-artifact-plane/f9-02-git-repository-access.md.
   patches = [ ./repo-allowlist.patch ];
 
   # The proxy delegates all git wire-protocol work to the system `git` binary

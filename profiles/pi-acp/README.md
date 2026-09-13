@@ -10,7 +10,7 @@
 (`session/new` / `session/attach`). Проверенный сценарий такого клиента — Ferngeist; запись о
 несовместимости stock `hydra-acp` client и отложенном Zed-шлюзе — в
 [документации модуля](../../modules/pi-acp-daemon/README.md) и
-[BACKLOG](../../docs/roadmap/BACKLOG.md).
+[BACKLOG](../../roadmap/BACKLOG.md).
 
 Текущий endpoint работает без auth и предназначен только для доверенной LAN. Граница риска и
 внутренний handshake описаны в
