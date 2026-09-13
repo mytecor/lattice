@@ -52,5 +52,4 @@
 ## Кеш — не source of truth
 
 Verdaccio кеширует только то, что запросили клиенты; удаление cache не теряет
-source, пакеты восстанавливаются из upstream registry и lockfiles. См. раздел
-«Доказать disposable-семантику caches» (f9-06).
+source, пакеты восстанавливаются из upstream registry и lockfiles.

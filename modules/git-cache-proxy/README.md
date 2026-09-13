@@ -66,4 +66,4 @@ Repo-scoped authorization (f9-02) вынесен отдельной задаче
 ## Кеш — не source of truth
 
 Bare mirrors — disposable: удаление cache вызывает обычный refetch, а не потерю
-source. См. раздел «Доказать disposable-семантику caches» (f9-06).
+source.

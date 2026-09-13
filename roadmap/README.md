@@ -67,13 +67,11 @@ Pi-native RPC-контракта нет (роль RPC entry point для F10 в�
 задачи F8 закрыты.
 
 **F9 — cache/artifact plane** (2026-09-13): f9-01/f9-02 (Git cache proxy) выполнены ранее;
-реализованы f9-03 (Verdaccio) и f9-04 (Attic). Verdaccio упакован через `buildPnpmCli`
+реализован f9-03 (Verdaccio). Verdaccio упакован через `buildPnpmCli`
 (6.10.3), модуль `lattice.verdaccio` — loopback cache-only npm/pnpm/yarn proxy с
-`clientConfig` (`/etc/npmrc`+`/etc/yarnrc`); Attic — модуль `lattice.attic` поверх
-`attic-server` из nixpkgs с signing keypair server-side и JWT-secret через agenix. Оба
-сопровождены eval + VM-тестами; `nix flake check --all-systems --no-build` проходит, VM/сборка
-идут в CI (x86_64-linux). Для f9-04 перед deploy остаётся операторский шаг — создать кеш и
-зашифровать `attic-jwt-secret.age`. Открыты f9-05 (artifact contract) и f9-06 (cache-loss drill).
+`clientConfig` (`/etc/npmrc`+`/etc/yarnrc`).
+Сопровождён eval + VM-тестами; `nix flake check --all-systems --no-build` проходит, VM/сборка
+идут в CI (x86_64-linux).
 Основной маршрут дальше:
 Pi → cache/artifact plane → disposable worker → controller.
 Незакрытые вопросы отслеживаются в

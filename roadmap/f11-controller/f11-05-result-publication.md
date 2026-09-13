@@ -1,6 +1,6 @@
 # Зафиксировать публикацию commit, result и artifacts
 
-Фича: [F11 — controller](./README.md). Зависит от f11-01, f11-04 и f9-05.
+Фича: [F11 — controller](./README.md). Зависит от f11-01 и f11-04.
 
 ## Контекст
 
