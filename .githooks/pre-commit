@@ -3,7 +3,21 @@
 #
 # Лёгкий нативный локальный чек: eval всех чеков без сборки (VM-тесты и
 # билд-продукты не строятся). Полная сборка — в GitHub Actions.
+#
+# Слои проверки:
+#   1. nix flake check --all-systems --no-build  — eval всех чеков без сборки
+#   2. lychee .                                  — проверка ссылок в документации
+#
+# Nix обязателен для репозитория: lychee запускается только через Nix
+# (`nix run --inputs-from . nixpkgs#lychee`) — версия жёстко закреплена в
+# flake.lock (nixpkgs#lychee, v0.24.x) и установка в систему не требуется.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
+
+echo "==> lychee: проверка ссылок в документации (закреплённая версия из Nix)"
+# Конфигурация — из lychee.toml/.lycheeignore в корне репозитория.
+nix run --inputs-from . nixpkgs#lychee -- --no-progress .
+
+echo "==> nix check"
 nix flake check --all-systems --no-build

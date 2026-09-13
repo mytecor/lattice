@@ -76,8 +76,17 @@ authoritative слой.
 
 Локальный прекоммит-хук (`.githooks/pre-commit`) — **лёгкий нативный** слой:
 он гоняет `nix flake check --all-systems --no-build` — eval всех чеков
-aрхитектурно независимо, без сборки VM-тестов. Активация — вручную
-`git config core.hooksPath .githooks`.
+aрхитектурно независимо, без сборки VM-тестов, а затем `lychee .` для проверки
+ссылок в документации. Активация — вручную `git config core.hooksPath .githooks`.
+
+Проверка ссылок (`lychee`): версия закреплена в `flake.lock`
+(`nixpkgs#lychee`); конфигурация — в
+[lychee.toml](./lychee.toml) и [`.lycheeignore`](./.lycheeignore) в корне репо.
+Nix обязателен для репозитория: прекоммит-хук запускает lychee из Nix
+(`nix run --inputs-from . nixpkgs#lychee`) — установка в систему не требуется,
+версия берётся из lock-файла репозитория. В
+GitHub Actions (`.github/workflows/nix.yml`) ссылки проверяет отдельный job
+`lychee` (lychee-action v2.9.0, lychee v0.24.2).
 
 Стираемый root дополнительно проверяется evaluation-check `checks.x86_64-linux.ephemeral-root-module`
 и привилегированным loopback-тестом `tests/ephemeral-root-loop.sh`. Loopback-тест запускается только

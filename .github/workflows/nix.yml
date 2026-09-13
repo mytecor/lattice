@@ -24,3 +24,20 @@ jobs:
 
       - name: Build and check flake
         run: nix flake check --print-build-logs
+
+  lychee:
+    name: Link check (lychee)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: lychee link checker
+        uses: lycheeverse/lychee-action@v2.9.0
+        with:
+          # Версия, согласованная с flake.lock (nixpkgs#lychee) — v0.24.2.
+          lycheeVersion: v0.24.2
+          # Сканируем весь репозиторий; конфиг из lychee.toml/.lycheeignore
+          # (gitignored-файлы и .secrets/ при этом пропускаются).
+          args: --no-progress --format detailed .
+          fail: true

@@ -4,3 +4,6 @@
 
 # Local Go build artifact (production is built via package.nix)
 /packages/llm-gateway/llm-gateway
+
+# lychee response cache (см. lychee.toml: cache = true)
+/.lycheecache
