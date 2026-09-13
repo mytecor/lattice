@@ -126,8 +126,8 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_open_port(${toString proxyPort})
 
     # --- service liveness ---
-    assert "ok" in machine.succeed(f"curl -fsS http://127.0.0.1:${toString proxyPort}/healthz")
-    assert "ok" in machine.succeed(f"curl -fsS http://127.0.0.1:${toString proxyPort}/readyz")
+    assert "ok" in machine.succeed("curl -fsS http://127.0.0.1:${toString proxyPort}/healthz")
+    assert "ok" in machine.succeed("curl -fsS http://127.0.0.1:${toString proxyPort}/readyz")
 
     # --- seed an upstream bare repo with one commit ---
     machine.succeed("""
@@ -172,7 +172,7 @@ pkgs.testers.runNixOSTest {
       echo second > second.txt && git add second.txt && git commit -q -m second
       git push -q origin HEAD:refs/heads/main
     """)
-    machine.succeed(f"cd /tmp/warm && git -c url.\"http://127.0.0.1:${toString proxyPort}/\".insteadOf=\"http://127.0.0.1:${toString upstreamPort}/\" pull -q origin main")
+    machine.succeed("cd /tmp/warm && git -c url.\"http://127.0.0.1:${toString proxyPort}/\".insteadOf=\"http://127.0.0.1:${toString upstreamPort}/\" pull -q origin main")
     assert machine.succeed("git -C /tmp/warm log -1 --format=%H").strip() == machine.succeed("git -C /tmp/seed log -1 --format=%H").strip()
 
     # --- disposable: delete the mirror -> ordinary refetch, same result ---
