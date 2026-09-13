@@ -156,18 +156,6 @@
         "type": "github"
       }
     },
-    "module-attic": {
-      "flake": false,
-      "locked": {
-        "path": "./modules/attic",
-        "type": "path"
-      },
-      "original": {
-        "path": "./modules/attic",
-        "type": "path"
-      },
-      "parent": []
-    },
     "module-ephemeral-root": {
       "flake": false,
       "locked": {
@@ -359,7 +347,6 @@
         "disko": "disko",
         "hardware-intel-n100": "hardware-intel-n100",
         "impermanence": "impermanence",
-        "module-attic": "module-attic",
         "module-ephemeral-root": "module-ephemeral-root",
         "module-git-cache-proxy": "module-git-cache-proxy",
         "module-llm-gateway": "module-llm-gateway",

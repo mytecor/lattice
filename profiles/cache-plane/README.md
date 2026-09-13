@@ -1,7 +1,7 @@
 # Cache and artifact plane (F9).
 
-Профиль включает сервисы cache-plane: Git cache proxy (f9-01), Verdaccio
-npm/pnpm/yarn caching proxy (f9-03), а в дальнейшем — Attic (f9-04).
+Профиль включает сервисы cache-plane: Git cache proxy (f9-01) и Verdaccio
+npm/pnpm/yarn caching proxy (f9-03).
 Long-lived accelerators
 отделяются от ценных результатов: всё, что здесь живёт, —
 disposable, удалимо и восстановимо из upstream/lockfiles.

@@ -3,13 +3,6 @@
 let
   rootPasswordHashFile = ./secrets/root-password-hash.age;
   hasRootPassword = builtins.pathExists rootPasswordHashFile;
-  # f9-04: attic JWT admin-token secret (the daemon's signing credential; the
-  # nar signing keypair is generated and stored server-side by attic itself).
-  # Conditional pathExists pattern (root-password-hash precedent): eval passes
-  # while the .age file is absent, so CI/local `nix flake check` works before
-  # the operator creates the secret.
-  atticJwtSecretFile = ./secrets/attic-jwt-secret.age;
-  hasAtticJwtSecret = builtins.pathExists atticJwtSecretFile;
   # Non-secret SSIDs exposed as world-readable store files, matching the module's
   # "both fields are file paths" contract. Passwords still come from a shared
   # agenix secret (wifi-password.age); only the home SSID uses wifi-ssid.age.
@@ -62,13 +55,6 @@ in
       };
       llm-provider-gonkarouter = {
         file = ./secrets/llm-provider-gonkarouter.age;
-        mode = "0400";
-      };
-    } // lib.optionalAttrs hasAtticJwtSecret {
-      # f9-04: attic JWT admin-token secret (EnvironmentFile fragment). Only
-      # requested when the .age file exists, so evaluation passes without it.
-      attic-jwt-secret = {
-        file = atticJwtSecretFile;
         mode = "0400";
       };
     };
@@ -168,21 +154,6 @@ in
   # origin is ever added, its per-repo credential goes with an explicit
   # allowRepos entry per KEY_MANAGEMENT.md.
   lattice.git-cache-proxy.allowRepos = [ "mytecor/lattice" ];
-
-  # f9-04: Attic Nix binary cache. Настройки порта/хоста/емейна/dataRoot приходят
-  # из cache-plane профиля (latticePorts.attic в profiles/networking/ports.nix,
-  # cacheRoot /var/lib/attic) — на ноде фиксируем только node-specific значения:
-  # JWT-secret, имя кеша и placeholders для клиентского trust/public URL.
-  # Порт НЕ дублируем здесь, чтобы не разошёлся с общим реестром ports.nix.
-  lattice.attic = {
-    enable = true;
-    cacheName = "lattice";
-    tokenSecretFile = if hasAtticJwtSecret then config.age.secrets.attic-jwt-secret.path else null;
-    # Placeholder until the operator creates the cache and records its public
-    # key (from `attic cache info`); then set both to enable client wiring.
-    trustedPublicKey = null;
-    publicUrl = null;
-  };
 
   # f9-03: Verdaccio npm caching proxy. Порт и остальные runtime-значения приходят
   # из cache-plane профиля (latticePorts.verdaccio = 9212 в ports.nix, host
@@ -414,9 +385,6 @@ in
     { directory = "/var/lib/rnsh"; user = "rnsh"; group = "rnsh"; mode = "0700"; }
     { directory = "/var/lib/radicle"; user = "radicle"; group = "radicle"; mode = "0750"; }
     { directory = "/var/lib/hydra-acp"; user = "root"; group = "root"; mode = "0700"; }
-    # f9-04: attic cache (SQLite + NAR storage) survives ephemeral root; loss
-    # only forces a rebuild/refetch (disposable semantics).
-    { directory = "/var/lib/attic"; user = "attic"; group = "attic"; mode = "0700"; }
   ];
 
   system.stateVersion = "26.05";

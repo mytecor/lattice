@@ -28,4 +28,4 @@
 - [`base/`](./base/default.nix) - базовый профиль: GitOps через `comin`, необходимые
   unfree-пакеты и стандартное обслуживание Nix store.
 - [`cache-plane/`](./cache-plane/README.md) - cache и artifact plane (F9): disposable
-  ускорители (Git cache proxy сейчас; Verdaccio и Attic далее), никогда не source of truth.
+  ускорители (Git cache proxy сейчас; Verdaccio далее), никогда не source of truth.

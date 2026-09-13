@@ -15,13 +15,12 @@ let
     ];
   }).config;
 
-  # The cache-plane profile (cache-plane/config.nix) composes all three
-  # services, so any isolated test that imports it must provide all three
-  # modules (git-cache-proxy, attic, verdaccio). Defined here (in the `let`,
-  # not in the result attribute set) so the test entries below can reference it.
+  # The cache-plane profile (cache-plane/config.nix) composes the cache
+  # services, so any isolated test that imports it must provide all the modules
+  # (git-cache-proxy, verdaccio). Defined here (in the `let`, not in the result
+  # attribute set) so the test entries below can reference it.
   cachePlaneModules = [
     self.nixosModules.git-cache-proxy
-    self.nixosModules.attic
     self.nixosModules.verdaccio
   ];
 in
@@ -86,21 +85,6 @@ in
     gatewayProfile = "${profiles}/tcp-gateway/config.nix";
   };
 
-  # f9-04: Attic binary cache / artifact cache.
-  attic = import ./attic.nix {
-    inherit pkgs nixpkgs;
-    cachePlaneModules = cachePlaneModules;
-    atticModule = self.nixosModules.attic;
-    atticProfile = "${profiles}/cache-plane/config.nix";
-  };
-
-  attic-vm = import ./attic-vm.nix {
-    inherit pkgs nixpkgs;
-    cachePlaneModules = cachePlaneModules;
-    atticModule = self.nixosModules.attic;
-    atticProfile = "${profiles}/cache-plane/config.nix";
-  };
-
   # f9-03: Verdaccio npm/pnpm/yarn caching proxy.
   verdaccio = import ./verdaccio.nix {
     inherit pkgs nixpkgs;
@@ -157,15 +141,6 @@ in
     # The proxy is a shared credentialed reader: no upstream credential may
     # exist until per-repo authorization (f9-02) is in place.
     assert homelabConfig.lattice.git-cache-proxy.upstreamAuthHeaderFile == null;
-    # f9-04: Attic is enabled and loopback-only; its backend port is not in
-    # the firewall (nix fetches through the local loopback endpoint).
-    assert homelabConfig.lattice.attic.enable;
-    assert homelabConfig.lattice.attic.host == "127.0.0.1";
-    assert !builtins.elem homelabConfig.lattice.attic.port
-      homelabConfig.networking.firewall.allowedTCPPorts;
-    # Pre-deploy placeholder: node does not yet trust a cache key (no client
-    # wiring emitted) and no JWT secret .age exists yet.
-    assert homelabConfig.lattice.attic.trustedPublicKey == null;
     assert homelabConfig.services.comin.enable;
     # SSH must stay key-only on the public-facing node.
     assert homelabConfig.services.openssh.enable;
