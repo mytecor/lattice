@@ -18,6 +18,15 @@ let
         networking.hostName = "node-a";
         system.stateVersion = "26.05";
         lattice.git-cache-proxy.allowRepos = [ "mytecor/lattice" ];
+
+        # The test only validates the generated Caddy config (caddy adapt
+        # --validate) and never actually runs Caddy. The default per-vhost
+        # access-log writes to /var/log/caddy, which does not exist inside the
+        # Nix build sandbox and fails validation with `mkdir /var: permission
+        # denied` (same fix as pi-acp-daemon.nix). Discard that log for the test
+        # vhost so adapt/validate does not touch the filesystem.
+        services.caddy.virtualHosts."http://git-cache-proxy.node-a.local".logFormat =
+          lib.mkForce "output discard";
       }
     ];
   }).config;
