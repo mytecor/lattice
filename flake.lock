@@ -156,6 +156,18 @@
         "type": "github"
       }
     },
+    "module-attic": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/attic",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/attic",
+        "type": "path"
+      },
+      "parent": []
+    },
     "module-ephemeral-root": {
       "flake": false,
       "locked": {
@@ -236,6 +248,18 @@
       },
       "original": {
         "path": "./modules/rnsh",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "module-verdaccio": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/verdaccio",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/verdaccio",
         "type": "path"
       },
       "parent": []
@@ -335,6 +359,7 @@
         "disko": "disko",
         "hardware-intel-n100": "hardware-intel-n100",
         "impermanence": "impermanence",
+        "module-attic": "module-attic",
         "module-ephemeral-root": "module-ephemeral-root",
         "module-git-cache-proxy": "module-git-cache-proxy",
         "module-llm-gateway": "module-llm-gateway",
@@ -342,6 +367,7 @@
         "module-pi-acp-daemon": "module-pi-acp-daemon",
         "module-rns-server": "module-rns-server",
         "module-rnsh": "module-rnsh",
+        "module-verdaccio": "module-verdaccio",
         "module-wireless": "module-wireless",
         "nixos-hardware": "nixos-hardware",
         "nixpkgs": "nixpkgs_2",

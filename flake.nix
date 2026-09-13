@@ -75,6 +75,17 @@
       flake = false;
     };
 
+    # f9-04: Attic binary cache / artifact cache (attic-server from nixpkgs).
+    module-attic = {
+      url = "path:./modules/attic";
+      flake = false;
+    };
+
+    module-verdaccio = {
+      url = "path:./modules/verdaccio";
+      flake = false;
+    };
+
     profiles = {
       url = "path:./profiles";
       flake = false;
@@ -103,6 +114,8 @@
     module-pi-acp-daemon,
     module-wireless,
     module-git-cache-proxy,
+    module-attic,
+    module-verdaccio,
     profiles,
     rns-rs,
     ...
@@ -131,6 +144,7 @@
             pi = final.lattice.pi;
           };
           git-cache-proxy = final.callPackage ./packages/git-cache-proxy/package.nix { };
+          verdaccio = final.callPackage ./packages/verdaccio/package.nix { };
 
           # f8-03: воспроизводимый tool profile для Pi-рантайма.
           pi-tool-profile = final.buildEnv {
@@ -181,7 +195,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) acp-normalizer git-cache-proxy hydra-acp llm-gateway pi pi-acp pi-mcp-adapter pi-tool-profile rns-server rnsh;
+          inherit (pkgs.lattice) acp-normalizer git-cache-proxy hydra-acp llm-gateway pi pi-acp pi-mcp-adapter pi-tool-profile rns-server rnsh verdaccio;
           default = pkgs.lattice.rns-server;
         });
 
@@ -211,6 +225,8 @@
         pi-acp-daemon.imports = [ "${module-pi-acp-daemon}" ];
         wireless.imports = [ "${module-wireless}" ];
         git-cache-proxy.imports = [ "${module-git-cache-proxy}" ];
+        attic.imports = [ "${module-attic}" ];
+        verdaccio.imports = [ "${module-verdaccio}" ];
 
         default.imports = [
           self.nixosModules.ephemeral-root
@@ -221,6 +237,8 @@
           self.nixosModules.pi-acp-daemon
           self.nixosModules.wireless
           self.nixosModules.git-cache-proxy
+          self.nixosModules.attic
+          self.nixosModules.verdaccio
         ];
       };
 

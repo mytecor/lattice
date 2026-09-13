@@ -14,4 +14,10 @@ in
   "llm-provider-dahl.age".publicKeys = [ admin node ];
   "llm-provider-hyperfusion.age".publicKeys = [ admin node ];
   "llm-provider-gonkarouter.age".publicKeys = [ admin node ];
+  # f9-04: Attic JWT admin-token secret (EnvironmentFile fragment generated on a
+  # linux/builder machine; see modules/attic/README.md "Операторский шаг перед
+  # deploy"). Contains ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64="<base64>" or
+  # ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64="<base64>". Commit only the .age;
+  # never the decrypted value.
+  "attic-jwt-secret.age".publicKeys = [ admin node ];
 }

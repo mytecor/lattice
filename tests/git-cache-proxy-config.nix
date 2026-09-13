@@ -1,4 +1,4 @@
-{ nixpkgs, pkgs, gitCacheModule, gitCacheProfile, gatewayProfile }:
+{ nixpkgs, pkgs, gitCacheModule, gitCacheProfile, gatewayProfile, cachePlaneModules }:
 
 # f9-01/f9-02: модульный контракт Git cache proxy и валидация сгенерированного
 # Caddy-конфига (caddy adapt --validate). Проверяются семантически важные
@@ -9,7 +9,7 @@
 let
   inherit (nixpkgs) lib;
   config = (lib.nixosSystem {
-    modules = [
+    modules = cachePlaneModules ++ [
       gitCacheModule
       gitCacheProfile
       gatewayProfile

@@ -18,8 +18,28 @@ backups и test outputs публикуются как объектные дан�
 **Статус:** f9-01 (Git cache proxy как NixOS-сервис) и f9-02 (repo-scoped
 authorization) выполнены 2026-09-12. Git cache proxy развёрнут на homelab с
 `allowRepos = [ "mytecor/lattice" ]`; модульный assertion запрещает upstream
-credential без непустого allowlist. Открыты f9-03 (Verdaccio), f9-04 (Attic),
-f9-05 (artifact contract), f9-06 (cache-loss drill).
+credential без непустого allowlist.
+
+2026-09-13: реализованы f9-03 (Verdaccio) и f9-04 (Attic).
+
+- **f9-03 Verdaccio** — упакован `pkgs.lattice.verdaccio` (6.10.3 через
+  `buildPnpmCli`) и добавлен модуль `lattice.verdaccio` (`modules/verdaccio/`):
+  loopback cache-only proxy, `cacheRoot` `/var/cache/verdaccio`, `publish`
+  по умолчанию выключен, строгий systemd-песочник. Опция `clientConfig` пишет
+  `/etc/npmrc` + `/etc/yarnrc` на loopback-прокси для npm/pnpm/yarn ноды.
+  VM-тест `tests/verdaccio.nix` (cold/warm install, disposable cache) — в CI.
+- **f9-04 Attic** — выбран `attic-server` из nixpkgs (даемон `atticd`), модуль
+  `lattice.attic` (`modules/attic/`): signing keypair server-side, JWT
+  admin-secret через agenix `LoadCredential` (условный `pathExists`),
+  client substituter + `trusted-public-keys` только при заданных
+  `trustedPublicKey`+`publicUrl`. VM-тесты `tests/attic.nix` + `tests/attic-vm.nix`
+  (trust-контракт и disposable-семантика) — в CI.
+
+Eval всех чеков проходит локально (`nix flake check --all-systems --no-build`);
+VM-тесты и сборка attic/verdaccio исполняются в CI на x86_64-linux. Для f9-04
+перед deploy нужен операторский шаг — создать кеш и зашифровать
+`attic-jwt-secret.age` (см. `modules/attic/README.md`). Открыты f9-05
+(artifact contract), f9-06 (cache-loss drill).
 
 **Критерий готовности:** Pi получает ускорение Git/npm/Nix из локальных caches, артефакт
 публикуется и читается по immutable reference, а удаление любого cache влияет только на время

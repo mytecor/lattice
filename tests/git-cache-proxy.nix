@@ -1,4 +1,4 @@
-{ pkgs, nixpkgs, gitCacheModule, gitCacheProfile }:
+{ pkgs, nixpkgs, gitCacheModule, gitCacheProfile, cachePlaneModules }:
 
 # f9-01: Git cache proxy как NixOS-сервис. Поведенческий тест целиком в VM:
 # локальный `git http-backend` на 127.0.0.1 служит upstream origin'ом, прокси
@@ -81,7 +81,7 @@ pkgs.testers.runNixOSTest {
   name = "git-cache-proxy";
 
   nodes.machine = { ... }: {
-    imports = [ gitCacheModule gitCacheProfile ];
+    imports = cachePlaneModules ++ [ gitCacheModule gitCacheProfile ];
 
     environment.systemPackages = [ pkgs.git pkgs.curl ];
 

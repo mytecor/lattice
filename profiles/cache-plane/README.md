@@ -1,11 +1,20 @@
 # Cache and artifact plane (F9).
 
-Профиль включает сервисы cache-plane: Git cache proxy (f9-01), а в
-дальнейшем — Verdaccio (f9-03) и Attic (f9-04). Long-lived accelerators
+Профиль включает сервисы cache-plane: Git cache proxy (f9-01), Verdaccio
+npm/pnpm/yarn caching proxy (f9-03), а в дальнейшем — Attic (f9-04).
+Long-lived accelerators
 отделяются от ценных результатов: всё, что здесь живёт, —
 disposable, удалимо и восстановимо из upstream/lockfiles.
 
 Not a source of truth.
+
+## Verdaccio npm caching proxy
+
+По умолчанию cache-only: только loopback, anonymous read внутри закрытой
+LAN, publish выключен. Пакеты кешируются в `/var/cache/verdaccio`;
+клиенты ноды (npm/pnpm/yarn) направляются на `127.0.0.1:9212` из tool
+profile (см. `profiles/pi`). Порт берётся из общего реестра
+`profiles/networking/ports.nix`.
 
 ## Git cache proxy
 

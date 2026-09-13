@@ -7,4 +7,6 @@
   rns-auto-data = 42671;
   rns-tcp = 4242;
   git-cache-proxy = 9211;
+  attic = 9209;
+  verdaccio = 9212;
 }
