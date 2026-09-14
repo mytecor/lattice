@@ -291,9 +291,20 @@ func (r *Runner) applyBalance(route string, routeConfig *compiledRoute, pool []T
 	if !routeConfig.Balance.Enabled || len(pool) < 2 {
 		return pool
 	}
-	return r.scores.Select(route, pool, routeConfig.Balance, func(target Target) int {
+	r.config.logger.Debug("balance select", "route", route, "pool", providerNames(pool))
+	selected := r.scores.Select(route, pool, routeConfig.Balance, func(target Target) int {
 		return r.config.providers[target.Provider].Priority
 	})
+	r.config.logger.Debug("balance chosen", "route", route, "provider", providerNames(selected)[0])
+	return selected
+}
+
+func providerNames(pool []Target) []string {
+	names := make([]string, len(pool))
+	for i, t := range pool {
+		names[i] = t.Provider
+	}
+	return names
 }
 
 // validateTarget checks the explicit native model of a target against the
