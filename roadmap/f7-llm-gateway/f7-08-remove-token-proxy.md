@@ -61,7 +61,7 @@ Homelab и все тесты модуля уже используют `runtime =
 - [x] `packages/README.md`: заменить раздел про `token-proxy` на актуальный про `llm-gateway`.
 - [x] `README.md`: убрать упоминание `mxyhi/token_proxy` в контракте F7.
 - [x] `roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md`: отметить пункт об удалении как выполненный.
-- [x] Обновить реестр задач `roadmap/tasks/README.md`: добавить строку `f7-08`.
+- [x] Завести задачу f7-08 в `roadmap/f7-llm-gateway/`: `roadmap/f7-llm-gateway/f7-08-remove-token-proxy.md` по шаблону [TEMPLATE_TASK.md](../TEMPLATE_TASK.md).
 
 ## Критерий готовности
 
@@ -86,7 +86,7 @@ Homelab и все тесты модуля уже используют `runtime =
 `retryableFailureCooldownSeconds`; в `config.nix` удалены все legacy-ветки (остался только
 bifrost-путь с `config.json`); профиль оставляет `runtime`/`package` умолчаниям модуля;
 `tests/llm-gateway.nix` удалён как дубликат `llm-gateway-bifrost.nix`; homelab-конфиг и README
-приведены к Go proxy; обновлены root `README.md`, `ARCHITECTURE.md`, `roadmap/README.md`,
+приведены к Go proxy; обновлены root `README.md`, `ARCHITECTURE.md`, `ROADMAP.md`,
 фича F7, модуль/profile README.
 
 Проверено `nix flake check --no-build` (модульные checks) и evaluation checks

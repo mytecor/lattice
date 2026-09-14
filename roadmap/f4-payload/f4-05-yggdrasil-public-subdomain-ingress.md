@@ -18,7 +18,7 @@ Reticulum (это отдельный вопрос в [BACKLOG](../BACKLOG.md)). 
 в agenix, как остальные секреты ([f2-02](../f2-secrets-identity/f2-02-node-identity.md)).
 
 Зависит от [F2](../f2-secrets-identity/README.md) (agenix) и от ingress из
-[f4-02](./f4-02-app-services-profile.md). Соответствует [вехе 4](../VISION.md#вехи-и-зависимости-без-деталей).
+[f4-02](./f4-02-app-services-profile.md). Соответствует [вехе 4](../../ROADMAP.md#f4-полезная-нагрузка).
 
 ## Что сделать
 

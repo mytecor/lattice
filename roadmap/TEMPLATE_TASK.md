@@ -7,8 +7,7 @@
 (`<feature-id>-<feature-slug>/`). Пример: `f1-05-wireless-on-node.md` в каталоге `../f1-one-node/`.
 
 Затем добавьте ссылку на задачу в файл своей фичи (`README.md` в каталоге
-`<feature-id>-<feature-slug>/`) и строку в реестр
-[`tasks/README.md`](./README.md), если он поддерживается.
+`<feature-id>-<feature-slug>/`).
 
 ---
 

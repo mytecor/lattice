@@ -5,7 +5,7 @@ Controller автоматизирует жизненный цикл disposable w
 Source и task definitions остаются в Git, artifacts — в object storage.
 
 Зависит от [F10](../f10-disposable-worker/README.md). Соответствует
-[вехе 11](../VISION.md#вехи-и-зависимости-без-деталей).
+[вехе 11](../../ROADMAP.md#f11-controller).
 
 Задачи: [f11-01](f11-01-control-state-model.md),
 [f11-02](f11-02-queue-leases-registry.md),

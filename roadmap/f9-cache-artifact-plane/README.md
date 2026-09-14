@@ -6,7 +6,7 @@ backups и test outputs публикуются как объектные дан�
 
 Зависит от source bootstrap [f4-01](../f4-payload/f4-01-radicle-seed-comin.md),
 [F7](../f7-llm-gateway/README.md) и [F8](../f8-pi-runtime/README.md). Соответствует
-[вехе 9](../VISION.md#вехи-и-зависимости-без-деталей).
+[вехе 9](../../ROADMAP.md#f9-caches-и-artifacts).
 
 Задачи: [f9-01](f9-01-git-cache-proxy.md),
 [f9-02](f9-02-git-repository-access.md),

@@ -15,7 +15,7 @@ Go proxy поверх Bifrost Go API; Lattice владеет HTTP/API contract, 
 [f7-13](./f7-13-provider-balancing.md).
 
 Зависит от [F1](../f1-one-node/README.md) и [F2](../f2-secrets-identity/README.md). Соответствует
-[вехе 7](../VISION.md#вехи-и-зависимости-без-деталей).
+[вехе 7](../../ROADMAP.md#f7-llm-gateway).
 
 Базовые задачи f7-01..f7-08 закрыты. Follow-up
 [f7-09](./f7-09-bounded-provider-routing.md) декомпозирует flat routing pipeline и ограничивает

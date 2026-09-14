@@ -81,7 +81,7 @@ inventory.
 - `ARCHITECTURE.md`
 - `roadmap/BACKLOG.md`
 - `roadmap/f7-llm-gateway/README.md`
-- `roadmap/tasks/`
+- `roadmap/TEMPLATE_TASK.md`
 
 ## Последующее решение
 

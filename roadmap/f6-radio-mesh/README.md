@@ -1,7 +1,7 @@
 # F6. Радио и mesh
 
 Работа на узком канале: LoRa/RNode как ещё один интерфейс Reticulum. Соответствует
-[вехе 6](../VISION.md#вехи-и-зависимости-без-деталей).
+[вехе 6](../../ROADMAP.md#f6-радио-и-mesh).
 
 Задачи: [f6-01](f6-01-rnode-lora-interfaces.md),
 [f6-02](f6-02-narrow-channel-profile.md),

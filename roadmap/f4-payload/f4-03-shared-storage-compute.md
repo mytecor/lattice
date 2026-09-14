@@ -21,7 +21,7 @@
 
 ## Затрагиваемые файлы / слои
 
-- `roadmap/VISION.md`
+- `ROADMAP.md`
 - `roadmap/f7-llm-gateway/README.md` — `f11-controller.md`
 
 ## Открытые вопросы

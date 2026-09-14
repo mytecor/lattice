@@ -5,7 +5,7 @@
 ни dependency directories, ни Pi session не являются состоянием продолжения задачи.
 
 Зависит от [F8](../f8-pi-runtime/README.md) и [F9](../f9-cache-artifact-plane/README.md). Соответствует
-[вехе 10](../VISION.md#вехи-и-зависимости-без-деталей).
+[вехе 10](../../ROADMAP.md#f10-disposable-worker).
 
 Задачи: [f10-01](f10-01-task-specification.md),
 [f10-02](f10-02-worker-isolation.md),

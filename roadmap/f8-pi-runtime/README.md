@@ -10,7 +10,7 @@ endpoint обслуживает динамические параллельны�
 к одной live session. Эта ветка не меняет disposable-модель будущих workers.
 
 Зависит от [F7](../f7-llm-gateway/README.md). Соответствует
-[вехе 8](../VISION.md#вехи-и-зависимости-без-деталей).
+[вехе 8](../../ROADMAP.md#f8-интерактивный-pi).
 
 Задачи: [f8-01](f8-01-package-pi.md),
 [f8-02](f8-02-pi-gateway-config.md),
