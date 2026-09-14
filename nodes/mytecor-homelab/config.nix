@@ -167,7 +167,7 @@ in
   # named route; a filter with where.model makes the route the entry route for
   # a logical model, filter provider builds the provider selection, map binds it
   # to one native model, rank orders the pool, balance selects a provider on
-  # runtime (adaptive), affinity pins stateful chains, race defines the
+  # runtime (round_robin), affinity pins stateful chains, race defines the
   # parallel batch, and retry/hedge are explicit transitions to named subroutes
   # (standard.retry, standard.hedge) whose own error/provider filters decide
   # when they apply. One request never creates more than four upstream calls
@@ -222,15 +222,19 @@ in
     # alias so a model_not_found in the primary alias can fail over to the
     # prefixed native Hyperfusion actually serves.
     #
-    # f7-13: live run of provider balancing. `balance` (adaptive) replaces
-    # `lease` as the runtime selection step before `race`, so traffic
-    # distributes across healthy providers instead of concentrating on the
-    # fastest lease holder. Distribution requires `race count = 1` (determin-
-    # istic selection); lease and balance are mutually exclusive on one route.
-    # Explicit flat weights offset the lopsided provider priorities so
-    # adaptive (score = weight × health) actually spreads traffic; without
-    # them priority 100 vs 10-50 would keep ~2/3 of requests on hyperfusion.
-    # window/errorBudget use the module defaults (5m / 0.2).
+    # f7-13: live run of provider balancing. `balance` replaces `lease` as the
+    # runtime selection step before `race`, so traffic distributes across
+    # healthy providers instead of concentrating on the fastest lease holder.
+    # Distribution requires `race count = 1` (deterministic selection); lease
+    # and balance are mutually exclusive on one route. Live run showed adaptive
+    # with even flat weights still re-concentrates ~25/27 requests on
+    # hyperfusion, because the EWMA latency factor (min latency / latency)
+    # dominates weight × health — adaptive is designed to favour the best
+    # performer. round_robin is the documented max-distribution strategy: it
+    # rotates over all healthy candidates (health floor via errorBudget,
+    # default 5m/0.2) and excludes unhealthy or blacklisted ones, which
+    # satisfies both DoD 1 (distribution) and DoD 2 (unhealthy excluded).
+    # window/errorBudget use the module defaults.
     routingRules = let
       allProviders = [
         "gonka-proxy"
@@ -249,19 +253,7 @@ in
         {
           route = model;
           action = "balance";
-          strategy = "adaptive";
-          # Explicit weights flatten the lopsided provider priorities
-          # (hyperfusion=100 vs 10-50 others) so adaptive actually
-          # distributes across healthy providers instead of concentrating
-          # ~2/3 of requests on the top priority. Score = weight × health.
-          weights = {
-            gonka-proxy = 2;
-            gonka-openbroker = 2;
-            gonka-api = 1;
-            dahl = 1;
-            hyperfusion = 1;
-            gonkarouter = 1;
-          };
+          strategy = "round_robin";
         }
         {
           route = model;
