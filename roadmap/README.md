@@ -51,8 +51,7 @@ surface и structured diagnostics подтверждены Go-тестами и 
 runtime**; f8-01 завершена: Pi закреплён и устанавливается через pnpm без
 пользовательской ручной установки. В f8-02 выполнена декларативная привязка Pi к gateway:
 `lattice.pi` генерирует store JSON и материализует `~/.pi/agent/{settings,models}.json` симлинками,
-`discoverModels = false`, только логические классы `standard`/`stupid` по loopback, с NixOS-проверкой
-`tests/pi-config.nix`. Client credential закрыт как не требующийся (client auth в gateway выключен,
+`discoverModels = false`, только логические классы `standard`/`stupid` по loopback. Client credential закрыт как не требующийся (client auth в gateway выключен,
 соединение loopback-only, порт `9208` един в `profiles/networking/ports.nix`); интерактивная проверка
 streaming остаётся за f8-04 (TUI). В f8-03 выполнен воспроизводимый tool profile: единый базовый
 контракт `bash/git/tools` в `profiles/pi/base-tools.nix` (нода и devShell), расширение проекта через

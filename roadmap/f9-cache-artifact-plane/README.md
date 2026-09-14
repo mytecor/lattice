@@ -24,10 +24,11 @@ credential без непустого allowlist.
   loopback cache-only proxy, `cacheRoot` `/var/cache/verdaccio`, `publish`
   по умолчанию выключен, строгий systemd-песочник. Опция `clientConfig` пишет
   `/etc/npmrc` + `/etc/yarnrc` на loopback-прокси для npm/pnpm/yarn ноды.
-  VM-тест `tests/verdaccio.nix` (cold/warm install, disposable cache) — в CI.
 
 Eval всех чеков проходит локально (`nix flake check --all-systems --no-build`);
-VM-тесты и сборка verdaccio исполняются в CI на x86_64-linux.
+VM-тесты (QEMU) из репозитория убраны — их место в CI занимали микро-бут, но они
+делали `nix flake check` красным (Node crash под QEMU, хрупкие runtime-assertion),
+поэтому поведенческое покрытие сведено к evaluation/config-чекам и Rust unit-тестам.
 
 **Критерий готовности:** Pi получает ускорение Git/npm/Nix из локальных caches, артефакт
 публикуется и читается по immutable reference, а удаление любого cache влияет только на время

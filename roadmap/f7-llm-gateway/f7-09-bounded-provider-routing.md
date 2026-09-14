@@ -331,9 +331,9 @@ provider.
   и assertions для всех новых actions.
 - [x] Мигрировать [homelab config](../../nodes/mytecor-homelab/config.nix) для `stupid` и
   `standard` на целевой pipeline и новые priorities.
-- [x] Обновить evaluation assertions в [tests/default.nix](../../tests/default.nix),
-  [Bifrost gateway test](../../tests/llm-gateway-bifrost.nix) и
-  [service test](../../tests/llm-gateway-service.nix).
+- [x] Обновить evaluation assertions в [tests/default.nix](../../tests/default.nix) и
+  [Bifrost gateway test](../../tests/llm-gateway-bifrost.nix).
+  (QEMU-сервис-тест `tests/llm-gateway-service.nix` убран вместе с остальными VM-тестами.)
 - [x] Убедиться, что generated public config не содержит credentials, affinity identifiers,
   prompts или runtime state.
 

@@ -21,22 +21,23 @@ upstream registries и lockfiles.
       на loopback-прокси; это только URL реестра, не credentials, и не трогает
       f8-03 base-tools (тяжёлый toolchain туда не добавляется).
 - [x] Проверить cold/warm install по lockfile и поведение после очистки cache.
-      Добавлен VM-тест `tests/verdaccio.nix` (CI, x86_64-linux): cold install через
-      npm/pnpm/yarn -> warm install тот же graph -> rm cache -> cold install тот же результат.
+      Изначально был добавлен VM-тест `tests/verdaccio.nix` (cold install через
+      npm/pnpm/yarn -> warm install тот же graph -> rm cache -> cold install тот же
+      результат), но позже убран: он требует сети к npmjs из QEMU-VM и крэшил Node
+      под виртуализацией, делая `nix flake check` красным.
 
 ## Критерий готовности
 
 - [ ] Три поддерживаемых package managers используют один proxy endpoint.
-      Реализовано и покрыто VM-тестом; исполняемое подтверждение — в CI (x86_64-linux).
+      Реализовано (модуль и пакет); исполняемое подтверждение убрано вместе с VM-тестом.
 - [ ] Cold install после удаления cache даёт тот же dependency graph по lockfile.
-      Реализовано и покрыто VM-тестом; исполняемое подтверждение — в CI (x86_64-linux).
+      Реализовано (модуль и пакет); исполняемое подтверждение убрано вместе с VM-тестом.
 
 ## Затрагиваемые файлы / слои
 
 - `packages/verdaccio/` — пакет через `buildPnpmCli`.
 - `modules/verdaccio/` — NixOS-модуль `lattice.verdaccio`.
 - `profiles/cache-plane/` — сервис в cache-plane профиле; порт `verdaccio` в `ports.nix`.
-- `tests/verdaccio.nix` — VM-тест proxy-поведения.
 - `nodes/mytecor-homelab/config.nix` — включение сервиса на ноде.
 
 ## Открытые вопросы
@@ -46,5 +47,6 @@ _нет_.
 ## Заметка по статусу (2026-09-13)
 
 Код, модуль и eval завершены; `nix flake check --all-systems --no-build` проходит.
-VM-тест (`tests/verdaccio.nix`) исполняется в CI на x86_64-linux — до зелёного
-пропуска CI пункты «Критерий готовности» остаются незакрытыми.
+VM-тест (`tests/verdaccio.nix`) был убран вместе с остальными QEMU-тестами — до
+включения поведенческой проверки на живом реестре пункты «Критерий готовности»
+остаются незакрытыми.

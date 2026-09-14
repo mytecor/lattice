@@ -51,8 +51,7 @@
 Окружение фиксируется в `/etc/pi.env` (read-only, inspect-only): `PATH` из tool profile,
 `LANG`/`LC_ALL=C.UTF-8`, git identity boundary (`GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=…/.gitconfig`).
 
-Smoke check из чистого окружения — [`tests/pi-tool-profile.nix`](../../tests/pi-tool-profile.nix)
-и NixOS-проверки в [`tests/pi-config.nix`](../../tests/pi-config.nix).
+Smoke check из чистого окружения — [`tests/pi-tool-profile.nix`](../../tests/pi-tool-profile.nix).
 
 ## Граница секретности
 

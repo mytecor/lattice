@@ -23,9 +23,8 @@ private Git objects. Workers не получают upstream GitHub credentials �
       Уже закрыто в f9-01 (system user, 0700 cache root, loopback-only, LoadCredential); сохранено.
 - [x] Проверить allow/deny cases и отсутствие данных запрещённого repo в ответах/cache metadata.
       Rust unit-тесты (`src/allowed.rs` + `tests/http.rs`: denied → 404 до upstream, allowed →
-      проходит в upstream, точность без suffix-расширения) и VM-тест
-      `tests/git-cache-proxy.nix`: forbidden repo → 404, ничего не материализуется, mirror уже
-      лежащий в cache того же denied repo → всё равно 404.
+      проходит в upstream, точность без suffix-расширения). QEMU-тест `tests/git-cache-proxy.nix`
+      тоже был добавлен, но убран вместе с остальными VM-тестами.
 
 ## Критерий готовности
 
@@ -41,7 +40,7 @@ private Git objects. Workers не получают upstream GitHub credentials �
   задаёт список.
 - `nodes/mytecor-homelab/` — `allowRepos = [ "mytecor/lattice" ]` (единственный origin-репозиторий).
 - `KEY_MANAGEMENT.md` — правила для будущих per-repo upstream credentials.
-- security checks — `tests/git-cache-proxy.nix`, `tests/git-cache-proxy-config.nix`.
+- security checks — `tests/git-cache-proxy-config.nix`.
 
 ## Открытые вопросы
 

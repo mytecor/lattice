@@ -48,17 +48,6 @@ in
     gatewayProfile = "${profiles}/llm-gateway/config.nix";
   };
 
-  llm-gateway-service = import ./llm-gateway-service.nix {
-    inherit pkgs nixpkgs;
-    gatewayModule = self.nixosModules.llm-gateway;
-    gatewayProfile = "${profiles}/llm-gateway/config.nix";
-  };
-
-  pi-config = import ./pi-config.nix {
-    inherit pkgs;
-    piModule = self.nixosModules.pi;
-  };
-
   pi-tool-profile = import ./pi-tool-profile.nix {
     inherit nixpkgs pkgs;
     piModule = self.nixosModules.pi;
@@ -70,27 +59,12 @@ in
     gatewayProfile = "${profiles}/tcp-gateway/config.nix";
   };
 
-  git-cache-proxy = import ./git-cache-proxy.nix {
-    inherit pkgs nixpkgs;
-    cachePlaneModules = cachePlaneModules;
-    gitCacheModule = self.nixosModules.git-cache-proxy;
-    gitCacheProfile = "${profiles}/cache-plane/config.nix";
-  };
-
   git-cache-proxy-config = import ./git-cache-proxy-config.nix {
     inherit pkgs nixpkgs;
     cachePlaneModules = cachePlaneModules;
     gitCacheModule = self.nixosModules.git-cache-proxy;
     gitCacheProfile = "${profiles}/cache-plane/config.nix";
     gatewayProfile = "${profiles}/tcp-gateway/config.nix";
-  };
-
-  # f9-03: Verdaccio npm/pnpm/yarn caching proxy.
-  verdaccio = import ./verdaccio.nix {
-    inherit pkgs nixpkgs;
-    cachePlaneModules = cachePlaneModules;
-    verdaccioModule = self.nixosModules.verdaccio;
-    verdaccioProfile = "${profiles}/cache-plane/config.nix";
   };
 
   comin-source-sync = import ./comin-source-sync.nix {

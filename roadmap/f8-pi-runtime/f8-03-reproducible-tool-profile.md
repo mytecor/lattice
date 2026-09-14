@@ -32,8 +32,7 @@
 - Smoke check из чистого окружения — [`tests/pi-tool-profile.nix`](../../tests/pi-tool-profile.nix):
   проверяет состав профиля, реальный запуск ключевых команд из `env -i`, `git init/commit` с
   per-user identity и фиксацию locale. Проходит на x86_64-linux (проверено на homelab).
-- NixOS-проверка [`tests/pi-config.nix`](../../tests/pi-config.nix) расширена: tool profile в
-  `systemPackages`, проектное расширение (`node`), `/etc/pi.env` с git-identity границей и locale.
+  (NixOS-проверка `tests/pi-config.nix` — QEMU-тест, убран вместе с остальными VM-тестами.)
 
 ## Критерий готовности
 

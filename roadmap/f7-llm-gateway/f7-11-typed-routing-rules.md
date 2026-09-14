@@ -162,13 +162,13 @@ _нет_. Выбор между закрытым interface и tagged wrapper о�
   является результат `lib.evalModules` над action-specific submodule, который задаёт только
   поля выбранного action (с требуемыми полями и типами). Unknown action/field/foreign field и
   missing required ловятся на Nix evaluation; `_public`-проекция генерирует в public JSON ровно
-  поля конкретного action. Mytecor-homelab assertions и `llm-gateway-service` проходят
-  evaluation без изменения описания правил.
+  поля конкретного action. Mytecor-homelab assertions проходят evaluation без изменения
+  описания правил. (`llm-gateway-service` — QEMU-посев, убран вместе с остальными VM-тестами.)
 
 ### Валидация
 
 - `gofmt`, `go vet`, `go test ./...`, `go test -race ./...` в `packages/llm-gateway` — зелёные;
 - генерированный из typed Nix union конфиг mytecor-homelab проходит
   `TestValidateExternalGeneratedConfig` end-to-end (strict decoder + compile);
-- проверки Nix: `.drvPath` для `mytecor-homelab`, `example` и `llm-gateway-service` eвалятся,
+- проверки Nix: `.drvPath` для `mytecor-homelab` и `example` евали̂руются,
   регрессионные assertions по routing rules проходят.

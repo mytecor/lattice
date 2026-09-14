@@ -68,8 +68,9 @@ Homelab и все тесты модуля уже используют `runtime =
 - `token_proxy`/`token-proxy`/`token_proxy_src` отсутствуют в active system closure/config, in
   `flake.nix`, `flake.lock`, модуле `modules/llm-gateway`, профиле, homelab-конфиге и активной
   документации.
-- `nix flake check --no-build` (и по возможности полный `nix flake check`) проходит; все три
-  gateway-теста (`llm-gateway`, `llm-gateway-bifrost`, `llm-gateway-service`) зелёные.
+- `nix flake check --no-build` (и по возможности полный `nix flake check`) проходит; gate-тесты
+  (`llm-gateway-bifrost`) зелёные, `llm-gateway-service` (QEMU-посев) убран вместе с
+  остальными VM-тестами.
 - `nix build .#checks.x86_64-linux.llm-gateway-*` собирается без ссылки на удалённый пакет.
 - Bifrost runtime остаётся единственным и homelab-конфиг проходит evaluation.
 
@@ -89,7 +90,7 @@ bifrost-путь с `config.json`); профиль оставляет `runtime`/
 фича F7, модуль/profile README.
 
 Проверено `nix flake check --no-build` (модульные checks) и evaluation checks
-`llm-gateway-bifrost`, `llm-gateway-service`, `mytecor-homelab`, `app-services`,
+`llm-gateway-bifrost`, `mytecor-homelab`, `app-services`,
 `ephemeral-root-module` — все зелёные. `token_proxy`/`token-proxy`/`token_proxy_src` отсутствуют
 в активной конфигурации, модуле, профиле, homelab и активной документации; исторические findings
 `f7-01`/`f7-05`/`f7-06` сохранены неизменными.

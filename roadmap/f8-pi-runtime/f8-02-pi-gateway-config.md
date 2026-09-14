@@ -30,7 +30,6 @@ upstream credentials остаются внутри `llm-gateway` и в конф�
 
 - `modules/pi/` — декларативные опции `settings`/`models` и генерация store JSON.
 - `nodes/mytecor-homelab/` — привязка Pi к loopback gateway и логическим классам.
-- `tests/pi-config.nix` — NixOS-проверка материализации конфига.
 - `KEY_MANAGEMENT.md` — client credential workflow (когда включим client auth).
 
 ## Открытые вопросы
@@ -55,6 +54,6 @@ upstream credentials остаются внутри `llm-gateway` и в конф�
 `~/.pi/agent/settings.json` и `~/.pi/agent/models.json` как symlink на store-файлы; каталог
 `~/.pi/agent` остаётся writable для runtime-состояния Pi. В node-конфиг добавлена привязка к
 `llm-gateway` по loopback: `discoverModels = false`, `models = [{id=standard},{id=stupid}]`,
-без `apiKey` (секреты в store не попадают). `tests/pi-config.nix` проверяет симлинки и
-отсутствие provider-specific discovery/credentials. Streaming и переключение класса модели
-проверяются в f8-04.
+без `apiKey` (секреты в store не попадают). NixOS-проверка `tests/pi-config.nix` (проверяла
+симлинки и отсутствие provider-specific discovery/credentials) убрана вместе с остальными
+VM-тестами. Streaming и переключение класса модели проверяются в f8-04.

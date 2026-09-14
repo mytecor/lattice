@@ -54,19 +54,17 @@ assert builtins.elem 80 config.networking.firewall.allowedTCPPorts;
 Examples: [`app-services.nix`](./app-services.nix),
 [`llm-gateway-bifrost.nix`](./llm-gateway-bifrost.nix) (jq over the generated
 public config, `caddy adapt --validate`, generated JSON),
-[`pi-acp-daemon.nix`](./pi-acp-daemon.nix).
-
-### NixOS integration tests
-
-`pkgs.testers.runNixOSTest` VM tests for behavior that cannot be reliably proven
-by evaluation alone: a service actually starts, a file is materialized, a
-symlink exists, a runtime directory is writable, an executable is available, an
-endpoint responds, several services interact. Do not move these checks back into
-plain Nix `assert` blocks.
-
-Examples: [`llm-gateway-service.nix`](./llm-gateway-service.nix),
-[`pi-config.nix`](./pi-config.nix),
+[`pi-acp-daemon.nix`](./pi-acp-daemon.nix),
 [`comin-source-sync.nix`](./comin-source-sync.nix).
+
+### Build/runtime smoke tests
+
+`pkgs.runCommand` checks that execute in the build sandbox — the application
+exists and does a meaningful self-contained pass over generated material —
+without booting a VM.
+
+Examples: [`comin-source-sync.nix`](./comin-source-sync.nix) (seeds a bare git
+remote, runs `comin-source-sync`, asserts the sync semantics).
 
 ### Application tests
 

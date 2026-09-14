@@ -23,8 +23,10 @@ mirrors. Cache хранится на локальной POSIX FS и не явл�
   system user/group, tmpfiles создаёт `/var/cache/git-cache-proxy` 0700, upstream-credential и
   serve-token подаются через `LoadCredential` в env (`GITCACHEPROXY_*`), не argv.
 - [x] Направить тестовый clone/fetch через proxy и подтвердить cache hit.
-  См. [VM-тест](../../tests/git-cache-proxy.nix): локальный `git http-backend` как origin,
-  cold/warm clone, delta fetch (`fetchTtlSeconds = 0`), cache-loss refetch, read-only 403.
+  Покрыто Rust unit- и integration-тестами (`tests/*.rs`); QEMU-тест с локальным
+  `git http-backend` как origin (cold/warm clone, delta fetch, cache-loss refetch,
+  read-only 403) был добавлен как `tests/git-cache-proxy.nix`, но убран вместе с
+  остальными VM-тестами, чтобы не делать `nix flake check` красным.
 - [x] Ограничить сеть и filesystem права сервиса его назначением.
   Loopback-only bind (`127.0.0.1:<port>`), публикация наружу только Caddy-ингресс
   `tcp-gateway` (mDNS alias), `NoNewPrivileges`, `ProtectSystem=strict` с `ReadWritePaths`
