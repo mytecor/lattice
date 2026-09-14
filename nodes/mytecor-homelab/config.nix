@@ -166,14 +166,15 @@ in
   # LLM Gateway: flat routing_rules with named routes. Every rule belongs to a
   # named route; a filter with where.model makes the route the entry route for
   # a logical model, filter provider builds the provider selection, map binds it
-  # to one native model, rank orders the pool, lease promotes the winner,
-  # affinity pins stateful chains, race defines the parallel batch, and
-  # retry/hedge are explicit transitions to named subroutes (standard.retry,
-  # standard.hedge) whose own error/provider filters decide when they apply.
-  # One request never creates more than four upstream calls (race 2 + one
-  # hedged target, or race 2 + two retries of one target), more than three
-  # concurrent calls, or a repeated call to one provider (the unused provider
-  # routing policy). Provider transport and credentials stay in the registry.
+  # to one native model, rank orders the pool, balance selects a provider on
+  # runtime (adaptive), affinity pins stateful chains, race defines the
+  # parallel batch, and retry/hedge are explicit transitions to named subroutes
+  # (standard.retry, standard.hedge) whose own error/provider filters decide
+  # when they apply. One request never creates more than four upstream calls
+  # (race 1 + one hedged target, or race 1 + two retries of one target), more
+  # than three concurrent calls, or a repeated call to one provider (the unused
+  # provider routing policy). Provider transport and credentials stay in the
+  # registry.
   lattice.llm-gateway = {
     # Debug logs contain routing metadata and sanitized upstream errors, never prompts or keys.
     logLevel = "debug";
@@ -220,6 +221,15 @@ in
     # fallback subroute for `standard` gives Hyperfusion its second catalog
     # alias so a model_not_found in the primary alias can fail over to the
     # prefixed native Hyperfusion actually serves.
+    #
+    # f7-13: live run of provider balancing. `balance` (adaptive) replaces
+    # `lease` as the runtime selection step before `race`, so traffic
+    # distributes across healthy providers instead of concentrating on the
+    # fastest lease holder. Distribution requires `race count = 1` (determin-
+    # istic selection); lease and balance are mutually exclusive on one route.
+    # Weights follow provider priority by default (adaptive multiplies the
+    # static base by health). window/errorBudget use the module defaults
+    # (5m / 0.2).
     routingRules = let
       allProviders = [
         "gonka-proxy"
@@ -237,13 +247,8 @@ in
         { route = model; action = "rank"; strategy = "priority"; }
         {
           route = model;
-          action = "lease";
-          source = "winner";
-          duration = "10m";
-          renewOnSuccess = true;
-          releaseOn = [ "429" "5xx" "timeout" "connection_error" ];
-          releaseAfterSlowStarts = 3;
-          slowStart = "3s";
+          action = "balance";
+          strategy = "adaptive";
         }
         {
           route = model;
@@ -253,7 +258,7 @@ in
           onMissing = "ignore";
           onProviderFailure = "fail-closed";
         }
-        { route = model; action = "race"; count = 2; }
+        { route = model; action = "race"; count = 1; }
         {
           route = model;
           action = "retry";
