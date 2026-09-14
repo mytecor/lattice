@@ -93,7 +93,13 @@ pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ 
   grep -q '"action":"balance"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"strategy":"adaptive"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"error_budget":0.2' ${config.lattice.llm-gateway.publicConfigFile}
-  grep -q '"weights":{"gonka-proxy":2,"gonka-openbroker":1}' ${config.lattice.llm-gateway.publicConfigFile}
+  # weights is a JSON object: key order is not stable (builtins.toJSON sorts
+  # attribute names), so assert on the object content, not on a textual
+  # representation whose ordering a config change may legitimately alter.
+  if ! jq -e 'any(.routing_rules[]; (.action == "balance") and (.weights == { "gonka-proxy": 2, "gonka-openbroker": 1 }))' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+    echo "expected adaptive balance weights (gonka-proxy=2, gonka-openbroker=1) not found" >&2
+    exit 1
+  fi
   grep -q '"affinity_file":"/run/llm-gateway/affinity.json"' ${config.lattice.llm-gateway.publicConfigFile}
 
   # Every filter provider action must carry explicit provider ids and every

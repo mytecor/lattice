@@ -142,7 +142,19 @@ func TestSelectAdaptiveFailOpenUnhealthyAll(t *testing.T) {
 }
 
 func TestSelectWeightedUsesStaticWeights(t *testing.T) {
+	// Weighted selection is random in production, so drive it deterministically
+	// through the store's pick01 hook: a cycle of ten draws that lands nine
+	// times in a's bin (<0.9) and once in b's bin (>=0.9) for 9:1 weights.
+	// This exercises the exact 9:1 split instead of leaving the assertion to
+	// chance (20 draws at 9:1 would historically skip b ~12% of the time).
+	draws := []float64{0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95}
 	clock := newStoreAt(time.Now())
+	var i int
+	clock.store.pick01 = func() float64 {
+		v := draws[i%len(draws)]
+		i++
+		return v
+	}
 	policy := BalanceConfig{Enabled: true, Strategy: "weighted", Weights: map[string]int{"a": 9, "b": 1}, Window: 5 * time.Minute, ErrorBudget: 0.2}
 	targets := []Target{{Provider: "a"}, {Provider: "b"}}
 	counts := map[string]int{}
@@ -155,6 +167,10 @@ func TestSelectWeightedUsesStaticWeights(t *testing.T) {
 	}
 	if counts["a"] <= counts["b"] {
 		t.Fatalf("9:1 weights must favour a, got %#v", counts)
+	}
+	// Two full ten-draw cycles reproduce the 9:1 weighted split exactly.
+	if counts["a"] != 18 || counts["b"] != 2 {
+		t.Fatalf("9:1 weights must split 9:1 over a full cycle, got %#v", counts)
 	}
 }
 
