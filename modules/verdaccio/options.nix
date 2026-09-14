@@ -116,11 +116,24 @@ in
       type = types.bool;
       default = true;
       description = ''
-        Install global registry config (/etc/npmrc plus a yarnrc) that points
-        npm, pnpm and yarn on this node at the loopback Verdaccio proxy, so
-        clients use the cache without manual setup. pnpm reads npm's registry
-        config, so one npmrc covers npm and pnpm; yarn reads /etc/yarnrc. Only
-        a registry URL is written; no upstream credentials ever.
+        Install global registry config that points pnpm on this node at the
+        loopback Verdaccio proxy, so clients use the cache without manual
+        setup. Recreates /root/.config/pnpm/config.yaml on activation (pnpm 11
+        reads this as its global config, not /etc/npmrc) and keeps /etc/npmrc
+        for non-Nix npm shells. Only a registry URL is written; no upstream
+        credentials ever.
+      '';
+    };
+
+    generatedConfigYaml = mkOption {
+      type = types.lines;
+      internal = true;
+      readOnly = true;
+      description = ''
+        The generated verdaccio config.yaml text. Exposed read-only so contract
+        tests can assert on the literal ACL tokens (access: $anonymous, no
+        publish/unpublish in cache-only mode) without duplicating the module's
+        YAML generation logic, and operators can inspect exactly what runs.
       '';
     };
   };

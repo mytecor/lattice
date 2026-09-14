@@ -81,7 +81,8 @@
 
 Ускорение отделено от ценного результата.
 
-- **Статус:** 🚧 в работе
+- **Статус:** 🚧 в работе — caches-часть (f9-01..f9-03) выполнена и
+  live-подтверждена; artifacts/S3 остаётся.
 - **Готово, когда:** caches можно удалить без потери корректности, artifacts сохраняются отдельно.
 - **Зависит от:** [F4-01](./roadmap/f4-payload/f4-01-radicle-seed-comin.md), [F7](#f7-llm-gateway),
   [F8](#f8-интерактивный-pi)
@@ -90,7 +91,8 @@
 > ронял Node 24/V8 на ноде, каждый `comin`-switch падал (status 4) и нода
 > переставала самообновляться из `main`. Исправлено: `MemoryDenyWriteExecute = false`
 > для Verdaccio (как у llm-gateway/Bifrost). Полный контекст — в
-> [f9-README](./roadmap/f9-cache-artifact-plane/README.md).
+> [f9-README](./roadmap/f9-cache-artifact-plane/README.md). Live-прогон 2026-09-14
+> дополнительно закрыл все критерии f9-03 (см. [f9-03](./roadmap/f9-cache-artifact-plane/f9-03-verdaccio.md)).
 
 ## [F10. Disposable worker](./roadmap/f10-disposable-worker/README.md)
 

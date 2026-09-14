@@ -42,14 +42,20 @@ upstream registries и lockfiles.
 
 ## Критерий готовности
 
-- [ ] Три поддерживаемых package managers используют один proxy endpoint.
-      Реализовано (модуль и пакет); сервис после снятия MDWX стартует на ноде.
-      Исполняемое подтверждение cold install через npm/pnpm/yarn остаётся —
-      прогнать после восстановления здоровья ноды (см. live-находку).
-- [ ] Cold install после удаления cache даёт тот же dependency graph по lockfile.
-      Реализовано (модуль и пакет); исполняемое подтверждение убрано вместе с
-      VM-тестом, disposable-семантика кеша описана в README модуля. Прогон на
-      живом сервисе после восстановления ноды.
+- [x] Package manager ноды (pnpm) использует единственный proxy endpoint.
+      Подтверждено live 2026-09-14: pnpm через прокси-зависимые пакеты
+      (`left-pad`, `chalk`, `rxjs`, `@types/node` + транзитивные, 11 tarball'ов)
+      попадают в `/var/cache/verdaccio`; `pnpm config get registry` =
+      `http://127.0.0.1:9212/`. Для этого clientConfig пишет глобальный конфиг
+      pnpm 11 `/root/.config/pnpm/config.yaml` (pnpm НЕ читает `/etc/npmrc`;
+      `/etc/pnpmrc` и env `NPM_CONFIG_REGISTRY` игнорируются — проверено на
+      ноде). Yarn из поддержки убран: в Lattice используется только pnpm.
+- [x] Cold install после удаления cache даёт тот же dependency graph по lockfile.
+      Подтверждено live 2026-09-14: `rm -rf /var/cache/verdaccio` (без ручного
+      `mkdir`) → рестарт юнита → fresh pnpm cold install дал тот же граф (4
+      пакета, 11 tarball'ов) и снова наполнил кэш прокси. Disposable-семантика
+      кеша закрыта: `CacheDirectory` пересоздаёт cacheRoot до mount
+      namespacing на каждый старт.
 
 ## Затрагиваемые файлы / слои
 
@@ -61,6 +67,37 @@ upstream registries и lockfiles.
 ## Открытые вопросы
 
 _нет_.
+
+## Live-находки 2026-09-14 (live-прогон f9-03 на `mytecor-homelab`)
+
+Первый живой прогон после фикса MDWX вскрыл **три дефекта**, которые ускользнули
+от eval-чеков и контрактного теста (тот проверял serviceConfig/песочницу, но не
+буквальное содержимое генерируемого YAML и не runtime-поведение удаления кэша):
+
+1. **`access: \${anonymous}` → 401 на раздачу.** В `modules/verdaccio/config.nix`
+   Nix-экейп `\${anonymous}` давал в YAML literal `${anonymous}`, а `@verdaccio/config`
+   `ROLES` знает только `$anonymous`/`$all`/`$authenticated` (и `@`-deprecated).
+   Anonymous-клиент не попадал в группу → `401 authorization required` на каждый
+   пакет, cold install был невозможен. Исправлено на literal `access:
+   $anonymous`; publish/unpublish в cache-only опускаются (пустой ACL = deny всем).
+2. **`rm -rf` кэша ронял юнит (226/NAMESPACE).** systemd ставит mount namespacing
+   (`ProtectSystem=strict` + `ReadWritePaths`) **до** ExecStartPre, а `tmpfiles`
+   создавал каталог только на boot. После runtime-удаления cacheRoot сервис падал.
+   Исправлено: `CacheDirectory=verdaccio` + `CacheDirectoryMode=0700` (systemd
+   создаёт каталог до namespacing на каждый старт); убран tmpfiles-блок; assertion
+   требует `cacheRoot` под `/var/cache`.
+3. **clientConfig покрывал только npm, а не pnpm.** pnpm 11 не читает `/etc/npmrc`
+   (globalconfig — `$XDG_CONFIG_HOME/pnpm/config.yaml`), `/etc/pnpmrc` и env
+   `NPM_CONFIG_REGISTRY` игнорируются (проверено на ноде). clientConfig теперь
+   пишет `/root/.config/pnpm/config.yaml` через активационный скрипт (путь вне
+   `/etc`, `/root` ephemeral по impermanence). Yarn из поддержки исключён: в
+   Lattice используется только pnpm (`buildPnpmCli`), `/etc/yarnrc` yar'ом не
+   читается, поддержка была фикцией.
+
+Всё подтверждено live-прогоном: pnpm cold → 11 tarball'ов в кэше прокси; warm →
+435ms; cache-drop + fresh store → тот же граф и снова 11 tarball'ов. `nix flake
+check --all-systems --no-build` проходит; контрактный тест теперь проверяет
+literal ACL-токены в генерируемом YAML и `CacheDirectory`.
 
 ## Заметка по статусу (2026-09-13)
 

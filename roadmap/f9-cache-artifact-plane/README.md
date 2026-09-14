@@ -23,7 +23,18 @@ credential без непустого allowlist.
   `buildPnpmCli`) и добавлен модуль `lattice.verdaccio` (`modules/verdaccio/`):
   loopback cache-only proxy, `cacheRoot` `/var/cache/verdaccio`, `publish`
   по умолчанию выключен, строгий systemd-песочник. Опция `clientConfig` пишет
-  `/etc/npmrc` + `/etc/yarnrc` на loopback-прокси для npm/pnpm/yarn ноды.
+  по активации глобальный конфиг pnpm `/root/.config/pnpm/config.yaml` на
+  loopback-прокси (pnpm 11 не читает `/etc/npmrc`).
+
+2026-09-14: **live-прогон f9-03 закрыл все критерии готовности.** Вскрыты и
+исправлены три дефекта, ускользнувших от eval-чеков: (1) `access: \${anonymous}`
+в YAML давал 401 на раздачу — стало literal `$anonymous`; (2) `rm -rf` кэша
+ронял юнит 226/NAMESPACE — теперь `CacheDirectory` пересоздаёт cacheRoot до
+mount namespacing; (3) clientConfig покрывал только npm — теперь пишет pnpm
+`config.yaml`, yarn из поддержки убран (в Lattice используется только pnpm).
+Подтверждено live: pnpm cold через прокси (11 tarball'ов в кэше), warm 435ms,
+cache-drop + fresh store даёт тот же граф. Подробности — в секции
+«Live-находки 2026-09-14» файла [f9-03](f9-03-verdaccio.md).
 
 Eval всех чеков проходит локально (`nix flake check --all-systems --no-build`);
 VM-тесты (QEMU) из репозитория убраны — их место в CI занимали микро-бут, но они

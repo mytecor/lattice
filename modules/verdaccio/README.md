@@ -30,6 +30,8 @@
 - `lattice.verdaccio.logLevel` — уровень лога stdout
   (`fatal`..`trace`, по умолчанию `warn`).
 - `lattice.verdaccio.runtimeDirectory` — systemd RuntimeDirectory.
+- `lattice.verdaccio.clientConfig` (default true) — декларативный registry-конфиг
+  pnpm ноды на loopback-прокси (см. ниже).
 
 ## Границы безопасности
 
@@ -37,10 +39,12 @@
    ингресс `tcp-gateway` (Caddy), если это операторски оправдано. Для local
    tooling ноды внешняя публикация не нужна.
 2. По умолчанию registry — **read-only cache**: `access: $anonymous`
-   (anonymous read в пределах закрытой сети), `publish/unpublish` — `$none`
-   (никто). Публикация включается только явной опцией `publish = true` вместе
-   с htpasswd-файлом вне Nix store. В генерируемый store-конфиг секреты не
-   попадают; htpasswd монтируется через `LoadCredential`.
+   (anonymous read в пределах закрытой сети); `publish/unpublish` не
+   объявлены (verdaccio по умолчанию даёт пустой ACL, то есть никто).
+   Публикация включается только явной опцией `publish = true` вместе
+   с htpasswd-файлом вне Nix store; тогда ACL переключается на
+   `$authenticated`. В генерируемый store-конфиг секреты не попадают;
+   htpasswd монтируется через `LoadCredential`.
 3. Строгий песочник systemd: `NoNewPrivileges`,
    `ProtectSystem=strict` (`ReadWritePaths` — только cache root),
    `RestrictAddressFamilies`
@@ -62,3 +66,19 @@
 
 Verdaccio кеширует только то, что запросили клиенты; удаление cache не теряет
 source, пакеты восстанавливаются из upstream registry и lockfiles.
+
+## Client config (pnpm)
+
+`clientConfig` направляет pnpm ноды на loopback-прокси без ручной настройки.
+Единственный реально используемый пакетный менеджер проекта/ноды — pnpm
+(все Node-пакеты собираются через `buildPnpmCli`); yarn не поддерживается.
+Расположение конфига (проверено на `mytecor-homelab`, 2026-09-14):
+
+- **pnpm 11** `/etc/npmrc` НЕ читает (globalconfig —
+  `$XDG_CONFIG_HOME/pnpm/config.yaml`); `/etc/pnpmrc` и env `NPM_CONFIG_REGISTRY`
+  игнорируются. Файл пересоздаётся активацией в `/root/.config/pnpm/config.yaml`
+  (путь вне `/etc`, `/root` ephemeral по impermanence).
+- `/etc/npmrc` пишется для не-Nix npm в shell-сессиях, где он применим.
+
+Пишется только URL реестра (`http://${host}:${port}/`), никаких credentials; для
+других пользователей/хостов прокси закрыт loopback-привязкой.

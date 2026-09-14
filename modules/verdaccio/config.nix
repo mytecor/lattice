@@ -20,11 +20,21 @@ let
 
   # Default policy: cache-only proxy. Anonymous users may read/install anything
   # the uplink can reach (proxy-scoped), but publish/unpublish default to
-  # denying everyone. When `publish` is enabled, publish/unpublish move to
+  # denying everyone (the keys are omitted, so verdaccio's default empty ACL
+  # denies all). When `publish` is enabled, publish/unpublish move to
   # `$authenticated` (htpasswd-backed) so at least a known operator can publish.
-  publishAccess = if cfg.publish then "$authenticated" else "\$none";
+  #
+  # NB: the acl tokens are `$anonymous` / `$authenticated` (single `$`, no
+  # braces) — see @verdaccio/config package-access.js ROLES. Writing
+  # `\${anonymous}` produced a literal ``${anonymous}`` string that verdaccio
+  # treats as a plain (non-matching) group, so anonymous clients got 401
+  # "authorization required" on every package and cold install was impossible.
+  publishAccessLines = lib.optionals cfg.publish [
+    "    publish: $authenticated"
+    "    unpublish: $authenticated"
+  ];
 
-  configYaml = pkgs.writeText "verdaccio-config.yaml" (lib.concatStringsSep "\n" [
+  configYamlText = lib.concatStringsSep "\n" ([
     "storage: ${cfg.cacheRoot}"
     "uplinks:"
     "  npmjs:"
@@ -34,14 +44,12 @@ let
     "    file: ${htpasswdPath}"
     "packages:"
     "  '@*/*':"
-    "    access: \${anonymous}"
-    "    publish: ${publishAccess}"
-    "    unpublish: ${publishAccess}"
+    "    access: $anonymous"
+  ] ++ publishAccessLines ++ [
     "    proxy: npmjs"
     "  '**':"
-    "    access: \${anonymous}"
-    "    publish: ${publishAccess}"
-    "    unpublish: ${publishAccess}"
+    "    access: $anonymous"
+  ] ++ publishAccessLines ++ [
     "    proxy: npmjs"
     "server:"
     "  keepAliveTimeout: 60"
@@ -53,6 +61,8 @@ let
     "  level: ${cfg.logLevel}"
     ""
   ]);
+
+  configYaml = pkgs.writeText "verdaccio-config.yaml" configYamlText;
 
   execScript = pkgs.writeShellScript "verdaccio-exec" ''
     set -eu
@@ -73,6 +83,9 @@ let
 in
 {
   config = lib.mkIf cfg.enable {
+    # Expose the exact config text for contract tests / operator inspection.
+    lattice.verdaccio.generatedConfigYaml = configYamlText;
+
     # Publish mode is an operator decision: it requires an htpasswd credential
     # file. Advertising publish without providing credentials would silently
     # nudge toward the shared cache path; better to fail closed at eval.
@@ -83,7 +96,18 @@ in
         (an htpasswd file mounted via LoadCredential). Set publish = false (the
         default cache-only proxy) or provide an htpasswd file.
       '';
-    }];
+    }
+      # CacheDirectory= only manages paths under /var/cache; a custom cacheRoot
+      # elsewhere cannot be auto-recreated before namespacing, which would
+      # silently reintroduce the rm -rf brick (226/NAMESPACE). Fail closed.
+      {
+        assertion = lib.hasPrefix "/var/cache/" (toString cfg.cacheRoot);
+        message = ''
+          lattice.verdaccio: cacheRoot must be under /var/cache/ so that
+          CacheDirectory can recreate it before systemd mount namespacing
+          (disposable-cache contract). Got: ${toString cfg.cacheRoot}
+        '';
+      }];
 
     users.groups.${cfg.group} = { };
     users.users.${cfg.user} = {
@@ -91,10 +115,6 @@ in
       group = cfg.group;
       home = "/var/empty";
     };
-
-    systemd.tmpfiles.rules = [
-      "d ${toString cfg.cacheRoot} 0700 ${cfg.user} ${cfg.group} - -"
-    ];
 
     systemd.services.verdaccio = {
       description = "Lattice Verdaccio npm caching proxy";
@@ -105,6 +125,14 @@ in
       serviceConfig = {
         User = cfg.user;
         Group = cfg.group;
+        # Disposable-cache contract: `rm -rf ${cfg.cacheRoot}` must not brick
+        # the unit. systemd sets up mount namespacing (ProtectSystem=strict +
+        # ReadWritePaths) *before* ExecStartPre, and fails with 226/NAMESPACE
+        # when the ReadWritePaths target does not exist. `CacheDirectory=`
+        # creates the directory before namespacing on every start and chowns
+        # it to User/Group, so a runtime cache wipe just causes a refetch.
+        CacheDirectory = lib.removePrefix "/var/cache/" (toString cfg.cacheRoot);
+        CacheDirectoryMode = "0700";
         RuntimeDirectory = cfg.runtimeDirectory;
         RuntimeDirectoryMode = "0700";
         WorkingDirectory = toString cfg.cacheRoot;
@@ -160,16 +188,32 @@ in
       };
     };
 
-    # f9-03: registry config so npm/pnpm/yarn on this node use the loopback
-    # cache by default (no global manual setup). Only a registry URL is
-    # written; upstream credentials never reach client config files.
-    environment.etc = lib.mkIf cfg.clientConfig ({
+    # f9-03: registry config so pnpm (the actual package manager used in this
+    # project / on the node) uses the loopback cache by default, without global
+    # manual setup. Only a registry URL is written; upstream credentials never
+    # reach client config files.
+    #
+    # Verified on the node, 2026-09-14:
+    #  - pnpm 11 does NOT read /etc/npmrc: its global config is
+    #    $XDG_CONFIG_HOME/pnpm/config.yaml (= /root/.config/pnpm/config.yaml
+    #    for root). /etc/pnpmrc and NPM_CONFIG_REGISTRY env are ignored.
+    #  - npm (Nix-built) has its own globalconfig at
+    #    /nix/store/<nodejs>/etc/npmrc, so /etc/npmrc only helps non-Nix npm;
+    #    it is harmless to keep for shells where it applies.
+    # The pnpm path is outside /etc and /root is ephemeral (impermanence), so
+    # it is (re)created on every activation.
+    environment.etc = lib.optionalAttrs cfg.clientConfig {
       npmrc.text = ''
         registry=http://${cfg.host}:${toString cfg.port}/
       '';
-      yarnrc.text = ''
-        registry "http://${cfg.host}:${toString cfg.port}/"
-      '';
-    });
+    };
+
+    system.activationScripts.verdaccioClientConfig =
+      lib.mkIf cfg.clientConfig (lib.stringAfter [ "users" ] ''
+        mkdir -p /root/.config/pnpm
+        cat > /root/.config/pnpm/config.yaml <<EOF
+        registry: http://${cfg.host}:${toString cfg.port}/
+        EOF
+      '');
   };
 }

@@ -56,20 +56,74 @@ assert unit.serviceConfig.User == "verdaccio";
 assert unit.serviceConfig.Group == "verdaccio";
 assert unit.serviceConfig.WorkingDirectory == "/var/cache/verdaccio";
 
-# tmpfiles создаёт cache root с владельцем сервисного юзера.
-assert builtins.elem "d /var/cache/verdaccio 0700 verdaccio verdaccio - -"
-  config.systemd.tmpfiles.rules;
+# Disposable-cache contract: CacheDirectory создаёт cacheRoot до mount
+# namespacing на каждый старт (tmpfiles — только на boot, поэтому после
+# `rm -rf /var/cache/verdaccio` во время работы сервис падал с 226/NAMESPACE).
+# Live-проверка f9-03 на mytecor-homelab это показала (2026-09-14).
+assert unit.serviceConfig.CacheDirectory == "verdaccio";
+assert unit.serviceConfig.CacheDirectoryMode == "0700";
+assert unit.serviceConfig.WorkingDirectory == "/var/cache/verdaccio";
 
 # Cache-only: никакой htpasswd из LoadCredential (publish выключен).
 assert unit.serviceConfig.LoadCredential == [ ];
 
-# clientConfig пишет только URL реестра, никаких credentials.
+# clientConfig пишет только URL реестра, никаких credentials — и только в
+# места, которые реальный package manager ноды (pnpm) читает (проверено на
+# ноде, 2026-09-14): /root/.config/pnpm/config.yaml реестра pnpm 11, +
+# /etc/npmrc для не-Nix npm.
 assert builtins.hasAttr "npmrc" config.environment.etc;
-assert builtins.hasAttr "yarnrc" config.environment.etc;
 assert config.environment.etc.npmrc.text == "registry=http://127.0.0.1:9212/\n";
-assert config.environment.etc.yarnrc.text == "registry \"http://127.0.0.1:9212/\"\n";
-# npmrc/yarnrc не содержат ничего похожего на credential.
+# npmrc не содержит ничего похожего на credential.
 assert !lib.strings.hasInfix "token" config.environment.etc.npmrc.text;
-assert !lib.strings.hasInfix "password" config.environment.etc.yarnrc.text;
+assert !lib.strings.hasInfix "password" config.environment.etc.npmrc.text;
+
+# Activation script пересоздаёт pnpm config.yaml (путь вне /etc, /root
+# ephemeral по impermanence) при каждой активации.
+let
+  actScript = config.system.activationScripts.verdaccioClientConfig.text;
+in
+assert lib.strings.hasInfix "registry: http://127.0.0.1:9212/" actScript;
+assert lib.strings.hasInfix "/root/.config/pnpm/config.yaml" actScript;
+# В активационном скрипте — только URL реестра, никаких credentials.
+assert !lib.strings.hasInfix "token" actScript;
+assert !lib.strings.hasInfix "password" actScript;
+
+# Генерируемый verdaccio config.yaml обязан содержать literal ACL-токен
+# `access: $anonymous` (одиночный $, без фигурных скобок). Ранее здесь стоял
+# Nix-экейп `\${anonymous}`, который попадал в YAML как literal `${anonymous}`:
+# @verdaccio/config ROLES знает только $anonymous/$all/$authenticated (и
+# @-deprecated), поэтому аннонимный клиент получал 401 "authorization\n# required" на каждую раздачу и cold install был невозможен. Live-проверка
+# f9-03 на mytecor-homelab это поймала (2026-09-14).
+let
+  yaml = config.lattice.verdaccio.generatedConfigYaml;
+  dollar = "$";
+in
+assert lib.strings.hasInfix "access: $anonymous" yaml;
+# ${...} форма токена (Nix-экейп `\${...}`) никогда не должна вернуться.
+assert !lib.strings.hasInfix "${dollar}{anonymous}" yaml;
+# cache-only: publish/unpublish отсутствуют (default ACL = deny всем).
+assert !lib.strings.hasInfix "publish:" yaml;
+assert !lib.strings.hasInfix "unpublish:" yaml;
+
+# В publish-режиме ACL переключается на $authenticated и присутствует htpasswd.
+let
+  publishConfig = (lib.nixosSystem {
+    modules = cachePlaneModules ++ [
+      verdaccioModule
+      verdaccioProfile
+      {
+        nixpkgs.pkgs = pkgs;
+        networking.hostName = "node-a";
+        system.stateVersion = "26.05";
+        lattice.verdaccio.publish = true;
+        lattice.verdaccio.credentials.htpasswdFile = "/tmp/htpasswd";
+      }
+    ];
+  }).config;
+  yamlP = publishConfig.lattice.verdaccio.generatedConfigYaml;
+in
+assert lib.strings.hasInfix "publish: $authenticated" yamlP;
+assert lib.strings.hasInfix "unpublish: $authenticated" yamlP;
+assert builtins.elem "htpasswd:/tmp/htpasswd" publishConfig.systemd.services.verdaccio.serviceConfig.LoadCredential;
 
 pkgs.runCommand "verdaccio-config-check" { } "touch $out"
