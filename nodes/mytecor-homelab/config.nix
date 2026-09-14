@@ -227,9 +227,10 @@ in
     # distributes across healthy providers instead of concentrating on the
     # fastest lease holder. Distribution requires `race count = 1` (determin-
     # istic selection); lease and balance are mutually exclusive on one route.
-    # Weights follow provider priority by default (adaptive multiplies the
-    # static base by health). window/errorBudget use the module defaults
-    # (5m / 0.2).
+    # Explicit flat weights offset the lopsided provider priorities so
+    # adaptive (score = weight × health) actually spreads traffic; without
+    # them priority 100 vs 10-50 would keep ~2/3 of requests on hyperfusion.
+    # window/errorBudget use the module defaults (5m / 0.2).
     routingRules = let
       allProviders = [
         "gonka-proxy"
@@ -249,6 +250,18 @@ in
           route = model;
           action = "balance";
           strategy = "adaptive";
+          # Explicit weights flatten the lopsided provider priorities
+          # (hyperfusion=100 vs 10-50 others) so adaptive actually
+          # distributes across healthy providers instead of concentrating
+          # ~2/3 of requests on the top priority. Score = weight × health.
+          weights = {
+            gonka-proxy = 2;
+            gonka-openbroker = 2;
+            gonka-api = 1;
+            dahl = 1;
+            hyperfusion = 1;
+            gonkarouter = 1;
+          };
         }
         {
           route = model;
