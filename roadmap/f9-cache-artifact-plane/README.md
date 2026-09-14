@@ -30,6 +30,17 @@ VM-тесты (QEMU) из репозитория убраны — их мест�
 делали `nix flake check` красным (Node crash под QEMU, хрупкие runtime-assertion),
 поэтому поведенческое покрытие сведено к evaluation/config-чекам и Rust unit-тестам.
 
+**Инцидент 2026-09-14 (Node 24 + W^X, заблокировал comin на ноду):**
+`MemoryDenyWriteExecute=true` в песочнице verdaccio останавливал сервис на
+реальной ноде — Node 24/V8 не может инициализировать isolate под W^X-политикой
+(`v8::base::OS::SetPermissions` возвращает `EPERM` вместо `ENOMEM` →
+`Check failed: 12`). Каждый `comin`-switch падал со status 4, комин помечал уже
+собранную out-path «already deployed» и переставал применяться: нода застряла на
+generation от 2026-09-10 и не могла самообновляться из `main`. Исправлено:
+`MemoryDenyWriteExecute = false` для Verdaccio (тот же трейд-офф, что у
+llm-gateway/Bifrost), остальная жёсткость песочника сохранена; контрактный тест
+`tests/verdaccio.nix` закрепляет MDWX=false и остальные защитные опции.
+
 **Критерий готовности:** Pi получает ускорение Git/npm/Nix из локальных caches, артефакт
 публикуется и читается по immutable reference, а удаление любого cache влияет только на время
 следующего выполнения. Private Git objects не выдаются клиенту без repo-scoped authorization.

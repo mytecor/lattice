@@ -43,8 +43,17 @@
    попадают; htpasswd монтируется через `LoadCredential`.
 3. Строгий песочник systemd: `NoNewPrivileges`,
    `ProtectSystem=strict` (`ReadWritePaths` — только cache root),
-   `MemoryDenyWriteExecute`, `RestrictAddressFamilies`
+   `RestrictAddressFamilies`
    (`AF_UNIX`/`AF_INET`/`AF_INET6`), ограниченные system calls.
+   `MemoryDenyWriteExecute` **отключён явно**: Node 24/V8 не может создать
+   isolate при W^X-политике systemd — `v8::base::OS::SetPermissions` на
+   code range падает с `EPERM` и V8 аварийно завершается на
+   `Check failed: 12 == (*__errno_location ())` ещё до старта verdaccio
+   (воспроизведено на `mytecor-homelab`, nodejs-24.19.0). Это тот же трейд-офф,
+   что у [llm-gateway](../../modules/llm-gateway/README.md#границы-безопасности), где
+   `MemoryDenyWriteExecute = false` из-за `mprotect(PROT_EXEC)` зависимостей:
+   остальная жёсткость песочника (NoNewPrivileges, ProtectSystem=strict,
+   CapabilityBoundingSet="", syscall filter) сохраняется.
 4. Кешированные данные — disposable: удаление `cacheRoot` вызывает обычный
    refetch из uplink при следующем cold install; cache никогда не является
    source of truth.

@@ -67,6 +67,13 @@ in
     gatewayProfile = "${profiles}/tcp-gateway/config.nix";
   };
 
+  verdaccio = import ./verdaccio.nix {
+    inherit pkgs nixpkgs;
+    cachePlaneModules = cachePlaneModules;
+    verdaccioModule = self.nixosModules.verdaccio;
+    verdaccioProfile = "${profiles}/cache-plane/config.nix";
+  };
+
   comin-source-sync = import ./comin-source-sync.nix {
     inherit pkgs;
     syncPackage = pkgs.lattice.comin-source-sync;

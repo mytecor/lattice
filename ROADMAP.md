@@ -86,6 +86,12 @@
 - **Зависит от:** [F4-01](./roadmap/f4-payload/f4-01-radicle-seed-comin.md), [F7](#f7-llm-gateway),
   [F8](#f8-интерактивный-pi)
 
+> 🔴 **Инцидент 2026-09-14:** `MemoryDenyWriteExecute=true` в песочнице Verdaccio
+> ронял Node 24/V8 на ноде, каждый `comin`-switch падал (status 4) и нода
+> переставала самообновляться из `main`. Исправлено: `MemoryDenyWriteExecute = false`
+> для Verdaccio (как у llm-gateway/Bifrost). Полный контекст — в
+> [f9-README](./roadmap/f9-cache-artifact-plane/README.md).
+
 ## [F10. Disposable worker](./roadmap/f10-disposable-worker/README.md)
 
 Задача выполняется в одноразовом окружении.

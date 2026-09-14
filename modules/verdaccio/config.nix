@@ -123,7 +123,17 @@ in
         AmbientCapabilities = "";
         CapabilityBoundingSet = "";
         LockPersonality = true;
-        MemoryDenyWriteExecute = true;
+        # Node 24's V8 cannot initialize an isolate under systemd's W^X policy:
+        # v8::base::OS::SetPermissions on the code range fails with errno !=
+        # ENOMEM (EPERM from seccomp) and V8 aborts with
+        # "Check failed: 12 == (*__errno_location ())". Reproduced on
+        # mytecor-homelab (Intel N100, nodejs-24.19.0): bare `node -e` runs,
+        # with MemoryDenyWriteExecute=yes it SIGTRAPs on first v8::Isolate::
+        # Initialize. Kept systemd hardening is still severe (NoNewPrivileges,
+        # ProtectSystem=strict, CapabilityBoundingSet="", syscall filter incl.
+        # ~@privileged/~@resources); the same tradeoff is documented for the
+        # llm-gateway unit (Bifrost mprotect(PROT_EXEC)). See modules/verdaccio/README.md.
+        MemoryDenyWriteExecute = false;
         NoNewPrivileges = true;
         PrivateDevices = true;
         PrivateTmp = true;
