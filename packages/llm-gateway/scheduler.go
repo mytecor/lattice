@@ -439,6 +439,7 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 		return &routeOutcome{err: emptyPoolError(), empty: true}
 	}
 	ordered := r.applyLease(logical, route, pool)
+	ordered = r.applyBalance(route.Name, route, ordered)
 	raceN := route.RaceCount
 	if raceN <= 0 || raceN > len(ordered) {
 		raceN = len(ordered)
@@ -532,6 +533,18 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 			if res.err == nil || res.err.Class != ErrorCancelled {
 				r.record(res.provider, res.err)
 				r.observeLeaseFailure(logical, route, res.provider, res.err)
+				// Not a res.err class-wise for cancellation: the latency is only
+				// meaningful for successful branches, and health-neutral failures
+				// still advance the window. Catalog-rejected targets are skipped:
+				// they carry no timing and their failure is local, not a health
+				// signal of the provider.
+				if !res.prefailed {
+					var latency time.Duration
+					if !res.finished.IsZero() && !res.started.IsZero() {
+						latency = res.finished.Sub(res.started)
+					}
+					r.scores.Observe(res.provider, res.err, latency)
+				}
 			}
 			if res.winner {
 				r.observeLeaseWinner(logical, route, res.provider, res)

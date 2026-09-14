@@ -123,7 +123,7 @@ runtime directory и подставляет credentials через `jq`; ито�
 ```
 
 Production configuration must provide filter/map/race rules for every advertised logical model.
-Rules follow the canonical per-route order `filter → map → rank → lease → affinity → race →
+Rules follow the canonical per-route order `filter → map → rank → lease | balance → affinity → race →
 retry/hedge → semaphore → timeout`; each entry is a discriminated rule for exactly one action and
 owns only that action's fields. An unknown action, an unknown field, or a field owned by another
 action (e.g. `providers` on `map`, `scope`/`on` on `retry`, `fallback_strategy` on `fallback`
@@ -155,6 +155,52 @@ Responses affinity state (opaque id → provider mapping for `conversation` and
 set) with mode `0600`, owned by the gateway user; it survives service restarts and is cleared on a
 full service stop or reboot. The file contains no prompts, keys, or provider URLs. Failed writes
 remain dirty and are retried by the next periodic/final flush; persistence errors are logged.
+
+## Balance: распределение и адаптивный выбор провайдера
+
+Action `balance` добавляет runtime-шаг выбора провайдера **до** `race` — то, чего не хватало для
+реальной балансировки. Пока выбирает race (first-responder), победитель всегда будет самым
+быстрым, какой бы порядок или вес ни задать: `rank` компиляционный, а `lease` лишь «клеит» к
+самому быстрому. `balance` выбирает одного провайдера на runtime и поднимает его в начало бэтча,
+поэтому **распределение достигается только при `race count = 1`** (детерминированный выбор). При
+`race count > 1` балансировка лишь меняет начало бэтча, но first-responder всё равно побеждает —
+это допустимо как latency-hedge, но не даёт равномерного распределения.
+
+```nix
+{
+  route = "standard";
+  action = "balance";
+  strategy = "adaptive";
+  weights = { gonka-proxy = 2; gonka-openbroker = 2; hyperfusion = 1; };
+  window = "5m";
+  errorBudget = 0.2;
+}
+{ route = "standard"; action = "race"; count = 1; }  # детерминированный выбор
+```
+
+Стратегии:
+
+- `round_robin` — курсор per-route вращается по здоровым кандидатам (равномерно; нездоровые
+  исключаются health-порогом). Максимум распределения.
+- `adaptive` — weighted-random по `score(p) = base(p) × health(p)`, где `health(p) ∈ [0,1]`
+  (доля ошибок относительно `errorBudget` + относительный фактор лёгкости EWMA TTFT). Даёт и
+  «разные провайдеры», и сдвиг к тем, кто лучше справляется.
+- `weighted` — только статические веса, без истории здоровья (база для ручной настройки).
+
+`weights` задают статические веса; по умолчанию используется `priority` провайдера. `window` —
+скользящее окно здоровья (по умолчанию `5m`), `errorBudget` — максимальная доля health-ошибок
+(`429`, `5xx`, `timeout`, `connection_error`), до которой провайдер здоров (по умолчанию `0.2`).
+Провайдер на/за бюджетом исключается из выбора `adaptive` и `round_robin`; если все кандидаты
+нездоровы, выбор fail-open возвращается к базовому порядку, чтобы маршрут не отказывал.
+
+`balance` и `lease` на одном route взаимоисключаемы (оба runtime-меняют выбор/порядок; lease
+перебивает балансировку «липкостью»). Конфликт отклоняется при компиляции. `affinity`
+совместим: балансировка применяется только к unpinned запросам. `balance` требует предшествующий
+`map` и позицию до `race`.
+
+Health state живёт в памяти процесса (per-provider, глобально по логическим моделям), питается в
+тех же точках scheduler, где сохраняются cooldown и lease, и переживает только процесс gateway
+(не перезагрузку). Это не source of truth и не credential storage.
 
 ## Logs
 

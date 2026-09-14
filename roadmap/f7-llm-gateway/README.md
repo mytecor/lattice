@@ -27,7 +27,8 @@ routing на named routes + `filter` + явные `target`-переходы (ret
 subroutes, без primary/fallback stage); [f7-13](./f7-13-provider-balancing.md) фиксирует дизайн
 round-robin и адаптивной балансировки провайдеров по здоровью (live-наблюдение: при большом RPC
 весь трафик валится на самого быстрого, `hyperfusion` при `priority: 100` не выигрывает ни одного
-race) — реализация отложена. Матрица обязательных режимов F7 (retry, cooldown,
+race) — реализация action `balance` выполнена, live-прогон и DoD-метрики остаются. Матрица
+обязательных режимов F7 (retry, cooldown,
 fallback, priority, race, hedge, streaming, cancellation), health surface и structured
 diagnostics подтверждены Go-тестами и evaluation checks в [f7-04](./f7-04-routing-resilience-tests.md).
 

@@ -39,7 +39,7 @@ Retry/fallback/hedge — явные переходы на другой имен�
 Канонический порядок внутри route:
 
 ```text
-filter → map → rank → lease → affinity → race → retry/hedge → semaphore → timeout
+filter → map → rank → lease | balance → affinity → race → retry/hedge → semaphore → timeout
 ```
 
 Transition graph (`standard → standard.retry` for retry, `standard → standard.fallback` for
@@ -73,6 +73,19 @@ request(model=standard) → standard → timeout? → standard.retry → (attemp
   продлевается успешным ответом (`renew_on_success`) и освобождается по настроенным hard
   failures (`release_on`) либо после `release_after_slow_starts` последовательных превышений
   `slow_start`;
+- `balance` — runtime-выбор провайдера **до** race (f7-13). Пока race выбирает first-responder,
+  победитель всегда самый быстрый, какой бы порядок/вес ни задать — `rank` компиляционный, а
+  `lease` лишь «клеит» к самому быстрому. `balance` поднимает выбранного провайдера в начало
+  бэтча, поэтому равномерное распределение достигается при `race count = 1` (при `count > 1`
+  балансировка меняет лишь начало бэтча и работает как latency-hedge). Стратегии:
+  `round_robin` (курсор per-route по здоровым кандидатам), `adaptive` (weighted-random по
+  `score(p) = base(p) × health(p)`, где `health(p) ∈ [0,1]` — доля ошибок относительно
+  `error_budget` плюс относительный фактор лёгкости EWMA TTFT), `weighted` (только статические
+  веса). `weights` по умолчанию берутся из `priority` провайдера. Провайдер на/за `error_budget`
+  исключается из выбора `adaptive`/`round_robin`; при всех нездоровых кандидатах выбор fail-open
+  к базовому порядку. `balance` и `lease` на одном route взаимоисключаемы (fail fast); `affinity`
+  совместим (балансировка только для unpinned запросов). Health state — in-memory, per-provider;
+  питается в тех же точках scheduler, что cooldown и lease; не переживает перезагрузку;
 - `affinity` закрепляет stateful Responses chain за provider, вернувшим `conversation` или
   `previous_response_id`. Chat Completions никогда не получает affinity; `prompt_cache_key` не
   считается session identifier. Known affinity сужает route до одного provider и при его отказе

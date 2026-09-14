@@ -41,7 +41,15 @@ let
               native = if model == "standard" then "deepseek-ai/DeepSeek-V4-Flash-0731" else "MiniMaxAI/MiniMax-M2.7";
             }
             { route = model; action = "rank"; strategy = "priority"; }
-            { route = model; action = "race"; count = 2; }
+            {
+              route = model;
+              action = "balance";
+              strategy = "adaptive";
+              weights = { gonka-proxy = 2; gonka-openbroker = 1; };
+              window = "5m";
+              errorBudget = 0.2;
+            }
+            { route = model; action = "race"; count = 1; }
             {
               route = model;
               action = "semaphore";
@@ -80,8 +88,12 @@ pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ 
   grep -q '"action":"semaphore"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"max_calls":4' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"max_in_flight":3' ${config.lattice.llm-gateway.publicConfigFile}
-  grep -q '"count":2' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"count":1' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"strategy":"priority"' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"action":"balance"' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"strategy":"adaptive"' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"error_budget":0.2' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"weights":{"gonka-proxy":2,"gonka-openbroker":1}' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"affinity_file":"/run/llm-gateway/affinity.json"' ${config.lattice.llm-gateway.publicConfigFile}
 
   # Every filter provider action must carry explicit provider ids and every

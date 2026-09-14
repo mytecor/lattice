@@ -4,9 +4,11 @@
 named routes/filter [f7-12](./f7-12-flat-routing-named-routes-filter.md) и bounded routing
 [f7-09](./f7-09-bounded-provider-routing.md).
 
-**Статус: дизайн зафиксирован и отложен. Реализация не начата** (по решению от 2026-09-11, по
-live-наблюдениям на `mytecor-homelab`). Документ фиксирует диагноз, целевую модель и принятый
-путь, чтобы следующий заход не заново исследовал механику.
+**Статус: дизайн зафиксирован; реализация выполнена 2026-09-14, live-прогон на homelab и
+DoD-метрики остаются** (решение от 2026-09-11 по live-наблюдениям на `mytecor-homelab`; код,
+валидация, Nix-модуль и Go-тесты закрыты, включение в проде зависит от п. 7 и DoD). Документ
+фиксирует диагноз, целевую модель и принятый путь, чтобы следующий заход не заново исследовал
+механику.
 
 ## Контекст
 
@@ -136,19 +138,19 @@ live-наблюдениям на `mytecor-homelab`). Документ фикси
 
 ## Что сделать
 
-- [ ] 1. **ScoreStore:** EWMA latency + скользящее окно ошибок; `health(p) ∈ [0,1]`; питание из
+- [x] 1. **ScoreStore:** EWMA latency + скользящее окно ошибок; `health(p) ∈ [0,1]`; питание из
   scheduler (там же, где `r.record`/`observeLeaseWinner`); memory-only, `-race` чисто.
-- [ ] 2. **Action `balance` (go):** `BalanceRule` compile-time → конфиг в `compiledRoute`;
+- [x] 2. **Action `balance` (go):** `BalanceRule` compile-time → конфиг в `compiledRoute`;
   runtime `applyBalance` в scheduler (по образцу `applyLease`); стратегии `round_robin` /
   `adaptive` / `weighted`.
-- [ ] 3. **Строгая валидация:** позиция до `race`; конфликт `balance`+`lease`; unknown strategy /
+- [x] 3. **Строгая валидация:** позиция до `race`; конфликт `balance`+`lease`; unknown strategy /
   field; указание про `race count > 1`.
-- [ ] 4. **NixOS module:** `action = "balance"` в `modules/llm-gateway/options.nix` /
+- [x] 4. **NixOS module:** `action = "balance"` в `modules/llm-gateway/options.nix` /
   `config.nix` с `strategy`, опциональными `weights`, `window`, `errorBudget`; fail fast на Nix
   evaluation.
-- [ ] 5. **README (`modules/llm-gateway/README.md`):** раздел про `balance`, его позицию в
+- [x] 5. **README (`modules/llm-gateway/README.md`):** раздел про `balance`, его позицию в
   pipeline и связку с `race count: 1`; явно — про конфликт с `lease`.
-- [ ] 6. **Тесты:** распределение на N запросов; выбивание нездорового; конфликт с lease;
+- [x] 6. **Тесты:** распределение на N запросов; выбивание нездорового; конфликт с lease;
   weighted determinism для streaming/non-streaming.
 - [ ] 7. **Прогон на homelab:** включить `balance` только после оценки текущих приоритетов
   провайдеров и проверки, что `hyperfusion` реально обслуживает нужный native модели
@@ -160,9 +162,14 @@ live-наблюдениям на `mytecor-homelab`). Документ фикси
   только на самого быстрого.
 - [ ] 2. Доля трафика следует за `health` (латентность + доля ошибок), нездоровый провайдер
   выбивается.
-- [ ] 3. Конфиг остаётся типизированным и плоским; `balance`+`lease` на одном route fail fast.
-- [ ] 4. Все новые режимы покрыты Go-тестами (`-race` чисто); NixOS-валидация fail fast.
+- [x] 3. Конфиг остаётся типизированным и плоским; `balance`+`lease` на одном route fail fast.
+- [x] 4. Все новые режимы покрыты Go-тестами (`-race` чисто); NixOS-валидация fail fast.
 - [ ] 5. README и поведение на homelab соответствуют дизайну.
+
+**Осталось до закрытия (live-прогон на homelab):** п. 7, DoD 1–2, DoD 5. Прогон выполняется
+отдельным шагом после оценки приоритетов провайдеров и проверки, что `hyperfusion` реально
+обслуживает назначенные native модели; включение в production-конфигурацию и push — по
+отдельному запросу.
 
 ## Не делать
 

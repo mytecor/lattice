@@ -42,13 +42,15 @@ func (b *ruleBase) setIdentity(route, action string) {
 
 // Routing action names. A route is a flat, ordered sequence of these actions:
 // filter (selection/applicability), map (native mapping), rank, lease,
-// affinity, race (execution), retry/fallback/hedge (explicit transitions to
-// other named routes), semaphore and timeout (request-wide safety).
+// balance, affinity, race (execution), retry/fallback/hedge (explicit
+// transitions to other named routes), semaphore and timeout (request-wide
+// safety).
 const (
 	ActionFilter    = "filter"
 	ActionMap       = "map"
 	ActionRank      = "rank"
 	ActionLease     = "lease"
+	ActionBalance   = "balance"
 	ActionAffinity  = "affinity"
 	ActionRace      = "race"
 	ActionRetry     = "retry"
@@ -75,13 +77,14 @@ var ruleRegistry = map[string]ruleDescriptor{
 	ActionMap:       {rank: 2, new: func() Rule { return &MapRule{} }},
 	ActionRank:      {rank: 3, new: func() Rule { return &RankRule{} }},
 	ActionLease:     {rank: 4, new: func() Rule { return &LeaseRule{} }},
-	ActionAffinity:  {rank: 5, new: func() Rule { return &AffinityRule{} }},
-	ActionRace:      {rank: 6, new: func() Rule { return &RaceRule{} }},
-	ActionRetry:     {rank: 7, new: func() Rule { return &RetryRule{} }},
-	ActionHedge:     {rank: 8, new: func() Rule { return &HedgeRule{} }},
-	ActionSemaphore: {rank: 9, new: func() Rule { return &SemaphoreRule{} }},
-	ActionTimeout:   {rank: 10, new: func() Rule { return &TimeoutRule{} }},
-	ActionFallback:  {rank: 11, new: func() Rule { return &FallbackRule{} }},
+	ActionBalance:   {rank: 5, new: func() Rule { return &BalanceRule{} }},
+	ActionAffinity:  {rank: 6, new: func() Rule { return &AffinityRule{} }},
+	ActionRace:      {rank: 7, new: func() Rule { return &RaceRule{} }},
+	ActionRetry:     {rank: 8, new: func() Rule { return &RetryRule{} }},
+	ActionHedge:     {rank: 9, new: func() Rule { return &HedgeRule{} }},
+	ActionSemaphore: {rank: 10, new: func() Rule { return &SemaphoreRule{} }},
+	ActionTimeout:   {rank: 11, new: func() Rule { return &TimeoutRule{} }},
+	ActionFallback:  {rank: 12, new: func() Rule { return &FallbackRule{} }},
 }
 
 // ruleErrf formats a routing-rule error that always carries the rule index,

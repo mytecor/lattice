@@ -158,6 +158,15 @@ func leaseRule(route string, modify func(*LeaseRule)) Rule {
 	return r
 }
 
+func balanceRule(route string, modify func(*BalanceRule)) Rule {
+	r := &BalanceRule{}
+	r.setIdentity(route, "balance")
+	if modify != nil {
+		modify(r)
+	}
+	return r
+}
+
 func affinityRule(route string, modify func(*AffinityRule)) Rule {
 	r := &AffinityRule{}
 	r.setIdentity(route, "affinity")

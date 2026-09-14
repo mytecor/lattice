@@ -118,6 +118,12 @@ let
     then (rule.where.provider."in" or [ ]) ++ (rule.where.provider.not_in or [ ])
     else [ ];
   mappedProviderIds = lib.unique (lib.concatMap filterProviderIDs cfg.routingRules);
+  # balance weights are a second place where routing rules reference provider
+  # IDs (static per-provider weights), checked here so a typo fails fast at
+  # Nix evaluation instead of only at gateway startup.
+  balanceWeightedProviders = lib.unique (lib.concatMap
+    (rule: if rule.action == "balance" then builtins.attrNames rule.weights or [ ] else [ ])
+    cfg.routingRules);
 in
 {
   config = lib.mkIf cfg.enable {
@@ -137,6 +143,12 @@ in
           (id: builtins.elem id providerIds)
           mappedProviderIds;
         message = "Every routing filter must reference an enabled provider ID.";
+      }
+      {
+        assertion = lib.all
+          (id: builtins.elem id providerIds)
+          balanceWeightedProviders;
+        message = "Every balance weights entry must reference an enabled provider ID.";
       }
       # The fallback/retry/hedge target pools come from their own subroute
       # filter+map rules only: the discriminated transition actions own no

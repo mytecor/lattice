@@ -216,6 +216,41 @@ let
         };
       };
     };
+    balance = { config, ... }: {
+      options = {
+        strategy = mkOption {
+          type = types.enum [ "round_robin" "adaptive" "weighted" ];
+          default = "adaptive";
+          description = "Runtime provider-selection strategy of the balance action. round_robin distributes equally over the healthy candidates, adaptive weights by static weight × health, weighted uses only the static weights.";
+        };
+        weights = mkOption {
+          type = types.attrsOf (types.ints.positive);
+          default = { };
+          description = "Static per-provider weights; fall back to provider priority. round_robin ignores them (uniform).";
+        };
+        window = mkOption {
+          type = types.strMatching "[0-9]+(ms|s|m|h)";
+          default = "5m";
+          description = "Health window for the adaptive strategy; the error budget is evaluated over this sliding window.";
+        };
+        errorBudget = mkOption {
+          type = types.float;
+          default = 0.2;
+          description = "Max share of health errors (429, 5xx, timeout, connection_error) inside which a provider stays healthy; a provider at or above the budget is excluded from the adaptive / round-robin choice.";
+        };
+        _public = mkOption {
+          type = types.attrs;
+          internal = true;
+          readOnly = true;
+          default = {
+            strategy = config.strategy;
+            weights = config.weights;
+            window = config.window;
+            error_budget = config.errorBudget;
+          };
+        };
+      };
+    };
     affinity = { config, ... }: {
       options = {
         sources = mkOption {

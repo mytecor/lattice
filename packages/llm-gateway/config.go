@@ -118,6 +118,7 @@ type compiledRoute struct {
 	// candidates.
 	RaceCount int
 	Lease     LeaseConfig
+	Balance   BalanceConfig
 	Affinity  AffinityConfig
 	Retry     RetryConfig
 	Fallback  FallbackConfig
@@ -184,6 +185,24 @@ type LeaseConfig struct {
 	ReleaseOn              map[ErrorClass]bool
 	ReleaseAfterSlowStarts int
 	SlowStart              time.Duration
+}
+
+// BalanceConfig is the compiled balance policy for one route. Unlike lease it
+// is applied to every request (there is no winner to reward yet): it selects
+// which provider the route's race starts with, so a `race count = 1` executes
+// exactly the balanced choice and a larger batch includes it first. The store
+// behind it is per-provider and global, so health is shared by every route.
+// The strategies:
+//
+//	round_robin — a per-route cursor rotates over the healthy candidates;
+//	adaptive    — weighted-random by static weight × health(p) ∈ [0,1];
+//	weighted    — only the static weights, no health history.
+type BalanceConfig struct {
+	Enabled     bool
+	Strategy    string // "round_robin" | "adaptive" | "weighted"
+	Weights     map[string]int
+	Window      time.Duration
+	ErrorBudget float64
 }
 
 type AffinityConfig struct {

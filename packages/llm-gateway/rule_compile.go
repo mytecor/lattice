@@ -17,6 +17,7 @@ type stageState struct {
 	pending             []Target
 	sawMap              bool
 	ranked              bool
+	sawBalance          bool
 	sawRace             bool
 	modelEq             string
 	entrySet            bool

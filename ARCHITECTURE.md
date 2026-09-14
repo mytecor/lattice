@@ -176,10 +176,10 @@ provider может хостить API под произвольным марш�
 
 Маршрут строится из плоского упорядоченного `routing_rules` pipeline. Каждый rule выполняет одно
 action с одной ответственностью, а compiled route отделён от внешних rules: кандидатный pool,
-ranking, dispatch batches, retry/hedge schedule, semaphore limits, lease и affinity state
+ranking, dispatch batches, retry/hedge schedule, semaphore limits, lease, balance и affinity state
 компилируются в отдельную структуру. Канонический порядок actions:
-`map → rank → lease → affinity → race → retry → hedge → semaphore → timeout`, за которым может
-следовать опциональный второй stage `map → rank → fallback`.
+`map → rank → lease | balance → affinity → race → retry → hedge → semaphore → timeout`, за которым
+может следовать опциональный второй stage `map → rank → fallback`.
 
 `map` связывает один native model ID с явным набором provider IDs и добавляет готовые
 target-пары `(provider ID, native model)` в pending pool; `rank` сортирует pool по priority, а
@@ -187,7 +187,17 @@ route-creating action (`race` или `fallback`) сохраняет immutable sn
 registry: rules ссылаются только на стабильные provider IDs, а access group больше не является
 routing identity. `lease` поднимает текущего победителя в начало ranking, продлевается успешным
 ответом и освобождается по настроенным hard failures либо после последовательных превышений
-meaningful TTFT. `affinity` закрепляет stateful Responses chain (по `conversation` /
+meaningful TTFT. `balance` (f7-13) добавляет runtime-выбор провайдера до race: пока race выбирает
+first-responder, победитель всегда самый быстрый, какой бы порядок/вес ни задать, поэтому
+равномерное распределение достигается только при `race count = 1`. Стратегии `round_robin`
+(курсор per-route по здоровым кандидатам), `adaptive` (weighted-random по `score(p) = base(p) ×
+health(p)`, где `health(p) ∈ [0,1]` — доля ошибок относительно `error_budget` + фактор лёгкости
+EWMA TTFT) и `weighted` (только статические веса). Health state per-provider живёт в памяти
+процесса и питается из scheduler в тех же точках, что cooldown и lease; провайдер на/за
+`error_budget` исключается, при всех нездоровых кандидатах выбор fail-open к базовому порядку.
+`balance` и `lease` на одном route взаимоисключаемы (fail fast), `affinity` совместим
+(балансировка только для unpinned запросов). `affinity` закрепляет stateful Responses chain (по
+`conversation` /
 `previous_response_id`) за вернувшим её provider и fail-closed при его отказе; Chat affinity
 никогда не получает. `race` запускает только top-`count` unused targets; `retry`
 `scope = "next"` берёт следующие unused targets и не повторяет provider; `hedge` разрешает

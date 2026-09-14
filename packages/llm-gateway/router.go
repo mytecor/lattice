@@ -80,6 +80,7 @@ type Runner struct {
 	mu       sync.Mutex
 	cooling  map[string]time.Time
 	leases   *LeaseStore
+	scores   *ScoreStore
 	affinity *AffinityStore
 }
 
@@ -89,6 +90,7 @@ func newRunner(config *compiledConfig, catalog *Catalog, executor Executor) *Run
 		now: time.Now, sleep: sleepContext, cooling: make(map[string]time.Time),
 	}
 	runner.leases = newLeaseStore(runner.now)
+	runner.scores = newScoreStore(runner.now)
 	runner.affinity = newAffinityStore(runner.now, config.raw.AffinityFile, func(err error) {
 		config.logger.Error("affinity persistence failed", "detail", safeLogDetail(err.Error()))
 	})
@@ -277,16 +279,21 @@ func (r *Runner) applyLease(logical string, route *compiledRoute, pool []Target)
 	if !ok {
 		return pool
 	}
-	for i, target := range pool {
-		if target.Provider == holder && i > 0 {
-			reordered := make([]Target, 0, len(pool))
-			reordered = append(reordered, target)
-			reordered = append(reordered, pool[:i]...)
-			reordered = append(reordered, pool[i+1:]...)
-			return reordered
-		}
+	return promoteFront(pool, holder)
+}
+
+// applyBalance performs the runtime provider selection of the balance action:
+// it promotes the balanced choice to the front of the pool for this request.
+// Balance and lease are mutually exclusive per route (checked at compile
+// stage), so it never runs on a route that also has a lease. The base weight
+// of a target is its provider priority.
+func (r *Runner) applyBalance(route string, routeConfig *compiledRoute, pool []Target) []Target {
+	if !routeConfig.Balance.Enabled || len(pool) < 2 {
+		return pool
 	}
-	return pool
+	return r.scores.Select(route, pool, routeConfig.Balance, func(target Target) int {
+		return r.config.providers[target.Provider].Priority
+	})
 }
 
 // validateTarget checks the explicit native model of a target against the
