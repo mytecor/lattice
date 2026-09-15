@@ -111,6 +111,10 @@ in
       ];
       modelOverrides = {
         standard = {
+          # llm-gateway роутит standard на text-only DeepSeek-V4-Flash-0731; без
+          # ["text"] Pi считает модель мультимодальной и шлёт image_url, от чего
+          # upstream отвечает 400 (not multimodal / at most 5 images / 413 size).
+          input = [ "text" ];
           thinkingLevelMap = {
             off = null; minimal = null; low = null; medium = null;
             high = null; xhigh = null; max = null;
@@ -118,6 +122,7 @@ in
           compat = { supportsReasoningEffort = false; };
         };
         stupid = {
+          input = [ "text" ];
           thinkingLevelMap = {
             off = null; minimal = null; low = null; medium = null;
             high = null; xhigh = null; max = null;

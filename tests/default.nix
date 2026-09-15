@@ -53,6 +53,11 @@ in
     piModule = self.nixosModules.pi;
   };
 
+  pi-models-config = import ./pi-models-config.nix {
+    inherit nixpkgs pkgs;
+    piModule = self.nixosModules.pi;
+  };
+
   pi-acp-daemon = import ./pi-acp-daemon.nix {
     inherit nixpkgs pkgs;
     acpModule = self.nixosModules.pi-acp-daemon;
