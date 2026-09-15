@@ -223,13 +223,21 @@ Health state живёт в памяти процесса (per-provider, глоб
 
 ## Logs
 
-The gateway writes structured JSON to the systemd journal when `logLevel` is one of `error`,
-`warn`, `info`, `debug`, or `trace`. The secure default is `silent`. Request bodies,
-prompts, headers, and credentials are never logged. At `info`, the journal records request
-start/completion with a request ID, logical model, API kind, streaming flag, status, and latency.
-At `debug`, it additionally records provider routing, native model, route stage/attempt, and
-latency. Upstream failures include HTTP status, error class, and a single-line truncated provider
-error message.
+The gateway writes one structured JSON event per line to the systemd journal when
+`logLevel` is one of `error`, `warn`, `info`, `debug`, or `trace`. The secure default is
+`silent`. Every line is a single JSON object carrying at least `time`, `level`, `service`
+(`llm-gateway`) and `event` (a stable event name), plus the low-cardinality routing
+context (`request_id`). Request bodies, prompts, headers, and credentials are never
+logged.
+
+The event hierarchy is request → attempt (see the F12 design in the gateway package
+README): a normal successful request writes exactly one `request_completed` line;
+transitions (retry, fallback, hedge, race, cooldown, semaphore denial) write their own
+attempt-level lines only when they actually fire. A request is traceable through the
+journal by its `request_id` alone: the `request_received`, `request_completed`/
+`request_failed` and `llm_attempt`/`llm_retry`/`llm_fallback` lines of one request share
+that id, so the retry → fallback → race path of a single request can be reconstructed
+without a dedicated tracing backend.
 
 ```sh
 journalctl -u llm-gateway -f -o cat

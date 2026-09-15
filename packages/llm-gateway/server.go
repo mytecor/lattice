@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
@@ -102,7 +103,7 @@ func (s *Server) metricsHandler(writer http.ResponseWriter, _ *http.Request) {
 	writer.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	writer.WriteHeader(http.StatusOK)
 	if err := s.metrics.WriteExposition(writer); err != nil {
-		s.logger.Error("metrics exposition failed", "detail", safeLogDetail(err.Error()))
+		logEvent(context.Background(), s.logger, slog.LevelError, "metrics_exposition_failed", "detail", safeLogDetail(err.Error()))
 	}
 }
 
@@ -114,14 +115,18 @@ func (s *Server) observeRequest(logical, provider, status string, duration time.
 	s.metrics.ObserveRequest(s.routeOf(logical), logical, provider, status, duration)
 }
 
-// observeTokens accumulates usage from a non-stream response body. Providers
-// that omit usage contribute nothing.
-func (s *Server) observeTokens(logical string, response []byte) {
-	input, output, ok := extractUsage(response)
+// observeTokens accumulates usage from a non-stream response body and returns
+// the parsed usage so the caller can embed it into the request_completed event.
+// Providers that omit usage contribute nothing. The hasUsage flag tells whether
+// the provider reported usage at all (zero tokens with hasUsage=false mean
+// "unknown", not "zero").
+func (s *Server) observeTokens(logical string, response []byte) (input, output, cached int64, hasUsage bool) {
+	summary, ok := extractUsageFull(response)
 	if !ok {
-		return
+		return 0, 0, 0, false
 	}
-	s.metrics.ObserveTokens(logical, input, output)
+	s.metrics.ObserveTokens(logical, summary.Input, summary.Output)
+	return summary.Input, summary.Output, summary.CachedTokens, true
 }
 
 func (s *Server) models(writer http.ResponseWriter, _ *http.Request) {
@@ -149,7 +154,11 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 	request = request.WithContext(withRequestID(request.Context(), requestID))
 	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, maxRequestBody))
 	if err != nil {
-		s.logger.Warn("request rejected", "request_id", requestID, "kind", kind, "status", http.StatusBadRequest, "reason", "invalid_body")
+		logEvent(request.Context(), s.logger, slog.LevelWarn, "request_rejected",
+			"kind", kind,
+			"status_code", http.StatusBadRequest,
+			"reason", "invalid_body",
+		)
 		writeAPIError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
@@ -158,16 +167,29 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 		Stream bool   `json:"stream"`
 	}
 	if err := json.Unmarshal(body, &metadata); err != nil || strings.TrimSpace(metadata.Model) == "" {
-		s.logger.Warn("request rejected", "request_id", requestID, "kind", kind, "status", http.StatusBadRequest, "reason", "invalid_json_or_model")
+		logEvent(request.Context(), s.logger, slog.LevelWarn, "request_rejected",
+			"kind", kind,
+			"status_code", http.StatusBadRequest,
+			"reason", "invalid_json_or_model",
+		)
 		writeAPIError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
 	if _, exists := s.config.models[metadata.Model]; !exists {
-		s.logger.Warn("request rejected", "request_id", requestID, "kind", kind, "logical_model", metadata.Model, "status", http.StatusNotFound, "reason", "model_not_found")
+		logEvent(request.Context(), s.logger, slog.LevelWarn, "request_rejected",
+			"kind", kind,
+			"logical_model", metadata.Model,
+			"status_code", http.StatusNotFound,
+			"reason", "model_not_found",
+		)
 		writeAPIError(writer, http.StatusNotFound, "model_not_found")
 		return
 	}
-	s.logger.Info("request started", "request_id", requestID, "kind", kind, "logical_model", metadata.Model, "stream", metadata.Stream)
+	logEvent(request.Context(), s.logger, slog.LevelInfo, "request_received",
+		"kind", kind,
+		"logical_model", metadata.Model,
+		"stream", metadata.Stream,
+	)
 	executeRequest := ExecuteRequest{Kind: kind, Body: body}
 	if metadata.Stream {
 		s.stream(writer, request, metadata.Model, executeRequest, started)
@@ -175,9 +197,12 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 	}
 	result, callErr := s.runner.RunWithResult(request.Context(), metadata.Model, executeRequest)
 	if callErr != nil {
-		s.logger.Warn("request failed",
-			"request_id", requestID, "kind", kind, "logical_model", metadata.Model,
-			"status", callErrorStatus(callErr), "error_class", callErr.Class,
+		logEvent(request.Context(), s.logger, slog.LevelWarn, "request_failed",
+			"kind", kind,
+			"logical_model", metadata.Model,
+			"stream", metadata.Stream,
+			"status_code", callErrorStatus(callErr),
+			"error_type", string(callErr.Class),
 			"duration_ms", time.Since(started).Milliseconds(),
 		)
 		s.observeRequest(metadata.Model, "", "failed", time.Since(started))
@@ -191,10 +216,17 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 		s.bindResponsesAffinity(metadata.Model, result.Provider, response, "")
 	}
 	provider := result.Provider
-	s.observeTokens(metadata.Model, response)
+	input, output, cached, hasUsage := s.observeTokens(metadata.Model, response)
 	response, err = sanitizeJSON(response, metadata.Model)
 	if err != nil {
-		s.logger.Error("request failed", "request_id", requestID, "kind", kind, "logical_model", metadata.Model, "status", http.StatusBadGateway, "error_class", ErrorInvalid, "duration_ms", time.Since(started).Milliseconds())
+		logEvent(request.Context(), s.logger, slog.LevelError, "request_failed",
+			"kind", kind,
+			"logical_model", metadata.Model,
+			"stream", metadata.Stream,
+			"status_code", http.StatusBadGateway,
+			"error_type", string(ErrorInvalid),
+			"duration_ms", time.Since(started).Milliseconds(),
+		)
 		s.observeRequest(metadata.Model, provider, "failed", time.Since(started))
 		writeAPIError(writer, http.StatusBadGateway, "invalid_upstream_response")
 		return
@@ -202,16 +234,31 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusOK)
 	_, _ = writer.Write(response)
-	s.logger.Info("request completed", "request_id", requestID, "kind", kind, "logical_model", metadata.Model, "status", http.StatusOK, "duration_ms", time.Since(started).Milliseconds())
+	logEvent(request.Context(), s.logger, slog.LevelInfo, "request_completed",
+		"kind", kind,
+		"route", s.routeOf(metadata.Model),
+		"logical_model", metadata.Model,
+		"provider", provider,
+		"stream", metadata.Stream,
+		"status_code", http.StatusOK,
+		"status", "success",
+		"duration_ms", time.Since(started).Milliseconds(),
+		"ttft_ms", result.TTFT.Milliseconds(),
+		"input_tokens", input,
+		"output_tokens", output,
+		"cached_tokens", cached,
+		"has_usage", hasUsage,
+		"attempts", result.Attempts,
+	)
 	s.observeRequest(metadata.Model, provider, "success", time.Since(started))
 }
 
 func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logical string, executeRequest ExecuteRequest, started time.Time) {
 	selected, callErr := s.runner.SelectStream(request.Context(), logical, executeRequest)
 	if callErr != nil {
-		s.logger.Warn("request failed",
-			"request_id", request.Context().Value(requestIDKey), "kind", executeRequest.Kind, "logical_model", logical,
-			"status", callErrorStatus(callErr), "error_class", callErr.Class,
+		logEvent(request.Context(), s.logger, slog.LevelWarn, "request_failed",
+			"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
+			"status_code", callErrorStatus(callErr), "error_type", string(callErr.Class),
 			"duration_ms", time.Since(started).Milliseconds(),
 		)
 		writeCallError(writer, callErr)
@@ -236,11 +283,23 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 		}
 		s.bindResponsesAffinity(logical, selected.Provider, event.Data, event.Event)
 	}
+	// Usage is accumulated across the winner's buffered prelude and the
+	// remaining stream (final usage chunk or delta fields); events report the
+	// summed totals plus whether any usage was reported at all.
+	var inTokens, outTokens, cachedTokens int64
+	var hasUsage bool
+	observe := func(data []byte) {
+		if summary, ok := extractUsageFull(data); ok {
+			inTokens += summary.Input
+			outTokens += summary.Output
+			cachedTokens += summary.CachedTokens
+			hasUsage = true
+			s.metrics.ObserveTokens(logical, summary.Input, summary.Output)
+		}
+	}
 	for _, event := range selected.Buffered {
 		bind(event)
-		if i, o, ok := extractUsage(event.Data); ok {
-			s.metrics.ObserveTokens(logical, i, o)
-		}
+		observe(event.Data)
 		if !writeStreamEvent(writer, flusher, logical, executeRequest.Kind, event) {
 			return
 		}
@@ -248,7 +307,12 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	for {
 		select {
 		case <-request.Context().Done():
-			s.logger.Debug("request cancelled", "request_id", request.Context().Value(requestIDKey), "kind", executeRequest.Kind, "logical_model", logical, "duration_ms", time.Since(started).Milliseconds())
+			logEvent(request.Context(), s.logger, slog.LevelDebug, "request_cancelled",
+				"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
+				"provider", selected.Provider,
+				"attempts", selected.Attempts,
+				"duration_ms", time.Since(started).Milliseconds(),
+			)
 			s.observeRequest(logical, selected.Provider, "cancelled", time.Since(started))
 			return
 		case event, open := <-selected.Remaining:
@@ -257,12 +321,33 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					_, _ = io.WriteString(writer, "data: [DONE]\n\n")
 					flusher.Flush()
 				}
-				s.logger.Info("request completed", "request_id", request.Context().Value(requestIDKey), "kind", executeRequest.Kind, "logical_model", logical, "status", http.StatusOK, "duration_ms", time.Since(started).Milliseconds())
+				logEvent(request.Context(), s.logger, slog.LevelInfo, "request_completed",
+					"kind", executeRequest.Kind,
+					"route", s.routeOf(logical),
+					"logical_model", logical,
+					"provider", selected.Provider,
+					"stream", true,
+					"status_code", http.StatusOK,
+					"status", "success",
+					"duration_ms", time.Since(started).Milliseconds(),
+					"ttft_ms", selected.TTFT.Milliseconds(),
+					"input_tokens", inTokens,
+					"output_tokens", outTokens,
+					"cached_tokens", cachedTokens,
+					"has_usage", hasUsage,
+					"attempts", selected.Attempts,
+				)
 				s.observeRequest(logical, selected.Provider, "success", time.Since(started))
 				return
 			}
 			if event.Err != nil {
-				s.logger.Warn("request stream failed", "request_id", request.Context().Value(requestIDKey), "kind", executeRequest.Kind, "logical_model", logical, "error_class", event.Err.Class, "duration_ms", time.Since(started).Milliseconds())
+				logEvent(request.Context(), s.logger, slog.LevelWarn, "request_failed",
+					"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
+					"provider", selected.Provider,
+					"status_code", callErrorStatus(event.Err), "error_type", string(event.Err.Class),
+					"attempts", selected.Attempts,
+					"duration_ms", time.Since(started).Milliseconds(),
+				)
 				s.observeRequest(logical, selected.Provider, "failed", time.Since(started))
 				payload, _ := json.Marshal(map[string]any{"error": map[string]any{"message": "upstream stream failed", "type": string(event.Err.Class)}})
 				_, _ = fmt.Fprintf(writer, "event: error\ndata: %s\n\n", payload)
@@ -273,9 +358,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 				return
 			}
 			bind(event)
-			if i, o, ok := extractUsage(event.Data); ok {
-				s.metrics.ObserveTokens(logical, i, o)
-			}
+			observe(event.Data)
 		}
 	}
 }

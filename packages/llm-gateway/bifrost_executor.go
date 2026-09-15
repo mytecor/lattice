@@ -264,52 +264,48 @@ func (e *BifrostExecutor) Stream(ctx context.Context, target Target, request Exe
 }
 
 func (e *BifrostExecutor) logRequestBuildError(ctx context.Context, target Target, kind RequestKind, callErr *CallError) {
-	attrs := logRequestAttrs(ctx)
-	attrs = append(attrs,
+	attrs := []any{
 		"provider", target.Provider,
 		"native_model", target.Model,
 		"kind", kind,
-		"status", callErr.Status,
-		"error_class", callErr.Class,
-	)
+		"status_code", callErr.Status,
+		"error_type", string(callErr.Class),
+	}
 	if callErr.Cause != nil {
 		attrs = append(attrs, "detail", safeLogDetail(callErr.Cause.Error()))
 	}
-	e.logger.Warn("provider request rejected before send", attrs...)
+	logEvent(ctx, e.logger, slog.LevelWarn, "provider_request_rejected", attrs...)
 }
 
 func (e *BifrostExecutor) logUpstreamFailure(ctx context.Context, target Target, kind RequestKind, started time.Time, bfErr *schemas.BifrostError, callErr *CallError) {
-	attrs := logRequestAttrs(ctx)
-	attrs = append(attrs,
+	attrs := []any{
 		"provider", target.Provider,
 		"native_model", target.Model,
 		"kind", kind,
-		"status", callErr.Status,
-		"error_class", callErr.Class,
+		"status_code", callErr.Status,
+		"error_type", string(callErr.Class),
 		"duration_ms", time.Since(started).Milliseconds(),
-	)
+	}
 	if bfErr != nil {
 		if detail := safeLogDetail(bfErr.GetErrorString()); detail != "" {
 			attrs = append(attrs, "detail", detail)
 		}
 	}
 	if callErr.Class == ErrorCancelled {
-		e.logger.Debug("upstream request cancelled", attrs...)
+		logEvent(ctx, e.logger, slog.LevelDebug, "upstream_request_cancelled", attrs...)
 		return
 	}
-	e.logger.Warn("upstream request failed", attrs...)
+	logEvent(ctx, e.logger, slog.LevelWarn, "upstream_request_failed", attrs...)
 }
 
 func (e *BifrostExecutor) logUpstreamSuccess(ctx context.Context, target Target, kind RequestKind, started time.Time) {
-	attrs := logRequestAttrs(ctx)
-	attrs = append(attrs,
+	logEvent(ctx, e.logger, slog.LevelDebug, "upstream_request_accepted",
 		"provider", target.Provider,
 		"native_model", target.Model,
 		"kind", kind,
-		"status", 200,
+		"status_code", 200,
 		"duration_ms", time.Since(started).Milliseconds(),
 	)
-	e.logger.Debug("upstream request accepted", attrs...)
 }
 
 func (e *BifrostExecutor) chatRequest(ctx *schemas.BifrostContext, target Target, body []byte) (*schemas.BifrostChatRequest, *CallError) {

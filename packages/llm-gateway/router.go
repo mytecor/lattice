@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -69,12 +70,19 @@ type Executor interface {
 type RunOutcome struct {
 	Body     []byte
 	Provider string
+	// Attempts is the number of route executions dispatched for this request
+	// (races plus retry/fallback rounds), used by request-level events.
+	Attempts int
+	// TTFT is the time to first meaningful event; for a non-streaming request
+	// this is the full response duration.
+	TTFT time.Duration
 }
 
 type Runner struct {
 	config   *compiledConfig
 	catalog  *Catalog
 	executor Executor
+	logger   *slog.Logger
 	now      func() time.Time
 	sleep    func(context.Context, time.Duration) error
 	mu       sync.Mutex
@@ -93,15 +101,19 @@ func newRunnerMetrics(config *compiledConfig, catalog *Catalog, executor Executo
 	if metrics == nil {
 		metrics = newMetrics()
 	}
+	logger := config.logger
+	if logger == nil {
+		logger = newGatewayLogger("info")
+	}
 	runner := &Runner{
-		config: config, catalog: catalog, executor: executor,
+		config: config, catalog: catalog, executor: executor, logger: logger,
 		now: time.Now, sleep: sleepContext, cooling: make(map[string]time.Time),
 		metrics: metrics,
 	}
 	runner.leases = newLeaseStore(runner.now)
 	runner.scores = newScoreStore(runner.now)
 	runner.affinity = newAffinityStore(runner.now, config.raw.AffinityFile, func(err error) {
-		config.logger.Error("affinity persistence failed", "detail", safeLogDetail(err.Error()))
+		logEvent(context.Background(), config.logger, slog.LevelError, "affinity_persistence_failed", "detail", safeLogDetail(err.Error()))
 	})
 	return runner
 }
@@ -162,7 +174,11 @@ func (r *Runner) RunWithResult(ctx context.Context, logical string, request Exec
 	if outcome.err != nil {
 		return nil, outcome.err
 	}
-	return &RunOutcome{Body: outcome.body, Provider: outcome.provider}, nil
+	ttft := time.Duration(0)
+	if outcome.ttft > 0 {
+		ttft = outcome.ttft
+	}
+	return &RunOutcome{Body: outcome.body, Provider: outcome.provider, Attempts: outcome.attempts, TTFT: ttft}, nil
 }
 
 // runPlan resolves the request-level entry route for the logical model and
@@ -200,11 +216,28 @@ func (r *Runner) executeRoute(ctx context.Context, logical string, route *compil
 			if !route.retryTarget.applicable(outcome.err, attempt) {
 				break
 			}
+			logEvent(ctx, r.logger, slog.LevelWarn, "llm_retry",
+				"route", route.Name,
+				"provider", outcome.failedProvider,
+				"error_type", string(outcome.err.Class),
+				"status_code", outcome.err.Status,
+				"attempt", attempt+1,
+			)
 			if callErr := runtime.waitBackoff(ctx, backoffDuration(route.Retry.Backoff, attempt), r.sleep); callErr != nil {
 				return &routeOutcome{err: callErr}
 			}
 			next := r.executeRoute(ctx, logical, route.retryTarget, request, streamMode, runtime)
 			if next.err == nil || next.err.Class == ErrorCancelled {
+				if next.err == nil {
+					// The retried attempt succeeded: one attempt-level success line
+					// so a request_id reconstructs the retry→success path.
+					logEvent(ctx, r.logger, slog.LevelInfo, "llm_attempt",
+						"route", route.retryTarget.Name,
+						"provider", next.provider,
+						"status", "success",
+						"attempt", attempt+1,
+					)
+				}
 				return next
 			}
 			if next.empty {
@@ -228,6 +261,12 @@ func (r *Runner) executeRoute(ctx context.Context, logical string, route *compil
 			reason = string(outcome.err.Class)
 		}
 		r.metrics.ObserveFallback(from, to, reason)
+		logEvent(ctx, r.logger, slog.LevelWarn, "llm_fallback",
+			"route", route.Name,
+			"from_provider", from,
+			"to_provider", to,
+			"reason", reason,
+		)
 		next := r.executeRoute(ctx, logical, route.fallbackTarget, request, streamMode, runtime)
 		if !next.empty {
 			return next
@@ -391,16 +430,36 @@ func (r *Runner) availableTargets(targets []Target) []Target {
 	return available
 }
 
-func (r *Runner) record(providerID string, callErr *CallError) {
+func (r *Runner) record(ctx context.Context, providerID string, callErr *CallError) {
+	before := r.cooldownUntil(providerID)
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	newUntil := time.Time{}
 	if callErr == nil {
 		delete(r.cooling, providerID)
+	} else if allRetryableClasses()[callErr.Class] {
+		newUntil = r.now().Add(r.config.providers[providerID].Cooldown.Duration)
+		r.cooling[providerID] = newUntil
+	}
+	r.mu.Unlock()
+	// Emit cooldown_put only when the provider actually enters the cooling
+	// window (was not cooling, now is); re-extending an active window is not a
+	// new event worth a line.
+	if !before.IsZero() || newUntil.IsZero() {
 		return
 	}
-	if allRetryableClasses()[callErr.Class] {
-		r.cooling[providerID] = r.now().Add(r.config.providers[providerID].Cooldown.Duration)
-	}
+	logEvent(ctx, r.logger, slog.LevelWarn, "cooldown_put",
+		"provider", providerID,
+		"error_type", string(callErr.Class),
+		"cooldown_ms", int64(r.config.providers[providerID].Cooldown.Duration.Milliseconds()),
+	)
+}
+
+// cooldownUntil reports the current cooling deadline of a provider (zero when
+// not cooling), read under the runner lock.
+func (r *Runner) cooldownUntil(providerID string) time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.cooling[providerID]
 }
 
 // observeLeaseFailure releases the model lease when its holder fails with a

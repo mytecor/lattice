@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"time"
 )
 
 // SelectedStream is the winner of a streaming route: the buffered prelude, the
@@ -11,6 +12,10 @@ type SelectedStream struct {
 	Remaining <-chan StreamEvent
 	Cancel    context.CancelFunc
 	Provider  string
+	// TTFT is the winner's time to first meaningful event.
+	TTFT time.Duration
+	// Attempts is the number of route executions dispatched for the request.
+	Attempts int
 }
 
 // SelectStream executes the bounded streaming route and returns the winner.
@@ -21,5 +26,7 @@ func (r *Runner) SelectStream(ctx context.Context, logical string, request Execu
 	if outcome.err != nil {
 		return nil, outcome.err
 	}
+	outcome.selected.TTFT = outcome.ttft
+	outcome.selected.Attempts = outcome.attempts
 	return outcome.selected, nil
 }

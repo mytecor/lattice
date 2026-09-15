@@ -8,6 +8,11 @@ import (
 	"strings"
 )
 
+// gatewayService is the constant service dimension carried by every structured
+// event line (alongside the metric service label). It is stable so a logs
+// pipeline (Alloy → Loki) can filter by service without knowing the deployment.
+const gatewayService = "llm-gateway"
+
 type logContextKey uint8
 
 const (
@@ -36,6 +41,20 @@ func newGatewayLoggerTo(level string, output io.Writer) *slog.Logger {
 		minimum = slog.LevelError
 	}
 	return slog.New(slog.NewJSONHandler(output, &slog.HandlerOptions{Level: minimum}))
+}
+
+// logEvent emits one structured event line. The slog JSON handler already
+// renders a single JSON object per line with a timestamp (as "time") and a
+// level; logEvent pins the stable event name, the service dimension and the
+// low-cardinality routing dimensions (request_id/route_stage/route_attempt)
+// into the same object. One line always means one event. Prompt material,
+// request/response bodies, headers and API keys are never passed here: the
+// caller is responsible for that boundary (see f12-02 DoD).
+func logEvent(ctx context.Context, logger *slog.Logger, level slog.Level, event string, extra ...any) {
+	attrs := logRequestAttrs(ctx)
+	attrs = append(attrs, "service", gatewayService, "event", event)
+	attrs = append(attrs, extra...)
+	logger.Log(ctx, level, event, attrs...)
 }
 
 func withRequestID(ctx context.Context, requestID string) context.Context {

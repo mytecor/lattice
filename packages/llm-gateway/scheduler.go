@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -38,6 +40,11 @@ type routeOutcome struct {
 	pinned         bool
 	empty          bool
 	failedProvider string
+	// attempts counts route executions dispatched for the request (races plus
+	// retry/fallback rounds); ttft is the winner's time to first meaningful
+	// event (stream) or the full response duration (non-stream).
+	attempts int
+	ttft     time.Duration
 }
 
 // emptyPoolError is the distinguishable terminal result of a transition route
@@ -65,6 +72,10 @@ type routeRuntime struct {
 	deadline time.Time
 	sem      semaphore
 	used     map[string]bool
+	// attempts counts the route executions actually dispatched by this request
+	// graph (each raceRoute that launched branches), so request_completed and
+	// llm_attempt events can report how many upstream rounds happened.
+	attempts int
 }
 
 func newRouteRuntime(entry *compiledRoute) *routeRuntime {
@@ -305,6 +316,11 @@ func (sc *schedule) launch(g int) bool {
 			continue
 		}
 		if !sc.sem.acquire(target.Provider, sc.active) {
+			logEvent(sc.ctx, sc.r.logger, slog.LevelDebug, "semaphore_denied",
+				"route", sc.route.Name,
+				"provider", target.Provider,
+				"model", target.Model,
+			)
 			allStarted = false
 			continue
 		}
@@ -519,6 +535,7 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 		// route has no available targets for this request.
 		return &routeOutcome{err: emptyPoolError(), empty: true}
 	}
+	runtime.attempts++
 	sc.armHedge()
 
 	// A failure admits a retry transition when it matches the retry target's
@@ -538,7 +555,7 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 			// Cancellations (route timeout, client cancel, loser cancel) are
 			// neutral for health and lease state.
 			if res.err == nil || res.err.Class != ErrorCancelled {
-				r.record(res.provider, res.err)
+				r.record(ctx, res.provider, res.err)
 				r.observeLeaseFailure(logical, route, res.provider, res.err)
 				r.observeBranch(res)
 				// Not a res.err class-wise for cancellation: the latency is only
@@ -562,7 +579,10 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 					r.metrics.ObserveTTFT(logical, res.finished.Sub(res.started))
 				}
 				sc.cancelOthers(res.id)
-				outcome := &routeOutcome{provider: res.provider}
+				outcome := &routeOutcome{provider: res.provider, attempts: runtime.attempts}
+				if !res.finished.IsZero() && !res.started.IsZero() {
+					outcome.ttft = res.finished.Sub(res.started)
+				}
 				if streamMode {
 					outcome.selected = res.selected
 				} else {
@@ -585,7 +605,7 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 				// latency-only and must not delay a fast terminal failure).
 				sc.drainPrefailed(failures, retryable)
 				sc.cancelAll()
-				return &routeOutcome{err: failures.err(), pinned: pinned, failedProvider: failures.provider}
+				return &routeOutcome{err: failures.err(), pinned: pinned, failedProvider: failures.provider, attempts: runtime.attempts}
 			}
 		case <-sc.hedgeC:
 			sc.hedgeC = nil
@@ -596,6 +616,10 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 			if sc.hedgeG >= 0 {
 				sc.armed[sc.hedgeG] = true
 				sc.launch(sc.hedgeG)
+				logEvent(ctx, r.logger, slog.LevelDebug, "hedge_launched",
+					"route", route.Name,
+					"providers", hedgeProviderNames(sc.groups[sc.hedgeG]),
+				)
 			}
 		case <-deadlineCh:
 			sc.cancelAll()
@@ -609,3 +633,13 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 
 // collectFailures is unused: prefailed results are accumulated through the
 // main loop and drained at the terminal point.
+
+// hedgeProviderNames renders the ordered provider names of a hedge batch for
+// the hedge_launched debug event (low cardinality: a provider id string).
+func hedgeProviderNames(targets []Target) string {
+	names := make([]string, 0, len(targets))
+	for _, target := range targets {
+		names = append(names, target.Provider)
+	}
+	return strings.Join(names, ",")
+}

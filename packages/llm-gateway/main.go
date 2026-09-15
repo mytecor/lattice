@@ -60,7 +60,7 @@ func run(arguments []string) error {
 		IdleTimeout:       90 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 	}
-	compiled.logger.Info("gateway starting",
+	logEvent(context.Background(), compiled.logger, slog.LevelInfo, "gateway_starting",
 		"address", httpServer.Addr,
 		"metrics_address", fmt.Sprintf("%s:%d", compiled.raw.MetricsHost, compiled.raw.MetricsPort),
 		"log_level", compiled.raw.LogLevel,
@@ -99,6 +99,9 @@ func run(arguments []string) error {
 
 func reportCatalogErrors(logger *slog.Logger, errorsByProvider map[string]error) {
 	for providerID, err := range errorsByProvider {
-		logger.Warn("catalog refresh failed", "provider", providerID, "detail", safeLogDetail(err.Error()))
+		logEvent(context.Background(), logger, slog.LevelWarn, "catalog_refresh_failed",
+			"provider", providerID,
+			"detail", safeLogDetail(err.Error()),
+		)
 	}
 }

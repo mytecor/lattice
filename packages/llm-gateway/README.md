@@ -58,6 +58,34 @@ credentials. Метрики считаются в счётчиках и гист
 curl -s localhost:9209/metrics
 ```
 
+## Структурированные события
+
+Параллельно метрикам gateway пишет **одну строку = один JSON event** в structured журнал
+(slog JSON, stdout → systemd journal). Каждая строка несёт как минимум `time`, `level`,
+`service` (`llm-gateway`), `event` (устойчивое имя) и низко-cardinality routing-контекст
+(`request_id`). Логи остаются событийными (расследование одного запроса по `request_id`),
+а не источником RPS/latency — это делают метрики.
+
+Димензии только низкой cardinality, те же, что у метрик: `service`, `route`, `provider`,
+`model`, `status`, `error_type`. `request_id` допустим **в поле** (для связывания), но никогда
+не становится лейблом метрики и не попадает в высоко-cardinality поля. Prompt, body, headers
+и API keys никогда не логируются.
+
+Иерархия событий — request → attempt, связывание по `request_id` (`attempt_id` опционален):
+
+- **Request-level** (по одному на запрос): `request_received`, `request_completed`,
+  `request_failed`. Обычный успешный запрос = минимум строк: одна `request_completed` с
+  `status_code`, `duration_ms`, `ttft_ms`, `input_tokens`, `output_tokens`, `cached_tokens`,
+  `stream`, `attempts`, `provider` (winner) и `route`.
+- **Attempt/transition-level** (только когда событие реально произошло):
+  `llm_attempt` (успех ретраен-попытки), `llm_retry`, `llm_fallback`, `hedge_launched`,
+  `semaphore_denied`, `cooldown_put`. Уровень: retry/fallback-переходы и cooldown — `warn`,
+  обычный успех — `info`, hedge/semaphore — `debug`.
+
+По `request_id` в журнале и в Prometheus-графе можно восстановить путь запроса: какие
+`request_completed`/`llm_retry`/`llm_fallback`-строки принадлежат одному запросу и где
+произошёл переход в retry/fallback/race (см. [f12-02](../../roadmap/f12-observability/f12-02-gateway-structured-events.md)).
+
 ## Routing
 
 `routing_rules` — плоская упорядоченная таблица rules. Каждый rule принадлежит именованному
@@ -424,6 +452,10 @@ nix flake check --no-build
   buckets/le-"+Inf"/sum/count), отсутствие высоко-cardinality лейблов, точность in-flight gauge
   и попыток при concurrent ветвях (`-race` чисто); end-to-end request → counters/duration/tokens/
   attempts/balance через серверный мэп.
+- структурированные события: `request_completed` несёт полный набор полей (status_code,
+  duration_ms, ttft_ms, tokens, stream, attempts, provider/route), `request_failed` при ошибке,
+  `llm_retry`+`llm_attempt success` ровно при ретрае, `llm_fallback` при fallback,
+  отсутствие prompt/секретов в любом событии (`-race` чисто).
 
 ## Безопасность
 
