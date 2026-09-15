@@ -28,8 +28,13 @@ let
   ];
 
   # Dashboard provider: a provisioning "providers" entry that points Grafana
-  # at a directory of dashboard JSON files shipped by the module. The f12-04
-  # dashboard JSON lives under modules/grafana/dashboards/.
+  # at the module's own dashboards directory (modules/grafana/dashboards/).
+  # Dashboard definitions live in the repository, not hand-edited in the UI.
+  #
+  # Operators extend the fleet through cfg.dashboardProviders, which replaces
+  # the default rather than appends to it: the repository is the single source
+  # of truth and there is exactly one provider set (f12-04). The module ships
+  # the LLM Gateway + Gateway runtime dashboards by default.
   dashboardProvider = {
     name = "lattice";
     folder = "Lattice";
@@ -94,7 +99,10 @@ in
       # Provision datasources (Prometheus + Loki) and the dashboard provider.
       provision = {
         datasources.settings.datasources = datasources;
-        dashboards.settings.providers = [ dashboardProvider ];
+        dashboards.settings.providers =
+          if cfg.dashboardProviders != [ ]
+          then cfg.dashboardProviders
+          else [ dashboardProvider ];
       };
     };
 

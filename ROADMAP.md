@@ -112,13 +112,15 @@
 
 > Метрики, структурированные события и дашборды для декларативной настройки LLM gateway.
 
-- **Статус:** 🚧 в работе — [f12-01](./roadmap/f12-observability/f12-01-gateway-metrics-endpoint.md)
+- **Статус:** ✅ выполнена 2026-09-16 —
+  [f12-01](./roadmap/f12-observability/f12-01-gateway-metrics-endpoint.md)
   и [f12-02](./roadmap/f12-observability/f12-02-gateway-structured-events.md)
   реализованы 2026-09-15 (`/metrics` + отдельный loopback-листенер;
   структурированные JSON-события request/attempt);
   [f12-03](./roadmap/f12-observability/f12-03-observability-stack.md)
-  (observability stack) реализована 2026-09-16; остаётся
-  [f12-04](./roadmap/f12-observability/f12-04-grafana-dashboards.md) (дашборды).
+  (observability stack) реализована 2026-09-16;
+  [f12-04](./roadmap/f12-observability/f12-04-grafana-dashboards.md) (дашборды)
+  реализована 2026-09-16.
 - **Готово, когда:** числовые метрики (`/metrics` → Prometheus) и JSON-события (stdout → Alloy /
   Loki) видны в Grafana; конкретный запрос связывается по `request_id` до переходов в
   retry/fallback/race; димензии низкой cardinality, без публичных сервисов.
@@ -130,12 +132,13 @@
 
 ## Текущий порядок реализации
 
-- [F12](#f12-observability-метрики-gateway-графана) — активная вертикаль:
+- [F12](#f12-observability-метрики-gateway-графана) — **выполнена 2026-09-16**:
   [f12-01](./roadmap/f12-observability/f12-01-gateway-metrics-endpoint.md) (`/metrics` +
   loopback-листенер) реализован 2026-09-15, [f12-02](./roadmap/f12-observability/f12-02-gateway-structured-events.md)
   (structured JSON-события request/attempt) реализован; [f12-03](./roadmap/f12-observability/f12-03-observability-stack.md)
   (observability stack: Prometheus/Loki/Alloy/Grafana) реализован 2026-09-16;
-  f12-04 (Grafana-дашборды) ещё не начат.
+  [f12-04](./roadmap/f12-observability/f12-04-grafana-dashboards.md) (Grafana-дашборды
+  «LLM Gateway», «Gateway runtime», «Loki / Расследование») реализован 2026-09-16.
 - [F9](#f9-caches-и-artifacts) — caches-часть (f9-01..f9-03) выполнена и закрыта
   live-прогоном 2026-09-14; остаётся artifacts/S3-часть.
 - [F7](#f7-llm-gateway) — выполнена 2026-09-14, включая f7-13 provider balancing

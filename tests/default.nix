@@ -95,6 +95,13 @@ in
     observabilityProfile = "${profiles}/observability/config.nix";
   };
 
+  grafana-dashboards = import ./grafana-dashboards.nix {
+    inherit nixpkgs pkgs;
+    lib = nixpkgs.lib;
+    observabilityModules = observabilityModules;
+    observabilityProfile = "${profiles}/observability/config.nix";
+  };
+
   comin-source-sync = import ./comin-source-sync.nix {
     inherit pkgs;
     syncPackage = pkgs.lattice.comin-source-sync;

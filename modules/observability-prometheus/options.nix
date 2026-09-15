@@ -60,6 +60,19 @@ in
       '';
     };
 
+    # Constant `environment` label applied to every llm-gateway scrape sample.
+    # Low cardinality (one value per deployment); lets dashboards scope by
+    # environment without a high-cardinality label on the exporter side.
+    gatewayEnvironment = mkOption {
+      type = types.str;
+      default = "homelab";
+      description = ''
+        Value of the constant `environment` label attached to every sample of
+        the llm-gateway scrape job. One value per deployment; the f12-04
+        dashboards expose it as the `environment` template variable.
+      '';
+    };
+
     extraScrapeConfigs = mkOption {
       type = types.listOf types.attrs;
       default = [ ];

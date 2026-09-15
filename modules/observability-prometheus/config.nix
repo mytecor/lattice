@@ -41,6 +41,7 @@ in
             targets = [ "${cfg.listenAddress}:${toString gatewayMetricsPort}" ];
             labels = {
               service = "llm-gateway";
+              environment = cfg.gatewayEnvironment;
             };
           }];
         }

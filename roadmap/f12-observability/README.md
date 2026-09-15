@@ -5,12 +5,13 @@
 fallback, cooldown) на основе **измеряемых данных** (latency, TTFT, tokens, error rate), а не
 ручных live-прогонов.
 
-**Статус:** 🚧 в работе — [f12-01](./f12-01-gateway-metrics-endpoint.md) и
+**Статус:** ✅ выполнена 2026-09-16 — [f12-01](./f12-01-gateway-metrics-endpoint.md) и
 [f12-02](./f12-02-gateway-structured-events.md) реализованы 2026-09-15 (`/metrics` на чистом
 stdlib + отдельный loopback-листенер; структурированные JSON-события request/attempt с usage,
 TTFT и переходами retry/fallback/hedge); [f12-03](./f12-03-observability-stack.md) реализована
-2026-09-16 (модули Prometheus/Loki/Alloy/Grafana, профиль, секреты, тест); остаётся
-f12-04 (дашборды).
+2026-09-16 (модули Prometheus/Loki/Alloy/Grafana, профиль, секреты, тест);
+[f12-04](./f12-04-grafana-dashboards.md) реализована 2026-09-16 (дашборды «LLM Gateway»,
+«Gateway runtime», «Loki / Расследование» + `environment`-лейбл и контракт-тест).
 
 Два независимых пути сбора, один frontend:
 
