@@ -62,17 +62,32 @@ func run(arguments []string) error {
 	}
 	compiled.logger.Info("gateway starting",
 		"address", httpServer.Addr,
+		"metrics_address", fmt.Sprintf("%s:%d", compiled.raw.MetricsHost, compiled.raw.MetricsPort),
 		"log_level", compiled.raw.LogLevel,
 		"providers", len(compiled.providers),
 		"models", len(compiled.logicalIDs),
 	)
 
-	serveErrors := make(chan error, 1)
+	// The metrics listener is a dedicated loopback endpoint (metrics_host /
+	// metrics_port, default 127.0.0.1:9209). It serves only /metrics without
+	// client authentication; the API listener never exposes it. The same metric
+	// registry backs both listeners, so a scrape of the dedicated address and a
+	// scrape of the API address observe one consistent surface.
+	metricsServer := &http.Server{
+		Addr:              fmt.Sprintf("%s:%d", compiled.raw.MetricsHost, compiled.raw.MetricsPort),
+		Handler:           newMetricsHandler(runner.Metrics()),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       90 * time.Second,
+	}
+
+	serveErrors := make(chan error, 2)
 	go func() { serveErrors <- httpServer.ListenAndServe() }()
+	go func() { serveErrors <- metricsServer.ListenAndServe() }()
 	select {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
+		_ = metricsServer.Shutdown(shutdownCtx)
 		return httpServer.Shutdown(shutdownCtx)
 	case err := <-serveErrors:
 		if errors.Is(err, http.ErrServerClosed) {

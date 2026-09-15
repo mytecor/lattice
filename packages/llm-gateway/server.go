@@ -21,14 +21,17 @@ type Server struct {
 	runner          *Runner
 	mux             *http.ServeMux
 	logger          *slog.Logger
+	metrics         *Metrics
 	requestSequence atomic.Uint64
 }
 
 func newServer(config *compiledConfig, catalog *Catalog, runner *Runner) *Server {
 	server := &Server{
 		config: config, catalog: catalog, runner: runner, mux: http.NewServeMux(), logger: config.logger,
+		metrics: runner.Metrics(),
 	}
 	server.mux.HandleFunc("GET /healthz", server.health)
+	server.mux.HandleFunc("GET /metrics", server.metricsHandler)
 	server.mux.HandleFunc("GET /v1/models", server.auth(server.models))
 	server.mux.HandleFunc("POST /v1/chat/completions", server.auth(server.chat))
 	server.mux.HandleFunc("POST /v1/responses", server.auth(server.responses))
@@ -38,6 +41,29 @@ func newServer(config *compiledConfig, catalog *Catalog, runner *Runner) *Server
 
 func (s *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	s.mux.ServeHTTP(writer, request)
+}
+
+// newMetricsHandler builds a dedicated http.Handler serving only GET /metrics
+// from the given registry. It is mounted on the separate loopback metrics
+// listener and exposes no other endpoint, so a scrape cannot reach the client
+// API surface.
+func newMetricsHandler(metrics *Metrics) http.Handler {
+	mux := http.NewServeMux()
+	handler := &metricsOnly{metrics: metrics}
+	mux.HandleFunc("GET /metrics", handler.serve)
+	return mux
+}
+
+type metricsOnly struct {
+	metrics *Metrics
+}
+
+func (m *metricsOnly) serve(writer http.ResponseWriter, _ *http.Request) {
+	writer.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	writer.WriteHeader(http.StatusOK)
+	if err := m.metrics.WriteExposition(writer); err != nil {
+		_, _ = io.WriteString(writer, "# error rendering metrics\n")
+	}
 }
 
 func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
@@ -57,6 +83,45 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 
 func (s *Server) health(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+// routeOf resolves the entry route name for a logical model, used as the
+// route label on request-level metrics. Every discoverable logical model maps
+// to exactly one entry route, so the label set stays low-cardinality.
+func (s *Server) routeOf(logical string) string {
+	if entry, ok := s.config.models[logical]; ok {
+		return entry.Name
+	}
+	return ""
+}
+
+// metricsHandler handles GET /metrics without client authentication: the
+// endpoint is deliberately non-public (its own loopback listener, see config)
+// and must not require the client API key.
+func (s *Server) metricsHandler(writer http.ResponseWriter, _ *http.Request) {
+	writer.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	writer.WriteHeader(http.StatusOK)
+	if err := s.metrics.WriteExposition(writer); err != nil {
+		s.logger.Error("metrics exposition failed", "detail", safeLogDetail(err.Error()))
+	}
+}
+
+// observeRequest records the request-level observation: counter, histogram and
+// token accumulation share one call so the request lifecycle is recorded once
+// at exactly one terminal point. The empty provider conveys that no branch
+// ever succeeded (for example a pre-dispatch rejection).
+func (s *Server) observeRequest(logical, provider, status string, duration time.Duration) {
+	s.metrics.ObserveRequest(s.routeOf(logical), logical, provider, status, duration)
+}
+
+// observeTokens accumulates usage from a non-stream response body. Providers
+// that omit usage contribute nothing.
+func (s *Server) observeTokens(logical string, response []byte) {
+	input, output, ok := extractUsage(response)
+	if !ok {
+		return
+	}
+	s.metrics.ObserveTokens(logical, input, output)
 }
 
 func (s *Server) models(writer http.ResponseWriter, _ *http.Request) {
@@ -115,6 +180,7 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 			"status", callErrorStatus(callErr), "error_class", callErr.Class,
 			"duration_ms", time.Since(started).Milliseconds(),
 		)
+		s.observeRequest(metadata.Model, "", "failed", time.Since(started))
 		writeCallError(writer, callErr)
 		return
 	}
@@ -124,9 +190,12 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 	if kind == RequestResponses {
 		s.bindResponsesAffinity(metadata.Model, result.Provider, response, "")
 	}
+	provider := result.Provider
+	s.observeTokens(metadata.Model, response)
 	response, err = sanitizeJSON(response, metadata.Model)
 	if err != nil {
 		s.logger.Error("request failed", "request_id", requestID, "kind", kind, "logical_model", metadata.Model, "status", http.StatusBadGateway, "error_class", ErrorInvalid, "duration_ms", time.Since(started).Milliseconds())
+		s.observeRequest(metadata.Model, provider, "failed", time.Since(started))
 		writeAPIError(writer, http.StatusBadGateway, "invalid_upstream_response")
 		return
 	}
@@ -134,6 +203,7 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 	writer.WriteHeader(http.StatusOK)
 	_, _ = writer.Write(response)
 	s.logger.Info("request completed", "request_id", requestID, "kind", kind, "logical_model", metadata.Model, "status", http.StatusOK, "duration_ms", time.Since(started).Milliseconds())
+	s.observeRequest(metadata.Model, provider, "success", time.Since(started))
 }
 
 func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logical string, executeRequest ExecuteRequest, started time.Time) {
@@ -168,6 +238,9 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	}
 	for _, event := range selected.Buffered {
 		bind(event)
+		if i, o, ok := extractUsage(event.Data); ok {
+			s.metrics.ObserveTokens(logical, i, o)
+		}
 		if !writeStreamEvent(writer, flusher, logical, executeRequest.Kind, event) {
 			return
 		}
@@ -176,6 +249,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 		select {
 		case <-request.Context().Done():
 			s.logger.Debug("request cancelled", "request_id", request.Context().Value(requestIDKey), "kind", executeRequest.Kind, "logical_model", logical, "duration_ms", time.Since(started).Milliseconds())
+			s.observeRequest(logical, selected.Provider, "cancelled", time.Since(started))
 			return
 		case event, open := <-selected.Remaining:
 			if !open {
@@ -184,10 +258,12 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					flusher.Flush()
 				}
 				s.logger.Info("request completed", "request_id", request.Context().Value(requestIDKey), "kind", executeRequest.Kind, "logical_model", logical, "status", http.StatusOK, "duration_ms", time.Since(started).Milliseconds())
+				s.observeRequest(logical, selected.Provider, "success", time.Since(started))
 				return
 			}
 			if event.Err != nil {
 				s.logger.Warn("request stream failed", "request_id", request.Context().Value(requestIDKey), "kind", executeRequest.Kind, "logical_model", logical, "error_class", event.Err.Class, "duration_ms", time.Since(started).Milliseconds())
+				s.observeRequest(logical, selected.Provider, "failed", time.Since(started))
 				payload, _ := json.Marshal(map[string]any{"error": map[string]any{"message": "upstream stream failed", "type": string(event.Err.Class)}})
 				_, _ = fmt.Fprintf(writer, "event: error\ndata: %s\n\n", payload)
 				flusher.Flush()
@@ -197,6 +273,9 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 				return
 			}
 			bind(event)
+			if i, o, ok := extractUsage(event.Data); ok {
+				s.metrics.ObserveTokens(logical, i, o)
+			}
 		}
 	}
 }

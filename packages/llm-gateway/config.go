@@ -40,6 +40,8 @@ func (d *Duration) UnmarshalJSON(data []byte) error {
 type Config struct {
 	Host                   string       `json:"host"`
 	Port                   int          `json:"port"`
+	MetricsHost            string       `json:"metrics_host,omitempty"`
+	MetricsPort            int          `json:"metrics_port,omitempty"`
 	LogLevel               string       `json:"log_level"`
 	ClientAPIKey           string       `json:"client_api_key"`
 	CatalogRefreshInterval Duration     `json:"catalog_refresh_interval"`
@@ -277,6 +279,18 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 	if cfg.Port < 1 || cfg.Port > 65535 {
 		return nil, fmt.Errorf("port must be between 1 and 65535")
 	}
+	if err := validateMetricsBind(cfg.MetricsHost, cfg.MetricsPort); err != nil {
+		return nil, err
+	}
+	if cfg.MetricsHost == "" {
+		cfg.MetricsHost = "127.0.0.1"
+	}
+	if cfg.MetricsPort == 0 {
+		cfg.MetricsPort = 9209
+	}
+	if cfg.MetricsHost == cfg.Host && cfg.MetricsPort == cfg.Port {
+		return nil, errors.New("metrics listener must not share the API host:port")
+	}
 	if cfg.CatalogRefreshInterval.Duration == 0 {
 		cfg.CatalogRefreshInterval.Duration = defaultCatalogRefresh
 	}
@@ -386,6 +400,23 @@ func validateEndpoint(value string) error {
 	}
 	if parsed.User != nil {
 		return errors.New("URL must not contain credentials")
+	}
+	return nil
+}
+
+// validateMetricsBind validates and normalizes the metrics listener bind.
+// The metrics endpoint is deliberately non-public: it defaults to a dedicated
+// loopback interface (127.0.0.1:9209) distinct from the API port and must not
+// share a port with the API listener.
+func validateMetricsBind(host string, port int) error {
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	if port == 0 {
+		port = 9209
+	}
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("metrics_port must be between 1 and 65535")
 	}
 	return nil
 }

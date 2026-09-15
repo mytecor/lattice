@@ -166,6 +166,14 @@ func (s *ScoreStore) health(provider string, window time.Duration, errorBudget f
 	return errorFactor * latencyFactor
 }
 
+// Health reports the numeric [0,1] health score of a provider for the given
+// balance policy window and budget. It is the public form of the internal
+// health computation, used both by the balance selection and by the
+// observability snapshot.
+func (s *ScoreStore) Health(provider string, window time.Duration, errorBudget float64) float64 {
+	return s.health(provider, window, errorBudget)
+}
+
 // Healthy reports whether the provider is inside its error budget for the
 // route's balance policy.
 func (s *ScoreStore) Healthy(provider string, window time.Duration, errorBudget float64) bool {

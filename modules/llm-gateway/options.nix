@@ -487,6 +487,18 @@ in
       description = "Gateway listen port.";
     };
 
+    metricsHost = mkOption {
+      type = types.str;
+      default = "127.0.0.1";
+      description = "Metrics listen address. Loopback by default so the Prometheus scrape endpoint is not public; wire it to a private scrape network explicitly.";
+    };
+
+    metricsPort = mkOption {
+      type = types.port;
+      default = 9209;
+      description = "Metrics listen port (Prometheus text exposition). Must not equal the API port.";
+    };
+
     clientCredentialFile = mkOption {
       type = types.nullOr types.str;
       default = null;

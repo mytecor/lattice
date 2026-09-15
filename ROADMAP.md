@@ -119,7 +119,8 @@
 
 Метрики, структурированные события и дашборды для декларативной настройки LLM gateway.
 
-- **Статус:** ⏳ ещё не начата
+- **Статус:** 🚧 в работе — [f12-01](./roadmap/f12-observability/f12-01-gateway-metrics-endpoint.md)
+  реализован 2026-09-15 (`/metrics` + отдельный loopback-листенер).
 - **Готово, когда:** числовые метрики (`/metrics` → Prometheus) и JSON-события (stdout → Alloy /
   Loki) видны в Grafana; конкретный запрос связывается по `request_id` до переходов в
   retry/fallback/race; димензии низкой cardinality, без публичных сервисов.

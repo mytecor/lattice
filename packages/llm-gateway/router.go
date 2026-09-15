@@ -82,12 +82,21 @@ type Runner struct {
 	leases   *LeaseStore
 	scores   *ScoreStore
 	affinity *AffinityStore
+	metrics  *Metrics
 }
 
 func newRunner(config *compiledConfig, catalog *Catalog, executor Executor) *Runner {
+	return newRunnerMetrics(config, catalog, executor, newMetrics())
+}
+
+func newRunnerMetrics(config *compiledConfig, catalog *Catalog, executor Executor, metrics *Metrics) *Runner {
+	if metrics == nil {
+		metrics = newMetrics()
+	}
 	runner := &Runner{
 		config: config, catalog: catalog, executor: executor,
 		now: time.Now, sleep: sleepContext, cooling: make(map[string]time.Time),
+		metrics: metrics,
 	}
 	runner.leases = newLeaseStore(runner.now)
 	runner.scores = newScoreStore(runner.now)
@@ -95,6 +104,36 @@ func newRunner(config *compiledConfig, catalog *Catalog, executor Executor) *Run
 		config.logger.Error("affinity persistence failed", "detail", safeLogDetail(err.Error()))
 	})
 	return runner
+}
+
+// Metrics exposes the runner's metric registry so the server can mount the
+// /metrics endpoint and record request-level observations.
+func (r *Runner) Metrics() *Metrics {
+	return r.metrics
+}
+
+// observeBranch records the branch attempt counter (the empty error_type labels
+// a success) and releases the in-flight slot. Cancelled losers are recorded
+// separately because they are neutral for health but still observable.
+func (r *Runner) observeBranch(res *branchResult) {
+	errorType := ""
+	if res.err != nil {
+		errorType = string(res.err.Class)
+	}
+	r.metrics.ObserveAttempt(res.provider, errorType)
+	if !res.prefailed {
+		r.metrics.DecrInFlight(res.provider)
+	}
+}
+
+// observeBranchCancelled records a cancelled branch (client cancel, loser
+// cancel, route deadline) without updating health. It still releases the
+// in-flight slot.
+func (r *Runner) observeBranchCancelled(res *branchResult) {
+	r.metrics.ObserveAttempt(res.provider, "cancelled")
+	if !res.prefailed {
+		r.metrics.DecrInFlight(res.provider)
+	}
 }
 
 // Close shuts down the runner's persistent state: the affinity store flushes
@@ -179,6 +218,16 @@ func (r *Runner) executeRoute(ctx context.Context, logical string, route *compil
 		}
 	}
 	if route.fallbackTarget != nil && route.fallbackTarget.applicable(outcome.err, 0) {
+		from := outcome.failedProvider
+		to := ""
+		if len(route.fallbackTarget.Pool) > 0 {
+			to = route.fallbackTarget.Pool[0].Provider
+		}
+		reason := ""
+		if outcome.err != nil {
+			reason = string(outcome.err.Class)
+		}
+		r.metrics.ObserveFallback(from, to, reason)
 		next := r.executeRoute(ctx, logical, route.fallbackTarget, request, streamMode, runtime)
 		if !next.empty {
 			return next
@@ -288,12 +337,35 @@ func (r *Runner) applyLease(logical string, route *compiledRoute, pool []Target)
 // stage), so it never runs on a route that also has a lease. The base weight
 // of a target is its provider priority.
 func (r *Runner) applyBalance(route string, routeConfig *compiledRoute, pool []Target) []Target {
+	// The health snapshot is recorded whether or not the pool is large enough
+	// for the balance action to reorder it: the pool state is observable even
+	// for a single-provider balance route.
+	if routeConfig.Balance.Enabled {
+		r.observeBalanceHealth(routeConfig, pool)
+	}
 	if !routeConfig.Balance.Enabled || len(pool) < 2 {
 		return pool
 	}
-	return r.scores.Select(route, pool, routeConfig.Balance, func(target Target) int {
+	selected := r.scores.Select(route, pool, routeConfig.Balance, func(target Target) int {
 		return r.config.providers[target.Provider].Priority
 	})
+	// The balanced choice is the front of the returned order; record it so the
+	// cursor movement is observable.
+	if len(selected) > 0 {
+		r.metrics.ObserveBalanceSelection(route, selected[0].Provider)
+	}
+	return selected
+}
+
+// observeBalanceHealth snapshots the current balance health of every pool
+// member under the route's policy. It must not be confused with the
+// request-level outcome: it describes the provider pool state, not the final
+// winner.
+func (r *Runner) observeBalanceHealth(routeConfig *compiledRoute, pool []Target) {
+	for _, target := range pool {
+		health := r.scores.Health(target.Provider, routeConfig.Balance.Window, routeConfig.Balance.ErrorBudget)
+		r.metrics.ObserveBalanceHealth(target.Provider, health)
+	}
 }
 
 // validateTarget checks the explicit native model of a target against the

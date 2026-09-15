@@ -26,14 +26,18 @@ type branchResult struct {
 // pinned marks a route narrowed by a known affinity mapping so the caller can
 // keep the request fail-closed (no transitions). empty marks a transition
 // route whose dynamic pool had no available targets: the transition is not
-// applicable and must never mask the original terminal failure.
+// applicable and must never mask the original terminal failure. failedProvider
+// names the provider of the selected terminal failure (empty when the failure
+// is local, for example an empty pool or a route deadline), used for fallback
+// observability.
 type routeOutcome struct {
-	provider string
-	body     []byte
-	selected *SelectedStream
-	err      *CallError
-	pinned   bool
-	empty    bool
+	provider       string
+	body           []byte
+	selected       *SelectedStream
+	err            *CallError
+	pinned         bool
+	empty          bool
+	failedProvider string
 }
 
 // emptyPoolError is the distinguishable terminal result of a transition route
@@ -139,10 +143,11 @@ func (r *routeRuntime) waitBackoff(ctx context.Context, duration time.Duration, 
 type failureAggregate struct {
 	count      int
 	selectedID int
+	provider   string
 	selected   *CallError
 }
 
-func (f *failureAggregate) add(id int, callErr *CallError, retryable func(ErrorClass) bool) {
+func (f *failureAggregate) add(id int, provider string, callErr *CallError, retryable func(ErrorClass) bool) {
 	if callErr == nil {
 		callErr = &CallError{Class: ErrorInvalid, Status: 502}
 	}
@@ -150,6 +155,7 @@ func (f *failureAggregate) add(id int, callErr *CallError, retryable func(ErrorC
 	if f.selected == nil || preferFailure(callErr, candidateRetryable, id, f.selected, retryable != nil && retryable(f.selected.Class), f.selectedID) {
 		f.selected = callErr
 		f.selectedID = id
+		f.provider = provider
 	}
 	f.count++
 }
@@ -311,6 +317,7 @@ func (sc *schedule) launch(g int) bool {
 		sc.runtime.used[target.Provider] = true
 		branchCtx, cancel := context.WithCancel(sc.ctx)
 		sc.cancels[id] = cancel
+		sc.r.metrics.IncrInFlight(target.Provider)
 		go sc.runBranch(branchCtx, id, cancel, target)
 	}
 	if allStarted {
@@ -418,7 +425,7 @@ func (sc *schedule) drainPrefailed(failures *failureAggregate, retryable func(Er
 			if !res.winner && res.err == nil {
 				res.err = &CallError{Class: ErrorInvalid, Status: 502}
 			}
-			failures.add(res.id, res.err, retryable)
+			failures.add(res.id, res.provider, res.err, retryable)
 		default:
 			return
 		}
@@ -533,6 +540,7 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 			if res.err == nil || res.err.Class != ErrorCancelled {
 				r.record(res.provider, res.err)
 				r.observeLeaseFailure(logical, route, res.provider, res.err)
+				r.observeBranch(res)
 				// Not a res.err class-wise for cancellation: the latency is only
 				// meaningful for successful branches, and health-neutral failures
 				// still advance the window. Catalog-rejected targets are skipped:
@@ -545,9 +553,14 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 					}
 					r.scores.Observe(res.provider, res.err, latency)
 				}
+			} else {
+				r.observeBranchCancelled(res)
 			}
 			if res.winner {
 				r.observeLeaseWinner(logical, route, res.provider, res)
+				if !res.finished.IsZero() && !res.started.IsZero() {
+					r.metrics.ObserveTTFT(logical, res.finished.Sub(res.started))
+				}
 				sc.cancelOthers(res.id)
 				outcome := &routeOutcome{provider: res.provider}
 				if streamMode {
@@ -560,7 +573,7 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 			if !res.prefailed {
 				sc.active--
 			}
-			failures.add(res.id, res.err, retryable)
+			failures.add(res.id, res.provider, res.err, retryable)
 			// A slot just freed: try to start members of an armed group that were
 			// denied a permit while it was held (refills the race batch and the
 			// hedge batch alike).
@@ -572,7 +585,7 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 				// latency-only and must not delay a fast terminal failure).
 				sc.drainPrefailed(failures, retryable)
 				sc.cancelAll()
-				return &routeOutcome{err: failures.err(), pinned: pinned}
+				return &routeOutcome{err: failures.err(), pinned: pinned, failedProvider: failures.provider}
 			}
 		case <-sc.hedgeC:
 			sc.hedgeC = nil

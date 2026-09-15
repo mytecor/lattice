@@ -13,6 +13,7 @@
 | Endpoint | Назначение |
 | --- | --- |
 | `GET /healthz` | Минимальный health check без раскрытия topology |
+| `GET /metrics` | Prometheus text exposition (числовые метрики; loopback-листенер `metrics_host:metrics_port`, по умолчанию `127.0.0.1:9209`, без `client_api_key`) |
 | `GET /v1/models` | Только logical models, выведенные из скомпилированных routing plans |
 | `POST /v1/chat/completions` | OpenAI Chat Completions, streaming и non-streaming |
 | `POST /v1/responses` | OpenAI Responses API, streaming и non-streaming |
@@ -24,7 +25,38 @@
 Authorization: Bearer <client_api_key>
 ```
 
-`/healthz` намеренно возвращает только `{"status":"ok"}`.
+`/healthz` намеренно возвращает только `{"status":"ok"}`. `GET /metrics` не требует ключа и
+обслуживается отдельным loopback-листенером (см. [Метрики](#метрики)).
+
+## Метрики
+
+Gateway экспортирует числовые метрики в Prometheus text exposition format (version 0.0.4) на
+выделенном loopback-листенере `metrics_host:metrics_port` (по умолчанию `127.0.0.1:9209`).
+Эндпоинт сознательно не публичен, не требует `client_api_key` и не раскрывает provider
+credentials. Метрики считаются в счётчиках и гистограммах на лету, а не из логов.
+
+Димензии только низкой cardinality: `service`, `route`, `provider`, `model`, `status`,
+`error_type`, `from_provider`, `to_provider`, `reason`. Высок-cardinality идентификаторы
+(`request_id`, session, user, api_key, client_ip, prompt hash) никогда не становятся лейблами.
+
+Семейства:
+
+- `llm_requests_total{route,model,provider,status}` — завершённые клиентские запросы.
+- `llm_request_duration_seconds{route,model}` — гистограмма полного времени запроса (p50/p95).
+- `llm_ttft_seconds{model}` — гистограмма времени до первого значимого события (winner).
+- `llm_input_tokens_total{model}` / `llm_output_tokens_total{model}` — накопленные токены usage.
+- `llm_attempts_total{provider,error_type}` — upstream попытки по терминальному классу ошибки.
+- `llm_requests_in_flight{provider}` — текущие in-flight ветви.
+- `llm_fallbacks_total{from_provider,to_provider,reason}` — явные fallback-переходы.
+- `llm_balance_selections_total{route,provider}` — выбор провайдера балансировкой.
+- `llm_balance_health{provider}` — текущий health score (0..1) пула.
+- `go_*` / `process_start_time_seconds` — минимальное runtime-состояние процесса.
+
+Скрейп-чек:
+
+```sh
+curl -s localhost:9209/metrics
+```
 
 ## Routing
 
@@ -387,7 +419,11 @@ nix flake check --no-build
   on subroute, cascade rejection всех legacy полей (`match`, `map.providers`, `retry.scope/count/on`,
   `fallback.on/fallbackStrategy`);
 - logical/native model rewrite и удаление Bifrost routing metadata из client responses;
-- отсутствие новых upstream calls после winner/cancellation/timeout/semaphore exhaustion.
+- отсутствие новых upstream calls после winner/cancellation/timeout/semaphore exhaustion;
+- метрики: рендер exposition format (порядок, TYPE/HELP, один line per label set, histogram
+  buckets/le-"+Inf"/sum/count), отсутствие высоко-cardinality лейблов, точность in-flight gauge
+  и попыток при concurrent ветвях (`-race` чисто); end-to-end request → counters/duration/tokens/
+  attempts/balance через серверный мэп.
 
 ## Безопасность
 
@@ -399,6 +435,8 @@ nix flake check --no-build
 - Provider-facing raw OpenAI body получает native model только после проверки logical model.
 - `/v1/models` публикует только logical IDs, выведенные из скомпилированных plans; native IDs и
   provider metadata не попадают в client responses и безопасные ошибки.
+- `GET /metrics` не требует `client_api_key` и обслуживается отдельным loopback-листенером
+  (`metrics_host:metrics_port`); он намеренно не публичен и не раскрывает provider credentials.
 
 Полный план и незавершённые шаги cutover находятся в
 [`f7-07-bifrost-go-proxy.md`](../../roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md).

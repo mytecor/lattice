@@ -5,6 +5,10 @@
 fallback, cooldown) на основе **измеряемых данных** (latency, TTFT, tokens, error rate), а не
 ручных live-прогонов.
 
+**Статус:** 🚧 в работе — [f12-01](./f12-01-gateway-metrics-endpoint.md) реализован 2026-09-15
+(/metrics на чистом stdlib + отдельный loopback-листенер); f12-02..f12-04 ещё не
+начаты.
+
 Два независимых пути сбора, один frontend:
 
 ```text

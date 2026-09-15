@@ -36,6 +36,8 @@ let
 
   publicConfig = {
     inherit (cfg) host port;
+    metrics_host = cfg.metricsHost;
+    metrics_port = cfg.metricsPort;
     log_level = cfg.logLevel;
     client_api_key = null;
     catalog_refresh_interval = cfg.catalogRefreshInterval;

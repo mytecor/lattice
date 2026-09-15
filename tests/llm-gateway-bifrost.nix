@@ -80,6 +80,17 @@ assert service.serviceConfig.ProtectSystem == "strict";
 pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ pkgs.jq ]; } ''
   grep -q '"catalog_refresh_interval":"10m"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"log_level":"silent"' ${config.lattice.llm-gateway.publicConfigFile}
+  # Metrics listener: loopback by default, distinct port from the API listener.
+  grep -q '"metrics_host":"127.0.0.1"' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"metrics_port":9209' ${config.lattice.llm-gateway.publicConfigFile}
+  if jq -e '.port == .metrics_port' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+    echo "metrics port must not equal the API port" >&2
+    exit 1
+  fi
+  if jq -e '.metrics_host != "127.0.0.1" and .metrics_host != "::1"' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+    echo "metrics host must be loopback by default (non-public endpoint)" >&2
+    exit 1
+  fi
   grep -q '"inference_url":"https://openbroker.gonka.invalid/v1"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"models_url":"https://proxy.gonka.invalid/v1/models"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"action":"filter"' ${config.lattice.llm-gateway.publicConfigFile}

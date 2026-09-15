@@ -234,3 +234,19 @@ error message.
 ```sh
 journalctl -u llm-gateway -f -o cat
 ```
+
+## Metrics
+
+Gateway exports numeric metrics in Prometheus text exposition format on a dedicated
+`metricsHost:metricsPort` listener (default `127.0.0.1:9209`, loopback, no `client_api_key`):
+
+```sh
+curl -s localhost:9209/metrics
+```
+
+Metrics are counters/histograms/gauges with low-cardinality labels only (`route`, `provider`,
+`model`, `status`, `error_type` and the like). High-cardinality identifiers (`request_id`,
+session, user, api key, client IP, prompt hash) never become labels, and the endpoint does not
+require the client key (it is non-public loopback by design). Set `metricsHost`/`metricsPort`
+explicitly only when a Prometheus scraper runs outside the loopback network namespace; the port
+must differ from `port`.
