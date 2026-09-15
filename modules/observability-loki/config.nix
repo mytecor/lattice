@@ -58,6 +58,12 @@ in
         compactor = {
           working_directory = "${toString cfg.dataDir}/compactor";
           retention_enabled = true;
+          # Loki 3.x requires the delete-request store to be named once
+          # retention is enabled (config validation fails without it). It
+          # must point at the same object store used by schema_config
+          # (filesystem here); this is where tombstones for expired or
+          # deleted streams live.
+          delete_request_store = "filesystem";
         };
       };
     };
