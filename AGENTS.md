@@ -48,3 +48,29 @@ Tests should verify contracts, invariants, generated artifacts, and runtime beha
 Do not write snapshot-like assertions that merely duplicate values from node configuration. If changing a configuration value would be a legitimate change, a test should normally not fail because of it.
 
 Universal configuration constraints belong in NixOS module `assertions`, not in tests of a specific node.
+
+## Секреты и пароли
+
+Секреты агентов (ключи нод, пароли сервисов, admin-пароли из `*.age`) являются
+чувствительными данными и не должны попадать в контекст LLM-моделей.
+
+- Агент **не должен самостоятельно вычитывать** секрет в свой контекст: не запускать
+  команды расшифровки (`age --decrypt`, `agenix -r`/`-e`, `cat` секрета и т.п.)
+  с выводом в консоль/stdout.
+- Вместо этого вывод расшифровки можно **пайпить куда нужно** (в файл, в переменную,
+  в stdin другого процесса), не печатая значение в консоль.
+- Главное правило: секрет в чистом виде **не должен уйти провайдерам LLM-моделей**
+  (не попадать в stdout/tool-вывод, который читает агент как context).
+
+Пример допустимого использования (значение не появляется в консоли):
+
+```sh
+# значение идёт сразу в файл, агент его не видит и не печатает
+age --decrypt -i "$key" secrets/foo.age > /tmp/foo.secret
+# или прямо в stdin следующей команды
+age --decrypt -i "$key" secrets/foo.age | some-command
+```
+
+Если секрет всё же попал в вывод (например, диагностика проблемы входа), агент
+должен продолжать писать команды так, чтобы не повторять секрет в stdout-выводе,
+а результат работы фиксировать обезличенно (путь к файлу, статус, код ответа).
