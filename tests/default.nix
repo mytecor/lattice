@@ -102,6 +102,13 @@ in
     observabilityProfile = "${profiles}/observability/config.nix";
   };
 
+  grafana-ingress = import ./grafana-ingress.nix {
+    inherit nixpkgs pkgs;
+    observabilityModules = observabilityModules;
+    observabilityProfile = "${profiles}/observability/config.nix";
+    gatewayProfile = "${profiles}/tcp-gateway/config.nix";
+  };
+
   comin-source-sync = import ./comin-source-sync.nix {
     inherit pkgs;
     syncPackage = pkgs.lattice.comin-source-sync;

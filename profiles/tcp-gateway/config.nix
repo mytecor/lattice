@@ -16,6 +16,8 @@ let
   piAcpCfg = config.lattice.pi-acp-daemon;
   gitCacheProxyEnabled = config.lattice.git-cache-proxy.enable or false;
   gitCacheProxyCfg = config.lattice.git-cache-proxy;
+  grafanaEnabled = config.lattice.grafana.enable or false;
+  grafanaCfg = config.lattice.grafana;
 
   mdnsPublisher = service: {
     description = "Publish the ${service} mDNS alias";
@@ -93,6 +95,18 @@ let
         '';
       };
     })
+
+    # 6. LAN ingress for the loopback-only Grafana frontend (F12). Grafana
+    # binds 127.0.0.1 by design (non-public); this Caddy site is how an
+    # operator reaches it from the LAN, `http://grafana.<node>.local/`. The
+    # admin login is still gated by the agenix-backed admin password.
+    (lib.mkIf grafanaEnabled {
+      ${siteAddress "grafana"} = {
+        extraConfig = ''
+          reverse_proxy ${grafanaCfg.listenAddress}:${toString grafanaCfg.port}
+        '';
+      };
+    })
   ];
 in
 {
@@ -124,6 +138,9 @@ in
       })
       (lib.mkIf gitCacheProxyEnabled {
         git-cache-proxy-mdns = mdnsPublisher "git-cache-proxy";
+      })
+      (lib.mkIf grafanaEnabled {
+        grafana-mdns = mdnsPublisher "grafana";
       })
     ];
   };
