@@ -180,6 +180,18 @@
       },
       "parent": []
     },
+    "module-grafana": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/grafana",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/grafana",
+        "type": "path"
+      },
+      "parent": []
+    },
     "module-llm-gateway": {
       "flake": false,
       "locked": {
@@ -188,6 +200,42 @@
       },
       "original": {
         "path": "./modules/llm-gateway",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "module-observability-alloy": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/observability-alloy",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/observability-alloy",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "module-observability-loki": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/observability-loki",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/observability-loki",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "module-observability-prometheus": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/observability-prometheus",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/observability-prometheus",
         "type": "path"
       },
       "parent": []
@@ -349,7 +397,11 @@
         "impermanence": "impermanence",
         "module-ephemeral-root": "module-ephemeral-root",
         "module-git-cache-proxy": "module-git-cache-proxy",
+        "module-grafana": "module-grafana",
         "module-llm-gateway": "module-llm-gateway",
+        "module-observability-alloy": "module-observability-alloy",
+        "module-observability-loki": "module-observability-loki",
+        "module-observability-prometheus": "module-observability-prometheus",
         "module-pi": "module-pi",
         "module-pi-acp-daemon": "module-pi-acp-daemon",
         "module-rns-server": "module-rns-server",

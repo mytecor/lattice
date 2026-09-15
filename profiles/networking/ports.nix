@@ -8,4 +8,9 @@
   rns-tcp = 4242;
   git-cache-proxy = 9211;
   verdaccio = 9212;
+  # F12 observability (loopback-only, non-public by design).
+  prometheus = 9213;
+  loki = 9214;
+  grafana = 9215;
+  alloy = 9216;
 }

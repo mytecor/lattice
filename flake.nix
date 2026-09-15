@@ -80,6 +80,26 @@
       flake = false;
     };
 
+    module-observability-prometheus = {
+      url = "path:./modules/observability-prometheus";
+      flake = false;
+    };
+
+    module-observability-loki = {
+      url = "path:./modules/observability-loki";
+      flake = false;
+    };
+
+    module-observability-alloy = {
+      url = "path:./modules/observability-alloy";
+      flake = false;
+    };
+
+    module-grafana = {
+      url = "path:./modules/grafana";
+      flake = false;
+    };
+
     profiles = {
       url = "path:./profiles";
       flake = false;
@@ -109,6 +129,10 @@
     module-wireless,
     module-git-cache-proxy,
     module-verdaccio,
+    module-observability-prometheus,
+    module-observability-loki,
+    module-observability-alloy,
+    module-grafana,
     profiles,
     rns-rs,
     ...
@@ -219,6 +243,10 @@
         wireless.imports = [ "${module-wireless}" ];
         git-cache-proxy.imports = [ "${module-git-cache-proxy}" ];
         verdaccio.imports = [ "${module-verdaccio}" ];
+        observability-prometheus.imports = [ "${module-observability-prometheus}" ];
+        observability-loki.imports = [ "${module-observability-loki}" ];
+        observability-alloy.imports = [ "${module-observability-alloy}" ];
+        grafana.imports = [ "${module-grafana}" ];
 
         default.imports = [
           self.nixosModules.ephemeral-root
@@ -230,6 +258,10 @@
           self.nixosModules.wireless
           self.nixosModules.git-cache-proxy
           self.nixosModules.verdaccio
+          self.nixosModules.observability-prometheus
+          self.nixosModules.observability-loki
+          self.nixosModules.observability-alloy
+          self.nixosModules.grafana
         ];
       };
 
@@ -241,6 +273,7 @@
           ./nodes/mytecor-homelab
           "${profiles}/app-services/config.nix"
           "${profiles}/cache-plane/config.nix"
+          "${profiles}/observability/config.nix"
           "${profiles}/llm-gateway/config.nix"
           "${profiles}/pi-acp/config.nix"
           "${profiles}/radicle/config.nix"

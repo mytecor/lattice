@@ -57,6 +57,16 @@ in
         file = ./secrets/llm-provider-gonkarouter.age;
         mode = "0400";
       };
+      # F12: Grafana admin password via agenix (file provider, never in store).
+      grafana-admin-password = {
+        file = ./secrets/grafana-admin-password.age;
+        mode = "0400";
+      };
+      # F12: Grafana secret_key (NixOS 26.05 requires explicit value).
+      grafana-secret-key = {
+        file = ./secrets/grafana-secret-key.age;
+        mode = "0400";
+      };
     };
   };
 
@@ -347,6 +357,15 @@ in
     ++ standardFallback;
   };
 
+  # F12 observability: Grafana admin password comes from an agenix secret via
+  # the file provider (never plaintext in the store). Datasources (Prometheus +
+  # Loki) and dashboard provisioning are configured by the module; only the
+  # secret is node-specific. Everything binds 127.0.0.1 (non-public).
+  lattice.grafana = {
+    adminPasswordFile = config.age.secrets.grafana-admin-password.path;
+    secretKeyFile = config.age.secrets.grafana-secret-key.path;
+  };
+
   lattice.rnsh = {
     # Public hash only; private operator identity stays on the Mac in .secrets/rnsh-operator.
     allowed = [ "59bfffc440ddc304749fd9477865b811" ];
@@ -400,6 +419,10 @@ in
     { directory = "/var/lib/rnsh"; user = "rnsh"; group = "rnsh"; mode = "0700"; }
     { directory = "/var/lib/radicle"; user = "radicle"; group = "radicle"; mode = "0750"; }
     { directory = "/var/lib/hydra-acp"; user = "root"; group = "root"; mode = "0700"; }
+    # F12 observability data survives reboots (impermanence).
+    { directory = "/var/lib/prometheus"; user = "prometheus"; group = "prometheus"; mode = "0750"; }
+    { directory = "/var/lib/loki"; user = "loki"; group = "loki"; mode = "0750"; }
+    { directory = "/var/lib/grafana"; user = "grafana"; group = "grafana"; mode = "0750"; }
   ];
 
   system.stateVersion = "26.05";

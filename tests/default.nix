@@ -23,6 +23,15 @@ let
     self.nixosModules.git-cache-proxy
     self.nixosModules.verdaccio
   ];
+
+  # F12 observability stack modules, composed so the isolated contract test can
+  # enable them together with the observability profile.
+  observabilityModules = [
+    self.nixosModules.observability-prometheus
+    self.nixosModules.observability-loki
+    self.nixosModules.observability-alloy
+    self.nixosModules.grafana
+  ];
 in
 {
   rns-network = import ./rns-network.nix {
@@ -77,6 +86,13 @@ in
     cachePlaneModules = cachePlaneModules;
     verdaccioModule = self.nixosModules.verdaccio;
     verdaccioProfile = "${profiles}/cache-plane/config.nix";
+  };
+
+  observability-stack = import ./observability-stack.nix {
+    inherit nixpkgs pkgs;
+    lib = nixpkgs.lib;
+    observabilityModules = observabilityModules;
+    observabilityProfile = "${profiles}/observability/config.nix";
   };
 
   comin-source-sync = import ./comin-source-sync.nix {

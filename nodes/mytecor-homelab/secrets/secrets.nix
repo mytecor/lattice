@@ -14,4 +14,6 @@ in
   "llm-provider-dahl.age".publicKeys = [ admin node ];
   "llm-provider-hyperfusion.age".publicKeys = [ admin node ];
   "llm-provider-gonkarouter.age".publicKeys = [ admin node ];
+  "grafana-admin-password.age".publicKeys = [ admin node ];
+  "grafana-secret-key.age".publicKeys = [ admin node ];
 }
