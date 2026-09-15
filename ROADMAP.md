@@ -98,7 +98,9 @@
 
 ## [F10. Disposable worker](./roadmap/f10-disposable-worker/README.md)
 
-Задача выполняется в одноразовом окружении.
+Задача выполняется в одноразовом окружении. Execution backend — готовый
+[r1s](https://github.com/mytecor/r1s) (`r1sd`-allocator над `containerd`); временный `LocalExecutor`
+из плана убран.
 
 - **Статус:** ⏳ ещё не начата
 - **Готово, когда:** полный цикл завершается результатом после уничтожения worker.

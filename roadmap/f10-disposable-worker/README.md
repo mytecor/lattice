@@ -4,10 +4,13 @@
 репозиторий, создаёт environment, запускает Pi RPC, публикует результат и уничтожается. Ни checkout,
 ни dependency directories, ни Pi session не являются состоянием продолжения задачи.
 
-До готовности r1s локальный execution path строится непосредственно на `containerd` и тонком
-`LocalExecutor`, без временного scheduler/allocator. Интерактивный оркестратор и disposable workers
-используют один Pi runtime и один OCI image: различаются task context, workspace, разрешения и
-политика persistence, но не Pi package, model config, tools или extensions.
+Execution path строится поверх [r1s](https://github.com/mytecor/r1s) — готового децентрализованного
+OCI workload fabric поверх Reticulum. `r1sd`-allocator выполняет OCI workload через `containerd`;
+Lattice не строит собственный scheduler/allocator и не протаскивает allocation protocol внутрь.
+Ранее планировавшийся тонкий временный `LocalExecutor` как замена r1s больше не нужен: r1s готов и
+становится execution backend. Интерактивный оркестратор и disposable workers используют один Pi
+runtime и один OCI image: различаются task context, workspace, разрешения и политика persistence, но
+не Pi package, model config, tools или extensions.
 
 Зависит от [F8](../f8-pi-runtime/README.md) и [F9](../f9-cache-artifact-plane/README.md). Соответствует
 [вехе 10](../../ROADMAP.md#f10-disposable-worker).
@@ -37,14 +40,14 @@ hydra-acp → pi-acp                         host ingress/session plane
                 ↓ pi-subagents external-job
         /run/lattice/worker.sock
                 ↓
-        LocalExecutor → containerd
+        r1s request → r1sd allocator → containerd
                 ↓
         disposable Pi container
 ```
 
 - [f10-02](./f10-02-worker-isolation.md) фиксирует `containerd`, общий immutable OCI image и
   декларативные worker classes вместо деклараций отдельных runtime-контейнеров.
-- [f10-03](./f10-03-worker-lifecycle.md) фиксирует узкий local broker/executor, который позднее
-  заменяется r1s-adapter без протекания allocation protocol в Lattice.
+- [f10-03](./f10-03-worker-lifecycle.md) фиксирует узкий executor contract поверх клиента r1s;
+  allocation protocol остаётся внутри r1s и не протекает в Lattice.
 - [f10-04](./f10-04-pi-rpc-runner.md) фиксирует host-side `pi-acp`, контейнерный Pi через
   `PI_ACP_PI_COMMAND` и интеграцию с `pi-subagents` через внешний job provider.

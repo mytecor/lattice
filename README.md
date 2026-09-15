@@ -44,7 +44,11 @@ package, patches, spike-тест и legacy-ветки модуля); истор�
 к homelab минимальным модулем. В f8-02 Pi подключён к gateway только через логические классы
 (`standard`/`stupid`) по loopback. В f8-03 выполнен воспроизводимый tool profile: единый базовый
 контракт `bash/git/tools` (`profiles/pi/base-tools.nix`), расширение проекта без изменения рантайма
-и smoke check из чистого окружения. Следующая задача F8 — f8-04 (интерактивная acceptance).
+и smoke check из чистого окружения. Готов исполняемый fabric
+[r1s](https://github.com/mytecor/r1s): децентрализованное выполнение OCI workload поверх Reticulum
+(клиент `r1s`, allocator `r1sd` над `containerd`). Он становится execution backend для будущих F10
+(disposable worker) и F11 (controller); временный `LocalExecutor` из плана убран.
+Следующая задача F8 — f8-04 (интерактивная acceptance).
 Затем идут caches/artifacts, disposable worker и controller.
 
 ## Направления развития
@@ -57,4 +61,5 @@ package, patches, spike-тест и legacy-ветки модуля); истор�
 - Описание политики доверия между узлами
 - Инструкции по добавлению новой ноды в сеть
 - Self-hosted agent runtime с provider-agnostic классами моделей
-- Disposable workers и восстанавливаемое выполнение задач
+- Disposable workers и восстанавливаемое выполнение задач (execution backend —
+  [r1s](https://github.com/mytecor/r1s) над RNS/`containerd`)

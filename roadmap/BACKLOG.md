@@ -21,15 +21,15 @@
   отрицательный результат Go LIP PoC, а целевой собственный Go proxy поверх Bifrost Go API и
   прямой cutover закреплены в [f7-07](f7-llm-gateway/f7-07-bifrost-go-proxy.md).
 - Backend изоляции первого disposable worker выбран в
-  [f10-02](./f10-disposable-worker/f10-02-worker-isolation.md): OCI/containerd, общий immutable Pi
-  image и декларативные worker classes. Переход на VM/microVM допустим позднее при измеренном
-  требовании к более сильной boundary.
+  [f10-02](./f10-disposable-worker/f10-02-worker-isolation.md): OCI/`containerd` через r1s `r1sd`,
+  общий immutable Pi image и декларативные worker classes. Переход на VM/microVM допустим позднее при
+  измеренном требовании к более сильной boundary.
 
 ## Открытые решения
 
 4. **Controller storage** — конкретная реализация выбирается в F11 после стабилизации task
-   specification и ручного worker lifecycle в F10. Provisioner boundary и первая implementation
-   (`LocalExecutor → containerd`) зафиксированы в
+   specification и ручного worker lifecycle в F10. Execution backend готов:
+   [r1s](https://github.com/mytecor/r1s) (`R1SExecutor`) зафиксирован в
    [f11-03](./f11-controller/f11-03-worker-provisioner.md).
 5. **Внешний доступ к сервисам с поддоменов `myt.su` через Yggdrasil** — открыт в
    [f4-05](f4-payload/f4-05-yggdrasil-public-subdomain-ingress.md): хостинг/управление DNS зоны

@@ -40,10 +40,12 @@ worker classes/policy и host runtime, но не отдельные эфемер
 
 ## Открытые вопросы
 
-_нет_. Для первого local backend выбран OCI/containerd; более сильная VM/microVM boundary остаётся
-допустимой заменой после измеренного требования.
+_нет_. Для первого backend выбран OCI/`containerd` (через r1s `r1sd`); более сильная VM/microVM
+boundary остаётся допустимой заменой после измеренного требования.
 
 ## Источник решения
 
-Обсуждение «Замена r1s в lattice» зафиксировало local `containerd`, декларативные image/classes и
-динамические runtime instances.
+Обсуждение «Замена r1s в lattice» зафиксировало локальный `containerd` в качестве временной
+implementation до готовности r1s. r1s готов ([mytecor/r1s](https://github.com/mytecor/r1s));
+декларативные image/classes и динамические runtime instances остаются прежними, но изоляция теперь
+обеспечивается `r1sd`-allocator'ом, который использует тот же `containerd`.
