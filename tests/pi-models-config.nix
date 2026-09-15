@@ -63,6 +63,7 @@ let
 in
 pkgs.runCommand "pi-models-config-evaluation" {
   inherit modelsJson;
+  nativeBuildInputs = [ pkgs.jq ];
 } ''
   set -euo pipefail
 
