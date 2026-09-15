@@ -35,3 +35,8 @@ group; retry, cooldown, fallback, priority, race и hedging проверены �
 
 **Осознанно откладываем (до F8):** конфигурацию Pi. Worker-specific выдачу credentials и сетевые
 ограничения — до F10.
+
+> Дальнейшая наблюдаемость (метрики `/metrics`, structured JSON-события, Grafana) вынесена в
+> [F12 — Observability](../f12-observability/README.md): числа считаются в Prometheus-
+> счётчиках, логи остаются событийными для расследования по `request_id`. Это новая вертикаль,
+> а не follow-up закрытой F7.

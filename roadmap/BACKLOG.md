@@ -50,7 +50,14 @@ peer, общий реестр в flake и исходящие TCP-соедине�
 2. **Reticulum interface discovery / auto-connect** — проверить поддержку в закреплённом
    `rns-rs`, затем использовать публичные peers как bootstrap для обнаружения других соседей.
 
-3. **Stdio shim для Zed поверх no-auth LAN ACP endpoint** — stock-клиент
+3. **Наблюдаемость LLM gateway (метрики + Grafana)** — заведена отдельной вертикалью
+   [F12](./f12-observability/README.md), а не follow-up к закрытой F7. Метрики считаются в
+   Prometheus-счётчиках (`/metrics`), логи остаются событийными для расследования по
+   `request_id`; дашборды — в Grafana. Задачи: [f12-01](./f12-observability/f12-01-gateway-metrics-endpoint.md)
+   .. [f12-04](./f12-observability/f12-04-grafana-dashboards.md). OpenTelemetry traces отложены
+   до тех пор, пока метрики и логи не покроют реальные вопросы настройки.
+
+4. **Stdio shim для Zed поверх no-auth LAN ACP endpoint** — stock-клиент
    [`@hydra-acp/cli`](../packages/hydra-acp/README.md) несовместим с безаутентичным endpoint
    `ws://acp.<nodename>.local/`: для не-loopback хоста требует credential из `remotes.json`, который
    выдаётся только через `/v1/auth/login`, а daemon без master password отвечает `403`. Caddy host
@@ -67,7 +74,7 @@ peer, общий реестр в flake и исходящие TCP-соедине�
    и включена глобально через `lattice.pi-acp-daemon.defaultTransformers`, см.
    [`packages/acp-normalizer`](../packages/acp-normalizer/README.md).
 
-4. **Вернуть pi-acp-daemon к минимальным доступам (revert privileged)** — на `mytecor-homelab`
+5. **Вернуть pi-acp-daemon к минимальным доступам (revert privileged)** — на `mytecor-homelab`
    временно включён `lattice.pi-acp-daemon.privileged = true` для живой диагностики
    Wi-Fi/nl80211 (раскрытие `AF_NETLINK`, `CAP_NET_ADMIN`, снятие `NoNewPrivileges`). Это stopgap:
    после завершения диагностики выключить опцию и восстановить строгий песочник (без netlink,

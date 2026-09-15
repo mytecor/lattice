@@ -64,7 +64,9 @@
 
 Единая точка доступа к моделям и provider credentials.
 
-- **Статус:** ✅ выполнена (включая f7-13 provider balancing, live-прогон 2026-09-14)
+- **Статус:** ✅ выполнена (включая f7-13 provider balancing, live-прогон 2026-09-14).
+  Дальнейшая наблюдаемость (метрики `/metrics`, structured события, Grafana) вынесена в
+  [F12](#f12-observability-метрики-gateway-графана), а не в follow-up закрытой F7.
 - **Готово, когда:** клиенты используют только логические классы моделей, а отказ upstream
   обрабатывается заданной политикой.
 - **Зависит от:** [F1](#f1-одна-железная-нода), [F2](#f2-секреты-и-идентичность)
@@ -110,3 +112,17 @@
 - **Готово, когда:** задача переживает сбой controller/worker без потери или двойной публикации
   результата.
 - **Зависит от:** [F10](#f10-disposable-worker)
+
+## [F12. Observability (метрики gateway + Grafana)](./roadmap/f12-observability/README.md)
+
+Метрики, структурированные события и дашборды для декларативной настройки LLM gateway.
+
+- **Статус:** ⏳ ещё не начата
+- **Готово, когда:** числовые метрики (`/metrics` → Prometheus) и JSON-события (stdout → Alloy /
+  Loki) видны в Grafana; конкретный запрос связывается по `request_id` до переходов в
+  retry/fallback/race; димензии низкой cardinality, без публичных сервисов.
+- **Зависит от:** [F7](#f7-llm-gateway)
+- **Задачи:** [f12-01](./roadmap/f12-observability/f12-01-gateway-metrics-endpoint.md),
+  [f12-02](./roadmap/f12-observability/f12-02-gateway-structured-events.md),
+  [f12-03](./roadmap/f12-observability/f12-03-observability-stack.md),
+  [f12-04](./roadmap/f12-observability/f12-04-grafana-dashboards.md)
