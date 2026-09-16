@@ -16,6 +16,7 @@ runtime и один OCI image: различаются task context, workspace, �
 [вехе 10](../../ROADMAP.md#f10-disposable-worker).
 
 Задачи: [f10-01](./f10-01-package-r1s.md),
+[f10-02](./f10-02-deploy-r1sd.md),
 [f10-04](./f10-04-pi-rpc-runner.md),
 [f10-05](./f10-05-worker-credentials.md),
 [f10-06](./f10-06-disposability-acceptance.md).
@@ -45,5 +46,8 @@ hydra-acp → pi-acp                         host ingress/session plane
 
 - [f10-01](./f10-01-package-r1s.md) фиксирует r1s как flake-пакет (клиент `r1s` + allocator
   `r1sd`) с го-тулчейном 1.27.1 из основного пина nixpkgs; закрыто 2026-09-16.
+- [f10-02](./f10-02-deploy-r1sd.md) разворачивает `r1sd`-allocator на ноде как NixOS-модуль
+  (`modules/worker-runtime/`): systemd-сервис над containerd, строгий песочник, включение на
+  ноде и smoke-проверка соединения клиента `r1s` с allocator.
 - [f10-04](./f10-04-pi-rpc-runner.md) фиксирует host-side `pi-acp`, контейнерный Pi через
   `PI_ACP_PI_COMMAND` и интеграцию с `pi-subagents` через внешний job provider.
