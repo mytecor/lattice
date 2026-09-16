@@ -28,3 +28,24 @@ buildPnpmCli {
 
 Версия остаётся ответственностью package definition. Для нового CLI создаётся собственный
 `packages/<name>/package.nix` и lock-файл; общий builder не содержит перечень пакетов.
+
+## Удержание pnpm-deps в Nix store
+
+`fetchPnpmDeps` — это fixed-output derivation (FOD): её выход (`*-pnpm-deps`,
+сжатый pnpm-store) `pnpmConfigHook` распаковывает в `node_modules` при сборке,
+но **сам FOD ничем не ссылается** в итоговом closure. При `keep-outputs = false`
+(по умолчанию) weekly `nix-gc` удаляет такой unreferenced выход, и следующий
+`comin`-rebuild заново выполняет `pnpm install --registry=…` против upstream npm
+registry по сети — медленно, с ретраями (а `comin` собирает с `--no-link`, не
+создавая собственных GC-корней).
+
+Builder решает это автоматически: в `installPhase` записывает store-path
+pnpm-deps в `$out/libexec/<pname>/pnpm-deps-store-path`. Так как pnpm-deps уже
+является входом derivation (его читает `pnpmConfigHook` из окружения), Nix
+переписывает этот путь и фиксирует реальную ссылку из выходного пакета на FOD.
+Пока пакет жив в активном closure системы (`/run/current-system`), FOD жив —
+внешних GC-корней, списков путей или ручной настройки не требуется; при смене
+lock-файла ссылка обновляется на новый FOD автоматически.
+
+Этот же приём применяется в `packages/pi-acp/package.nix`, который использует
+`fetchPnpmDeps` напрямую (а не через builder).

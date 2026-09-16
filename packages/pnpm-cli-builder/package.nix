@@ -91,6 +91,17 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     cp -R node_modules "$out/libexec/${pname}/"
     ${wrappers}
 
+    # Keep the fetchPnpmDeps FOD output alive through the store reference:
+    # pnpm-deps is a fixed-output derivation whose (compressed) pnpm store is
+    # unpacked here into node_modules but is *not* itself referenced by the
+    # resulting closure. With no reference, weekly nix-gc deletes the FOD and
+    # the next comin rebuild re-runs `pnpm install --registry=…` against the
+    # upstream npm registry over the network (slow, retry-prone). Recording the
+    # FOD store path in $out makes the package output reference it, so the FOD
+    # stays alive exactly as long as this package is part of the active system
+    # closure — automatic, no external GC-root plumbing needed.
+    echo ${lib.escapeShellArg finalAttrs.pnpmDeps} > "$out/libexec/${pname}/pnpm-deps-store-path"
+
     runHook postInstall
   '';
 

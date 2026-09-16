@@ -66,7 +66,28 @@ upstream registries и lockfiles.
 
 ## Открытые вопросы
 
-_нет_.
+**Build-time fetch vs runtime cache (решено 2026-09-16).** Verdaccio кеширует
+runtime-pnpm (клиенты ноды по `clientConfig`), но **build-time** `fetchPnpmDeps`
+(фиксированный вывод Nix, собранный comin-ом) ходит напрямую в upstream npm
+registry: фиксированные выводы не могут достучаться до loopback-proxy
+(песочница Nix изолирует loopback — проверено на ноде: `curl 127.0.0.1:9212` из
+сборки не проходит). Причём эти FOD-выходы (`*-pnpm-deps`, сжатый pnpm-store)
+ничем не ссылаются в финальном closure, поэтому weekly `nix-gc` удаляет их, а
+следующий comin apply заново выполняет `pnpm install --registry=…` по Wi-Fi —
+медленно, с ретраями.
+
+Решение: `buildPnpmCli` (и `packages/pi-acp`) записывают store-path pnpm-deps в
+`$out` при сборке, чтобы выходной пакет ссылался на FOD (см.
+[README пакета](../../packages/pnpm-cli-builder/README.md)). Пока пакет жив в
+активном closure ноды, FOD жив; пере-фетч остаётся только при реально новом
+lock-файле. Подтверждено live на mytecor-homelab 2026-09-16: все пять
+`*-pnpm-deps` были в dead-list GC до фикса; после фикса пакет-ссылочник
+удерживает FOD (проверка: `nix-store --gc --print-dead` перестаёт видеть
+зареференсованный FOD).
+
+Побочный эффект: в `$out/libexec/<pname>/` появляется служебный файл
+`pnpm-deps-store-path`. Он не участвует в runtime и не увеличивает зависимость
+CLI сверх уже собранного store.
 
 ## Live-находки 2026-09-14 (live-прогон f9-03 на `mytecor-homelab`)
 

@@ -67,6 +67,11 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     pnpm prune --prod
     mkdir -p "$out/bin" "$out/libexec/${pname}"
     cp -R dist node_modules package.json pnpm-lock.yaml "$out/libexec/${pname}/"
+    # Same closure-reference trick as buildPnpmCli: record the fetchPnpmDeps FOD
+    # output path in $out so the resulting package references it and weekly
+    # nix-gc keeps it alive (it is unpacked into node_modules but otherwise
+    # unreferenced — see packages/pnpm-cli-builder/package.nix).
+    echo ${lib.escapeShellArg finalAttrs.pnpmDeps} > "$out/libexec/${pname}/pnpm-deps-store-path"
     makeWrapper ${lib.getExe nodejs} "$out/bin/pi-acp" \
       --add-flags "$out/libexec/${pname}/dist/index.js" \
       --prefix PATH : ${lib.makeBinPath [ pi ]}

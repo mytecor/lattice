@@ -1,6 +1,7 @@
 { self, nixpkgs, impermanence, profiles, overlay }:
 
 let
+  inherit (nixpkgs) lib;
   pkgs = import nixpkgs {
     system = "x86_64-linux";
     overlays = [ overlay ];
@@ -112,6 +113,11 @@ in
   comin-source-sync = import ./comin-source-sync.nix {
     inherit pkgs;
     syncPackage = pkgs.lattice.comin-source-sync;
+  };
+
+  pnpm-deps-fod-reference = import ./pnpm-deps-fod-reference.nix {
+    inherit pkgs lib;
+    nix = pkgs.nix;
   };
 
   node-status = import ./node-status.nix {
