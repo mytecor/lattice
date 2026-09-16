@@ -89,6 +89,8 @@ let runtime = byUid "gateway-runtime"; in
 assert lib.hasInfix "llm_balance_health" (joinExprs runtime);
 assert lib.hasInfix "llm_balance_selections_total" (joinExprs runtime);
 assert lib.hasInfix "cooldown_put|llm_retry|llm_fallback|hedge_launched|semaphore_denied" (joinExprs runtime);
+# f12-05: version stat visible in the runtime dashboard.
+assert lib.hasInfix "llm_gateway_build_info" (joinExprs runtime);
 
 # --- Investigation dashboard (loki-investigation) ---
 let lokiDb = byUid "loki-investigation"; in
@@ -100,8 +102,23 @@ assert lib.hasInfix "| json" (joinExprs lokiDb);
 assert gatewayJob.static_configs != [ ];
 assert builtins.all (sc: (sc.labels.environment or null) != null) gatewayJob.static_configs;
 
+# --- f12-05 dashboard polish (status/p99/data links) ---
+# The `status` template variable must actually be used in at least one panel
+# (it was declared in the templating list but unused before f12-05).
+assert lib.hasInfix "status=~\"$status\"" (joinExprs llm);
+# Successful attempts (empty error_type) must not be counted as errors:
+# the errors panel filters them out.
+assert lib.hasInfix "error_type=~\".+\"" (joinExprs llm);
+# Latency and TTFT show p50 and p99 percentiles, not just p95.
+assert lib.hasInfix "histogram_quantile(0.50," (joinExprs llm);
+assert lib.hasInfix "histogram_quantile(0.99," (joinExprs llm);
+# The LLM Gateway logs panel carries a data link into the investigation
+# dashboard keyed by request_id (${__value.raw}).
+assert lib.hasInfix "loki-investigation?var-request_id=\${__value.raw}" (builtins.toJSON llm);
+
 pkgs.runCommand "grafana-dashboards-contract" { } ''
   echo "f12-04 grafana dashboards contract holds:
   dashboards: ${builtins.concatStringsSep ", " (map (d: d.uid) dashboards)}
-  environment label (scrape): ${(builtins.elemAt gatewayJob.static_configs 0).labels.environment}" > "$out"
+  environment label (scrape): ${(builtins.elemAt gatewayJob.static_configs 0).labels.environment}
+  f12-05 polish: status used, p50/p99 percentiles, data links to investigation" > "$out"
 ''

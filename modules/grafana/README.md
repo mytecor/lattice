@@ -21,7 +21,7 @@ admin-пароль — из agenix-секрета через file provider (не
 
 ## Dashboard provisioning
 
-`dashboards/` — каталог с dashboard JSON (f12-04): «LLM Gateway» (`llm-gateway.json`),
+`dashboards/` — каталог с dashboard JSON (f12-04, доработка f12-05): «LLM Gateway» (`llm-gateway.json`),
 «Gateway runtime» (`gateway-runtime.json`), «Loki / Расследование»
 (`loki-investigation.json`). Провайдер `lattice` (папка "Lattice")
 подхватывает файлы при старте; definitions живут в репозитории, не в UI.

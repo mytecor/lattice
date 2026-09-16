@@ -50,7 +50,26 @@
           },
           "links": []
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "request_id"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Расследование по request_id",
+                    "url": "/d/loki-investigation?var-request_id=${__value.raw}&${__url_time_range}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -173,8 +192,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(llm_requests_total{environment=\"$environment\",route=~\"$route\",provider=~\"$provider\",model=~\"$model\"}[$__rate_interval])) by (route)",
-          "legendFormat": "{{route}}",
+          "expr": "sum(rate(llm_requests_total{environment=\"$environment\",route=~\"$route\",provider=~\"$provider\",model=~\"$model\",status=~\"$status\"}[$__rate_interval])) by (route, status)",
+          "legendFormat": "{{route}} / {{status}}",
           "range": true,
           "refId": "A"
         }
@@ -271,9 +290,20 @@
           "legendFormat": "p95 {{route}}",
           "range": true,
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum(rate(llm_request_duration_seconds_bucket{environment=\"$environment\",route=~\"$route\",model=~\"$model\"}[$__rate_interval])) by (le, route))",
+          "legendFormat": "p99 {{route}}",
+          "range": true,
+          "refId": "C"
         }
       ],
-      "title": "Latency p50 / p95 по route",
+      "title": "Latency p50 / p95 / p99 по route",
       "type": "timeseries"
     },
     {
@@ -350,13 +380,35 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum(rate(llm_ttft_seconds_bucket{environment=\"$environment\",model=~\"$model\"}[$__rate_interval])) by (le, model))",
+          "legendFormat": "p50 {{model}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
           "expr": "histogram_quantile(0.95, sum(rate(llm_ttft_seconds_bucket{environment=\"$environment\",model=~\"$model\"}[$__rate_interval])) by (le, model))",
           "legendFormat": "p95 {{model}}",
           "range": true,
-          "refId": "A"
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum(rate(llm_ttft_seconds_bucket{environment=\"$environment\",model=~\"$model\"}[$__rate_interval])) by (le, model))",
+          "legendFormat": "p99 {{model}}",
+          "range": true,
+          "refId": "C"
         }
       ],
-      "title": "TTFT p95 по model",
+      "title": "TTFT p50 / p95 / p99 по model",
       "type": "timeseries"
     },
     {
@@ -551,7 +603,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (provider, error_type) (rate(llm_attempts_total{environment=\"$environment\",provider=~\"$provider\"}[$__rate_interval]))",
+          "expr": "sum by (provider, error_type) (rate(llm_attempts_total{environment=\"$environment\",provider=~\"$provider\",error_type=~\".+\"}[$__rate_interval]))",
           "legendFormat": "{{provider}} {{error_type}}",
           "range": true,
           "refId": "A"
@@ -636,7 +688,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "llm_requests_in_flight{environment=\"$environment\",provider=~\"$provider\"}",
+          "expr": "sum(llm_requests_in_flight{environment=\"$environment\",provider=~\"$provider\"}) by (provider)",
           "legendFormat": "{{provider}}",
           "range": true,
           "refId": "A"

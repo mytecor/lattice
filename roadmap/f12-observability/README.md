@@ -26,7 +26,8 @@ llm-gateway
 Задачи: [f12-01](./f12-01-gateway-metrics-endpoint.md),
 [f12-02](./f12-02-gateway-structured-events.md),
 [f12-03](./f12-03-observability-stack.md),
-[f12-04](./f12-04-grafana-dashboards.md).
+[f12-04](./f12-04-grafana-dashboards.md),
+[f12-05](./f12-05-dashboard-polish.md) (доработка дашбордов: status, p50/p99, data links, версия сборки).
 
 **Критерий готовности:** любой запрос через gateway наблюдаем двумя путями: числовые метрики
 (RPS, latency p50/p95, TTFT, input/output tokens, errors, cost) доступны в Prometheus и видны в

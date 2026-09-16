@@ -138,7 +138,8 @@
 - **Задачи:** [f12-01](./roadmap/f12-observability/f12-01-gateway-metrics-endpoint.md),
   [f12-02](./roadmap/f12-observability/f12-02-gateway-structured-events.md),
   [f12-03](./roadmap/f12-observability/f12-03-observability-stack.md),
-  [f12-04](./roadmap/f12-observability/f12-04-grafana-dashboards.md)
+  [f12-04](./roadmap/f12-observability/f12-04-grafana-dashboards.md),
+  [f12-05](./roadmap/f12-observability/f12-05-dashboard-polish.md) (доработка дашбордов: status, p50/p99, data links, версия сборки)
 
 ## Текущий порядок реализации
 
@@ -148,7 +149,9 @@
   (structured JSON-события request/attempt) реализован; [f12-03](./roadmap/f12-observability/f12-03-observability-stack.md)
   (observability stack: Prometheus/Loki/Alloy/Grafana) реализован 2026-09-16;
   [f12-04](./roadmap/f12-observability/f12-04-grafana-dashboards.md) (Grafana-дашборды
-  «LLM Gateway», «Gateway runtime», «Loki / Расследование») реализован 2026-09-16.
+  «LLM Gateway», «Gateway runtime», «Loki / Расследование») реализован 2026-09-16;
+  [f12-05](./roadmap/f12-observability/f12-05-dashboard-polish.md) (доработка: status,
+  p50/p99, data links, версия сборки) — follow-up к f12-04.
 - [F9](#f9-caches-и-artifacts) — caches-часть (f9-01..f9-03) выполнена и закрыта
   live-прогоном 2026-09-14; artifacts/S3-часть отложена на сильно потом (сознательно
   не блокирует F10/F11).
