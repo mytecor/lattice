@@ -13,13 +13,15 @@ let
   # f4-04: writer статус-документа. writeShellApplication даёт store-путь с полным
   # PATH (bash+git+jq+coreutils), который обязан работать из activation-скрипта:
   # среда активации NixOS не кладёт git/jq в PATH сама по себе (127 / command not
-  # found на ноде). Тот же файл читает overlay-пакет lattice.node-status-write и
-  # контрактный smoke-тест tests/node-status.nix.
-  statusWriter = pkgs.writeShellApplication {
+  # found на ноде). lib.getExe возвращает исполняемый bin-путь (writeShellApplication
+  # кладёт wrapper в $out/bin/, где ${} без getExe дал бы каталог => "Is a directory").
+  # Тот же файл читает overlay-пакет lattice.node-status-write и контрактный
+  # smoke-тест tests/node-status.nix.
+  statusWriter = lib.getExe (pkgs.writeShellApplication {
     name = "lattice-node-status-write";
     runtimeInputs = [ pkgs.coreutils pkgs.git pkgs.jq pkgs.bash ];
     text = builtins.readFile ./status-write.sh;
-  };
+  });
 in
 {
   imports = [ ../tcp-gateway/config.nix ];
