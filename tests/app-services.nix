@@ -15,12 +15,20 @@ let
 
   statusHost = "status.node-a.local";
   gateway = config.services.caddy.virtualHosts."http://${statusHost}";
+  statusWriter = config.system.activationScripts.lattice-node-status;
 in
 assert !config.services.nginx.enable;
 assert config.services.caddy.enable;
-assert lib.hasInfix "respond" gateway.extraConfig;
+# f4-04: endpoint отдаёт runtime JSON из /run через file_server, не static respond.
+assert lib.hasInfix "file_server" gateway.extraConfig;
 assert lib.hasInfix "lattice-node-status" gateway.extraConfig;
-assert lib.hasInfix "\"node\":\"node-a\"" gateway.extraConfig;
+assert lib.hasInfix "/run/lattice-node-status.json" gateway.extraConfig;
+assert !lib.hasInfix "respond" gateway.extraConfig;
+# Активационный скрипт генерирует документ: stateVersion и commit source /var/lib/comin/source/repository.
+assert lib.hasInfix "lattice-node-status-write" statusWriter.text;
+assert lib.hasInfix "/var/lib/comin/source/repository" statusWriter.text;
+assert lib.hasInfix "LATTICE_NODE_STATE_VERSION" statusWriter.text;
+assert lib.hasInfix "26.05" statusWriter.text;
 assert config.services.avahi.publish.userServices;
 assert builtins.hasAttr "node-status-mdns" config.systemd.services;
 assert lib.hasInfix statusHost config.systemd.services.node-status-mdns.script;

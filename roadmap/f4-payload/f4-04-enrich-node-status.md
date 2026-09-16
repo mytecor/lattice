@@ -14,15 +14,25 @@ JSON `{"node":<hostName>,"service":"lattice-node-status"}`. Это полезн�
 
 ## Что сделать
 
-- [ ] Определить набор полей метаданных, которые отдаёт endpoint (минимум — generation и source
+- [x] Определить набор полей метаданных, которые отдаёт endpoint (минимум — generation и source
       revision; стоит рассмотреть hostname, kernel, uptime, `system.stateVersion`, время активации).
-- [ ] Определить источник коммита/ревизии, на которой работает узел (`self.rev` / `dirtyRev` из
+      → **Решено**: `node`, `service`, `generation`, `commit`, `kernel`, `stateVersion`, `activatedAt`.
+      Sensory-поля (uptime) намеренно исключены.
+- [x] Определить источник коммита/ревизии, на которой работает узел (`self.rev` / `dirtyRev` из
       flake, или revision, выбранная `comin` из Radicle/GitHub remote).
-- [ ] Выбрать механизм доставки: generation/commit меняются на активации без пересборки Caddy —
+      → **Канонический — runtime `refs/lattice/source`** из `/var/lib/comin/source/repository`
+      (значение, которое выбрал `comin-source-sync` до нормализации). `self.rev` отклонён: он
+      пуст на грязном дереве и не отражает фактически применённый источник.
+- [x] Выбрать механизм доставки: generation/commit меняются на активации без пересборки Caddy —
       обосновать, генерировать ли JSON на сборке (build-time), писать файл на активации
       (activation-time) или обслуживать через лёгкий backend.
-- [ ] Расширить `profiles/app-services/config.nix` так, чтобы endpoint отдавал новые поля.
-- [ ] Обновить тест `tests/app-services.nix` и (при необходимости) набор проверок statusHost.
+      → **activation-time**: активационный скрипт `lattice-node-status` пишет
+      `/run/lattice-node-status.json` (tmp + `mv`, транзакционно); Caddy отдаёт через `file_server`
+      без отдельного backend (контракт f4-02 сохранён — без внутреннего порта).
+- [x] Расширить `profiles/app-services/config.nix` так, чтобы endpoint отдавал новые поля.
+- [x] Обновить тест `tests/app-services.nix` и (при необходимости) набор проверок statusHost;
+      добавлен runtime smoke-тест `tests/node-status.nix` (сценарии: generation из symlink,
+      commit из refs, commit=null на свежей ноде, отсутствие current-system → generation=null).
 
 ## Критерий готовности (Definition of Done)
 
@@ -40,7 +50,16 @@ JSON `{"node":<hostName>,"service":"lattice-node-status"}`. Это полезн�
 
 ## Открытые вопросы
 
-- Какой источник «коммита» считается каноничным: `self.rev` (фиксирует сборку flake) против
-  revision, применённой `comin` из remote (фиксирует фактически выбранный источник)? Нужно решить
-  до старта или отдавать оба поля.
-- Отдавать ли sensory-поля вроде uptime (меняются часто и плохо кэшируются)? — уточнить до старта.
+- ~~Какой источник «коммита» считается каноничным~~ — решено: runtime `refs/lattice/source`
+  (`comin-source-sync`), а не `self.rev`. См. выше.
+- ~~Отдавать ли sensory-поля вроде uptime~~ — решено: не отдавать.
+
+## Прогресс
+
+2026-09-16: реализована декларативная часть. `profiles/app-services/config.nix` пишет
+`/run/lattice-node-status.json` активационным скриптом `lattice-node-status` из
+[`status-write.sh`](../../profiles/app-services/status-write.sh); Caddy отдаёт его через
+`file_server`. `tests/app-services.nix` переведён на новые контракты (file_server вместо respond,
+поля из activation-скрипта); добавлен runtime smoke-тест `tests/node-status.nix`. `nix flake check
+--all-systems --no-build` проходит. Осталось live-подтверждение на `mytecor-homelab` (критерий
+«значения реального состояния»).

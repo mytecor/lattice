@@ -3,19 +3,41 @@
 let
   hostName = config.networking.hostName;
   statusHost = "status.${hostName}.local";
-  statusDocument = builtins.toJSON {
-    service = "lattice-node-status";
-    node = hostName;
-  };
+
+  # f4-04: JSON генерируется на каждой активации из runtime-фактов узла
+  # (NixOS generation, применённый comin commit). Обслуживает сам Caddy через
+  # file_server — без отдельного backend-процесса и внутреннего порта
+  # (контракт f4-02 сохранён).
+  statusFile = "/run/lattice-node-status.json";
+  cominSourceRepo = "/var/lib/comin/source/repository";
+  # Используется и активационным скриптом, и контрактным тестом node-status.
+  # Читаем тот же ./status-write.sh, что и overlay-пакет lattice.node-status-write.
+  statusWriter = pkgs.writeScript "lattice-node-status-write" (builtins.readFile ./status-write.sh);
 in
 {
   imports = [ ../tcp-gateway/config.nix ];
 
   config = {
     services.caddy.virtualHosts."http://${statusHost}".extraConfig = ''
+      root * ${statusFile}
       header Content-Type application/json
-      respond `${statusDocument}` 200
+      file_server
     '';
+
+    # f4-04: пишем статус-документ при каждой активации. Специальный
+    # 'lattice-node-status' activation script работает без отдельного юнита:
+    # значения generation/commit меняются именно на активации, а Caddy читает
+    # файл только по запросу. Если коммит ещё не выбран (свежая нода до первого
+    # comin-цикла), commit=null, endpoint остаётся валидным JSON.
+    system.activationScripts.lattice-node-status = {
+      deps = [ ];
+      text = ''
+        LATTICE_NODE_STATUS_FILE=${statusFile} \
+        LATTICE_NODE_STATE_VERSION=${lib.escapeShellArg config.system.stateVersion} \
+        LATTICE_COMIN_SOURCE_REPO=${lib.escapeShellArg cominSourceRepo} \
+        ${statusWriter}
+      '';
+    };
 
     systemd.services.node-status-mdns = {
       description = "Publish the node status mDNS alias";

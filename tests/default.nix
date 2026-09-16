@@ -114,6 +114,11 @@ in
     syncPackage = pkgs.lattice.comin-source-sync;
   };
 
+  node-status = import ./node-status.nix {
+    inherit pkgs;
+    statusWriter = pkgs.lattice.node-status-write;
+  };
+
   example =
     assert exampleConfig.services.comin.enable;
     assert exampleConfig.nix.settings.auto-optimise-store;

@@ -150,6 +150,13 @@
             runtimeInputs = [ final.coreutils final.git final.jq final.util-linux ];
             text = builtins.readFile ./profiles/gitops/comin-source-sync.sh;
           };
+          # f4-04: writer runtime-статуса узла (generation/commit JSON). Используется
+          # активационным скриптом app-services и контрактным тестом node-status.
+          node-status-write = final.writeShellApplication {
+            name = "lattice-node-status-write";
+            runtimeInputs = [ final.coreutils final.git final.jq ];
+            text = builtins.readFile ./profiles/app-services/status-write.sh;
+          };
           acp-normalizer = final.callPackage ./packages/acp-normalizer/package.nix { };
           rns-server = final.callPackage "${rns-rs}/package.nix" { bin = "rns-server"; };
           rnsh = final.callPackage "${rns-rs}/package.nix" { bin = "rnsh"; };
