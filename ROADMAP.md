@@ -41,8 +41,12 @@
 
 > Нода становится self-hosted средой и source origin.
 
-- **Статус:** 🚧 в работе
+- **Статус:** 🟡 частично — source bootstrap (f4-01) и app services (f4-02, f4-03, f4-04)
+  работают на homelab; drill без GitHub, полный bootstrap новой ноды и f4-05
+  (Yggdrasil-ingress) отложены на потом.
 - **Готово, когда:** конфиг распространяется без GitHub; на ноде работает прикладной сервис.
+- **Не блокирует:** [F10](#f10-disposable-worker), [F11](#f11-controller) — зависят только
+  от f4-01 (Radicle seed/comin), который выполнен.
 - **Зависит от:** [F1](#f1-одна-железная-нода), [F2](#f2-секреты-и-идентичность)
 
 ## [F5. Внешние узлы](./roadmap/f5-external-nodes/README.md)
@@ -159,23 +163,22 @@
   в `current-system` комin-сервисы, `auto-optimise-store`, `nix-gc.timer`;
   root эфемерный).
 
-До перехода к не начатым вертикалям остаётся:
+Следующий фокус (непосредственно после выполненных вертикалей):
 
-- [F4](#f4-полезная-нагрузка) — source bootstrap (f4-01) и app services (f4-02, f4-03, f4-04)
-  работают на homelab; не закрыты строгий drill без GitHub и полный bootstrap новой
-  NixOS-ноды, а также f4-05 (Yggdrasil-ингress, блокирован внешним DNS).
+- [F10](#f10-disposable-worker) — execution backend (r1s `r1sd`/containerd, общий immutable
+  Pi image) уже зафиксирован в f10-02..f10-04; worker lifecycle и acceptance — впереди.
+- [F11](#f11-controller) — ждёт стабилизации task specification и ручного worker
+  lifecycle в F10.
+
+Отложены на потом:
+
+- [F4](#f4-полезная-нагрузка) — остатки: drill без GitHub, bootstrap новой ноды, f4-05.
+- [F9](#f9-caches-и-artifacts) — artifacts/S3.
 
 Ещё не начатые вертикали (в порядке подхода):
 
-- [F10](#f10-disposable-worker) — execution backend (r1s `r1sd`/containerd, общий immutable
-  Pi image) уже зафиксирован в f10-02..f10-04; worker lifecycle и acceptance ещё не начаты.
-- [F11](#f11-controller) — ждёт стабилизации task specification и ручного worker
-  lifecycle в F10.
 - [F5](#f5-внешние-узлы), [F6](#f6-радио-и-mesh) — политика доверия внешних узлов и
   радиоканал.
 
-До тех пор, пока не закрыта F4 и не начат цикл F10→F11, эти вертикали остаются
+До тех пор, пока не начат цикл F10→F11, эти вертикали остаются
 в запланированных, а не в выполненных.
-
-Приоритет: сначала F4 (drill без GitHub, bootstrap новой ноды, f4-05), затем цикл F10→F11
-(F10 — непосредственно следующий шаг после F4). F9 artifacts/S3 отложена на сильно потом.
