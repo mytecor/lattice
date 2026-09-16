@@ -40,16 +40,21 @@ HTTP API опубликованы через Caddy. В F7 развёрнут с�
 модуль/профиль и контракт двух logical models (`stupid`, `standard`). После подтверждённой
 runtime-проверки legacy `mxyhi/token_proxy` удалён целиком из активной конфигурации (input,
 package, patches, spike-тест и legacy-ветки модуля); исторические findings f7-01/f7-05/f7-06
-сохранены. В f8-01 Pi закреплён через pnpm lockfile, собирается общим pnpm CLI builder и подключён
-к homelab минимальным модулем. В f8-02 Pi подключён к gateway только через логические классы
-(`standard`/`stupid`) по loopback. В f8-03 выполнен воспроизводимый tool profile: единый базовый
-контракт `bash/git/tools` (`profiles/pi/base-tools.nix`), расширение проекта без изменения рантайма
-и smoke check из чистого окружения. Готов исполняемый fabric
+сохранены. В f8 выбран интерактивный ingress через ACP (Pi TUI не используется): Pi закреплён
+в `pnpm lockfile`, собирается общим `pnpm` CLI builder и подключён к gateway только через
+логические классы `standard`/`stupid` по loopback; готов воспроизводимый tool profile с единым
+базовым контрактом `bash/git/tools` (`profiles/pi/base-tools.nix`). Сетевой ACP-клиент
+(Ferngeist) через общий endpoint создаёт параллельные сессии и подключается к единой live session;
+отдельный сетевой Pi RPC endpoint не вводится — execution boundary для F10 задаёт контейнерный
+runtime. В F12 развёрнут observability-стек: `/metrics` + отдельный loopback-листенер, структурированные
+JSON-события request/attempt, Prometheus/Loki+Alloy/Grafana, дашборды «LLM Gateway», «Gateway
+runtime» и «Loki / Расследование»; конкретный запрос связывается по `request_id`.
+Готов исполняемый fabric
 [r1s](https://github.com/mytecor/r1s): децентрализованное выполнение OCI workload поверх Reticulum
-(клиент `r1s`, allocator `r1sd` над `containerd`). Он становится execution backend для будущих F10
+(клиент `r1s`, allocator `r1sd` над `containerd`). Он становится execution backend для F10
 (disposable worker) и F11 (controller); временный `LocalExecutor` из плана убран.
-Следующая задача F8 — f8-04 (интерактивная acceptance).
-Затем идут caches/artifacts, disposable worker и controller.
+Следующая незакрытая вертикаль — F9: caches-часть (f9-01..f9-03) выполнена, остаётся
+artifacts/S3-часть. Затем disposable worker и controller.
 
 ## Направления развития
 
