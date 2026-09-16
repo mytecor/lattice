@@ -35,7 +35,11 @@ in
 
   config = {
     services.caddy.virtualHosts."http://${statusHost}".extraConfig = ''
-      root * ${statusFile}
+      # f4-04: единый статус-файл отдаётся на любой путь. root указывает на
+      # каталог /run, а rewrite перенаправляет запрос на сам файл, чтобы
+      # file_server не делал 308-редирект (трактуя root-файл как директорию).
+      root * /run
+      rewrite * /lattice-node-status.json
       header Content-Type application/json
       file_server
     '';

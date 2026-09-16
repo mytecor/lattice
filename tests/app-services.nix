@@ -19,10 +19,12 @@ let
 in
 assert !config.services.nginx.enable;
 assert config.services.caddy.enable;
-# f4-04: endpoint отдаёт runtime JSON из /run через file_server, не static respond.
+# f4-04: endpoint отдаёт runtime JSON из /run через file_server (не static respond),
+# root на каталог /run + rewrite на файл (без 308-редиректа).
 assert lib.hasInfix "file_server" gateway.extraConfig;
 assert lib.hasInfix "lattice-node-status" gateway.extraConfig;
-assert lib.hasInfix "/run/lattice-node-status.json" gateway.extraConfig;
+assert lib.hasInfix "/run" gateway.extraConfig;
+assert lib.hasInfix "lattice-node-status.json" gateway.extraConfig;
 assert !lib.hasInfix "respond" gateway.extraConfig;
 # Активационный скрипт генерирует документ: stateVersion и commit source /var/lib/comin/source/repository.
 assert lib.hasInfix "lattice-node-status-write" statusWriter.text;
