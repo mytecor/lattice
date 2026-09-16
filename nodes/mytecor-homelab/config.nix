@@ -118,6 +118,7 @@ in
       models = [
         { id = "standard"; }
         { id = "stupid"; }
+        { id = "smart"; }
       ];
       modelOverrides = {
         standard = {
@@ -138,6 +139,27 @@ in
             high = null; xhigh = null; max = null;
           };
           compat = { supportsReasoningEffort = false; };
+        };
+        # smart → zai-org/GLM-5.3-Flash via the llm-gateway. Multimodal
+        # (vision verified), accepts the developer role, and always-reasoning:
+        # GLM ignores a thinking:disabled toggle and reasons regardless. Pi's
+        # zai thinkingFormat sends thinking:{type:enabled/disabled}; since no
+        # reasoning level is controllable, none is exposed (all null keeps
+        # getSupportedThinkingLevels empty) and input stays full multimodal.
+        smart = {
+          reasoning = true;
+          input = [ "text" "image" ];
+          thinkingLevelMap = {
+            off = null; minimal = null; low = null; medium = null;
+            high = null; xhigh = null; max = null;
+          };
+          compat = {
+            supportsReasoningEffort = false;
+            # GLM-5.3-Flash accepts the developer role and the zai thinking
+            # shape; declare thinkingFormat explicitly so the model is treated
+            # as reasoning-capable through the gateway passthrough.
+            thinkingFormat = "zai";
+          };
         };
       };
     };
@@ -231,9 +253,13 @@ in
         priority = 10;
       };
     };
-    # The entry route maps one native per logical model to the full provider
-    # set; the retry and hedge subroutes re-select unused providers. The
-    # fallback subroute for `standard` gives Hyperfusion its second catalog
+    # The entry route maps one native per logical model to a provider set; the
+    # retry and hedge subroutes re-select unused providers. `standard`,
+    # `stupid` and `smart` all use the full provider universe: providers whose
+    # catalog does not yet serve the native ID fail exact validation locally
+    # (model_not_found, no upstream call) and are skipped, so `smart`
+    # (GLM-5.3-Flash) rides whatever subset of the networks already carry it.
+    # The fallback subroute for `standard` gives Hyperfusion its second catalog
     # alias so a model_not_found in the primary alias can fail over to the
     # prefixed native Hyperfusion actually serves.
     #
@@ -259,7 +285,13 @@ in
         "hyperfusion"
         "gonkarouter"
       ];
-      # The bounded primary pipeline used by both logical models.
+      # The bounded primary pipeline used by every logical model. All models
+      # select from the full enabled provider universe; providers whose catalog
+      # does not yet serve the native ID fail exact validation with
+      # model_not_found locally (no upstream call) and are simply skipped — the
+      # healthy carriers take the traffic. This keeps `smart` on the same
+      # provider set as standard/stupid as each network rolls out GLM-5.3-Flash
+      # on its side.
       primaryRules = model: native: [
         { route = model; action = "filter"; where = { model = { eq = model; }; }; }
         { route = model; action = "filter"; where = { provider = { "in" = allProviders; }; }; }
@@ -354,6 +386,7 @@ in
     in
     primaryRules "stupid" "MiniMaxAI/MiniMax-M2.7"
     ++ primaryRules "standard" "deepseek-ai/DeepSeek-V4-Flash-0731"
+    ++ primaryRules "smart" "zai-org/GLM-5.3-Flash"
     ++ standardFallback;
   };
 
