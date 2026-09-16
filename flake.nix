@@ -150,12 +150,23 @@
             runtimeInputs = [ final.coreutils final.git final.jq final.util-linux ];
             text = builtins.readFile ./profiles/gitops/comin-source-sync.sh;
           };
-          # f4-04: writer runtime-статуса узла (generation/commit JSON). Используется
-          # активационным скриптом app-services и контрактным тестом node-status.
-          node-status-write = final.writeShellApplication {
+          # f4-04: writer runtime-статуса узла (generation/commit JSON).
+          # replaceVars вшивает полные store-пути команд, чтобы скрипт работал
+          # из активационной среды (PATH там не содержит git/jq). Используется
+          # smoke-тестом tests/node-status.nix.
+          # f4-04: writer runtime-статуса узла (generation/commit JSON).
+          # replaceVarsWith вшивает полные store-пути bash/git/jq, чтобы скрипт
+          # работал из активационной среды (PATH там не содержит git/jq).
+          node-status-write = final.replaceVarsWith {
             name = "lattice-node-status-write";
-            runtimeInputs = [ final.coreutils final.git final.jq ];
-            text = builtins.readFile ./profiles/app-services/status-write.sh;
+            src = ./profiles/app-services/status-write.sh;
+            replacements = {
+              bash = "${final.bash}/bin/bash";
+              git = "${final.git}/bin/git";
+              jq = "${final.jq}/bin/jq";
+            };
+            dir = "bin";
+            isExecutable = true;
           };
           acp-normalizer = final.callPackage ./packages/acp-normalizer/package.nix { };
           rns-server = final.callPackage "${rns-rs}/package.nix" { bin = "rns-server"; };

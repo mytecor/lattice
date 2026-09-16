@@ -10,18 +10,24 @@ let
   # (контракт f4-02 сохранён).
   statusFile = "/run/lattice-node-status.json";
   cominSourceRepo = "/var/lib/comin/source/repository";
-  # f4-04: writer статус-документа. writeShellApplication даёт store-путь с полным
-  # PATH (bash+git+jq+coreutils), который обязан работать из activation-скрипта:
-  # среда активации NixOS не кладёт git/jq в PATH сама по себе (127 / command not
-  # found на ноде). lib.getExe возвращает исполняемый bin-путь (writeShellApplication
-  # кладёт wrapper в $out/bin/, где ${} без getExe дал бы каталог => "Is a directory").
-  # Тот же файл читает overlay-пакет lattice.node-status-write и контрактный
-  # smoke-тест tests/node-status.nix.
-  statusWriter = lib.getExe (pkgs.writeShellApplication {
+  # f4-04: writer статус-документа. Собираем через replaceVarsWith: вшиваем
+  # полные store-пути bash/git/jq (@bash@/@git@/@jq@) — их нет в активационной
+  # среде NixOS (иначе activation падал 127 и валил comin-switch). Остальные
+  # команды (readlink/basename/hostname/uname/date/chmod/mv) уже есть в PATH
+  # активации через coreutils. dir="bin" + isExecutable дают executable в
+  # $out/bin/lattice-node-status-write.
+  statusWriterPkg = pkgs.replaceVarsWith {
     name = "lattice-node-status-write";
-    runtimeInputs = [ pkgs.coreutils pkgs.git pkgs.jq pkgs.bash ];
-    text = builtins.readFile ./status-write.sh;
-  });
+    src = ./status-write.sh;
+    replacements = {
+      bash = "${pkgs.bash}/bin/bash";
+      git = "${pkgs.git}/bin/git";
+      jq = "${pkgs.jq}/bin/jq";
+    };
+    dir = "bin";
+    isExecutable = true;
+  };
+  statusWriter = "${statusWriterPkg}/bin/lattice-node-status-write";
 in
 {
   imports = [ ../tcp-gateway/config.nix ];

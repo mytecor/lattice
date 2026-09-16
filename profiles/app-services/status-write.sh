@@ -1,10 +1,13 @@
-#!/usr/bin/env bash
+#!@bash@
 # f4-04: сгенерировать /run/lattice-node-status.json на каждой активации из
 # runtime-фактов узла (NixOS generation, применённый comin source revision).
 #
-# Файл пишется транзакционно (временный файл + mv), чтобы Caddy никогда не
-# отдал частично записанный JSON. При недоступности источника commit поле
-# остаётся null; от активации это не должно зависнуть.
+# Скрипт собирается через pkgs.replaceVars (см. config.nix): @bash@, @git@ и
+# @jq@ заменяются полными store-путями при сборке. Остальные команды
+# (readlink, basename, hostname, uname, date, chmod, mv) берутся из coreutils,
+# который NixOS гарантированно кладёт в PATH активационной среды. Это нужно,
+# т.к. PATH активации не содержит git/jq — иначе activation падал 127 и валил
+# comin-switch.
 set -euo pipefail
 
 : "${LATTICE_NODE_STATUS_FILE:?LATTICE_NODE_STATUS_FILE is required}"
@@ -22,7 +25,7 @@ node="${LATTICE_NODE_NAME:-$(hostname)}"
 current_system="$(readlink "$current_system_link" 2>/dev/null || true)"
 generation="null"
 if [[ -n "$current_system" ]]; then
-  gen="$(basename "$current_system")"           # system-123-link
+  gen="$(basename "$current_system")"        # system-123-link
   if [[ "$gen" =~ ^system-([0-9]+)(-link)?$ ]]; then
     generation="${BASH_REMATCH[1]}"
   fi
@@ -35,7 +38,7 @@ fi
 commit="null"
 source_ref="refs/lattice/source"
 if [[ -d "$LATTICE_COMIN_SOURCE_REPO" ]]; then
-  ref=$(git -C "$LATTICE_COMIN_SOURCE_REPO" rev-parse --verify --quiet "$source_ref" 2>/dev/null || true)
+  ref=$(@git@ -C "$LATTICE_COMIN_SOURCE_REPO" rev-parse --verify --quiet "$source_ref" 2>/dev/null || true)
   if [[ -n "$ref" && "$ref" =~ ^[0-9a-f]{40}$ ]]; then
     commit="\"$ref\""
   fi
@@ -46,7 +49,7 @@ activated_at="$(date +%s)"
 
 # Транзакционная запись. jq собирает валидный JSON и экранирует строки.
 tmp="${LATTICE_NODE_STATUS_FILE}.tmp.$$"
-jq -n \
+@jq@ -n \
   --arg node "$node" \
   --arg service "lattice-node-status" \
   --argjson generation "$generation" \
