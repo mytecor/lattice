@@ -1883,3 +1883,132 @@ func TestNestedTransitionStandardFallbackThenRetry(t *testing.T) {
 		t.Fatalf("unexpected winner: %s", body)
 	}
 }
+
+func TestSmart404FallbackToUnusedCarrier(t *testing.T) {
+	// Mirrors the `smart` (GLM-5.3-Flash) topology: the entry route races one
+	// provider chosen by round_robin from the full universe. A provider that
+	// advertises GLM in its catalog but rejects the upstream call with 404 is
+	// selected; the retry subroute's error filter excludes 404/model_not_found
+	// (so retry does not fire) and the hedge is latency-only (abandoned on a
+	// fast terminal failure). The explicit fallback to the unused exact-ID
+	// carriers is the only transition that rescues a fast 404: it must skip the
+	// just-failed provider (it is marked used after the upstream call) and hand
+	// the request to a carrier that actually serves GLM.
+	//
+	// Providers a..c: `a` is the non-carrier that 404s upstream; `b`, `c` are
+	// exact-ID carriers. Entry route picks `a` first via round_robin cursor 0.
+	rules := []Rule{
+		filterModel("smart", "smart"),
+		filterProvider("smart", "a", "b", "c"),
+		mapRule("smart", "zai-org/GLM-5.3-Flash"),
+		rankRule("smart"),
+		raceRule("smart", 1),
+		// retry excludes 404/model_not_found exactly like primaryRules.
+		retryRule("smart", "smart.retry", 2),
+		hedgeRule("smart", 10*time.Millisecond, "smart.hedge"),
+		fallbackRule("smart", "smart.fallback"),
+		// retry subroute: applies only to non-404 failures, re-selects unused.
+		filterError("smart.retry", "429", "5xx", "timeout", "connection_error", "invalid_response"),
+		filterProviderUnused("smart.retry", "a", "b", "c"),
+		mapRule("smart.retry", "zai-org/GLM-5.3-Flash"),
+		rankRule("smart.retry"),
+		raceRule("smart.retry", 1),
+		// hedge subroute: latency-only, unused.
+		filterProviderUnused("smart.hedge", "a", "b", "c"),
+		mapRule("smart.hedge", "zai-org/GLM-5.3-Flash"),
+		rankRule("smart.hedge"),
+		raceRule("smart.hedge", 1),
+		// fallback subroute: admits 404/model_not_found and re-routes through
+		// unused carriers.
+		filterError("smart.fallback", "404", "model_not_found", "429", "5xx", "timeout", "connection_error", "invalid_response"),
+		filterProviderUnused("smart.fallback", "b", "c"),
+		mapRule("smart.fallback", "zai-org/GLM-5.3-Flash"),
+		rankRule("smart.fallback"),
+		raceRule("smart.fallback", 1),
+	}
+	compiled := rulesConfig(t, 3, rules)
+	var calls atomic.Int32
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		calls.Add(1)
+		switch target.Provider {
+		case "b", "c":
+			return successBody(target.Provider), nil
+		case "a":
+			return nil, &CallError{Class: ErrorNotFound, Status: 404}
+		}
+		return nil, &CallError{Class: ErrorInvalid, Status: 500}
+	}}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.sleep = func(context.Context, time.Duration) error { return nil }
+	// Force the round_robin cursor to land on `a` first: with a fresh store,
+	// cursor 0 picks the first healthy member in pool (priority order a,b,c).
+	body, callErr := runner.Run(context.Background(), "smart", ExecuteRequest{Kind: RequestChat})
+	if callErr != nil {
+		t.Fatalf("smart fallback did not recover from upstream 404: %v", callErr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil || (payload["winner"] != "b" && payload["winner"] != "c") {
+		t.Fatalf("fallback winner must be a carrier b/c, got %s", body)
+	}
+	// Exactly 2 upstream calls: the failed `a` and one carrier. The retry must
+	// not fire (404 excluded) and the hedge must not add a third call (fast
+	// terminal failure abandons it).
+	if calls.Load() != 2 {
+		t.Fatalf("expected 2 upstream calls (a 404, one carrier), got %d", calls.Load())
+	}
+}
+
+func TestSmartModelNotFoundPreFailedThenUnusedFallback(t *testing.T) {
+	// A provider whose catalog snapshot does not (yet) carry the exact native
+	// ID is rejected locally as model_not_found before any upstream call and is
+	// NOT marked used. With round_robin landing on that provider first, the
+	// fallback's unused policy must still reach a real carrier (the pre-failed
+	// provider is not a receiver, but the other carriers are).
+	//
+	// `a` catalog-rejected (no GLM), `b` carrier, `c` carrier.
+	rules := []Rule{
+		filterModel("smart", "smart"),
+		filterProvider("smart", "a", "b", "c"),
+		mapRule("smart", "zai-org/GLM-5.3-Flash"),
+		rankRule("smart"),
+		raceRule("smart", 1),
+		retryRule("smart", "smart.retry", 2),
+		fallbackRule("smart", "smart.fallback"),
+		filterError("smart.retry", "429", "5xx", "timeout", "connection_error", "invalid_response"),
+		filterProviderUnused("smart.retry", "a", "b", "c"),
+		mapRule("smart.retry", "zai-org/GLM-5.3-Flash"),
+		rankRule("smart.retry"),
+		raceRule("smart.retry", 1),
+		filterError("smart.fallback", "404", "model_not_found", "429", "5xx", "timeout", "connection_error", "invalid_response"),
+		filterProviderUnused("smart.fallback", "b", "c"),
+		mapRule("smart.fallback", "zai-org/GLM-5.3-Flash"),
+		rankRule("smart.fallback"),
+		raceRule("smart.fallback", 1),
+	}
+	compiled, catalog := compiledWithCatalogs(t, rules, map[string][]string{
+		"a": {"some-other-model"}, // has a catalog, but not GLM → local model_not_found
+		"b": {"zai-org/GLM-5.3-Flash"},
+		"c": {"zai-org/GLM-5.3-Flash"},
+	})
+	var calls atomic.Int32
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		calls.Add(1)
+		if target.Provider == "b" || target.Provider == "c" {
+			return successBody(target.Provider), nil
+		}
+		return nil, &CallError{Class: ErrorInvalid, Status: 500}
+	}}
+	runner := newRunner(compiled, catalog, executor)
+	runner.sleep = func(context.Context, time.Duration) error { return nil }
+	body, callErr := runner.Run(context.Background(), "smart", ExecuteRequest{Kind: RequestChat})
+	if callErr != nil {
+		t.Fatalf("model_not_found did not fall back to an unused carrier: %v", callErr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil || (payload["winner"] != "b" && payload["winner"] != "c") {
+		t.Fatalf("fallback winner must be a carrier b/c, got %s", body)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected exactly one upstream call (the carrier), got %d", calls.Load())
+	}
+}

@@ -383,11 +383,59 @@ in
         { route = "standard.fallback"; action = "rank"; strategy = "priority"; }
         { route = "standard.fallback"; action = "race"; count = 1; }
       ];
+      # Fallback subroute for smart (GLM-5.3-Flash): re-selects one of the
+      # providers that actually carry the exact unprefixed native. The entry
+      # route chooses one provider by round_robin from the full universe, and
+      # when that provider rejects GLM (upstream 404, or a local model_not_found
+      # because its catalog does not yet carry the exact ID) the request must
+      # hand off to a carrier instead of failing. The recovery needs more than
+      # a retry: the retry subroute's error filter excludes 404/model_not_found
+      # and the hedge is latency-only (abandoned on a fast terminal failure), so
+      # an explicit fallback is the only transition that rescues a fast 404. The
+      # fallback races the whole exact-ID carrier pool (count 0 = whole pool) so
+      # a stale catalog or a second 404 on one carrier does not strand the
+      # request; the unused policy skips a carrier that already served this
+      # request. Hyperfusion is intentionally absent: it serves GLM only under
+      # the prefixed gonka/ alias (see standardFallback).
+      smartFallback = [
+        {
+          route = "smart";
+          action = "fallback";
+          target = "smart.fallback";
+        }
+        {
+          route = "smart.fallback";
+          action = "filter";
+          where = {
+            error = { "in" = [ "404" "model_not_found" "429" "5xx" "timeout" "connection_error" "invalid_response" ]; };
+          };
+        }
+        {
+          route = "smart.fallback";
+          action = "filter";
+          where = { provider = { "in" = [ "gonka-proxy" "gonka-openbroker" "gonkarouter" ]; unused = true; }; };
+        }
+        {
+          route = "smart.fallback";
+          action = "map";
+          native = "zai-org/GLM-5.3-Flash";
+        }
+        { route = "smart.fallback"; action = "rank"; strategy = "priority"; }
+        { route = "smart.fallback"; action = "race"; count = 0; }
+      ];
     in
+    # A provider whose catalog lists GLM but that fails the upstream call with
+    # a provider-side 404 must not leave `smart` without a carrier: that 404 is
+    # exact-match (catalog present, model absent for the proxy) and is not on
+    # the plain 404 retry list, so the only way to recover is an explicit
+    # fallback that re-selects an unused carrier provider. The fallback also
+    # absorbs a local model_not_found (catalog snapshot not yet rolled out on
+    # the selected provider) so the request still reaches a carrier.
     primaryRules "stupid" "MiniMaxAI/MiniMax-M2.7"
     ++ primaryRules "standard" "deepseek-ai/DeepSeek-V4-Flash-0731"
     ++ primaryRules "smart" "zai-org/GLM-5.3-Flash"
-    ++ standardFallback;
+    ++ standardFallback
+    ++ smartFallback;
   };
 
   # F12 observability: Grafana admin password comes from an agenix secret via
