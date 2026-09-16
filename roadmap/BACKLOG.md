@@ -20,8 +20,9 @@
 - Решение по LLM gateway runtime закрыто: [f7-06](f7-llm-gateway/f7-06-go-lip-gonka-cutover.md) сохранила
   отрицательный результат Go LIP PoC, а целевой собственный Go proxy поверх Bifrost Go API и
   прямой cutover закреплены в [f7-07](f7-llm-gateway/f7-07-bifrost-go-proxy.md).
-- Backend изоляции первого disposable worker выбран в
-  [f10-02](./f10-disposable-worker/f10-02-worker-isolation.md): OCI/`containerd` через r1s `r1sd`,
+- Backend изоляции первого disposable worker зафиксирован в
+  [README F10](./f10-disposable-worker/README.md#зафиксированная-архитектура) и
+  [f10-01](./f10-disposable-worker/f10-01-package-r1s.md): OCI/`containerd` через r1s `r1sd`,
   общий immutable Pi image и декларативные worker classes. Переход на VM/microVM допустим позднее при
   измеренном требовании к более сильной boundary.
 

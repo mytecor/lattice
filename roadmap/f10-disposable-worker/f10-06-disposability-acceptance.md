@@ -1,7 +1,7 @@
 # Провести acceptance-тест уничтожения и восстановления worker
 
 Фича: [F10 — disposable worker](./README.md). Зависит от
-[f10-03](./f10-03-worker-lifecycle.md), [f10-04](./f10-04-pi-rpc-runner.md) и
+[f10-04](./f10-04-pi-rpc-runner.md) и
 [f10-05](./f10-05-worker-credentials.md).
 
 ## Контекст

@@ -1,8 +1,7 @@
 # Запускать общий Pi runtime внутри контейнера
 
 Фича: [F10 — disposable worker](./README.md). Зависит от
-[f8-05](../f8-pi-runtime/f8-05-pi-rpc-contract.md) и
-[f10-03](./f10-03-worker-lifecycle.md).
+[f8-05](../f8-pi-runtime/f8-05-pi-rpc-contract.md).
 
 ## Контекст
 

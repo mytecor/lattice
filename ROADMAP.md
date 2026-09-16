@@ -102,7 +102,7 @@
 > [r1s](https://github.com/mytecor/r1s) (`r1sd`-allocator над `containerd`); временный `LocalExecutor`
 > из плана убран.
 
-- **Статус:** 🟡 начата — [f10-00](./roadmap/f10-disposable-worker/f10-00-package-r1s.md) (упаковка
+- **Статус:** 🟡 начата — [f10-01](./roadmap/f10-disposable-worker/f10-01-package-r1s.md) (упаковка
   execution backend r1s/r1sd) закрыта 2026-09-16; остальные задачи f10-* впереди.
 - **Готово, когда:** полный цикл завершается результатом после уничтожения worker.
 - **Зависит от:** [F8](#f8-интерактивный-pi), [F9](#f9-caches-и-artifacts)
@@ -167,8 +167,9 @@
 Следующий фокус (непосредственно после выполненных вертикалей):
 
 - [F10](#f10-disposable-worker) — упаковка execution backend (r1s `r1sd`/containerd) закрыта в
-  [f10-00](./roadmap/f10-disposable-worker/f10-00-package-r1s.md); общий immutable Pi image — в
-  f10-02..f10-04; worker lifecycle и acceptance — впереди.
+  [f10-01](./roadmap/f10-disposable-worker/f10-01-package-r1s.md); впереди общий immutable Pi
+  image и контейнерный Pi runtime (f10-04), worker credentials (f10-05) и acceptance
+  (f10-06). Что именно Lattice фиксирует поверх r1s (task spec, lifecycle) решается по ходу.
 - [F11](#f11-controller) — ждёт стабилизации task specification и ручного worker
   lifecycle в F10.
 

@@ -9,7 +9,7 @@
 Execution path F10 строится поверх r1s: `r1s`-клиент и `r1sd`-allocator должны появляться на ноде
 тем же декларативным способом, что и остальные пакеты Lattice, и воспроизводиться из flake lock
 state. Это подготовительная задача — она делает r1s доступным как flake-пакет, но не реализует
-executor/lifecycle (это f10-03).
+executor/lifecycle поверх r1s (это остаётся более поздней работой цикла F10).
 
 ## Что сделать
 
@@ -46,5 +46,5 @@ nix build .#packages.x86_64-linux.r1s
 в GitHub Actions; локально — на x86_64-linux билдере или ноде. `doCheck = true` прогоняет
 `go test ./...` r1s в sandbox.
 
-Использование r1s как execution backend (executor contract, lifecycle, запуск worker) — отдельная
-задача [f10-03](./f10-03-worker-lifecycle.md).
+Использование r1s как execution backend (executor contract, lifecycle, запуск worker), включая
+Lattice-специфичный контракт поверх r1s, — отдельная более поздняя работа цикла F10.

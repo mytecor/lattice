@@ -1,7 +1,6 @@
 # Выдавать worker минимальные временные credentials
 
-Фича: [F10 — disposable worker](./README.md). Зависит от f9-02 и
-f10-02.
+Фича: [F10 — disposable worker](./README.md). Зависит от f9-02.
 
 ## Контекст
 
