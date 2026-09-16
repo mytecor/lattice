@@ -55,6 +55,19 @@ func TestBalanceRuleCompileDefaults(t *testing.T) {
 	}
 }
 
+func TestBalanceRuleCompileP2C(t *testing.T) {
+	result := mustCompile(t, balancePipeline(
+		balanceRule("standard", func(r *BalanceRule) { r.Strategy = "p2c" }),
+	)...)
+	balance := entryRoute(t, result, "standard").Balance
+	if !balance.Enabled || balance.Strategy != "p2c" {
+		t.Fatalf("p2c balance policy mismatch: %#v", balance)
+	}
+	if balance.Window != 5*time.Minute || balance.ErrorBudget != 0.2 {
+		t.Fatalf("p2c must inherit the default window/error_budget: %#v", balance)
+	}
+}
+
 func TestBalanceRuleCompilePreservesWeights(t *testing.T) {
 	result := mustCompile(t, balancePipeline(
 		balanceRule("standard", func(r *BalanceRule) {

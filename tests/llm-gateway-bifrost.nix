@@ -79,6 +79,7 @@ assert service.serviceConfig.NoNewPrivileges;
 assert service.serviceConfig.ProtectSystem == "strict";
 pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ pkgs.jq ]; } ''
   grep -q '"catalog_refresh_interval":"10m"' ${config.lattice.llm-gateway.publicConfigFile}
+  grep -q '"stream_idle_timeout":"5m"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"log_level":"silent"' ${config.lattice.llm-gateway.publicConfigFile}
   # Metrics listener: loopback by default, distinct port from the API listener.
   grep -q '"metrics_host":"127.0.0.1"' ${config.lattice.llm-gateway.publicConfigFile}

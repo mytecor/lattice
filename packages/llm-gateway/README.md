@@ -46,6 +46,7 @@ credentials. Метрики считаются в счётчиках и гист
 - `llm_ttft_seconds{model}` — гистограмма времени до первого значимого события (winner).
 - `llm_input_tokens_total{model}` / `llm_output_tokens_total{model}` — накопленные токены usage.
 - `llm_attempts_total{provider,error_type}` — upstream попытки по терминальному классу ошибки.
+- `llm_stream_breaks_total{provider,error_type}` — обрывы winner-стрима после выбора (mid-stream). Обратная связь инкрементит и `llm_attempts_total` (тот же срез provider/error_type), так что провайдер деградирует так же, как при ошибках до выбора; отдельный счётчик отделяет mid-stream-обрывы от попыток планировщика.
 - `llm_requests_in_flight{provider}` — текущие in-flight ветви.
 - `llm_fallbacks_total{from_provider,to_provider,reason}` — явные fallback-переходы.
 - `llm_balance_selections_total{route,provider}` — выбор провайдера балансировкой.
@@ -81,10 +82,47 @@ curl -s localhost:9209/metrics
   `llm_attempt` (успех ретраен-попытки), `llm_retry`, `llm_fallback`, `hedge_launched`,
   `semaphore_denied`, `cooldown_put`. Уровень: retry/fallback-переходы и cooldown — `warn`,
   обычный успех — `info`, hedge/semaphore — `debug`.
+- **Mid-stream обрывы winner-стрима**: `llm_stream_break` (апстрим вернул ошибку после выбора
+  победителя) и `llm_stream_stalled` (стрим молчал дольше `stream_idle_timeout`). Оба — `warn`;
+  в полях — provider, error_type, status_code, а у stalled ещё и idle_ms. Оба ведут к записи
+  неудачи против провайдера (см. [Обрывы winner-стрима](#обрывы-winner-стрима)).
 
 По `request_id` в журнале и в Prometheus-графе можно восстановить путь запроса: какие
 `request_completed`/`llm_retry`/`llm_fallback`-строки принадлежат одному запросу и где
 произошёл переход в retry/fallback/race (см. [f12-02](../../roadmap/f12-observability/f12-02-gateway-structured-events.md)).
+
+## Обрывы winner-стрима
+
+Планировщик выбирает победителя стрима по первому значимому событию; всё, что случается
+после этого, вне досягаемости route graph (retry/fallback уже отработали или отменены
+выбором winner). Поэтому обрыв апстримом уже выбранного winner-стрима обрабатывается
+отдельно:
+
+- **Обратная связь о здоровье.** Ошибка обрыва (`llm_stream_break`) попадает в ту же машину
+  состояния, что и ошибки до выбора: cooldown по retryable-классам, health-скор
+  (окно/errorBudget балансировки), release lease по `release_on`, `llm_attempts_total` и
+  отдельный `llm_stream_breaks_total`. Провайдер, регулярно рвущий стримы, перестаёт
+  выигрывать выбор так же, как при ошибках соединения.
+- **Idle-таймаут** (`stream_idle_timeout`, по умолчанию `5m`): winner-стрим, не приславший
+  ни одного события (включая keep-alive) этот срок, отменяется; клиент получает
+  типизированный timeout-error, а неудача записывается против провайдера как `llm_stream_stalled`.
+  Таймер перезапускается каждым событием, поэтому легитимные паузы reasoning-моделей
+  остаются в пределах лимита; timeout ограничивает только полностью замолчавший stream.
+- **Структурированный SSE error payload.** Терминальная ошибка стрима отдаётся как
+  `event: error` с машинно-читаемым телом:
+
+  ```json
+  {"error": {"message": "upstream stream failed", "type": "5xx", "status_code": 502,
+    "retryable": true, "partial": true, "request_id": "…"}}
+  ```
+
+  `retryable` вычисляется по фильтрам переходов entry-route (retry/fallback; без явных
+  переходов — общему retryable-набору), `partial` всегда `true` (контент уже частично
+  отдан). Текст `message` стабилен и остаётся совместимым с текстовым матчингом клиентов.
+- **Ни `[DONE]`, ни ретрая после flush.** После `event: error` фрейм `data: [DONE]`
+  намеренно не отправляется — стрим не завершился успешно. Gateway не ретраит после выбора
+  winner: prelude уже отдан клиенту, повтор дублировал бы контент; повтор — ответственность
+  клиента (например, pi-retry).
 
 ## Routing
 
@@ -137,12 +175,19 @@ request(model=standard) → standard → timeout? → standard.retry → (attemp
   победитель всегда самый быстрый, какой бы порядок/вес ни задать — `rank` компиляционный, а
   `lease` лишь «клеит» к самому быстрому. `balance` поднимает выбранного провайдера в начало
   бэтча, поэтому равномерное распределение достигается при `race count = 1` (при `count > 1`
-  балансировка меняет лишь начало бэтча и работает как latency-hedge). Стратегии:
-  `round_robin` (курсор per-route по здоровым кандидатам), `adaptive` (weighted-random по
+  балансировка меняет лишь начало бэтча и работает как latency-hedge). Стратегии: `p2c`
+  (power of two choices: два случайных здоровых кандидата, выигрывает тот, у кого меньше
+  in-flight веток; сигнал — живые счётчики scheduler в тех же точках, что gauge
+  `llm_requests_in_flight`; для стримов ветка завершается выбором победителя, так что сигнал
+  покрывает фазу выбора/TTFT, а не всю длину стрима; при равном пуле — равновероятный выбор),
+  `round_robin` (курсор
+  per-route по здоровым кандидатам), `adaptive` (weighted-random по
   `score(p) = base(p) × health(p)`, где `health(p) ∈ [0,1]` — доля ошибок относительно
   `error_budget` плюс относительный фактор лёгкости EWMA TTFT), `weighted` (только статические
-  веса). `weights` по умолчанию берутся из `priority` провайдера. Провайдер на/за `error_budget`
-  исключается из выбора `adaptive`/`round_robin`; при всех нездоровых кандидатах выбор fail-open
+  веса). По умолчанию все веса равны (1): `priority` провайдера не участвует в runtime-выборе
+  (f7-13: приоритетные весы концентрируют трафик), он задаёт только compile-time порядок пула.
+  Провайдер на/за `error_budget` исключается из выбора `p2c`/`adaptive`/`round_robin`; при всех
+  нездоровых кандидатах выбор fail-open
   к базовому порядку. `balance` и `lease` на одном route взаимоисключаемы (fail fast); `affinity`
   совместим (балансировка только для unpinned запросов). Health state — in-memory, per-provider;
   питается в тех же точках scheduler, что cooldown и lease; не переживает перезагрузку;

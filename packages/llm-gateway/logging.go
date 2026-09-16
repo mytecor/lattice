@@ -61,6 +61,15 @@ func withRequestID(ctx context.Context, requestID string) context.Context {
 	return context.WithValue(ctx, requestIDKey, requestID)
 }
 
+// requestIDFrom returns the request id pinned into the context by the
+// inference handler (empty when absent, for example in direct unit tests).
+func requestIDFrom(ctx context.Context) string {
+	if requestID, ok := ctx.Value(requestIDKey).(string); ok {
+		return requestID
+	}
+	return ""
+}
+
 func withRouteAttempt(ctx context.Context, stage, attempt int) context.Context {
 	ctx = context.WithValue(ctx, routeStageKey, stage)
 	return context.WithValue(ctx, routeAttemptKey, attempt)

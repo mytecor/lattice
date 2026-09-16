@@ -32,6 +32,7 @@ type ScoreStore struct {
 	pick01    func() float64 // injected for deterministic weighted-random tests
 	providers map[string]*providerScore
 	rrCursor  map[string]int // per-route round-robin cursor
+	inFlight  map[string]int // live in-flight branch count per provider (p2c signal)
 }
 
 type providerScore struct {
@@ -55,7 +56,45 @@ func newScoreStore(now func() time.Time) *ScoreStore {
 		pick01:    rand.Float64,
 		providers: make(map[string]*providerScore),
 		rrCursor:  make(map[string]int),
+		inFlight:  make(map[string]int),
 	}
+}
+
+// IncrInFlight and DecrInFlight maintain the live in-flight branch count per
+// provider — the load signal behind the p2c strategy. They are called by the
+// scheduler at exactly the same points as the llm_requests_in_flight gauge
+// (branch launch and branch completion), so the balance signal and the
+// exported gauge always describe the same concurrency state. Scope: a
+// streamed branch completes at winner selection (the first meaningful event),
+// so the signal — and the gauge — cover the probe phase of a stream, not the
+// whole relayed response. A decrement never drops below zero, so a stale
+// increment cannot poison the signal.
+func (s *ScoreStore) IncrInFlight(provider string) {
+	if provider == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.inFlight[provider]++
+}
+
+func (s *ScoreStore) DecrInFlight(provider string) {
+	if provider == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if value := s.inFlight[provider]; value > 0 {
+		s.inFlight[provider] = value - 1
+	}
+}
+
+// inFlightOf reports the current in-flight branch count of one provider.
+// Providers without any observed branch carry zero.
+func (s *ScoreStore) inFlightOf(provider string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.inFlight[provider]
 }
 
 // balanceHealthErrors are the failure classes that count against a provider's
@@ -181,20 +220,20 @@ func (s *ScoreStore) Healthy(provider string, window time.Duration, errorBudget 
 }
 
 // baseWeight resolves the static per-provider weight of a target for the
-// balance policy: an explicit policy weight wins over the provider priority.
-func baseWeight(target Target, policy BalanceConfig, base func(Target) int) int {
-	w := base(target)
-	if w < 1 {
-		w = 1
-	}
+// balance policy: an explicit policy weight wins; without one every provider
+// carries the same weight (1). Provider priority is deliberately not a base
+// for runtime weights — f7-13 showed priority-weighted selection concentrates
+// on the highest-priority provider; priority only shapes compile-time pool
+// order.
+func baseWeight(target Target, policy BalanceConfig) int {
 	if policyW, ok := policy.Weights[target.Provider]; ok && policyW > 0 {
-		w = policyW
+		return policyW
 	}
-	return w
+	return 1
 }
 
 // healthyIndexes returns the pool indexes whose provider is inside the health
-// floor for the balance policy. round_robin and adaptive both skip providers
+// floor for the balance policy. p2c, round_robin and adaptive skip providers
 // whose windowed error rate meets or exceeds the error budget; weighted is
 // static and keeps every provider so manual tuning stays authoritative.
 func (s *ScoreStore) healthyIndexes(targets []Target, policy BalanceConfig) []int {
@@ -221,12 +260,16 @@ func (s *ScoreStore) healthyIndexes(targets []Target, policy BalanceConfig) []in
 //
 // Strategies:
 //
+//	p2c          — power of two choices: two random healthy candidates are
+//	  drawn and the one with fewer in-flight branches wins. Spreads load under
+//	  concurrency without latency feedback (f7-13 showed latency-weighted
+//	  selection re-concentrates on the fastest provider).
 //	round_robin — a per-route cursor rotates over the healthy candidates,
 //	  excluding the unhealthy via the health floor. Maximum distribution.
 //	adaptive    — weighted-random by score(p) = base(p) × health(p): spreads
 //	  the load and shifts it toward who is currently coping best.
 //	weighted    — only the static weights, no health history.
-func (s *ScoreStore) Select(route string, targets []Target, policy BalanceConfig, base func(Target) int) []Target {
+func (s *ScoreStore) Select(route string, targets []Target, policy BalanceConfig) []Target {
 	if len(targets) < 2 {
 		return targets
 	}
@@ -237,12 +280,14 @@ func (s *ScoreStore) Select(route string, targets []Target, policy BalanceConfig
 		return targets
 	}
 	switch policy.Strategy {
+	case "p2c":
+		return s.selectP2C(targets, policy, healthy)
 	case "round_robin":
 		return s.selectRoundRobin(route, targets, healthy)
 	case "adaptive", "weighted":
 		weights := make([]float64, len(healthy))
 		for i, idx := range healthy {
-			w := float64(baseWeight(targets[idx], policy, base))
+			w := float64(baseWeight(targets[idx], policy))
 			if policy.Strategy == "adaptive" {
 				w *= s.health(targets[idx].Provider, policy.Window, policy.ErrorBudget)
 			}
@@ -253,6 +298,40 @@ func (s *ScoreStore) Select(route string, targets []Target, policy BalanceConfig
 	default:
 		return targets
 	}
+}
+
+// selectP2C implements the power-of-two-choices strategy: it draws two
+// distinct random candidates from the healthy set and promotes the one with
+// fewer in-flight branches. Under concurrency this equalizes the queues
+// without any latency feedback, which f7-13 identified as the missing
+// distribution signal. Ties in in-flight keep the first draw, so the result
+// is deterministic under the injected pick01 while the draws themselves stay
+// random: an idle pool distributes uniformly. The first draw is weighted by
+// the static base weight (equal by default); the second is uniform over the
+// remaining candidates.
+func (s *ScoreStore) selectP2C(targets []Target, policy BalanceConfig, healthy []int) []Target {
+	if len(healthy) == 1 {
+		return promoteFront(targets, targets[healthy[0]].Provider)
+	}
+	// The first draw is weighted by the static base weight (equal 1 by
+	// default, so the idle-pool draw is uniform; explicit weights bias it).
+	weights := make([]float64, len(healthy))
+	for i, idx := range healthy {
+		weights[i] = float64(baseWeight(targets[idx], policy))
+	}
+	first := s.pickWeighted(healthy, weights)
+	if first < 0 {
+		first = 0
+	}
+	second := int(s.pick01() * float64(len(healthy)-1))
+	if second >= first {
+		second++
+	}
+	a, b := healthy[first], healthy[second]
+	if s.inFlightOf(targets[a].Provider) <= s.inFlightOf(targets[b].Provider) {
+		return promoteFront(targets, targets[a].Provider)
+	}
+	return promoteFront(targets, targets[b].Provider)
 }
 
 // selectRoundRobin rotates a per-route cursor over the healthy candidates in

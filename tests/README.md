@@ -54,6 +54,8 @@ assert builtins.elem 80 config.networking.firewall.allowedTCPPorts;
 Examples: [`app-services.nix`](./app-services.nix),
 [`llm-gateway-bifrost.nix`](./llm-gateway-bifrost.nix) (jq over the generated
 public config, `caddy adapt --validate`, generated JSON),
+[`llm-gateway-sugar.nix`](./llm-gateway-sugar.nix) (f7-14: generated pipeline
+JSON plus module assertion failures caught as data in `config.assertions`),
 [`pi-acp-daemon.nix`](./pi-acp-daemon.nix),
 [`comin-source-sync.nix`](./comin-source-sync.nix).
 

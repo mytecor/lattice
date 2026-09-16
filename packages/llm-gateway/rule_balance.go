@@ -14,13 +14,17 @@ import (
 // the race action. It owns no execution and never replaces race: it only
 // controls the choice and the order of the race batch.
 //
-// The three strategies differ only in the runtime selection policy:
+// The strategies differ only in the runtime selection policy:
 //
-//	round_robin — a per-route cursor rotates over the healthy candidates
-//	  (maximum distribution; unhealthy providers are excluded by the floor);
-//	adaptive    — weighted-random by static weight × health(p); spreads load
-//	  and shifts it toward whoever is currently coping best;
-//	weighted    — only the static weights, no health history.
+//		p2c          — power of two choices: two random healthy candidates are
+//	  drawn and the one with fewer in-flight branches wins. Spreads load under
+//	  concurrency without latency feedback (f7-13 showed latency-weighted
+//	  selection re-concentrates on the fastest provider);
+//		round_robin — a per-route cursor rotates over the healthy candidates
+//		  (maximum distribution; unhealthy providers are excluded by the floor);
+//		adaptive    — weighted-random by static weight × health(p); spreads load
+//		  and shifts it toward whoever is currently coping best;
+//		weighted    — only the static weights, no health history.
 //
 // balance and lease are mutually exclusive on one route: both change the
 // runtime choice/order, and a lease would silently override the balancing
@@ -50,9 +54,9 @@ func (r *BalanceRule) apply(ctx *stageContext) error {
 		return ctx.errf("balance and lease are mutually exclusive on one route")
 	}
 	switch r.Strategy {
-	case "round_robin", "adaptive", "weighted":
+	case "p2c", "round_robin", "adaptive", "weighted":
 	default:
-		return ctx.errf("unsupported balance strategy %q (only \"round_robin\", \"adaptive\" or \"weighted\")", r.Strategy)
+		return ctx.errf("unsupported balance strategy %q (only \"p2c\", \"round_robin\", \"adaptive\" or \"weighted\")", r.Strategy)
 	}
 	weights := make(map[string]int, len(r.Weights))
 	for provider, weight := range r.Weights {

@@ -16,6 +16,12 @@ import (
 
 const defaultCatalogRefresh = 10 * time.Minute
 
+// defaultStreamIdleTimeout bounds a silently stalled winner stream: any event
+// (including provider keep-alives) re-arms the timer. The default is
+// deliberately conservative because reasoning models may pause mid-stream
+// without emitting events for a long time.
+const defaultStreamIdleTimeout = 5 * time.Minute
+
 type Duration struct {
 	time.Duration
 }
@@ -45,6 +51,7 @@ type Config struct {
 	LogLevel               string       `json:"log_level"`
 	ClientAPIKey           string       `json:"client_api_key"`
 	CatalogRefreshInterval Duration     `json:"catalog_refresh_interval"`
+	StreamIdleTimeout      Duration     `json:"stream_idle_timeout"`
 	AffinityFile           string       `json:"affinity_file,omitempty"`
 	Providers              []Provider   `json:"providers"`
 	RoutingRules           RoutingRules `json:"routing_rules"`
@@ -196,12 +203,13 @@ type LeaseConfig struct {
 // behind it is per-provider and global, so health is shared by every route.
 // The strategies:
 //
+//	p2c          — power of two choices by live in-flight branch count;
 //	round_robin — a per-route cursor rotates over the healthy candidates;
 //	adaptive    — weighted-random by static weight × health(p) ∈ [0,1];
 //	weighted    — only the static weights, no health history.
 type BalanceConfig struct {
 	Enabled     bool
-	Strategy    string // "round_robin" | "adaptive" | "weighted"
+	Strategy    string // "p2c" | "round_robin" | "adaptive" | "weighted"
 	Weights     map[string]int
 	Window      time.Duration
 	ErrorBudget float64
@@ -296,6 +304,12 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 	}
 	if cfg.CatalogRefreshInterval.Duration < time.Second {
 		return nil, fmt.Errorf("catalog_refresh_interval must be at least 1s")
+	}
+	if cfg.StreamIdleTimeout.Duration == 0 {
+		cfg.StreamIdleTimeout.Duration = defaultStreamIdleTimeout
+	}
+	if cfg.StreamIdleTimeout.Duration < time.Second {
+		return nil, fmt.Errorf("stream_idle_timeout must be at least 1s")
 	}
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = "silent"

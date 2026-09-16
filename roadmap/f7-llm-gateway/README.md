@@ -7,7 +7,9 @@ Go proxy поверх Bifrost Go API; Lattice владеет HTTP/API contract, 
 ([f7-08](f7-08-remove-token-proxy.md)); его ограничения и отклонения Go LIP зафиксированы
 в исторических f7-01, f7-05 и f7-06.
 
-**Статус:** выполнена 2026-09-14 (включая f7-09..f7-13; all follow-ups закрыты).
+**Статус:** выполнена 2026-09-14 (включая f7-09..f7-13); follow-up
+[f7-14](./f7-14-declarative-models-p2c.md) (декларативные модели + p2c-балансировка без
+ручных весов, hedge opt-in) реализован 2026-09-16.
 
 Зависит от [F1](../f1-one-node/README.md) и [F2](../f2-secrets-identity/README.md). Соответствует
 [вехе 7](../../ROADMAP.md#f7-llm-gateway).

@@ -58,6 +58,11 @@ in
     gatewayProfile = "${profiles}/llm-gateway/config.nix";
   };
 
+  llm-gateway-sugar = import ./llm-gateway-sugar.nix {
+    inherit nixpkgs pkgs;
+    gatewayModule = self.nixosModules.llm-gateway;
+  };
+
   pi-tool-profile = import ./pi-tool-profile.nix {
     inherit nixpkgs pkgs;
     piModule = self.nixosModules.pi;

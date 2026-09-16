@@ -2027,9 +2027,9 @@ func TestParallelRaceWholePoolHungCarrierDoesNotBlock(t *testing.T) {
 		raceRule("smart", 0),
 	}
 	compiled, catalog := compiledWithCatalogs(t, rules, map[string][]string{
-		"a": {"unrelated"},                    // catalog-rejected, skipped locally
-		"b": {"zai-org/GLM-5.3-Flash"},        // healthy carrier, fast
-		"c": {"zai-org/GLM-5.3-Flash", "x"},   // hung carrier
+		"a": {"unrelated"},                  // catalog-rejected, skipped locally
+		"b": {"zai-org/GLM-5.3-Flash"},      // healthy carrier, fast
+		"c": {"zai-org/GLM-5.3-Flash", "x"}, // hung carrier
 	})
 	var calls atomic.Int32
 	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {

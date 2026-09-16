@@ -144,6 +144,70 @@ func (r *Runner) observeBranchCancelled(res *branchResult) {
 	r.metrics.ObserveAttempt(res.provider, "cancelled")
 }
 
+// RecordStreamFailure feeds a mid-stream (post-selection) failure of the
+// winning stream back into the same health machinery that pre-selection branch
+// failures use. The scheduler has already returned by the time the winner's
+// stream breaks, so without this call the provider would keep a clean health
+// record no matter how often it breaks streams mid-flight. Cancelled streams
+// are health-neutral, exactly like cancelled branches. The lease (if enabled)
+// is released per the entry route's ReleaseOn policy, and both the branch
+// attempt counter and the dedicated stream-break counter are observed.
+func (r *Runner) RecordStreamFailure(ctx context.Context, logical, provider string, callErr *CallError) {
+	if callErr == nil || callErr.Class == ErrorCancelled || provider == "" {
+		return
+	}
+	r.record(ctx, provider, callErr)
+	if entry, ok := r.config.models[logical]; ok {
+		r.observeLeaseFailure(logical, entry, provider, callErr)
+	}
+	r.scores.Observe(provider, callErr, 0)
+	r.metrics.ObserveAttempt(provider, string(callErr.Class))
+	r.metrics.ObserveStreamBreak(provider, string(callErr.Class))
+	logEvent(ctx, r.logger, slog.LevelWarn, "llm_stream_break",
+		"provider", provider,
+		"error_type", string(callErr.Class),
+		"status_code", callErrorStatus(callErr),
+	)
+}
+
+// streamRetryable reports whether a fresh client request carrying the same
+// failure would activate an explicit transition of the logical model's entry
+// route (retry or fallback, gated by their own error filters). With no
+// explicit transition configured it falls back to the shared retryable class
+// set. The gateway itself never retries after the winner's first meaningful
+// event (the SSE prelude is already flushed); this flag is emitted in the SSE
+// error payload so a retry-capable client can decide on typed data instead of
+// matching the message text.
+func (r *Runner) streamRetryable(logical string, callErr *CallError) bool {
+	if callErr == nil {
+		return false
+	}
+	entry, ok := r.config.models[logical]
+	if !ok {
+		return allRetryableClasses()[callErr.Class]
+	}
+	hasTransition := false
+	if entry.Retry.Attempts > 0 && entry.retryTarget != nil {
+		if entry.retryTarget.applicable(callErr, 0) {
+			return true
+		}
+		hasTransition = true
+	}
+	if entry.fallbackTarget != nil {
+		if entry.fallbackTarget.applicable(callErr, 0) {
+			return true
+		}
+		hasTransition = true
+	}
+	if hasTransition {
+		// The entry route owns explicit transitions: their error filters are
+		// authoritative, and an excluded class must not be advertised as
+		// retryable.
+		return false
+	}
+	return allRetryableClasses()[callErr.Class]
+}
+
 // Close shuts down the runner's persistent state: the affinity store flushes
 // any recent mappings so a graceful restart does not lose them.
 func (r *Runner) Close() error {
@@ -369,8 +433,10 @@ func (r *Runner) applyLease(logical string, route *compiledRoute, pool []Target)
 // applyBalance performs the runtime provider selection of the balance action:
 // it promotes the balanced choice to the front of the pool for this request.
 // Balance and lease are mutually exclusive per route (checked at compile
-// stage), so it never runs on a route that also has a lease. The base weight
-// of a target is its provider priority.
+// stage), so it never runs on a route that also has a lease. Static weights
+// default to equal (1): provider priority does not feed the runtime choice —
+// f7-13 showed priority-weighted selection concentrates on one provider —
+// it only shapes the compile-time pool order.
 func (r *Runner) applyBalance(route string, routeConfig *compiledRoute, pool []Target) []Target {
 	// The health snapshot is recorded whether or not the pool is large enough
 	// for the balance action to reorder it: the pool state is observable even
@@ -381,9 +447,7 @@ func (r *Runner) applyBalance(route string, routeConfig *compiledRoute, pool []T
 	if !routeConfig.Balance.Enabled || len(pool) < 2 {
 		return pool
 	}
-	selected := r.scores.Select(route, pool, routeConfig.Balance, func(target Target) int {
-		return r.config.providers[target.Provider].Priority
-	})
+	selected := r.scores.Select(route, pool, routeConfig.Balance)
 	// The balanced choice is the front of the returned order; record it so the
 	// cursor movement is observable.
 	if len(selected) > 0 {

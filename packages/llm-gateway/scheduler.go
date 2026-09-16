@@ -334,6 +334,11 @@ func (sc *schedule) launch(g int) bool {
 		branchCtx, cancel := context.WithCancel(sc.ctx)
 		sc.cancels[id] = cancel
 		sc.r.metrics.IncrInFlight(target.Provider)
+		// The score store keeps its own live in-flight count per provider: it is
+		// the load signal behind the p2c balance strategy, fed at the same
+		// launch/completion points as the exported gauge so both describe the
+		// same concurrency state.
+		sc.r.scores.IncrInFlight(target.Provider)
 		go sc.runBranch(branchCtx, id, cancel, target)
 	}
 	if allStarted {
@@ -411,8 +416,22 @@ func (sc *schedule) runBranch(ctx context.Context, id int, cancel context.Cancel
 	// so it is returned on every exit path — including when a racing sibling
 	// wins and the main loop returns before draining this branch's result from
 	// sc.results (previously the decrement lived only in the main loop, so a
-	// cancelled loser left +1 in the gauge forever).
-	defer sc.r.metrics.DecrInFlight(target.Provider)
+	// cancelled loser left +1 in the gauge forever). The score store mirrors
+	// the decrement: its per-provider in-flight count is the p2c load signal.
+	// Scope: a streamed branch completes at winner selection (the first
+	// meaningful event), so the signal — and the gauge — cover the probe phase
+	// of a stream, not the whole relayed response.
+	// Every branch that reached runBranch was counted by IncrInFlight at launch
+	// (scheduler.launch). The gauge slot is released here, in the branch itself,
+	// so it is returned on every exit path — including when a racing sibling
+	// wins and the main loop returns before draining this branch's result from
+	// sc.results (previously the decrement lived only in the main loop, so a
+	// cancelled loser left +1 in the gauge forever). The score store mirrors
+	// the decrement: its per-provider in-flight count is the p2c load signal.
+	defer func() {
+		sc.r.metrics.DecrInFlight(target.Provider)
+		sc.r.scores.DecrInFlight(target.Provider)
+	}()
 
 	started := sc.r.now()
 	var res *branchResult

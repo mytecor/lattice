@@ -288,6 +288,33 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	// summed totals plus whether any usage was reported at all.
 	var inTokens, outTokens, cachedTokens int64
 	var hasUsage bool
+	requestID := requestIDFrom(request.Context())
+	// The idle watchdog bounds a silently stalled winner stream: the route
+	// deadline only guards the selection phase, so without it a winner that
+	// stops emitting events hangs until the client gives up. Any event (not
+	// only meaningful content — provider keep-alives count) re-arms the timer;
+	// zero disables the watchdog. The timeout is deliberately generous so
+	// legitimate reasoning pauses survive.
+	idleTimeout := s.config.raw.StreamIdleTimeout.Duration
+	var idleTimer *time.Timer
+	var idleC <-chan time.Time
+	if idleTimeout > 0 {
+		idleTimer = time.NewTimer(idleTimeout)
+		defer idleTimer.Stop()
+		idleC = idleTimer.C
+	}
+	rearmIdle := func() {
+		if idleTimer == nil {
+			return
+		}
+		if !idleTimer.Stop() {
+			select {
+			case <-idleTimer.C:
+			default:
+			}
+		}
+		idleTimer.Reset(idleTimeout)
+	}
 	observe := func(data []byte) {
 		if summary, ok := extractUsageFull(data); ok {
 			inTokens += summary.Input
@@ -314,6 +341,19 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 				"duration_ms", time.Since(started).Milliseconds(),
 			)
 			s.observeRequest(logical, selected.Provider, "cancelled", time.Since(started))
+			return
+		case <-idleC:
+			stall := &CallError{Class: ErrorTimeout, Status: 504, Cause: fmt.Errorf("no stream events for %s", idleTimeout)}
+			logEvent(request.Context(), s.logger, slog.LevelWarn, "llm_stream_stalled",
+				"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
+				"provider", selected.Provider,
+				"idle_ms", idleTimeout.Milliseconds(),
+				"attempts", selected.Attempts,
+				"duration_ms", time.Since(started).Milliseconds(),
+			)
+			s.runner.RecordStreamFailure(request.Context(), logical, selected.Provider, stall)
+			s.observeRequest(logical, selected.Provider, "failed", time.Since(started))
+			writeStreamError(writer, flusher, stall, requestID, s.runner.streamRetryable(logical, stall))
 			return
 		case event, open := <-selected.Remaining:
 			if !open {
@@ -347,13 +387,20 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					"status_code", callErrorStatus(event.Err), "error_type", string(event.Err.Class),
 					"attempts", selected.Attempts,
 					"duration_ms", time.Since(started).Milliseconds(),
+					"input_tokens", inTokens,
+					"output_tokens", outTokens,
+					"cached_tokens", cachedTokens,
+					"has_usage", hasUsage,
 				)
 				s.observeRequest(logical, selected.Provider, "failed", time.Since(started))
-				payload, _ := json.Marshal(map[string]any{"error": map[string]any{"message": "upstream stream failed", "type": string(event.Err.Class)}})
-				_, _ = fmt.Fprintf(writer, "event: error\ndata: %s\n\n", payload)
-				flusher.Flush()
+				// Feed the failure back into cooldown/health/lease/metrics: the
+				// scheduler returned at selection, so without this the provider
+				// would stay "healthy" no matter how often it breaks streams.
+				s.runner.RecordStreamFailure(request.Context(), logical, selected.Provider, event.Err)
+				writeStreamError(writer, flusher, event.Err, requestID, s.runner.streamRetryable(logical, event.Err))
 				return
 			}
+			rearmIdle()
 			if !writeStreamEvent(writer, flusher, logical, executeRequest.Kind, event) {
 				return
 			}
@@ -441,6 +488,45 @@ func writeAPIError(writer http.ResponseWriter, status int, kind string) {
 	writeJSON(writer, status, map[string]any{
 		"error": map[string]any{"message": http.StatusText(status), "type": kind},
 	})
+}
+
+// writeStreamError emits the terminal SSE error event of a relayed winner
+// stream. Headers and the buffered prelude are already flushed at this point,
+// so the SSE body is the only channel left: the payload is machine-readable
+// (status_code/retryable/partial/request_id) while the message text stays the
+// stable "upstream stream failed" string that text-matching clients rely on.
+// Deliberately no trailing "data: [DONE]" follows: the stream did not
+// complete, and a terminating marker would let clients treat the turn as
+// successfully finished.
+func writeStreamError(writer http.ResponseWriter, flusher http.Flusher, callErr *CallError, requestID string, retryable bool) {
+	payload, _ := json.Marshal(map[string]any{
+		"error": streamErrorPayload(callErr, requestID, retryable),
+	})
+	_, _ = fmt.Fprintf(writer, "event: error\ndata: %s\n\n", payload)
+	flusher.Flush()
+}
+
+// streamErrorPayload builds the machine-readable error body of the SSE
+// "event: error" frame. partial is always true: the winner was selected on a
+// meaningful event, so content has already been relayed to the client before
+// the failure arrived — an in-gateway retry could only duplicate it, which is
+// why retrying is left to the client.
+func streamErrorPayload(callErr *CallError, requestID string, retryable bool) map[string]any {
+	type_ := "upstream_error"
+	if callErr != nil {
+		type_ = string(callErr.Class)
+	}
+	payload := map[string]any{
+		"message":     "upstream stream failed",
+		"type":        type_,
+		"status_code": callErrorStatus(callErr),
+		"retryable":   retryable,
+		"partial":     true,
+	}
+	if requestID != "" {
+		payload["request_id"] = requestID
+	}
+	return payload
 }
 
 func writeJSON(writer http.ResponseWriter, status int, payload any) {

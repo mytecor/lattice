@@ -41,9 +41,15 @@ type Metrics struct {
 	// fallbackTotal counts explicit fallback transitions. The same transition
 	// may fire multiple times per request; the counter reflects that.
 	fallbackTotal *counterVec
+	// streamBreaks counts mid-stream (post-selection) winner stream failures
+	// by provider and error class. These failures escape the scheduler (the
+	// route graph already returned a winner); the stream-failure feedback
+	// increments llm_attempts_total too, and this dedicated slice keeps
+	// mid-stream failures observable apart from branch-scoped attempts.
+	streamBreaks *counterVec
 	// balanceSelections counts the provider chosen by the balance action per
-	// route, so the round_robin/adaptive cursor movement is observable without
-	// reading scheduler internals.
+	// route, so the p2c / round_robin / adaptive selection movement is
+	// observable without reading scheduler internals.
 	balanceSelections *counterVec
 	// inputTokens / outputTokens accumulate usage from responses and streams,
 	// keyed by model (zero when a provider omits usage).
@@ -82,6 +88,7 @@ func newMetrics() *Metrics {
 	return &Metrics{
 		requestsTotal:     newCounterVec([]string{"route", "model", "provider", "status"}),
 		attemptTotal:      newCounterVec([]string{"provider", "error_type"}),
+		streamBreaks:      newCounterVec([]string{"provider", "error_type"}),
 		fallbackTotal:     newCounterVec([]string{"from_provider", "to_provider", "reason"}),
 		balanceSelections: newCounterVec([]string{"route", "provider"}),
 		inputTokens:       newCounterVec([]string{"model"}),
@@ -151,6 +158,14 @@ func (m *Metrics) DecrInFlight(provider string) {
 	m.requestsInFlight.dec(provider)
 }
 
+// ObserveStreamBreak records one mid-stream (post-selection) winner stream
+// failure. errorType is the terminal ErrorClass string.
+func (m *Metrics) ObserveStreamBreak(provider, errorType string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.streamBreaks.inc(provider, errorType)
+}
+
 // ObserveFallback records an explicit fallback transition.
 func (m *Metrics) ObserveFallback(fromProvider, toProvider, reason string) {
 	m.mu.Lock()
@@ -196,6 +211,7 @@ func (m *Metrics) WriteExposition(writer io.Writer) error {
 
 	m.requestsTotal.write(buffered, "llm_requests_total", "Completed client requests by route, model, winning provider and status.")
 	m.attemptTotal.write(buffered, "llm_attempts_total", "Upstream branch attempts by provider and terminal error type.")
+	m.streamBreaks.write(buffered, "llm_stream_breaks_total", "Mid-stream (post-selection) winner stream failures by provider and error type.")
 	m.fallbackTotal.write(buffered, "llm_fallbacks_total", "Explicit fallback transitions by source and destination provider.")
 	m.balanceSelections.write(buffered, "llm_balance_selections_total", "Provider chosen by the balance action per route.")
 	m.inputTokens.write(buffered, "llm_input_tokens_total", "Accumulated input tokens by model.")
