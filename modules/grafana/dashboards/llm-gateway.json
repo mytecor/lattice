@@ -96,7 +96,7 @@
             "uid": "loki"
           },
           "editorMode": "builder",
-          "expr": "{service=\"llm-gateway\"} | json | request_id=~\"${request_id}\"",
+          "expr": "{service=\"llm-gateway\"} | json | request_id=\"${request_id}\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -512,8 +512,7 @@
           "sort": "desc"
         }
       },
-      "span": 12,
-      "type": "timeseries"
+      "span": 12
     },
     {
       "collapsed": false,

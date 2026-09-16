@@ -115,6 +115,13 @@ assert lib.hasInfix "histogram_quantile(0.99," (joinExprs llm);
 # The LLM Gateway logs panel carries a data link into the investigation
 # dashboard keyed by request_id (${__value.raw}).
 assert lib.hasInfix "loki-investigation?var-request_id=\${__value.raw}" (builtins.toJSON llm);
+# The request_id template variable must filter by exact equality, never a
+# regex `=~` against the empty default (an empty regex would match every
+# request and the investigation panel would show the whole stream).
+assert lib.hasInfix "request_id=\"\${request_id}\"" (joinExprs llm);
+assert lib.hasInfix "request_id=\"\${request_id}\"" (joinExprs lokiDb);
+assert !lib.hasInfix "request_id=~\"\${request_id}\"" (joinExprs llm);
+assert !lib.hasInfix "request_id=~\"\${request_id}\"" (joinExprs lokiDb);
 
 pkgs.runCommand "grafana-dashboards-contract" { } ''
   echo "f12-04 grafana dashboards contract holds:

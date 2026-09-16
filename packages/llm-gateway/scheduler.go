@@ -406,6 +406,14 @@ func (sc *schedule) cancelAll() {
 // runBranch performs one upstream call and delivers exactly one terminal
 // result. The send never blocks the caller past cancellation.
 func (sc *schedule) runBranch(ctx context.Context, id int, cancel context.CancelFunc, target Target) {
+	// Every branch that reached runBranch was counted by IncrInFlight at launch
+	// (scheduler.launch). The gauge slot is released here, in the branch itself,
+	// so it is returned on every exit path — including when a racing sibling
+	// wins and the main loop returns before draining this branch's result from
+	// sc.results (previously the decrement lived only in the main loop, so a
+	// cancelled loser left +1 in the gauge forever).
+	defer sc.r.metrics.DecrInFlight(target.Provider)
+
 	started := sc.r.now()
 	var res *branchResult
 	if sc.stream {

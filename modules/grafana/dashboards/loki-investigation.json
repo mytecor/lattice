@@ -96,7 +96,7 @@
             "uid": "loki"
           },
           "editorMode": "code",
-          "expr": "sum by (event) (count_over_time({service=\"llm-gateway\"} | json | request_id=~\"${request_id}\" [$__interval]))",
+          "expr": "sum by (event) (count_over_time({service=\"llm-gateway\"} | json | request_id=\"${request_id}\" [$__interval]))",
           "legendFormat": "{{event}}",
           "range": true,
           "refId": "A"
@@ -185,7 +185,7 @@
             "uid": "loki"
           },
           "editorMode": "builder",
-          "expr": "{service=\"llm-gateway\"} | json | request_id=~\"${request_id}\"",
+          "expr": "{service=\"llm-gateway\"} | json | request_id=\"${request_id}\"",
           "queryType": "range",
           "refId": "A"
         }

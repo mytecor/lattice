@@ -125,27 +125,23 @@ func (r *Runner) Metrics() *Metrics {
 }
 
 // observeBranch records the branch attempt counter (the empty error_type labels
-// a success) and releases the in-flight slot. Cancelled losers are recorded
-// separately because they are neutral for health but still observable.
+// a success). The in-flight gauge slot is released by the branch's own defer in
+// runBranch (scheduler.go), so every launched branch returns it exactly once on
+// every exit path — including when a racing sibling wins and the main loop
+// returns before draining this branch's result.
 func (r *Runner) observeBranch(res *branchResult) {
 	errorType := ""
 	if res.err != nil {
 		errorType = string(res.err.Class)
 	}
 	r.metrics.ObserveAttempt(res.provider, errorType)
-	if !res.prefailed {
-		r.metrics.DecrInFlight(res.provider)
-	}
 }
 
 // observeBranchCancelled records a cancelled branch (client cancel, loser
-// cancel, route deadline) without updating health. It still releases the
-// in-flight slot.
+// cancel, route deadline) without updating health. The in-flight gauge slot is
+// released by the branch's own defer in runBranch, not here.
 func (r *Runner) observeBranchCancelled(res *branchResult) {
 	r.metrics.ObserveAttempt(res.provider, "cancelled")
-	if !res.prefailed {
-		r.metrics.DecrInFlight(res.provider)
-	}
 }
 
 // Close shuts down the runner's persistent state: the affinity store flushes

@@ -255,6 +255,51 @@ func TestBoundedRaceCancelsLosers(t *testing.T) {
 	}
 }
 
+// TestRaceReleasesInFlightGauge verifies that every launched branch returns
+// its in-flight slot even when a racing sibling wins and the main loop returns
+// before draining the loser's result. Regression for the slow monotonic growth
+// of llm_requests_in_flight: the decrement used to live only in the main loop,
+// so a cancelled loser (winner already returned) left +1 in the gauge forever.
+func TestRaceReleasesInFlightGauge(t *testing.T) {
+	compiled := raceOnlyConfig(t)
+	started := make(chan string, 2)
+	releaseWinner := make(chan struct{})
+	loserDone := make(chan struct{})
+	runner := newRunner(compiled, newCatalog(compiled), &fakeExecutor{do: func(ctx context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		started <- target.Provider
+		if target.Provider == "a" {
+			<-releaseWinner
+			return successBody("a"), nil
+		}
+		<-ctx.Done()
+		close(loserDone)
+		return nil, &CallError{Class: ErrorCancelled, Status: 499, Cause: ctx.Err()}
+	}})
+	go func() {
+		_, _ = runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat})
+	}()
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("providers did not start")
+		}
+	}
+	close(releaseWinner)
+	select {
+	case <-loserDone:
+	case <-time.After(time.Second):
+		t.Fatal("loser never returned after being cancelled")
+	}
+	body := scrape(t, runner.Metrics())
+	if strings.Contains(body, `llm_requests_in_flight{provider="a"} 1`) {
+		t.Errorf("winner provider in-flight slot leaked:\n%s", body)
+	}
+	if strings.Contains(body, `llm_requests_in_flight{provider="b"} 1`) {
+		t.Errorf("loser provider in-flight slot leaked:\n%s", body)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // entry route selection
 // ---------------------------------------------------------------------------

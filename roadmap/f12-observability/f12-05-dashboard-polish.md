@@ -1,7 +1,8 @@
-# f12-05. Доработка Grafana-дашбордов (status, percentile, data links, runtime)
+# f12-05. Доработка Grafana-дашбордов и багфиксы наблюдаемости gateway
 
 Фича: [F12 — Observability](./README.md). Follow-up к [f12-04](./f12-04-grafana-dashboards.md)
-(дашборды) — не меняет метрики/события gateway, только панели и связку дашбордов.
+(дашборды) — улучшает панели и чинит два бага наблюдаемости: утечку счётчика
+`llm_requests_in_flight` и неверный фильтр `request_id` (regex вместо равенства).
 
 ## Контекст
 
@@ -11,7 +12,10 @@
 нет видимого распределения и p99 у latency; панель-логи по `request_id` не связана data links с
 дашбордом расследования; `llm_gateway_build_info` (версия сборки) не показан; панель «Errors»
 считает успешные attempts (`error_type=""`) как ошибки; duplicate panel `id`s между дашбордами
-мешают копированию панелей в UI.
+мешают копированию панелей в UI. Позднее на живом дашборде оказалось, что `llm_requests_in_flight`
+растёт медленно, но монотонно (≈200 за 6 часов): это оказалось не ростом нагрузки
+(fanout attempts/requests ≈ 1.2, попыток единицы), а **утечкой декремента** (см. п.8), и
+«Счёт по event для request_id» путал события всех запросов из-за regex-фильтра `=~""` (см. п.9).
 
 ## Что сделать
 
@@ -34,7 +38,17 @@
       только уникален в рамках одного дашборда). Правок не потребовалось.
 - [x] 7. **Обновить контракт-тест** `tests/grafana-dashboards.nix`: добавить проверки на наличие
       `status=~"$status"`, `error_type=~".+"`, p99 (0.99), data links на loki-investigation,
-      `llm_gateway_build_info`.
+      `llm_gateway_build_info`, и `request_id="${request_id}"` (не `=~`).
+- [x] 8. **Починить утечку `llm_requests_in_flight` (баг кода gateway)**: декремент жил только
+      в main loop `raceRoute` (при чтении из `sc.results`); при победе одной ветки loop выходит
+      и канал не читается → проигравшие ветки навсегда +1 в gauge. Фикс: `defer DecrInFlight`
+      в самой `runBranch` (срабатывает на всех путях выхода), убрать дублирующий декремент из
+      `observeBranch`/`observeBranchCancelled`. Регрессия
+      `TestRaceReleasesInFlightGauge` (падает без фикса, зелёный с фиксом).
+- [x] 9. **Починить «Счёт по event для request_id»**: `request_id=~"${request_id}"` при пустой
+      переменной становился `~""` и матчил ВСЕ запросы (панель показывала весь stream).
+      Заменить в трёх панелях (llm-gateway «Связка», loki-investigation «Счёт» и «Все события»)
+      на точное `request_id="${request_id}"` — пустой выбирающий → 0 серий (ничего не показывать).
 
 ## Критерий готовности (Definition of Done)
 
@@ -47,16 +61,25 @@
       полный `nix flake check --no-build` на `x86_64-linux` (локально на darwin сборка
       x86_64-linux runCommand недоступна — eval и есть проверка контракта). Live-проверка
       на ноде — шаг деплоя (как в f12-03/f12-04).
+- [x] 4. `llm_requests_in_flight` больше не растёт монотонно: регрессионный тест
+      `TestRaceReleasesInFlightGauge` покрывает победу + проигравших (все тесты пакета зелёные,
+      `go vet` чистый).
+- [x] 5. «Счёт по event для request_id» с пустой переменной показывает 0 серий (не весь stream),
+      с введённым `request_id` — только события этого запроса.
 
 ## Затрагиваемые файлы / слои
 
 - `modules/grafana/dashboards/llm-gateway.json` — status-фильтр RPS, p50/p99 TTFT/latency,
-  data link в расследование, `error_type=~".+"` в Errors, `sum by (provider)` в In-flight.
+  data link в расследование, `error_type=~".+"` в Errors, `sum by (provider)` в In-flight,
+  `request_id="${request_id}"` (точное равенство).
 - `modules/grafana/dashboards/gateway-runtime.json` — stat «Версия сборки» (`llm_gateway_build_info`).
-- `modules/grafana/dashboards/loki-investigation.json` — не менялся (само-дашборд; связка идёт data
-  link из `llm-gateway`).
+- `modules/grafana/dashboards/loki-investigation.json` — `request_id="${request_id}"` в двух панелях
+  («Счёт по event», «Все события запроса») вместо `=~`.
+- `packages/llm-gateway/scheduler.go` — `defer DecrInFlight` в `runBranch` (багфикс утечки).
+- `packages/llm-gateway/router.go` — убраны дублирующие `DecrInFlight` из `observeBranch*`.
+- `packages/llm-gateway/router_test.go` — регрессия `TestRaceReleasesInFlightGauge`.
 - `tests/grafana-dashboards.nix` — новые контракт-ассерты (status, p50/p99, data link,
-  `llm_gateway_build_info`).
+  `llm_gateway_build_info`, `request_id=` vs `=~`).
 - Документация: `modules/grafana/dashboards/README.md`, `modules/grafana/README.md`,
   `roadmap/f12-observability/README.md`, `ROADMAP.md`.
 
@@ -70,8 +93,17 @@
   (`/d/loki-investigation?var-request_id=${__value.raw}&${__url_time_range}`).
 - `gateway-runtime.json`: stat «Версия сборки gateway» — `llm_gateway_build_info{service="llm-gateway"}`,
   legend `{{version}}`, `textMode value_and_name` — видна деплоенная версия бинаря.
+- **Багфикс утечки `llm_requests_in_flight`**: медитация на живой ноде показала медленный
+  монотонный рост (~200/6ч) при fanout ≈1.2 и единичных попытках; корень — `DecrInFlight` жил
+  только в main loop, который выходит при победе, бросая канал с результатами проигравших.
+  Перенёс декремент в `runBranch` через `defer`, убрал дубликаты из `observeBranch*`;
+  регрессия `TestRaceReleasesInFlightGauge` падает без фикса (проверено), зелёный с фиксом.
+- **Багфикс «Счёт по event»**: `request_id=~"${request_id}"` при пустой переменной → `~""`
+  матчил все запросы. Заменил на `request_id="${request_id}"` в трёх панелях; контракт-тест
+  теперь требует `=` и отвергает `=~`.
 - Panel `id`s: выяснено, что в каждом дашборде id уже уникальны в пределах файла (пересечение
   только между дашбордами — это допустимо, Grafana требует уникальность в рамках одного
   дашборда); отдельных правок не потребовалось.
-- Контракт-тест дополнен ассертами (status, p50/p99, data link, build_info); eval прошёл
-  (`nix eval .#checks.x86_64-linux.grafana-dashboards.name` → `"grafana-dashboards-contract"`).
+- Контракт-тест дополнен ассертами (status, p50/p99, data link, build_info, request_id=); eval
+  прошёл (`nix eval .#checks.x86_64-linux.grafana-dashboards.name` → `"grafana-dashboards-contract"`).
+- `go vet` чистый, все тесты пакета llm-gateway зелёные (`go test ./...` → ok).
