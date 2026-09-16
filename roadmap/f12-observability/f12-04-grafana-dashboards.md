@@ -57,6 +57,38 @@
   (низкая cardinality, переменная `environment` в дашбордах).
 - `tests/grafana-dashboards.nix` (новый контракт-тест).
 
+## Ревизия 2026-09-16: переработка дашбордов
+
+Полная переработка трёх JSON (uids сохранены) по принципу «верх отвечает «всё ли
+в порядке» за ~3 секунды, логи — внизу»: до ревизии дашборды открывались пустой
+полноэкранной лог-панелью, health пула жил только в runtime, а Loki-панели
+runtime были мертвы — события это JSON-строки, а селектор `| event=~"..."`
+стоял до парсера `| json` и молча матчит пустоту.
+
+- **`llm-gateway.json`**: KPI-ряд (RPS; доля ошибок failed/(success+failed) с
+  `clamp_min`-защитой от no-data, пороги 5%/15%; p95 длительности и TTFT;
+  in-flight; число нездоровых провайдеров `count(llm_balance_health < 0.5)`),
+  затем трафик по route/status, задержки p50/p95/p99, ряд надёжности (attempts
+  по error_type, fallback from→to+reason, in-flight по провайдеру,
+  `llm_balance_health` таймсерией), токены (вкл. средняя длина ответа), и
+  только внизу — логи по `request_id` (точное равенство, data link в
+  расследование). Аннотация по `event="request_failed"`.
+- **`gateway-runtime.json`**: ряд «Сервис» (версия через `llm_gateway_build_info`
+  с `textMode:"name"`, аптайм `time() - process_start_time_seconds`, горутины,
+  куча), «Балансировка» (выборы по route/provider, health пула), «События
+  (Loki)» — исправлено: `| json` обязателен перед фильтром по полю `event`;
+  счёт переходов за период `count_over_time`; «Диагностика» (динамика
+  горутин/кучи, `catalog_refresh_failed`).
+- **`loki-investigation.json`**: browsable точка входа — таблица «Последние
+  запросы» (`event=~"request_completed|request_failed"`, `extractFields`,
+  клик по `request_id` фильтрует панели), счёт событий по типам, лента сбоев
+  и переходов, полная лента запроса по `request_id` (по возрастанию времени).
+
+`request_id` стал видимой переменной (`hide: 0`) — раньше поле ввода было
+спрятано и вставить id вручную было невозможно. Контракт-тест расширен
+поверхностными ассертами на новые панели (`| json` в runtime,
+`extractFields` в таблице расследования, health и output tokens на обзоре).
+
 ## Реализация 2026-09-16
 
 Три дашборда как provisioning-файлы в `modules/grafana/dashboards/` (репозиторий — источник

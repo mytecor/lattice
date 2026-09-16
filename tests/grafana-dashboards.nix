@@ -70,6 +70,11 @@ assert lib.hasInfix "llm_input_tokens_total" (joinExprs llm);
 assert lib.hasInfix "llm_attempts_total" (joinExprs llm);
 assert lib.hasInfix "llm_requests_in_flight" (joinExprs llm);
 assert lib.hasInfix "llm_fallbacks_total" (joinExprs llm);
+# The provider pool health is visible on the overview itself (f12-04), not only
+# on the runtime dashboard.
+assert lib.hasInfix "llm_balance_health" (joinExprs llm);
+# Output tokens are part of the token surface alongside input tokens.
+assert lib.hasInfix "llm_output_tokens_total" (joinExprs llm);
 # Filters by the low-cardinality environment label and the route/provider/model
 # template variables.
 assert lib.hasInfix "environment=\"$environment\"" (joinExprs llm);
@@ -91,12 +96,23 @@ assert lib.hasInfix "llm_balance_selections_total" (joinExprs runtime);
 assert lib.hasInfix "cooldown_put|llm_retry|llm_fallback|hedge_launched|semaphore_denied" (joinExprs runtime);
 # f12-05: version stat visible in the runtime dashboard.
 assert lib.hasInfix "llm_gateway_build_info" (joinExprs runtime);
+# Runtime/process gauges are part of the runtime surface (leak/restart checks).
+assert lib.hasInfix "go_memstats_alloc_bytes" (joinExprs runtime);
+assert lib.hasInfix "process_start_time_seconds" (joinExprs runtime);
+# Loki journal events are JSON lines: without the `| json` parser an event
+# filter matches nothing (the exact bug that made the old panels empty).
+assert lib.hasInfix "| json" (joinExprs runtime);
 
 # --- Investigation dashboard (loki-investigation) ---
 let lokiDb = byUid "loki-investigation"; in
 assert lib.hasInfix "request_id" (joinExprs lokiDb);
 assert lib.hasInfix "count_over_time" (joinExprs lokiDb);
 assert lib.hasInfix "| json" (joinExprs lokiDb);
+# Browsable entry point: recent completed/failed requests without typing an id.
+assert lib.hasInfix "request_completed|request_failed" (joinExprs lokiDb);
+# The table is built by extracting the JSON event fields (not a raw Line blob).
+assert lib.any (tr: (tr.id or "") == "extractFields")
+  (lib.concatMap (p: p.transformations or [ ]) lokiDb.panels);
 
 # --- Prometheus scrape attaches the constant environment label (low card) ---
 assert gatewayJob.static_configs != [ ];
