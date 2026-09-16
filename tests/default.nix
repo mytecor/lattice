@@ -119,6 +119,14 @@ in
     statusWriter = pkgs.lattice.node-status-write;
   };
 
+  # f1-01: nodes/example must actually carry the base profile into the build.
+  # profiles/base (imported for every node via mkNode) pulls in profiles/gitops
+  # (services.comin), nix.settings.auto-optimise-store and nix.gc.automatic.
+  # These asserts are the explicit regression guard: if base ever stops being
+  # wired into the assembled system, this check fails even though evaluation
+  # would still succeed. Live confirmation 2026-09-16 on mytecor-homelab:
+  # comin.service / lattice-comin-source-sync.{service,timer} present, runtime
+  # `nix show-config --auto-optimise-store` = true, nix-gc.timer scheduled.
   example =
     assert exampleConfig.services.comin.enable;
     assert exampleConfig.nix.settings.auto-optimise-store;
