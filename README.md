@@ -53,8 +53,9 @@ runtime» и «Loki / Расследование»; конкретный зап�
 [r1s](https://github.com/mytecor/r1s): децентрализованное выполнение OCI workload поверх Reticulum
 (клиент `r1s`, allocator `r1sd` над `containerd`). Он становится execution backend для F10
 (disposable worker) и F11 (controller); временный `LocalExecutor` из плана убран.
-Следующая незакрытая вертикаль — F9: caches-часть (f9-01..f9-03) выполнена, остаётся
-artifacts/S3-часть. Затем disposable worker и controller.
+Следующая вертикаль — F10 (disposable worker): execution backend (`r1s` `r1sd` над `containerd`)
+уже зафиксирован, задача f9-01..f9-03 (caches) закрыта, artifacts/S3-часть
+F9 отложена на сильно потом и не блокирует F10/F11. Затем controller.
 
 ## Направления развития
 
