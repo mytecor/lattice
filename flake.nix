@@ -2,7 +2,7 @@
   description = "Lattice node deployment flake";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/dc5d91f840324650bac8c379428c7037a416959a";
 
     disko = {
       url = "github:nix-community/disko";
@@ -181,6 +181,8 @@
           };
           git-cache-proxy = final.callPackage ./packages/git-cache-proxy/package.nix { };
           verdaccio = final.callPackage ./packages/verdaccio/package.nix { };
+          # F10: r1s execution backend (client + r1sd allocator); needs go_1_27 = 1.27.1 (go.mod).
+          r1s = final.callPackage ./packages/r1s/package.nix { go = final.go_1_27; };
 
           # f8-03: воспроизводимый tool profile для Pi-рантайма.
           pi-tool-profile = final.buildEnv {
@@ -231,7 +233,8 @@
           };
         in
         {
-          inherit (pkgs.lattice) acp-normalizer git-cache-proxy hydra-acp llm-gateway pi pi-acp pi-mcp-adapter pi-tool-profile rns-server rnsh verdaccio;
+          inherit (pkgs.lattice) acp-normalizer git-cache-proxy hydra-acp llm-gateway pi pi-acp pi-mcp-adapter pi-tool-profile r1s rns-server rnsh verdaccio;
+          r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
         });
 

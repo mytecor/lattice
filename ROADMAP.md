@@ -102,7 +102,8 @@
 > [r1s](https://github.com/mytecor/r1s) (`r1sd`-allocator над `containerd`); временный `LocalExecutor`
 > из плана убран.
 
-- **Статус:** ⏳ ещё не начата
+- **Статус:** 🟡 начата — [f10-00](./roadmap/f10-disposable-worker/f10-00-package-r1s.md) (упаковка
+  execution backend r1s/r1sd) закрыта 2026-09-16; остальные задачи f10-* впереди.
 - **Готово, когда:** полный цикл завершается результатом после уничтожения worker.
 - **Зависит от:** [F8](#f8-интерактивный-pi), [F9](#f9-caches-и-artifacts)
   (только caches-часть; artifacts/S3 отложена)
@@ -165,8 +166,9 @@
 
 Следующий фокус (непосредственно после выполненных вертикалей):
 
-- [F10](#f10-disposable-worker) — execution backend (r1s `r1sd`/containerd, общий immutable
-  Pi image) уже зафиксирован в f10-02..f10-04; worker lifecycle и acceptance — впереди.
+- [F10](#f10-disposable-worker) — упаковка execution backend (r1s `r1sd`/containerd) закрыта в
+  [f10-00](./roadmap/f10-disposable-worker/f10-00-package-r1s.md); общий immutable Pi image — в
+  f10-02..f10-04; worker lifecycle и acceptance — впереди.
 - [F11](#f11-controller) — ждёт стабилизации task specification и ручного worker
   lifecycle в F10.
 

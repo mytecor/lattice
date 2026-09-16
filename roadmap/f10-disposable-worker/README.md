@@ -15,7 +15,8 @@ runtime и один OCI image: различаются task context, workspace, �
 Зависит от [F8](../f8-pi-runtime/README.md) и [F9](../f9-cache-artifact-plane/README.md). Соответствует
 [вехе 10](../../ROADMAP.md#f10-disposable-worker).
 
-Задачи: [f10-01](./f10-01-task-specification.md),
+Задачи: [f10-00](./f10-00-package-r1s.md),
+[f10-01](./f10-01-task-specification.md),
 [f10-02](./f10-02-worker-isolation.md),
 [f10-03](./f10-03-worker-lifecycle.md),
 [f10-04](./f10-04-pi-rpc-runner.md),
@@ -45,6 +46,8 @@ hydra-acp → pi-acp                         host ingress/session plane
         disposable Pi container
 ```
 
+- [f10-00](./f10-00-package-r1s.md) фиксирует r1s как flake-пакет (клиент `r1s` + allocator
+  `r1sd`) с го-тулчейном 1.27.1 из основного пина nixpkgs; закрыто 2026-09-16.
 - [f10-02](./f10-02-worker-isolation.md) фиксирует `containerd`, общий immutable OCI image и
   декларативные worker classes вместо деклараций отдельных runtime-контейнеров.
 - [f10-03](./f10-03-worker-lifecycle.md) фиксирует узкий executor contract поверх клиента r1s;
