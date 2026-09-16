@@ -36,11 +36,16 @@ JSON `{"node":<hostName>,"service":"lattice-node-status"}`. Это полезн�
 
 ## Критерий готовности (Definition of Done)
 
-- [ ] `curl http://status.<node>.local/` возвращает валидный JSON, содержащий поколение системы и
+- [x] `curl http://status.<node>.local/` возвращает валидный JSON, содержащий поколение системы и
       актуальный коммит/ревизию конфигурации узла.
-- [ ] Значения соответствуют реальному состоянию узла, а не константе (проверено на
+      → **Подтверждено 2026-09-16**: `curl --fail http://status.mytecor-homelab.local/` с машины
+      в LAN возвращает HTTP 200 и JSON: `generation=15`, `commit=5638323...`, а также kernel,
+      stateVersion, activatedAt.
+- [x] Значения соответствуют реальному состоянию узла, а не константе (проверено на
       `mytecor-homelab` после активации нового поколения).
-- [ ] Документация (`profiles/app-services/README.md`) описывает новые поля endpoint.
+      → `commit` = фактически применённый `refs/lattice/source`; `generation` — текущее NixOS
+      поколение из `/nix/var/nix/profiles/system`. Подтверждено live.
+- [x] Документация (`profiles/app-services/README.md`) описывает новые поля endpoint.
 
 ## Затрагиваемые файлы / слои
 
@@ -59,7 +64,24 @@ JSON `{"node":<hostName>,"service":"lattice-node-status"}`. Это полезн�
 2026-09-16: реализована декларативная часть. `profiles/app-services/config.nix` пишет
 `/run/lattice-node-status.json` активационным скриптом `lattice-node-status` из
 [`status-write.sh`](../../profiles/app-services/status-write.sh); Caddy отдаёт его через
-`file_server`. `tests/app-services.nix` переведён на новые контракты (file_server вместо respond,
-поля из activation-скрипта); добавлен runtime smoke-тест `tests/node-status.nix`. `nix flake check
---all-systems --no-build` проходит. Осталось live-подтверждение на `mytecor-homelab` (критерий
-«значения реального состояния»).
+`file_server` (root `/run` + rewrite на файл, без 308-redirect). `tests/app-services.nix`
+переведён на новые контракты; добавлен runtime smoke-тест `tests/node-status.nix`. `nix flake
+check --all-systems --no-build` проходит.
+
+**2026-09-16 live: задача закрыта.** Применена на `mytecor-homelab` через comin (коммит
+`5638323`). `curl --fail http://status.mytecor-homelab.local/` с машины в LAN возвращает HTTP 200
+и актуальный JSON (`generation=15`, `commit=5638323...`, kernel, stateVersion, activatedAt).
+Значения реальные, а не константа.
+
+Live-находки, исправленные по ходу:
+
+- `writeShellApplication` НЕ кладёт runtimeInputs в PATH исполнения — activation-среда NixOS
+  вызывает скрипты с минимальным PATH, и первая же внешняя команда (git/jq/hostname) падала 127,
+  валя comin-switch. Решение: скрипт собирается через `replaceVarsWith`, вшивая полные
+  store-пути `bash`/`git`/`jq`/`hostname`; остальное (coreutils) есть в PATH активации.
+- `/run/current-system` на этой ноде указывает прямо на store-путь (без `system-N-link`),
+  поэтому номер поколения читается из `/nix/var/nix/profiles/system` (readlink → `system-N-link`),
+  с fallback на `/run/current-system`.
+- `substituteAll` удалён из текущего nixpkgs — используется `replaceVarsWith`.
+- `file_server` с root-файлом на `/` даёт 308-redirect-loop (root-файл трактуется как директория) —
+  root указывает на `/run`, а `rewrite * /lattice-node-status.json` отдаёт файл по любому пути.
