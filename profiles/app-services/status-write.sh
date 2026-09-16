@@ -16,16 +16,22 @@ set -euo pipefail
 
 # Пути по умолчанию можно переопределить для тестов/контейнеров.
 current_system_link="${LATTICE_CURRENT_SYSTEM_LINK:-/run/current-system}"
+profiles_system_link="${LATTICE_NIXOS_PROFILES_SYSTEM:-/nix/var/nix/profiles/system}"
 node="${LATTICE_NODE_NAME:-$(@hostname@)}"
 
-# NixOS generation: /run/current-system -> /nix/var/nix/profiles/system-N-link.
-# Берём непосредственную цель (readlink без -f), т.к. сама system-N-link в свою
-# очередь указывает на /nix/store/...-nixos-system-..., и basename финальной цели
-# уже не содержит номера поколения.
-current_system="$(readlink "$current_system_link" 2>/dev/null || true)"
+# NixOS generation. /run/current-system на этой ноде указывает напрямую на
+# /nix/store/...-nixos-system-... (без system-N-link), поэтому номер берём из
+# /nix/var/nix/profiles/system, чей readlink-таргет называется system-N-link.
 generation="null"
+generation_link="$profiles_system_link"
+current_system="$(readlink "$generation_link" 2>/dev/null || true)"
+if [[ -z "$current_system" ]]; then
+  # fallback: /run/current-system (системы, где это system-N-link)
+  generation_link="$current_system_link"
+  current_system="$(readlink "$generation_link" 2>/dev/null || true)"
+fi
 if [[ -n "$current_system" ]]; then
-  gen="$(basename "$current_system")"        # system-123-link
+  gen="$(basename "$current_system")"        # system-123-link или nixos-system-...
   if [[ "$gen" =~ ^system-([0-9]+)(-link)?$ ]]; then
     generation="${BASH_REMATCH[1]}"
   fi

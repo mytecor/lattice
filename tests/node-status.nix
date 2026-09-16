@@ -12,14 +12,19 @@ pkgs.runCommand "node-status-writer-test" {
   git config --global user.name test
   git config --global user.email test@localhost
 
-  # Mock ноды, как на реальной ноде: /run/current-system ->
-  # /nix/var/nix/profiles/system-42-link (первый уровень readlink даёт номер
-  # поколения), а system-42-link в свою очередь -> store-путь nixos-system.
+  # Mock ноды, как на реальной ноде: /nix/var/nix/profiles/system ->
+  # system-42-link (первый уровень readlink даёт номер поколения), а
+  # system-42-link в свою очередь -> store-путь nixos-system.
   mkdir -p "$TMPDIR/fs/nix/var/nix/profiles" "$TMPDIR/fs/run"
   ln -sfn "$TMPDIR/fs/nix/store/nixos-system-mock" \
     "$TMPDIR/fs/nix/var/nix/profiles/system-42-link"
-  ln -sfn ../nix/var/nix/profiles/system-42-link \
-    "$TMPDIR/fs/run/current-system"
+  ln -sfn system-42-link "$TMPDIR/fs/nix/var/nix/profiles/system"
+  # fallback-источник: /run/current-system -> system-7-link иначе
+  mkdir -p "$TMPDIR/fs/run/fallback/nix/var/nix/profiles"
+  ln -sfn "$TMPDIR/fs/nix/store/nixos-system-mock" \
+    "$TMPDIR/fs/run/fallback/nix/var/nix/profiles/system-7-link"
+  ln -sfn ../nix/var/nix/profiles/system-7-link \
+    "$TMPDIR/fs/run/fallback/current-system"
 
   # Mock comin source repo с выбранным head в refs/lattice/source
   git init --bare "$TMPDIR/source-repo"
@@ -33,12 +38,13 @@ pkgs.runCommand "node-status-writer-test" {
     LATTICE_NODE_STATE_VERSION="26.05" \
     LATTICE_COMIN_SOURCE_REPO="$TMPDIR/source-repo" \
     LATTICE_CURRENT_SYSTEM_LINK="$TMPDIR/fs/run/current-system" \
+    LATTICE_NIXOS_PROFILES_SYSTEM="$TMPDIR/fs/nix/var/nix/profiles/system" \
     LATTICE_NODE_NAME="node-a" \
     lattice-node-status-write
     jq -e . "$1" >/dev/null
   }
 
-  # 1. Обычный узел: generation=42, commit из refs/lattice/source
+  # 1. Обычный узел: generation=42 (из profiles/system), commit из refs/lattice/source
   run_status "$TMPDIR/status1.json"
   test "$(jq -r .generation "$TMPDIR/status1.json")" = "42"
   test "$(jq -r .commit "$TMPDIR/status1.json")" = "$head"
@@ -54,19 +60,31 @@ pkgs.runCommand "node-status-writer-test" {
   LATTICE_NODE_STATE_VERSION="26.05" \
   LATTICE_COMIN_SOURCE_REPO="$TMPDIR/empty-source/repository" \
   LATTICE_CURRENT_SYSTEM_LINK="$TMPDIR/fs/run/current-system" \
+  LATTICE_NIXOS_PROFILES_SYSTEM="$TMPDIR/fs/nix/var/nix/profiles/system" \
   LATTICE_NODE_NAME="fresh" \
   lattice-node-status-write
   jq -e '.commit == null and (.generation | type == "number")' \
     "$TMPDIR/status2.json" >/dev/null
 
-  # 3. Нет symlink current-system → generation=null (не падает)
+  # 3. Нет profiles/system → fallback на /run/current-system (generation=7)
   LATTICE_NODE_STATUS_FILE="$TMPDIR/status3.json" \
   LATTICE_NODE_STATE_VERSION="26.05" \
   LATTICE_COMIN_SOURCE_REPO="$TMPDIR/source-repo" \
+  LATTICE_CURRENT_SYSTEM_LINK="$TMPDIR/fs/run/fallback/current-system" \
+  LATTICE_NIXOS_PROFILES_SYSTEM="$TMPDIR/no-such-profile-system" \
+  LATTICE_NODE_NAME="fallback" \
+  lattice-node-status-write
+  jq -e '.generation == 7' "$TMPDIR/status3.json" >/dev/null
+
+  # 4. Нет ни profiles/system, ни current-system → generation=null (не падает)
+  LATTICE_NODE_STATUS_FILE="$TMPDIR/status4.json" \
+  LATTICE_NODE_STATE_VERSION="26.05" \
+  LATTICE_COMIN_SOURCE_REPO="$TMPDIR/source-repo" \
   LATTICE_CURRENT_SYSTEM_LINK="$TMPDIR/no-such-link" \
+  LATTICE_NIXOS_PROFILES_SYSTEM="$TMPDIR/no-such-profile-system" \
   LATTICE_NODE_NAME="no-gen" \
   lattice-node-status-write
-  jq -e '.generation == null' "$TMPDIR/status3.json" >/dev/null
+  jq -e '.generation == null' "$TMPDIR/status4.json" >/dev/null
 
   mkdir "$out"
 ''
