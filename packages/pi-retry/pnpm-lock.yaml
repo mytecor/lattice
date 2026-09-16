@@ -1,0 +1,29 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@geebos/pi-retry':
+        specifier: 0.0.2
+        version: 0.0.2
+
+packages:
+
+  '@geebos/pi-retry@0.0.1':
+    resolution: {integrity: sha512-KzZu2TlKjE2EvjxN4S2SL8fMGsTfiDJ4qYiw5qJRk0CFAzMQJLlsZyXcmkPnuiHlmH5KJMNDzzya9IAjVS86zg==}
+
+  '@geebos/pi-retry@0.0.2':
+    resolution: {integrity: sha512-mn9oJ7RpJPhCbnS8HD09Kmc29VJbtQrovqZrv/sKP2x21lU6p/bZ4lFh7f5etb0THODQZ3k2EoTQo4SEu+Uy9g==}
+
+snapshots:
+
+  '@geebos/pi-retry@0.0.1': {}
+
+  '@geebos/pi-retry@0.0.2':
+    dependencies:
+      '@geebos/pi-retry': 0.0.1

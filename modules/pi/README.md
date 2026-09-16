@@ -10,20 +10,25 @@
    пользователя (`lattice.pi.user`, по умолчанию `root`).
 
 Каталог `~/.pi/agent` остаётся writable: на store-файлы ссылаются только
-`settings.json`/`models.json`, а runtime-состояние Pi (sessions, trust, ключи `/login`)
-пишется рядом и не переживает перезагрузку или пересборку как immutable данные.
+`settings.json`/`models.json` и `extensions/pi-retry/config.json`, а runtime-состояние
+Pi (sessions, trust, ключи `/login`) пишется рядом и не переживает перезагрузку
+или пересборку как immutable данные.
 
 ## Опции
 
 - `lattice.pi.enable` — добавить Pi в системный профиль и материализовать конфиг.
 - `lattice.pi.user` — целевой пользователь для `~/.pi/agent` (по умолчанию `root`).
 - `lattice.pi.settings` — содержимое `settings.json`: `defaultProvider`,
-  `defaultModel`, `defaultThinkingLevel`, `theme`, `packages` и `extensions`.
+  `defaultModel`, `defaultThinkingLevel`, `theme`, `packages`, `extensions` и
+  `retry`.
   `packages` — pi packages (строка-спека `npm:`/`git:` с закреплённой версией/рефом
   либо Nix-пакет, store-path). `extensions` — прямые пути к файлу/каталогу
   расширения; для Nix-сборок модуль раскрывает пакет-значение в `"${p}/extension"`
   (см. [`packages/pi-mcp-adapter`](../../packages/pi-mcp-adapter/README.md)),
   например `extensions = [ pkgs.lattice.pi-mcp-adapter ];`.
+  `retry` — ретрай-паттерны расширения pi-retry (RegExp-источники в
+  `~/.pi/agent/extensions/pi-retry/config.json`). Пустое значение = дефолт
+  (без кастомных паттернов).
 - `lattice.pi.models` — содержимое `models.json`: attrsOf providers. У каждого
   provider есть `baseUrl`, `api`, `apiKey` (nullable), `discoverModels`,
   `models` (explicit logical классы) и `modelOverrides`.

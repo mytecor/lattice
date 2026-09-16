@@ -104,7 +104,14 @@ in
       # builder (packages/pi-mcp-adapter, lock + store-path), загружается как
       # extension-директория из settings.extensions — на ноде не нужны ни node/npm,
       # ни runtime-загрузки из npm registry.
-      extensions = [ pkgs.lattice.pi-mcp-adapter ];
+      # pi-retry (@geebos/pi-retry): классифицирует provider-specific/stalled-stream
+      # ошибки как retryable. Паттерны ниже (RegExp) делают "upstream stream failed"
+      # ретраябельным — llm-gateway шлёт это сообщение по SSE при обрыве апстрим-
+      # стрима (5xx от hyperfusion), и без паттерна встроенный ретрай pi его не
+      # ловит (см. packages/pi-retry/package.nix). "unsupported model" ретраить НЕ
+      # нужно: модель не поддерживается — повторный запрос бессмысленен.
+      extensions = [ pkgs.lattice.pi-mcp-adapter pkgs.lattice.pi-retry ];
+      retry = [ "^Provider finish_reason: abort$" "upstream stream failed" ];
     };
     models.llm-gateway = {
       baseUrl = "http://127.0.0.1:9208/v1";

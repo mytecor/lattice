@@ -51,6 +51,18 @@ in
           example = [ "/path/to/extension.ts" ];
           description = "Extension files or directories loaded directly, e.g. a Nix-built extension package.";
         };
+        # Ретрай-паттерны для pi-retry (extensions/pi-retry/config.json):
+        # RegExp-источники, по которым расширение классифицирует ошибку провайдера
+        # как retryable и подхватывает встроенный агент-ретрай pi. Значения —
+        # case-insensitive RegExp. Пустой список = расширение без своих паттернов
+        # (только встроенные + stall watchdog). Материализуется модулем как
+        # `~/.pi/agent/extensions/pi-retry/config.json`.
+        options.retry = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          example = [ "upstream stream failed" ];
+          description = "Custom retry keyword patterns for the pi-retry extension (RegExp sources).";
+        };
       };
       default = { };
       description = "Declarative contents of ~/.pi/agent/settings.json";
@@ -135,6 +147,11 @@ in
       type = types.path;
       readOnly = true;
       description = "Generated ~/.pi/agent/models.json in the Nix store.";
+    };
+    generatedRetryConfigJson = mkOption {
+      type = types.path;
+      readOnly = true;
+      description = "Generated ~/.pi/agent/extensions/pi-retry/config.json in the Nix store.";
     };
     # Необязательный вывод: итоговый состав tool profile (base + tools) как пакет.
     toolProfile = mkOption {

@@ -68,6 +68,11 @@ in
     piModule = self.nixosModules.pi;
   };
 
+  pi-retry-config = import ./pi-retry-config.nix {
+    inherit nixpkgs pkgs;
+    piModule = self.nixosModules.pi;
+  };
+
   pi-acp-daemon = import ./pi-acp-daemon.nix {
     inherit nixpkgs pkgs;
     acpModule = self.nixosModules.pi-acp-daemon;

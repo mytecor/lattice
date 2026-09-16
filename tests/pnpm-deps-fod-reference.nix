@@ -36,6 +36,7 @@ let
     HYDRA_DRV = drvString pkgs.lattice.hydra-acp;
     ACP_DRV = drvString pkgs.lattice.pi-acp;
     MCP_DRV = drvString pkgs.lattice.pi-mcp-adapter;
+    RETRY_DRV = drvString pkgs.lattice.pi-retry;
   };
 in
 pkgs.runCommand "pnpm-deps-fod-reference-check" ({
@@ -70,6 +71,14 @@ pkgs.runCommand "pnpm-deps-fod-reference-check" ({
     | grep -q 'pi-mcp-adapter-2.33.0' \
     || { echo "FAIL: pi-mcp-adapter wrapper does not reference its inner pnpm build" >&2; exit 1; }
   echo "OK: pi-mcp-adapter wrapper chains to a pnpm-deps-bearing build"
+
+  # pi-retry (f8-03): то же — runCommand-обёртка над buildPnpmCli-пакетом
+  # @geebos/pi-retry; обёртка обязана ссылаться на внутренний build, чтобы
+  # pnpm-deps оставался живым в active closure.
+  echo "$(nix derivation show "$(cat "$RETRY_DRV_PATH")")" \
+    | grep -q 'pi-retry-0.0.2' \
+    || { echo "FAIL: pi-retry wrapper does not reference its inner pnpm build" >&2; exit 1; }
+  echo "OK: pi-retry wrapper chains to a pnpm-deps-bearing build"
 
   mkdir "$out"
 ''

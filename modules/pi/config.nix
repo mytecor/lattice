@@ -44,6 +44,15 @@ let
     providers = lib.mapAttrs providerJson cfg.models;
   });
 
+  # ~/.pi/agent/extensions/pi-retry/config.json — ретрай-паттерны для расширения
+  # pi-retry (@geebos/pi-retry). Расширение читает этот файл по каноническому пути
+  # `extensions/pi-retry/config.json` под ~/.pi/agent (см. src/config.ts пакета) на
+  # каждое совпадение; store-path-симлинк делает конфигурацию декларативной и
+  # immutable, как settings.json/models.json.
+  retryConfigJson = pkgs.writeText "pi-retry-config.json" (builtins.toJSON {
+    patterns = cfg.settings.retry;
+  });
+
   # База .pi/agent для целевого пользователя: раскрываем $HOME через getent.
   homeFromUser = builtins.toString (config.users.users.${cfg.user}.home or "/root");
 
@@ -79,6 +88,7 @@ in
   config = lib.mkIf cfg.enable {
     lattice.pi.generatedSettingsJson = settingsJson;
     lattice.pi.generatedModelsJson = modelsJson;
+    lattice.pi.generatedRetryConfigJson = retryConfigJson;
 
     # f8-03: на ноде есть ровно декларированный tool profile (базовый контракт
     # + `lattice.pi.tools`) — без зависимости от случайных user/global пакетов.
@@ -105,6 +115,10 @@ in
       install -d -m 0700 "$pi_dir"
       ln -sfn ${settingsJson} "$pi_dir/settings.json"
       ln -sfn ${modelsJson} "$pi_dir/models.json"
+      # pi-retry extension config: расширение читает его с канонического пути
+      # `~/.pi/agent/extensions/pi-retry/config.json` (см. src/config.ts пакета).
+      install -d -m 0700 "$pi_dir/extensions/pi-retry"
+      ln -sfn ${retryConfigJson} "$pi_dir/extensions/pi-retry/config.json"
     '';
 
     # Read-only вывод: готовый tool profile как derivation (для инспекции/тестов).
