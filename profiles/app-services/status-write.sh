@@ -2,12 +2,12 @@
 # f4-04: сгенерировать /run/lattice-node-status.json на каждой активации из
 # runtime-фактов узла (NixOS generation, применённый comin source revision).
 #
-# Скрипт собирается через pkgs.replaceVars (см. config.nix): @bash@, @git@ и
-# @jq@ заменяются полными store-путями при сборке. Остальные команды
-# (readlink, basename, hostname, uname, date, chmod, mv) берутся из coreutils,
-# который NixOS гарантированно кладёт в PATH активационной среды. Это нужно,
-# т.к. PATH активации не содержит git/jq — иначе activation падал 127 и валил
-# comin-switch.
+# Скрипт собирается через replaceVarsWith (см. config.nix): @bash@, @git@,
+# @jq@ и @hostname@ заменяются полными store-путями при сборке. Это нужно,
+# т.к. PATH активационной среды NixOS не содержит git/jq и hostname (hostname
+# из inetutils, его нет даже в coreutils) — иначе activation падал 127 и
+# валил comin-switch. Остальные команды (readlink/basename/uname/date/chmod/mv)
+# берутся из coreutils, который активация кладёт в PATH.
 set -euo pipefail
 
 : "${LATTICE_NODE_STATUS_FILE:?LATTICE_NODE_STATUS_FILE is required}"
@@ -16,7 +16,7 @@ set -euo pipefail
 
 # Пути по умолчанию можно переопределить для тестов/контейнеров.
 current_system_link="${LATTICE_CURRENT_SYSTEM_LINK:-/run/current-system}"
-node="${LATTICE_NODE_NAME:-$(hostname)}"
+node="${LATTICE_NODE_NAME:-$(@hostname@)}"
 
 # NixOS generation: /run/current-system -> /nix/var/nix/profiles/system-N-link.
 # Берём непосредственную цель (readlink без -f), т.к. сама system-N-link в свою

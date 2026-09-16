@@ -164,6 +164,7 @@
               bash = "${final.bash}/bin/bash";
               git = "${final.git}/bin/git";
               jq = "${final.jq}/bin/jq";
+              hostname = "${final.inetutils}/bin/hostname";
             };
             dir = "bin";
             isExecutable = true;

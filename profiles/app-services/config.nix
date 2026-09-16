@@ -23,6 +23,7 @@ let
       bash = "${pkgs.bash}/bin/bash";
       git = "${pkgs.git}/bin/git";
       jq = "${pkgs.jq}/bin/jq";
+      hostname = "${pkgs.inetutils}/bin/hostname";
     };
     dir = "bin";
     isExecutable = true;
