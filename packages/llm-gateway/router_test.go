@@ -2012,3 +2012,51 @@ func TestSmartModelNotFoundPreFailedThenUnusedFallback(t *testing.T) {
 		t.Fatalf("expected exactly one upstream call (the carrier), got %d", calls.Load())
 	}
 }
+
+func TestParallelRaceWholePoolHungCarrierDoesNotBlock(t *testing.T) {
+	// Mirrors the `smart` fix: entry race count 0 (whole universe). A carrier
+	// that is catalog-rejected pre-fails locally (no upstream); the valid
+	// carriers race in parallel, and a healthy carrier's first meaningful token
+	// wins even while another carrier hangs forever. This is what fixes the 504
+	// timeout when a single GLM carrier hangs for the whole route deadline.
+	rules := []Rule{
+		filterModel("smart", "smart"),
+		filterProvider("smart", "a", "b", "c"),
+		mapRule("smart", "zai-org/GLM-5.3-Flash"),
+		rankRule("smart"),
+		raceRule("smart", 0),
+	}
+	compiled, catalog := compiledWithCatalogs(t, rules, map[string][]string{
+		"a": {"unrelated"},                    // catalog-rejected, skipped locally
+		"b": {"zai-org/GLM-5.3-Flash"},        // healthy carrier, fast
+		"c": {"zai-org/GLM-5.3-Flash", "x"},   // hung carrier
+	})
+	var calls atomic.Int32
+	executor := &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		calls.Add(1)
+		if target.Provider == "b" {
+			time.Sleep(20 * time.Millisecond)
+			return successBody("b"), nil
+		}
+		if target.Provider == "c" {
+			select {} // never returns: the hang that used to cause the 504
+		}
+		return nil, &CallError{Class: ErrorInvalid, Status: 500}
+	}}
+	runner := newRunner(compiled, catalog, executor)
+	started := time.Now()
+	outcome, callErr := runner.RunWithResult(context.Background(), "smart", ExecuteRequest{Kind: RequestChat})
+	if callErr != nil {
+		t.Fatalf("hung carrier blocked the request: %v", callErr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(outcome.Body, &payload); err != nil || payload["winner"] != "b" {
+		t.Fatalf("winner must be the fast carrier b, got %s", outcome.Body)
+	}
+	if elapsed := time.Since(started); elapsed >= time.Second {
+		t.Fatalf("request waited for a hung carrier: %s", elapsed)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("expected 2 upstream calls (b,c), got %d", calls.Load())
+	}
+}

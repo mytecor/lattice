@@ -390,20 +390,75 @@ in
         { route = "standard.fallback"; action = "rank"; strategy = "priority"; }
         { route = "standard.fallback"; action = "race"; count = 1; }
       ];
-      # Fallback subroute for smart (GLM-5.3-Flash): re-selects one of the
-      # providers that actually carry the exact unprefixed native. The entry
-      # route chooses one provider by round_robin from the full universe, and
-      # when that provider rejects GLM (upstream 404, or a local model_not_found
-      # because its catalog does not yet carry the exact ID) the request must
-      # hand off to a carrier instead of failing. The recovery needs more than
-      # a retry: the retry subroute's error filter excludes 404/model_not_found
-      # and the hedge is latency-only (abandoned on a fast terminal failure), so
-      # an explicit fallback is the only transition that rescues a fast 404. The
-      # fallback races the whole exact-ID carrier pool (count 0 = whole pool) so
-      # a stale catalog or a second 404 on one carrier does not strand the
-      # request; the unused policy skips a carrier that already served this
-      # request. Hyperfusion is intentionally absent: it serves GLM only under
-      # the prefixed gonka/ alias (see standardFallback).
+      # smart (GLM-5.3-Flash) uses its own topology, not primaryRules: GLM
+      # carriers can hang for a long time while reasoning without sending a
+      # meaningful token, and the primaryRules pace (race count 1 + hedge over
+      # the whole universe) consumed the entire 60s route deadline on one hung
+      # provider — the deadline is global, so retry/fallback got no room and the
+      # request returned 504 timeout. The fix is provider-list-free:
+      #   - race count 0 = the whole provider universe races in parallel;
+      #     providers whose catalog lacks the exact GLM native pre-fail locally
+      #     (model_not_found, no upstream call) and are skipped, so exactly the
+      #     carriers race first-to-success and a hung carrier can no longer
+      #     block the request;
+      #   - the hedge is dropped: it raced all providers and marked every one
+      #     used, emptying the unused pool that retry/fallback depend on;
+      #   - maxInFlight 4 launches all carriers concurrently;
+      #   - a generic universe fallback (unused, race 0) remains as a safety net
+      #     for the 404/model_not_found and all-down cases.
+      smartRules = [
+        { route = "smart"; action = "filter"; where = { model = { eq = "smart"; }; }; }
+        { route = "smart"; action = "filter"; where = { provider = { "in" = allProviders; }; }; }
+        { route = "smart"; action = "map"; native = "zai-org/GLM-5.3-Flash"; }
+        { route = "smart"; action = "rank"; strategy = "priority"; }
+        { route = "smart"; action = "balance"; strategy = "round_robin"; }
+        {
+          route = "smart";
+          action = "affinity";
+          sources = [ "responses.conversation" "responses.previous_response_id" ];
+          ttl = "24h";
+          onMissing = "ignore";
+          onProviderFailure = "fail-closed";
+        }
+        { route = "smart"; action = "race"; count = 0; }
+        {
+          route = "smart";
+          action = "retry";
+          target = "smart.retry";
+          attempts = 2;
+          backoffType = "exponential";
+          backoffInitial = "200ms";
+          backoffMax = "1s";
+        }
+        {
+          route = "smart";
+          action = "semaphore";
+          maxCalls = 6;
+          maxInFlight = 4;
+          maxCallsPerProvider = 1;
+        }
+        { route = "smart"; action = "timeout"; duration = "60s"; }
+        {
+          route = "smart.retry";
+          action = "filter";
+          where = {
+            error = { "in" = [ "429" "5xx" "timeout" "connection_error" "invalid_response" ]; };
+          };
+        }
+        {
+          route = "smart.retry";
+          action = "filter";
+          where = { provider = { "in" = allProviders; unused = true; }; };
+        }
+        { route = "smart.retry"; action = "map"; native = "zai-org/GLM-5.3-Flash"; }
+        { route = "smart.retry"; action = "rank"; strategy = "priority"; }
+        { route = "smart.retry"; action = "race"; count = 1; }
+      ];
+      # Generic (provider-list-free) fallback for smart: universe + unused +
+      # race 0. Providers whose catalog lacks the exact GLM native pre-fail
+      # locally and are skipped; the valid carriers re-race in parallel. This
+      # recovers from an upstream 404 on one carrier (the others still race) and
+      # from a local model_not_found, without naming any provider.
       smartFallback = [
         {
           route = "smart";
@@ -420,7 +475,7 @@ in
         {
           route = "smart.fallback";
           action = "filter";
-          where = { provider = { "in" = [ "gonka-proxy" "gonka-openbroker" "gonkarouter" ]; unused = true; }; };
+          where = { provider = { "in" = allProviders; unused = true; }; };
         }
         {
           route = "smart.fallback";
@@ -431,16 +486,9 @@ in
         { route = "smart.fallback"; action = "race"; count = 0; }
       ];
     in
-    # A provider whose catalog lists GLM but that fails the upstream call with
-    # a provider-side 404 must not leave `smart` without a carrier: that 404 is
-    # exact-match (catalog present, model absent for the proxy) and is not on
-    # the plain 404 retry list, so the only way to recover is an explicit
-    # fallback that re-selects an unused carrier provider. The fallback also
-    # absorbs a local model_not_found (catalog snapshot not yet rolled out on
-    # the selected provider) so the request still reaches a carrier.
     primaryRules "stupid" "MiniMaxAI/MiniMax-M2.7"
     ++ primaryRules "standard" "deepseek-ai/DeepSeek-V4-Flash-0731"
-    ++ primaryRules "smart" "zai-org/GLM-5.3-Flash"
+    ++ smartRules
     ++ standardFallback
     ++ smartFallback;
   };
