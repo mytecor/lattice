@@ -82,6 +82,52 @@ func TestBifrostExecutorCustomProviderChat(t *testing.T) {
 	}
 }
 
+func TestStripParamsRemovesUnsupportedReasoningControl(t *testing.T) {
+	// hyperfusion/litellm rejects zai's `thinking` control with 400; the
+	// provider declares strip_params, and the gateway must drop the key
+	// before sending while keeping the rest of the body intact.
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if _, leaked := body["thinking"]; leaked {
+			t.Errorf("thinking reach upstream despite strip_params: %#v", body)
+		}
+		if _, leaked := body["reasoning_effort"]; leaked {
+			t.Errorf("reasoning_effort reach upstream despite strip_params: %#v", body)
+		}
+		if body["model"] != "native-model" {
+			t.Errorf("model rewrite lost: %#v", body["model"])
+		}
+		if body["messages"] == nil {
+			t.Errorf("messages were dropped: %#v", body)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(writer, `{"id":"chat-1","object":"chat.completion","created":1,"model":"native-model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer upstream.Close()
+
+	compiled := bifrostTestConfig(t, upstream.URL)
+	compiled.raw.Providers[0].StripParams = []string{"thinking", "reasoning_effort"}
+	compiled2, err := compileConfig(compiled.raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor, err := newBifrostExecutor(context.Background(), compiled2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer executor.Close()
+	_, callErr := executor.Do(context.Background(), Target{Provider: "mock-openai", Model: "native-model"}, ExecuteRequest{
+		Kind: RequestChat,
+		Body: []byte(`{"model":"standard","thinking":{"type":"enabled"},"reasoning_effort":"high","messages":[{"role":"user","content":"hello"}]}`),
+	})
+	if callErr != nil {
+		t.Fatal(callErr)
+	}
+}
+
 func TestBifrostExecutorCustomProviderChatWithVersionedBasePath(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		// A provider whose OpenAI-compatible server lives under an arbitrary

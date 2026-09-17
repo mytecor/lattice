@@ -309,7 +309,7 @@ func (e *BifrostExecutor) logUpstreamSuccess(ctx context.Context, target Target,
 }
 
 func (e *BifrostExecutor) chatRequest(ctx *schemas.BifrostContext, target Target, body []byte) (*schemas.BifrostChatRequest, *CallError) {
-	rewritten, err := sjson.SetBytes(body, "model", target.Model)
+	rewritten, err := rewriteRequestBody(body, target, e.providers[target.Provider].StripParams)
 	if err != nil {
 		return nil, &CallError{Class: ErrorInvalid, Status: 400, Cause: err}
 	}
@@ -341,7 +341,7 @@ func (e *BifrostExecutor) chatRequest(ctx *schemas.BifrostContext, target Target
 }
 
 func (e *BifrostExecutor) responsesRequest(ctx *schemas.BifrostContext, target Target, body []byte) (*schemas.BifrostResponsesRequest, *CallError) {
-	rewritten, err := sjson.SetBytes(body, "model", target.Model)
+	rewritten, err := rewriteRequestBody(body, target, e.providers[target.Provider].StripParams)
 	if err != nil {
 		return nil, &CallError{Class: ErrorInvalid, Status: 400, Cause: err}
 	}
@@ -370,6 +370,28 @@ func (e *BifrostExecutor) responsesRequest(ctx *schemas.BifrostContext, target T
 		ctx.SetValue(schemas.BifrostContextKeyUseRawRequestBody, true)
 	}
 	return request, nil
+}
+
+// rewriteRequestBody sets the routed native model and, per the target
+// provider's strip_params, removes top-level reasoning-control keys the
+// upstream does not support. The gateway serves clients that encode a
+// provider-specific reasoning control (zai's `thinking`) which generic
+// OpenAI-compatible upstreams (hyperfusion/litellm) reject with 400; without
+// stripping it those providers would fail every request even though their
+// model is fully routable. Keys are removed top-level only: nested fields
+// (e.g. a per-message reasoning block) are preserved.
+func rewriteRequestBody(body []byte, target Target, strip []string) ([]byte, error) {
+	rewritten, err := sjson.SetBytes(body, "model", target.Model)
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range strip {
+		rewritten, err = sjson.DeleteBytes(rewritten, key)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return rewritten, nil
 }
 
 func parseResponsesInput(raw json.RawMessage) ([]schemas.ResponsesMessage, error) {

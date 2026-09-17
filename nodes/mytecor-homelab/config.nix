@@ -7,6 +7,11 @@ let
   # "both fields are file paths" contract. Passwords still come from a shared
   # agenix secret (wifi-password.age); only the home SSID uses wifi-ssid.age.
   ssidFile = name: value: "${pkgs.writeText "lattice-ssid-${name}" value}";
+  # zai `thinking` control rejected by generic OpenAI-compatible upstreams
+  # (hyperfusion/litellm 400). Stripped for every provider so reasoning level
+  # choice stays a native-model concern and no provider fails a race over an
+  # unsupported request parameter.
+  stripReasoningParams = [ "thinking" "reasoning_effort" ];
 in
 {
   networking.hostName = "mytecor-homelab";
@@ -250,36 +255,42 @@ in
         inferenceUrl = "https://api.proxy.gonka.gg/v1";
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
         priority = 50;
+        stripParams = stripReasoningParams;
       };
       gonka-openbroker = {
         id = "gonka-openbroker";
         inferenceUrl = "https://api.openbroker.gonka.gg/v1";
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
         priority = 40;
+        stripParams = stripReasoningParams;
       };
       gonka-api = {
         id = "gonka-api";
         inferenceUrl = "https://hskyauefqcgbvgvxkluj.supabase.co/functions/v1/gonka";
         apiKeyFile = config.age.secrets.llm-provider-gonka-api.path;
         priority = 30;
+        stripParams = stripReasoningParams;
       };
       dahl = {
         id = "dahl";
         inferenceUrl = "https://inference.dahl.global/v1";
         apiKeyFile = config.age.secrets.llm-provider-dahl.path;
         priority = 20;
+        stripParams = stripReasoningParams;
       };
       hyperfusion = {
         id = "hyperfusion";
         inferenceUrl = "https://api.hyperfusion.io/v1";
         apiKeyFile = config.age.secrets.llm-provider-hyperfusion.path;
         priority = 100;
+        stripParams = stripReasoningParams;
       };
       gonkarouter = {
         id = "gonkarouter";
         inferenceUrl = "https://api.gonkarouter.io/v1";
         apiKeyFile = config.age.secrets.llm-provider-gonkarouter.path;
         priority = 10;
+        stripParams = stripReasoningParams;
       };
     };
     # Pipeline defaults equal the built-in ones (providers = all enabled,

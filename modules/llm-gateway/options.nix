@@ -182,6 +182,18 @@ in
             default = { };
             description = "Non-secret extra headers sent to the provider.";
           };
+          stripParams = mkOption {
+            type = types.listOf types.str;
+            default = [ ];
+            description = ''
+              Top-level request-body keys removed before the request reaches this
+              provider. The gateway serves clients that encode a provider-specific
+              reasoning control (zai's `thinking`) which generic OpenAI-compatible
+              upstreams (hyperfusion/litellm) reject with 400; listing it here lets
+              such a provider carry the same logical model with that control
+              stripped, while other providers keep their native control.
+            '';
+          };
         };
       }));
     };

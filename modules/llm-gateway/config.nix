@@ -18,6 +18,7 @@ let
     request_timeout = provider.requestTimeout;
     bifrost_max_retries = provider.bifrostMaxRetries;
     allow_private_network = provider.allowPrivateNetwork;
+    strip_params = provider.stripParams;
   };
 
   # Emits exactly the fields a routing action owns plus the rule envelope

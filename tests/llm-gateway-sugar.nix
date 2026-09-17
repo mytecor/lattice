@@ -22,6 +22,7 @@ let
               inferenceUrl = "https://proxy.gonka.invalid/v1";
               apiKeyFile = "/run/agenix/llm-provider-proxy";
               priority = 20;
+              stripParams = [ "thinking" "reasoning_effort" ];
             };
             openbroker = {
               id = "gonka-openbroker";
@@ -236,6 +237,12 @@ pkgs.runCommand "llm-gateway-sugar-evaluation" { nativeBuildInputs = [ pkgs.jq ]
     # The deployment pipeline providers list narrows the entry filter.
     if ! jq -e 'any(.routing_rules[]; .action == "filter" and .where.provider["in"] != null and (.where.provider["in"] | sort) == ["gonka-openbroker","gonka-proxy"])' $cfg >/dev/null; then
       echo "provider filter must carry the explicit pipeline provider list" >&2
+      exit 1
+    fi
+
+    # A provider's stripParams reach the public config as strip_params.
+    if ! jq -e '.providers[] | select(.id == "gonka-proxy") | .strip_params == ["thinking","reasoning_effort"]' $cfg >/dev/null; then
+      echo "provider strip_params must be emitted as strip_params in the public config" >&2
       exit 1
     fi
 

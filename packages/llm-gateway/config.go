@@ -70,6 +70,14 @@ type Provider struct {
 	BifrostMaxRetries   int               `json:"bifrost_max_retries,omitempty"`
 	AllowPrivateNetwork bool              `json:"allow_private_network,omitempty"`
 	Headers             map[string]string `json:"headers,omitempty"`
+	// StripParams removes the listed top-level request-body keys before the
+	// request reaches this provider. The gateway serves clients that encode a
+	// provider-specific reasoning control (zai's `thinking`) that generic
+	// OpenAI-compatible upstreams (hyperfusion/litellm) reject with 400; the
+	// gateway strips it so a provider that simply doesn't support the control
+	// can carry the same logical model. Other providers keep their native
+	// control untouched.
+	StripParams []string `json:"strip_params,omitempty"`
 }
 
 type BackoffConfig struct {
@@ -334,6 +342,7 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 		provider.BaseProvider = strings.TrimSpace(provider.BaseProvider)
 		provider.InferenceURL = strings.TrimRight(strings.TrimSpace(provider.InferenceURL), "/")
 		provider.ModelsURL = strings.TrimSpace(provider.ModelsURL)
+		provider.StripParams = trimNonEmpty(provider.StripParams)
 		if provider.ID == "" || provider.InferenceURL == "" {
 			return nil, errors.New("every provider requires id and inference_url")
 		}
@@ -442,6 +451,19 @@ func sortedKeys[V any](values map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// trimNonEmpty returns the input with each element TrimSpace'd and blanks
+// removed. Used for lists that are config-optional in meaning (empty == not
+// set) without confusing the executor with empty/whitespace entries.
+func trimNonEmpty(values []string) []string {
+	var out []string
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 func parseErrorClasses(values []string) map[ErrorClass]bool {
