@@ -73,6 +73,11 @@ assert lib.hasInfix "llm_fallbacks_total" (joinExprs llm);
 # The provider pool health is visible on the overview itself (f12-04), not only
 # on the runtime dashboard.
 assert lib.hasInfix "llm_balance_health" (joinExprs llm);
+# Cooldown state is a first-class signal on the overview: the remaining window
+# (deadline − now) must be visible so a cooling provider reads as "cooling for
+# 15s", not as the balance-health zero that stays down for the whole 5m window.
+assert lib.hasInfix "llm_cooldown_until_seconds" (joinExprs llm);
+assert lib.hasInfix "cooldown_until_seconds" (joinExprs llm);
 # Output tokens are part of the token surface alongside input tokens.
 assert lib.hasInfix "llm_output_tokens_total" (joinExprs llm);
 # Filters by the low-cardinality environment label and the route/provider/model

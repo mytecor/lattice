@@ -1390,7 +1390,7 @@
       ],
       "title": "Здоровье провайдеров пула",
       "type": "timeseries",
-      "description": "llm_balance_health по провайдеру: 0 — недоступен, ≥0.8 — здоров."
+      "description": "llm_balance_health: скользящее окно ошибок против error-бюджета (5m, 20%). 0 — провайдер исключён из balance-выбора (частые 429/5xx), 1 — здоров. Это НЕ cooldown: временная заморозка показывается на панели ниже."
     },
     {
       "collapsed": false,
@@ -1403,6 +1403,121 @@
         "w": 24,
         "x": 0,
         "y": 32
+      },
+      "id": 124,
+      "panels": [],
+      "title": "Кулдаун провайдеров",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": true,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": null
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "id": 125,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "width": 0
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "exemplar": false,
+          "expr": "clamp_min(llm_cooldown_until_seconds{environment=\"$environment\",provider=~\"$provider\"} - time(), 0)",
+          "legendFormat": "{{provider}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Остаток кулдауна по провайдеру",
+      "type": "timeseries",
+      "description": "Секунды до возврата провайдера в пул (llm_cooldown_until_seconds − now). Пики — это кулдаун-окона (обычно 15s) после retryable-ошибок; ноль — не в кулдауне. Если провайдер сидит в нуле и не растёт — он просто не охлаждён, а не «завис»."
+    },
+    {
+      "collapsed": false,
+      "datasource": {
+        "type": "grafana",
+        "uid": "-- Grafana --"
+      },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 41
       },
       "id": 119,
       "panels": [],
@@ -1469,7 +1584,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 33
+        "y": 42
       },
       "id": 120,
       "options": {
@@ -1578,7 +1693,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 33
+        "y": 42
       },
       "id": 121,
       "options": {
@@ -1624,7 +1739,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 48
       },
       "id": 122,
       "panels": [],
@@ -1672,7 +1787,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 49
       },
       "id": 123,
       "options": {

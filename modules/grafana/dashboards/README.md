@@ -11,9 +11,9 @@ Fleet (rev. 2026-09-16, полная переработка):
   KPI отвечает «всё ли в порядке» за ~3 секунды: RPS, доля ошибок, p95
   длительности, p95 TTFT, активные запросы, число нездоровых провайдеров.
   Ниже: трафик по route/status, задержки p50/p95/p99, надёжность (attempts,
-  fallback, in-flight, `llm_balance_health`), токены; логи по `request_id` —
-  внизу. Переменные `environment`, `route`, `provider`, `model`, `status`,
-  `request_id`.
+  fallback, in-flight, `llm_balance_health`, кулдаун `llm_cooldown_until_seconds`),
+  токены; логи по `request_id` — внизу. Переменные `environment`, `route`,
+  `provider`, `model`, `status`, `request_id`.
 - [`gateway-runtime.json`](./gateway-runtime.json) — «Gateway runtime»: сервис
   (версия `llm_gateway_build_info`, аптайм, горутины, куча Go), балансировка
   (выборы `llm_balance_selections_total`, здоровье пула `llm_balance_health`),
@@ -34,7 +34,10 @@ Fleet (rev. 2026-09-16, полная переработка):
 - `llm-gateway`: добавлен KPI-ряд (RPS, доля ошибок с порогами 5%/15%, p95
   длительности и TTFT, in-flight, нездоровые провайдеры), ряды «Трафик»,
   «Задержки» (p50/p95/p99), «Надёжность и пул провайдеров» (включая
-  `llm_balance_health` таймсерией), «Токены»; Loki-логи перенесены вниз.
+  `llm_balance_health` таймсерией и панель «Остаток кулдауна по провайдеру»,
+  `llm_cooldown_until_seconds − time()`: cooldown теперь виден как 15-секундные
+  пики, а не как залипший на нуле health), «Кулдаун провайдеров», «Токены»;
+  Loki-логи перенесены вниз.
   Аннотация «Ошибки запросов» (`event="request_failed"`) рисует красные метки
   на графиках.
 - `gateway-runtime`: исправлен мёртвый фильтр Loki-панелей — события это JSON-строки,
@@ -56,7 +59,8 @@ Fleet (rev. 2026-09-16, полная переработка):
 | `llm_input_tokens_total` / `llm_output_tokens_total{model}` | накопленные токены |
 | `llm_attempts_total{provider,error_type}` | попытки веток по провайдеру и классу ошибки (errors фильтрует `error_type=~".+"`) |
 | `llm_fallbacks_total{from_provider,to_provider,reason}` | явные fallback-переходы |
-| `llm_balance_health{provider}` | здоровье пула [0..1] |
+| `llm_balance_health{provider}` | скользящее здоровье пула [0..1] (окно ошибок против бюджета; 0 ≠ cooldown) |
+| `llm_cooldown_until_seconds{provider}` | unix-deadline до возврата провайдера из кулдауна; панель считает остаток `deadline − time()` |
 | `llm_balance_selections_total{route,provider}` | кого выбрала balance-действие |
 | `llm_requests_in_flight{provider}` | ветки в полёте по провайдеру |
 | `llm_gateway_build_info{version,service}` | версия сборки gateway |
