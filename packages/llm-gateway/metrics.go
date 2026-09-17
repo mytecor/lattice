@@ -65,6 +65,14 @@ type Metrics struct {
 	// balanceHealth is the last computed balance health per provider,
 	// snapshotted by the runner alongside balance selections.
 	balanceHealth *gaugeVec
+	// cooldownUntil is the unix-second deadline until which a provider is
+	// cooling, snapshotted by the runner whenever cooldown state changes. A
+	// provider that is not cooling is absent from the family (not zero):
+	// absence is the healthy state, and a literal zero deadline would be
+	// indistinguishable from a just-expired (and thus no longer cooling)
+	// window. Panels compute the remaining window at scrape time with
+	// deadline − time() so the value decays truthfully between snapshots.
+	cooldownUntil *gaugeVec
 
 	startTime time.Time
 }
@@ -97,6 +105,7 @@ func newMetrics() *Metrics {
 		ttft:              newHistogramVec([]string{"model"}, ttftBucketsSec),
 		requestsInFlight:  newGaugeVec([]string{"provider"}),
 		balanceHealth:     newGaugeVec([]string{"provider"}),
+		cooldownUntil:     newGaugeVec([]string{"provider"}),
 		startTime:         time.Now(),
 	}
 }
@@ -188,6 +197,20 @@ func (m *Metrics) ObserveBalanceHealth(provider string, health float64) {
 	m.balanceHealth.set(provider, health)
 }
 
+// ObserveCooldownUntil records the unix-second deadline until which a
+// provider is cooling. A zero deadline clears the provider from the family:
+// a cleared (expired or success-reset) cooldown must not linger as a stale
+// entry, so the dashboard's presence-based panels stay truthful.
+func (m *Metrics) ObserveCooldownUntil(provider string, until time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if until.IsZero() {
+		m.cooldownUntil.clear(provider)
+		return
+	}
+	m.cooldownUntil.set(provider, float64(until.UnixNano())/1e9)
+}
+
 // WriteExposition renders the full metric surface in the Prometheus text
 // exposition format (version 0.0.4: TYPE/HELP lines plus one line per unique
 // label set, families sorted by name). It also emits a small set of
@@ -218,6 +241,7 @@ func (m *Metrics) WriteExposition(writer io.Writer) error {
 	m.outputTokens.write(buffered, "llm_output_tokens_total", "Accumulated output tokens by model.")
 	m.requestsInFlight.write(buffered, "llm_requests_in_flight", "Current in-flight upstream branches by provider.")
 	m.balanceHealth.write(buffered, "llm_balance_health", "Latest balance health score per provider (0 unhealthy … 1 healthy).")
+	m.cooldownUntil.write(buffered, "llm_cooldown_until_seconds", "Unix seconds until a cooling provider re-enters the candidate pool.")
 	m.requestDuration.write(buffered, "llm_request_duration_seconds", "Request duration histogram by route and model.")
 	m.ttft.write(buffered, "llm_ttft_seconds", "Time to first meaningful event histogram by model.")
 
@@ -359,6 +383,14 @@ func (g *gaugeVec) dec(values ...string) {
 
 func (g *gaugeVec) set(provider string, health float64) {
 	g.v[g.keyFor(provider)] = health
+}
+
+// clear removes one provider's entry entirely. Cooldown state uses this so an
+// expired window disappears from the exposition instead of lingering as a
+// stale 0: the value may only be observed on the next scrape after expiry,
+// and by then absence is the truthful value.
+func (g *gaugeVec) clear(provider string) {
+	delete(g.v, g.keyFor(provider))
 }
 
 func (g *gaugeVec) write(buffered *bufio.Writer, name, help string) {

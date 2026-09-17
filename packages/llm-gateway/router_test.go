@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1026,6 +1028,77 @@ func TestCooldownSkipsRecentlyFailedProvider(t *testing.T) {
 	defer mu.Unlock()
 	if calls["a"] != firstA || calls["b"] != 2 {
 		t.Fatalf("cooldown did not skip failed provider: %#v", calls)
+	}
+}
+
+// TestCooldownUntilGaugeFlow pins the metric feedback of the
+// cooldown cycle: the gauge enters with the window, refreshes while the window
+// re-extends, clears on success, and never reports a stale window as cooling.
+func TestCooldownUntilGaugeFlow(t *testing.T) {
+	compiled := raceOnlyConfig(t)
+	// Freeze time so window math and the scrape are exact.
+	current := time.Unix(1_000_000, 0)
+	runner := newRunner(compiled, newCatalog(compiled), &fakeExecutor{do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
+		if target.Provider == "a" {
+			return nil, &CallError{Class: ErrorUpstream, Status: 503}
+		}
+		// b wins slowly: a's failure must settle as a real (not cancelled)
+		// branch before the winner is chosen.
+		time.Sleep(15 * time.Millisecond)
+		return successBody("b"), nil
+	}})
+	runner.now = func() time.Time { return current }
+
+	run := func() {
+		t.Helper()
+		if _, callErr := runner.Run(context.Background(), "standard", ExecuteRequest{Kind: RequestChat}); callErr != nil {
+			t.Fatal(callErr)
+		}
+	}
+	remainingOf := func(body, provider string) (float64, bool) {
+		t.Helper()
+		for _, line := range strings.Split(body, "\n") {
+			if strings.HasPrefix(line, `llm_cooldown_until_seconds{provider="`+provider+`"} `) {
+				value, err := strconv.ParseFloat(strings.Fields(line)[1], 64)
+				if err != nil {
+					t.Fatalf("cooldown deadline gauge parse: %v", err)
+				}
+				return value, true
+			}
+		}
+		return 0, false
+	}
+	exposition := func() string {
+		t.Helper()
+		var buffer bytes.Buffer
+		if err := runner.Metrics().WriteExposition(&buffer); err != nil {
+			t.Fatal(err)
+		}
+		return buffer.String()
+	}
+
+	// First request: provider a fails into cooldown; the gauge must carry the
+	// exact deadline (now + configured 15s), not a stale or absent value.
+	run()
+	value, ok := remainingOf(exposition(), "a")
+	if !ok || value != 1_000_015 {
+		t.Fatalf("after first failure cooldown deadline = %v (present %v), want 1000015", value, ok)
+	}
+
+	// Window extension re-snapshots rather than stacking a second value.
+	runner.record(context.Background(), "a", &CallError{Class: ErrorUpstream, Status: 503})
+	value, ok = remainingOf(exposition(), "a")
+	if !ok || value != 1_000_015 {
+		t.Fatalf("cooldown deadline after extension = %v (present %v), want 1000015", value, ok)
+	}
+
+	// After the window passes, a success path clears the gauge: record with a
+	// nil error is exactly what the scheduler feeds on a winner's success, and
+	// the metric must drop the series rather than keep a stale deadline.
+	current = current.Add(16 * time.Second)
+	runner.record(context.Background(), "a", nil)
+	if _, ok := remainingOf(exposition(), "a"); ok {
+		t.Fatalf("expired cooldown must drop the series after a success reset")
 	}
 }
 

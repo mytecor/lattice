@@ -42,6 +42,7 @@ func TestExpositionRendersFamilies(t *testing.T) {
 	m.IncrInFlight("a")
 	m.ObserveBalanceSelection("standard", "a")
 	m.ObserveBalanceHealth("a", 0.8)
+	m.ObserveCooldownUntil("a", time.Unix(1_700_000_000, 0))
 	m.ObserveFallback("a", "b", "timeout")
 
 	body := scrape(t, m)
@@ -56,6 +57,9 @@ func TestExpositionRendersFamilies(t *testing.T) {
 		"llm_output_tokens_total",
 		"llm_requests_in_flight",
 		"llm_balance_health",
+		"llm_cooldown_until_seconds",
+		"llm_request_duration_seconds",
+		"llm_request_duration_seconds",
 		"llm_request_duration_seconds",
 		"llm_ttft_seconds",
 		"llm_gateway_build_info",
@@ -169,5 +173,31 @@ func TestFallbacksMetric(t *testing.T) {
 	}
 	if !strings.Contains(body, `llm_fallbacks_total{from_provider="a",to_provider="b",reason="5xx"} 1`) {
 		t.Errorf("missing fallback 5xx series")
+	}
+}
+
+func TestCooldownUntilMetric(t *testing.T) {
+	m := newMetrics()
+	m.ObserveCooldownUntil("a", time.Unix(1_700_000_100, 0))
+	m.ObserveCooldownUntil("b", time.Unix(1_700_000_007, 0))
+	m.ObserveCooldownUntil("c", time.Time{}) // clear: expired windows must not linger
+	body := scrape(t, m)
+
+	if !strings.Contains(body, `llm_cooldown_until_seconds{provider="a"} 1.7000001e+09`) {
+		t.Errorf("cooldown deadline for a missing or wrong:\n%s", body)
+	}
+	if !strings.Contains(body, `llm_cooldown_until_seconds{provider="b"} 1.700000007e+09`) {
+		t.Errorf("cooldown deadline for b missing or wrong:\n%s", body)
+	}
+	// A cleared provider must be fully absent from the family: a literal zero
+	// deadline would be indistinguishable from a just-expired window.
+	if strings.Contains(body, `llm_cooldown_until_seconds{provider="c"}`) {
+		t.Errorf("cleared cooldown must not linger as a stale entry:\n%s", body)
+	}
+	// Extension overwrites in place: one series per provider, latest value wins.
+	m.ObserveCooldownUntil("a", time.Unix(1_700_000_005, 0))
+	body = scrape(t, m)
+	if strings.Contains(body, `llm_cooldown_until_seconds{provider="a"} 1.7000001e+09`) {
+		t.Errorf("stale cooldown deadline kept after extension:\n%s", body)
 	}
 }

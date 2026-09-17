@@ -51,6 +51,10 @@ credentials. Метрики считаются в счётчиках и гист
 - `llm_fallbacks_total{from_provider,to_provider,reason}` — явные fallback-переходы.
 - `llm_balance_selections_total{route,provider}` — выбор провайдера балансировкой.
 - `llm_balance_health{provider}` — текущий health score (0..1) пула.
+- `llm_cooldown_until_seconds{provider}` — unix-дедлайн, до которого провайдер
+  охлаждается после retryable-ошибки (в семье отсутствует, когда не охлаждён);
+  остаток окна считается как `deadline − now` на стороне панели, так что значение
+  правдиво убывает между скрейпами.
 - `go_*` / `process_start_time_seconds` — минимальное runtime-состояние процесса.
 
 Скрейп-чек:

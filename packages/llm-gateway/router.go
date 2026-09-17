@@ -501,6 +501,20 @@ func (r *Runner) record(ctx context.Context, providerID string, callErr *CallErr
 		r.cooling[providerID] = newUntil
 	}
 	r.mu.Unlock()
+	// Snapshot the cooldown gauge on every cooldown-state transition the
+	// request produced: enter, extend and clear. The gauge carries the absolute
+	// deadline; a panel computes the remaining window at scrape time with
+	// deadline − time(), so the value decays truthfully between snapshots and
+	// a stale deadline never outlives its window. A cleared window drops the
+	// series.
+	if newUntil.IsZero() {
+		if before.IsZero() {
+			return
+		}
+		r.metrics.ObserveCooldownUntil(providerID, time.Time{})
+		return
+	}
+	r.metrics.ObserveCooldownUntil(providerID, newUntil)
 	// Emit cooldown_put only when the provider actually enters the cooling
 	// window (was not cooling, now is); re-extending an active window is not a
 	// new event worth a line.
