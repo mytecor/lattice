@@ -16,4 +16,12 @@ in
   "llm-provider-gonkarouter.age".publicKeys = [ admin node ];
   "grafana-admin-password.age".publicKeys = [ admin node ];
   "grafana-secret-key.age".publicKeys = [ admin node ];
+  # f4-05: Yggdrasil node identity (PKCS8 PEM private key — формат PrivateKeyPath).
+  # Стабильный адрес ноды в 200::/7 выводится из этого ключа, поэтому ключ живёт в agenix,
+  # а не генерируется заново.
+  "yggdrasil-keys.age".publicKeys = [ admin node ];
+  # f4-05: Cloudflare API token для DNS-01 (валидация ACME-сертификатов *.homelab.myt.su
+  # через публичный DNS, т.к. AAAA-записи указывают на yggdrasil-адрес, недостижимый
+  # для HTTP-01/TLS-ALPN публичных CA). Создаётся оператором (см. README).
+  "caddy-cloudflare-token.age".publicKeys = [ admin node ];
 }

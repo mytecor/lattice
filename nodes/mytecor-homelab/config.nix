@@ -3,6 +3,11 @@
 let
   rootPasswordHashFile = ./secrets/root-password-hash.age;
   hasRootPassword = builtins.pathExists rootPasswordHashFile;
+  # f4-05: Cloudflare API token для DNS-01 (валидация ACME через публичный DNS).
+  # Секрет создаёт оператор (см. nodes/mytecor-homelab/README.md); пока .age-файла нет,
+  # mesh-HTTPS остаётся выключен, LAN-контракт *.local не затронут.
+  caddyCloudflareTokenFile = ./secrets/caddy-cloudflare-token.age;
+  hasCaddyCloudflare = builtins.pathExists caddyCloudflareTokenFile;
   # Non-secret SSIDs exposed as world-readable store files, matching the module's
   # "both fields are file paths" contract. Passwords still come from a shared
   # agenix secret (wifi-password.age); only the home SSID uses wifi-ssid.age.
@@ -15,6 +20,39 @@ let
 in
 {
   networking.hostName = "mytecor-homelab";
+
+  # f4-05: Yggdrasil — IPv6 mesh-оверлей для внешнего доступа к сервисам без белого IP.
+  # Нода получает стабильный адрес в 200::/7 из agenix-ключа (приватный ключ из
+  # yggdrasil-keys.age; PrivateKeyPath загружается через systemd credentials, в store
+  # ключ не попадает — на это есть assertion модуля). Peers — проверенные на живом
+  # клиенте (Mac) публичные ноды. Из этого адреса выпускаются поддомены homelab.myt.su
+  # (см. README: внешний DNS *.homelab.myt.su → address).
+  services.yggdrasil = {
+    enable = true;
+    settings = {
+      # Стабильные, проверенные публичные peers (несколько регионов для отказоустойчивости).
+      Peers = [
+        "tls://ygg5.mk16.de:1338"
+        "tls://supanadit.com:15021"
+        "tls://ins.8px.sk:4321"
+        "quic://asia.deinfra.org:15015"
+        "tls://ygg-msk-1.averyan.ru:8362"
+      ];
+      PrivateKeyPath = config.age.secrets.yggdrasil-keys.path;
+      IfName = "ygg0";
+    };
+  };
+
+  # f4-05: внешний (mesh) ingress поверх LAN-контракта. Caddy обслуживает сервисы
+  # по Host заголовку и для *.homelab.myt.su параллельно *.local. domain null → mesh закрыт.
+  # grafana/llm-gateway в meshExclude: у них нет публичной TLS/API-key защиты, поэтому
+  # они остаются только на LAN-контракте *.local и извне (через mesh) недоступны.
+  lattice.tcp-gateway = {
+    meshDomain = "homelab.myt.su";
+    meshExclude = [ "grafana" "llm-gateway" ];
+    # Cloudflare DNS-01: включается автоматически, как только оператор создаст секрет.
+    cloudflareToken = lib.mkIf hasCaddyCloudflare config.age.secrets.caddy-cloudflare-token.path;
+  };
 
   age = {
     identityPaths = [ "/persist/var/lib/lattice/age/identity" ];
@@ -70,6 +108,23 @@ in
       # F12: Grafana secret_key (NixOS 26.05 requires explicit value).
       grafana-secret-key = {
         file = ./secrets/grafana-secret-key.age;
+        mode = "0400";
+      };
+      # f4-05: стабильная идентичность ноды Yggdrasil (PKCS8 PEM private key — формат,
+      # который требует PrivateKeyPath, см. src/config/config.go "...in PEM format").
+      # Адрес в 200::/7 выводится из этого ключа и должен переживать перезагрузки — поэтому
+      # ключ в agenix, а не генерируется заново при старте. При ротации ключа сервис
+      # перезапускают вручную (в этой версии agenix нет restartUnits; секрет перечитывается
+      # на следующей активации, yggdrasil подхватит новый адрес после перезапуска юнита).
+      yggdrasil-keys = {
+        file = ./secrets/yggdrasil-keys.age;
+        mode = "0400";
+      };
+    } // lib.optionalAttrs hasCaddyCloudflare {
+      # f4-05: токен Cloudflare для DNS-01 (acme_dns). Подаётся через systemd
+      # EnvironmentFile (services.caddy.environmentFile), в store не попадает.
+      caddy-cloudflare-token = {
+        file = caddyCloudflareTokenFile;
         mode = "0400";
       };
     };

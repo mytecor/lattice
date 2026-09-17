@@ -4,6 +4,25 @@ let
   hostName = config.networking.hostName;
   statusHost = "status.${hostName}.local";
 
+  # f4-05: mesh (внешний) доступ к status — параллельно LAN-контракту. Читаем те же
+  # опции, что задаёт профиль tcp-gateway: meshDomain и cloudflareToken. Без токена
+  # mesh-сайт обслуживается по plain HTTP (:80); с токеном — по HTTPS (acme_dns).
+  meshDomain = config.lattice.tcp-gateway.meshDomain;
+  meshCloudflare = config.lattice.tcp-gateway.cloudflareToken != null;
+  meshScheme = if meshCloudflare then "https" else "http";
+  statusMeshHost = if meshDomain != null then "${meshScheme}://status.${meshDomain}" else null;
+
+  # Общий extraConfig статус-сайта (LAN и mesh используют один и тот же контент-блок).
+  statusSiteConfig = ''
+    # f4-04: единый статус-файл отдаётся на любой путь. root указывает на
+    # каталог /run, а rewrite перенаправляет запрос на сам файл, чтобы
+    # file_server не делал 308-редирект (трактуя root-файл как директорию).
+    root * /run
+    rewrite * /lattice-node-status.json
+    header Content-Type application/json
+    file_server
+  '';
+
   # f4-04: JSON генерируется на каждой активации из runtime-фактов узла
   # (NixOS generation, применённый comin commit). Обслуживает сам Caddy через
   # file_server — без отдельного backend-процесса и внутреннего порта
@@ -34,15 +53,11 @@ in
   imports = [ ../tcp-gateway/config.nix ];
 
   config = {
-    services.caddy.virtualHosts."http://${statusHost}".extraConfig = ''
-      # f4-04: единый статус-файл отдаётся на любой путь. root указывает на
-      # каталог /run, а rewrite перенаправляет запрос на сам файл, чтобы
-      # file_server не делал 308-редирект (трактуя root-файл как директорию).
-      root * /run
-      rewrite * /lattice-node-status.json
-      header Content-Type application/json
-      file_server
-    '';
+    services.caddy.virtualHosts = {
+      "http://${statusHost}".extraConfig = statusSiteConfig;
+    } // lib.optionalAttrs (statusMeshHost != null) {
+      "${statusMeshHost}".extraConfig = statusSiteConfig;
+    };
 
     # f4-04: пишем статус-документ при каждой активации. Специальный
     # 'lattice-node-status' activation script работает без отдельного юнита:

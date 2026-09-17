@@ -117,6 +117,93 @@ rnsh --config .secrets/rnsh-operator \
 `~/.reticulum`. Не генерируйте заново операторскую identity поверх существующей: новая identity
 потребует обновить allowlist на ноде. Python rnsh следует запускать из терминала с TTY.
 
+## Yggdrasil и mesh-доступ (f4-05)
+
+Наружу нода доступна через
+[Yggdrasil](https://yggdrasil-network.github.io/) — self-organizing IPv6 mesh-оверлей
+с криптографическими адресами в `200::/7`. Исходящие подключения к публичным peers дают
+достижимость адреса ноды из интернета даже за NAT, без белого IP и проброса портов.
+
+Стабильная идентичность ноды лежит в agenix-секрете `yggdrasil-keys.age` (в Git только
+`.age`-шифротекст). Секрет — PKCS8 PEM-приватный ключ Yggdrasil; `services.yggdrasil.settings.PrivateKeyPath`
+указывает на расшифрованный файл, который Yggdrasil читает через systemd credentials
+(`LoadCredential`), поэтому приватный ключ не попадает в Nix store.
+
+Из адреса ноды выпущены публичные поддомены `*.homelab.myt.su`:
+
+```text
+http://acp.homelab.myt.su/          — ACP (Pi)
+http://git-cache-proxy.homelab.myt.su/
+http://radicle.homelab.myt.su/
+http://status.homelab.myt.su/
+```
+
+Grafana и LLM gateway в mesh НЕ выводятся (`meshExclude`): у них нет публичной TLS/API-key
+защиты, поэтому они остаются только на LAN-контракте `*.local`. Порт 80 (HTTP) открыт в
+firewall; 443 открывается, только когда оператор создаст `caddy-cloudflare-token.age` (тогда
+mesh-сайты обслуживаются по HTTPS через DNS-01 ACME Cloudflare).
+
+### Внешний DNS
+
+Нужны AAAA-записи `*.homelab.myt.su` (и сам `homelab.myt.su`) → yggdrasil-адрес ноды
+(публичное значение, выводится из приватного ключа):
+
+```text
+address:    200:e9f0:e122:7db:3bea:cf88:cdf3:fb91
+subnet:     300:e9f0:e122:7db::/64
+publickey:  8b078f6efc12620a983b9906023747b01bc5c6e2464fc171299fb5044374fdf3
+```
+
+Записи видят только клиенты, находящиеся в yggdrasil-сети (сама нода и остальные участники
+mesh-оверлея). Это mesh-доступ, а не публичный интернет.
+
+### Проверка с клиента в yggdrasil-сети (Mac)
+
+На Mac достаточно клиента Yggdrasil в той же сети (например, демон `yggdrasil` уже работает
+с `/etc/yggdrasil.conf`). Из терминала:
+
+```sh
+curl --fail http://status.homelab.myt.su/
+```
+
+Ожидаемый ответ — тот же JSON, что и `http://status.mytecor-homelab.local/`. Любой сервис с
+mesh-поддомена должен возвращать тот же ответ, что и его LAN-контракт.
+
+### Создание/ротация секрета `yggdrasil-keys.age`
+
+Пустой конфиг генерирует ключ и адрес (значения не печатать в консоль):
+
+```sh
+umask 077
+# из каталога nodes/mytecor-homelab/secrets/
+nix run nixpkgs#yggdrasil -- -genconf > /tmp/yggdrasil-new.conf
+```
+
+Публичный адрес/ключ (можно печатать — это не секрет):
+
+```sh
+yggdrasil -useconffile /tmp/yggdrasil-new.conf -address
+```
+
+Приватный ключ в PEM-формате (нужен для `PrivateKeyPath`) выводится через `-exportkey` и
+шифруется прямо в `.age`, не попадая в консоль:
+
+```sh
+umask 077
+# yggdrasil -exportkey печатает PEM на stdout; пайпим сразу в age --encrypt
+nix run nixpkgs#yggdrasil -- -useconffile /tmp/yggdrasil-new.conf -exportkey | \
+  nix run nixpkgs#age --encrypt \
+    -r age1dyxfyhf8s5lj9k0pzkkjjte0dcg4yecwglh88kmv2udau0q33v0ssa4pd8 \
+    -R ~/.ssh/mytecor-homelab.pub \
+    -o yggdrasil-keys.age
+rm /tmp/yggdrasil-new.conf
+```
+
+Адрес ноды в `200::/7` остаётся стабильным между перезагрузками, потому что ключ приходит из
+agenix, а не генерируется заново. При ротации ключа нужно обновить DNS-записи
+`*.homelab.myt.su` на новый адрес и перезапустить сервис (`systemctl restart yggdrasil`),
+т.к. в этой версии agenix нет restartUnits.
+
 ## Radicle
 
 Нода запускает selective seed и HTTP gateway с отдельной сервисной identity. Закрытый ключ

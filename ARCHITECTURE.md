@@ -120,8 +120,12 @@ http://<service>.<node-name>.local/
 Backend-порты не открываются в firewall и не являются частью клиентского API. Клиенты не должны
 использовать IP ноды, ручной `Host` или внутренний порт backend вместо канонического mDNS-имени.
 
-Маршруты публичного DNS/HTTPS, если они появятся, настраиваются отдельно и не изменяют локальный
-контракт `service.node-name.local:80`.
+Опционально (`lattice.tcp-gateway.meshDomain` профиля `tcp-gateway`) тот же набор
+сервисов обслуживается параллельно на адресе `http(s)://<service>.<meshDomain>/` для
+доступа из Yggdrasil-сети. DNS `*.meshDomain` ведёт на yggdrasil-адрес ноды
+(`200::/7`), достижимый через публичные peers. Сервисы из `meshExclude` (например
+`grafana`, `llm-gateway`) не получают mesh-адрес: у них нет публичной TLS/API-key защиты.
+Mesh-схема `http` по умолчанию; с Cloudflare-токеном — `https` (DNS-01 ACME).
 
 Первый прикладной payload — JSON endpoint `status.<node>.local` из
 [`profiles/app-services`](./profiles/app-services/README.md). Его обслуживает директива Caddy
