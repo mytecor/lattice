@@ -836,7 +836,7 @@
           "instant": false,
           "legendFormat": "p95 · {{route}}",
           "range": true,
-          "refId": "A"
+          "refId": "B"
         },
         {
           "datasource": {
@@ -849,7 +849,7 @@
           "instant": false,
           "legendFormat": "p99 · {{route}}",
           "range": true,
-          "refId": "A"
+          "refId": "C"
         }
       ],
       "title": "Длительность ответа по маршруту",
@@ -958,7 +958,7 @@
           "instant": false,
           "legendFormat": "p95 · {{model}}",
           "range": true,
-          "refId": "A"
+          "refId": "B"
         },
         {
           "datasource": {
@@ -971,7 +971,7 @@
           "instant": false,
           "legendFormat": "p99 · {{model}}",
           "range": true,
-          "refId": "A"
+          "refId": "C"
         }
       ],
       "title": "TTFT по модели",
@@ -1626,7 +1626,7 @@
           "instant": false,
           "legendFormat": "выход · {{model}}",
           "range": true,
-          "refId": "A"
+          "refId": "B"
         }
       ],
       "title": "Токены в секунду по модели",
