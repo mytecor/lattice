@@ -303,18 +303,22 @@ pkgs.runCommand "llm-gateway-sugar-evaluation" { nativeBuildInputs = [ pkgs.jq ]
     # native group and the override group each select their own subset, and
     # hyperfusion-style providers map directly (not via fallback). Verify the
     # generated rules pair every provider prefix with the right native.
-    if ! jq -e --arg prefix "gonka-openbroker" --arg native "gonka/zai-org/GLM-5.3-Flash" \
-      'any(.routing_rules[]; .route == "smart" and .action == "map" and .native == $native
-        and (any(.routing_rules[]; .route == "smart" and .action == "filter"
-          and .where.provider["in"] != null
-          and (.where.provider["in"] | index($prefix)) != null)))' $cfg >/dev/null; then
+    # jq 1.7 nests `any(.c[]; ...)` over the same collection unsafely and
+    # errors with "Cannot iterate over null", so each filter->map pair is
+    # asserted with two independent `any` calls joined by `and`.
+    if ! jq -e --arg native "gonka/zai-org/GLM-5.3-Flash" \
+      'any(.routing_rules[]; .route == "smart" and .action == "map" and .native == $native)
+       and any(.routing_rules[]; .route == "smart" and .action == "filter"
+         and (.where.provider["in"] // [] | index("gonka-openbroker")) != null)' \
+      $cfg >/dev/null; then
       echo "expected a smart map to gonka/zai-org/GLM-5.3-Flash preceded by a filter selecting gonka-openbroker" >&2
       exit 1
     fi
     if ! jq -e --arg native "zai-org/GLM-5.3-Flash" \
-      'any(.routing_rules[]; .route == "smart" and .action == "map" and .native == $native
-        and (any(.routing_rules[]; .route == "smart" and .action == "filter"
-          and .where.provider["in"] != null and (.where.provider["in"] | index("gonka-proxy")) != null)))' $cfg >/dev/null; then
+      'any(.routing_rules[]; .route == "smart" and .action == "map" and .native == $native)
+       and any(.routing_rules[]; .route == "smart" and .action == "filter"
+         and (.where.provider["in"] // [] | index("gonka-proxy")) != null)' \
+      $cfg >/dev/null; then
       echo "expected a smart map to zai-org/GLM-5.3-Flash preceded by a filter selecting gonka-proxy" >&2
       exit 1
     fi
