@@ -257,6 +257,10 @@ lattice.llm-gateway = {
     standard.native = "deepseek-ai/DeepSeek-V4-Flash-0731";
     smart = {
       native = "zai-org/GLM-5.3-Flash";
+      # Per-provider native override: hyperfusion serves the model under its
+      # own prefixed catalog alias, mapped directly in the entry pipeline
+      # (not via fallback); other carriers get `native`.
+      nativeByProvider = { hyperfusion = "gonka/zai-org/GLM-5.3-Flash"; };
       pipeline = {            # per-model override поверх deployment-дефолтов
         raceCount = 0;        # гонять весь пул параллельно (GLM-носители)
         semaphore.maxCalls = 6;
@@ -278,6 +282,11 @@ filter (where.model) → filter provider → map → rank → balance → affini
 → retry (+ opt-in hedge) → semaphore → timeout, плюс <model>.retry (и <model>.hedge,
 когда hedge включён) как именованные подроуты с фильтром unused-провайдеров.
 ```
+
+`models.<name>.nativeByProvider` разбивает пул по distinct native ID: для каждого
+group генерируется своя пара `filter provider (in group) → map native`, так что
+разные провайдеры одной модели достигают её через разные native IDs в одном stage
+(без fallback). Без `nativeByProvider` это одна пара над всем пулом — прежний вывод.
 
 Дефолты pipeline: провайдеры — все включённые (выводятся из реестра, список `id`);
 `balance.strategy = "p2c"` с равными весами; `race count = 1`; retry 2 попытки (exponential,

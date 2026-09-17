@@ -39,9 +39,13 @@ let
             standard.native = "deepseek-ai/DeepSeek-V4-Flash-0731";
             # smart narrows nothing (inherits the deployment providers list
             # through the override chain) but races the whole pool and opts
-            # into the hedge with a custom delay.
+            # into the hedge with a custom delay. gonka-openbroker serves the
+            # GLM model under its own prefixed native: the per-provider
+            # mapping splits the entry pipeline into two filter→map pairs
+            # without a fallback.
             smart = {
               native = "zai-org/GLM-5.3-Flash";
+              nativeByProvider = { gonka-openbroker = "gonka/zai-org/GLM-5.3-Flash"; };
               pipeline = {
                 raceCount = 0;
                 hedge = {
@@ -152,6 +156,38 @@ let
     ];
   }).config;
 
+  # A nativeByProvider key must be in the model's effective provider list; a
+  # provider excluded by models.<name>.pipeline.providers must not be mapped.
+  foreignNativeByProviderConfig = (lib.nixosSystem {
+    modules = [
+      gatewayModule
+      {
+        nixpkgs.pkgs = pkgs;
+        system.stateVersion = "26.05";
+        lattice.llm-gateway.enable = true;
+        lattice.llm-gateway = {
+          providers = {
+            proxy = {
+              id = "gonka-proxy";
+              inferenceUrl = "https://proxy.gonka.invalid/v1";
+              apiKeyFile = "/run/agenix/llm-provider-proxy";
+            };
+            openbroker = {
+              id = "gonka-openbroker";
+              inferenceUrl = "https://openbroker.gonka.invalid/v1";
+              apiKeyFile = "/run/agenix/llm-provider-openbroker";
+            };
+          };
+          models.smart = {
+            native = "zai-org/GLM-5.3-Flash";
+            nativeByProvider = { gonka-openbroker = "gonka/zai-org/GLM-5.3-Flash"; };
+            pipeline.providers = [ "gonka-proxy" ];
+          };
+        };
+      }
+    ];
+  }).config;
+
   failedAssertions = cfg:
     lib.filter (assertion: !assertion.assertion) cfg.assertions;
   # Only the llm-gateway module's own contract assertions: the minimal test
@@ -176,6 +212,10 @@ assert lib.length (gatewayFailures dottedModelConfig) == 1;
 assert lib.hasInfix
   "dot-free"
   (lib.head (gatewayFailures dottedModelConfig)).message;
+assert lib.length (gatewayFailures foreignNativeByProviderConfig) == 1;
+assert lib.hasInfix
+  "effective provider list"
+  (lib.head (gatewayFailures foreignNativeByProviderConfig)).message;
 pkgs.runCommand "llm-gateway-sugar-evaluation" { nativeBuildInputs = [ pkgs.jq ]; }
   ''
     cfg=${config.lattice.llm-gateway.publicConfigFile}
@@ -252,5 +292,39 @@ pkgs.runCommand "llm-gateway-sugar-evaluation" { nativeBuildInputs = [ pkgs.jq ]
       echo "entry model standard must be filtered exactly once" >&2
       exit 1
     fi
+    # nativeByProvider splits the pool into filter→map pairs: the default
+    # native group and the override group each select their own subset, and
+    # hyperfusion-style providers map directly (not via fallback). Verify the
+    # generated rules pair every provider prefix with the right native.
+    if ! jq -e --arg prefix "gonka-openbroker" --arg native "gonka/zai-org/GLM-5.3-Flash" \
+      'any(.routing_rules[]; .route == "smart" and .action == "map" and .native == $native
+        and (any(.routing_rules[]; .route == "smart" and .action == "filter"
+          and .where.provider["in"] != null
+          and (.where.provider["in"] | index($prefix)) != null)))' $cfg >/dev/null; then
+      echo "expected a smart map to gonka/zai-org/GLM-5.3-Flash preceded by a filter selecting gonka-openbroker" >&2
+      exit 1
+    fi
+    if ! jq -e --arg native "zai-org/GLM-5.3-Flash" \
+      'any(.routing_rules[]; .route == "smart" and .action == "map" and .native == $native
+        and (any(.routing_rules[]; .route == "smart" and .action == "filter"
+          and .where.provider["in"] != null and (.where.provider["in"] | index("gonka-proxy")) != null)))' $cfg >/dev/null; then
+      echo "expected a smart map to zai-org/GLM-5.3-Flash preceded by a filter selecting gonka-proxy" >&2
+      exit 1
+    fi
+    # Each provider appears in exactly one entry filter group (no duplicates).
+    if ! jq -e '([.routing_rules[] | select(.route == "smart" and .action == "filter"
+      and .where.provider != null and .where.provider["in"] != null)
+      | .where.provider["in"][]] | length) == 2' $cfg >/dev/null; then
+      echo "expected each of the two smart providers in exactly one filter group" >&2
+      exit 1
+    fi
+    # The override propagates to the retry and hedge subroutes too.
+    for sub in smart.retry smart.hedge; do
+      if ! jq -e --arg sub "$sub" --arg native "gonka/zai-org/GLM-5.3-Flash" \
+        'any(.routing_rules[]; .route == $sub and .action == "map" and .native == $native)' $cfg >/dev/null; then
+        echo "expected the override native to reach $sub" >&2
+        exit 1
+      fi
+    done
     touch $out
   ''

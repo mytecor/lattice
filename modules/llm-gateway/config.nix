@@ -62,14 +62,48 @@ let
       # Enabled provider IDs (not attrnames): the provider registry allows a
       # custom `id` per instance.
       providerList = let p = pick [ "providers" ] null; in if p != null then p else map (provider: provider.id) (builtins.attrValues activeProviders);
+      # Per-provider native overrides: a provider listed in nativeByProvider is
+      # mapped to its own native ID instead of model.native. The pool is split
+      # into one group per distinct effective native, emitting filter provider
+      # (in group) → map native pairs, so different providers of one logical
+      # model can be reached through different native IDs in a single stage
+      # (f7-10: one provider may appear in the pool once; each group maps
+      # disjoint providers to one native).
+      nativeFor = provider: model.nativeByProvider.${provider} or model.native;
+      # Debounced distinct natives in providerList order: each provider's
+      # effective native is emitted once, in first-appearance order.
+      distinctNatives = lib.foldl' (acc: provider:
+        let n = nativeFor provider; in
+        if lib.elem n acc then acc else acc ++ [ n ]
+      ) [ ] providerList;
+      # effectiveNativeGroups: list of { native, providers } — one group per
+      # distinct effective native, providers in providerList order. Independent
+      # providers map to their own native; without nativeByProvider this is a
+      # single group over the whole provider list (identical to previous
+      # output).
+      effectiveNativeGroups = map (n: {
+        native = n;
+        providers = lib.filter (p: nativeFor p == n) providerList;
+      }) distinctNatives;
+      # filter+map rules for one route (entry or subroute) whose provider
+      # selection carries an optional unused restriction.
+      mapSliceRules = route: unused:
+        lib.concatMap (g: [
+          { route = route; action = "filter"; where = { provider = { "in" = g.providers; } // lib.optionalAttrs unused { unused = true; }; }; }
+          { route = route; action = "map"; native = g.native; }
+        ]) effectiveNativeGroups;
       entry = name;
       retryRoute = "${entry}.retry";
       hedgeEnabled = pick [ "hedge" "enable" ] false;
       hedgeRoute = "${entry}.hedge";
       rawRules = [
         { route = entry; action = "filter"; where = { model = { eq = entry; }; }; }
-        { route = entry; action = "filter"; where = { provider = { "in" = providerList; }; }; }
-        { route = entry; action = "map"; native = model.native; }
+      ]
+      # One filter provider (in group) → map native pair per distinct
+      # effective native; without nativeByProvider this is a single pair over
+      # the whole provider list, identical to previous output.
+      ++ mapSliceRules entry false
+      ++ [
         { route = entry; action = "rank"; strategy = "priority"; }
         {
           route = entry;
@@ -122,18 +156,16 @@ let
             error = { "in" = [ "429" "5xx" "timeout" "connection_error" "invalid_response" ]; };
           };
         }
-        {
-          route = retryRoute;
-          action = "filter";
-          where = { provider = { "in" = providerList; unused = true; }; };
-        }
-        { route = retryRoute; action = "map"; native = model.native; }
+      ]
+      # Retry subroute re-selects unused providers with the same per-native
+      # grouping as the entry route.
+      ++ mapSliceRules retryRoute true
+      ++ [
         { route = retryRoute; action = "rank"; strategy = "priority"; }
         { route = retryRoute; action = "race"; count = 1; }
       ]
+      ++ lib.optionals hedgeEnabled (mapSliceRules hedgeRoute true)
       ++ lib.optionals hedgeEnabled [
-        { route = hedgeRoute; action = "filter"; where = { provider = { "in" = providerList; unused = true; }; }; }
-        { route = hedgeRoute; action = "map"; native = model.native; }
         { route = hedgeRoute; action = "rank"; strategy = "priority"; }
         { route = hedgeRoute; action = "race"; count = 1; }
       ];
@@ -287,6 +319,23 @@ in
           (id: builtins.elem id providerIds)
           balanceWeightedProviders;
         message = "llm-gateway: every balance weights entry must reference an enabled provider ID.";
+      }
+      # nativeByProvider keys must be enabled provider IDs available to the
+      # model: the sugar groups the effective provider list (not the whole
+      # registry) and a key outside it would be silently dropped.
+      {
+        assertion = lib.all
+          (name: lib.all (provider: builtins.elem provider providerIds)
+            (builtins.attrNames cfg.models.${name}.nativeByProvider))
+          modelNames;
+        message = "llm-gateway: every nativeByProvider key must reference an enabled provider ID.";
+      }
+      {
+        assertion = lib.all
+          (name: lib.all (provider: builtins.elem provider (let m = cfg.models.${name}; p = pipelineValue m [ "providers" ] null; in if p != null then p else providerIds))
+            (builtins.attrNames cfg.models.${name}.nativeByProvider))
+          modelNames;
+        message = "llm-gateway: every nativeByProvider key must be in the model's effective provider list (models.<name>.nativeByProvider targets a provider excluded by models.<name>.pipeline.providers or the deployment pipeline).";
       }
       {
         assertion = lib.all

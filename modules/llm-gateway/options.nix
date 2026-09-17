@@ -219,6 +219,19 @@ in
             type = types.nonEmptyStr;
             description = "Provider-native model id mapped for this logical model.";
           };
+          nativeByProvider = mkOption {
+            type = types.attrsOf types.nonEmptyStr;
+            default = { };
+            description = ''
+              Per-provider native model overrides for this logical model. A
+              provider listed here is mapped to the given native ID instead of
+              `native`; the sugar emits one filter (provider in group) + map
+              pair per distinct native, so different providers of one logical
+              model can reach it through different native IDs (f7-10) without
+              a fallback. Keys must be enabled provider IDs present in the
+              model's effective provider list.
+            '';
+          };
           pipeline = mkOption {
             default = { };
             description = ''

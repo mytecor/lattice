@@ -147,7 +147,11 @@ in
           };
           compat = { supportsReasoningEffort = false; };
         };
-        # smart → zai-org/GLM-5.3-Flash via the llm-gateway. Multimodal
+        # smart → zai-org/GLM-5.3-Flash via the llm-gateway. Hyperfusion serves
+        # the same GLM under a second catalog alias: the per-provider mapping
+        # gives it gonka/zai-org/GLM-5.3-Flash directly in the entry pipeline,
+        # not through a fallback — hyperfusion carries smart on its own native.
+        # Multimodal
         # (vision verified), accepts the developer role, and always-reasoning:
         # GLM ignores a thinking:disabled toggle and reasons regardless. Pi's
         # zai thinkingFormat sends thinking:{type:enabled/disabled}; since no
@@ -308,6 +312,7 @@ in
       # whose completions stay well under 4K.
       smart = {
         native = "zai-org/GLM-5.3-Flash";
+        nativeByProvider = { hyperfusion = "gonka/zai-org/GLM-5.3-Flash"; };
         pipeline = {
           providers = [
             "gonka-proxy"
