@@ -301,6 +301,7 @@ func TestStreamIdleWatchdogSurvivesSlowStream(t *testing.T) {
 				}
 				events <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"b"}}]}`), Meaningful: true}
 			}
+			events <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`), Meaningful: false}
 		}()
 		return events, nil
 	}}
@@ -313,5 +314,112 @@ func TestStreamIdleWatchdogSurvivesSlowStream(t *testing.T) {
 	}
 	if !strings.Contains(body, "data: [DONE]") {
 		t.Fatalf("completed stream must end with [DONE]: %s", body)
+	}
+}
+
+// TestStreamMissingFinishReasonEmitsStructuredError pins the
+// missing-finish-reason contract: a winner chat stream that closes cleanly
+// without any finish_reason chunk (observed 2026-09-17 on gonka carriers:
+// long GLM streams cut at the ~300s mark) is not a completed request. The
+// client sees the relayed content, then a single structured event: error
+// frame with the stable "upstream stream failed" message, no [DONE], and the
+// provider enters cooldown so it stops winning races.
+func TestStreamMissingFinishReasonEmitsStructuredError(t *testing.T) {
+	compiled := singleProviderStreamConfig(t)
+	events := make(chan StreamEvent, 3)
+	events <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"hi"}}]}`), Meaningful: true}
+	close(events)
+	executor := &fakeExecutor{stream: func(context.Context, Target, ExecuteRequest) (<-chan StreamEvent, *CallError) {
+		return events, nil
+	}}
+	api, runner := streamTestServer(t, compiled, executor)
+
+	body := postStream(t, api.URL)
+
+	// The meaningful delta is relayed before the failure.
+	if !strings.Contains(body, `"content":"hi"`) {
+		t.Fatalf("meaningful delta missing from relayed stream: %s", body)
+	}
+	var payload struct {
+		Error struct {
+			Message    string `json:"message"`
+			Type       string `json:"type"`
+			StatusCode int    `json:"status_code"`
+			Retryable  bool   `json:"retryable"`
+			Partial    bool   `json:"partial"`
+			RequestID  string `json:"request_id"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(sseErrorData(t, body), &payload); err != nil {
+		t.Fatalf("structured error payload: %v\n%s", err, body)
+	}
+	if payload.Error.Message != "upstream stream failed" {
+		t.Errorf("message must stay stable for text-matching clients: %q", payload.Error.Message)
+	}
+	if payload.Error.Type != "5xx" || payload.Error.StatusCode != 502 {
+		t.Errorf("missing finish_reason must classify as 5xx: %+v", payload.Error)
+	}
+	if !payload.Error.Retryable || !payload.Error.Partial {
+		t.Errorf("missing finish_reason must be retryable+partial: %+v", payload.Error)
+	}
+	if payload.Error.RequestID == "" {
+		t.Errorf("request_id missing from error payload: %+v", payload.Error)
+	}
+	if strings.Contains(body, "data: [DONE]") {
+		t.Fatalf("[DONE] must not follow a stream that never carried finish_reason: %s", body)
+	}
+	if got := runner.availableTargets([]Target{{Provider: "a", Model: "native-model"}}); len(got) != 0 {
+		t.Fatalf("provider a must cool down after a finish_reason-less close, available: %#v", got)
+	}
+	var scrape bytes.Buffer
+	if err := runner.Metrics().WriteExposition(&scrape); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(scrape.String(), `llm_stream_breaks_total{provider="a",error_type="5xx"} 1`) {
+		t.Errorf("stream break counter missing after missing-finish-reason close:\n%s", scrape.String())
+	}
+}
+
+// TestStreamEmptyCloseWithoutFinishReasonIsStructuredError covers the
+// instant-empty carrier failure observed 2026-09-17 on gonka: the upstream
+// accepts (200), emits a single reasoning delta (GLM reasons regardless of
+// the thinking toggle, so the winner is selected on it), sends nothing else
+// and closes cleanly. The client must get the typed retryable error, not a
+// [DONE] success.
+func TestStreamEmptyCloseWithoutFinishReasonIsStructuredError(t *testing.T) {
+	compiled := singleProviderStreamConfig(t)
+	events := make(chan StreamEvent, 3)
+	events <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}`), Meaningful: false}
+	events <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"reasoning_content":"."}}]}`), Meaningful: true}
+	close(events)
+	executor := &fakeExecutor{stream: func(context.Context, Target, ExecuteRequest) (<-chan StreamEvent, *CallError) {
+		return events, nil
+	}}
+	api, runner := streamTestServer(t, compiled, executor)
+
+	body := postStream(t, api.URL)
+
+	var payload struct {
+		Error struct {
+			Message    string `json:"message"`
+			Type       string `json:"type"`
+			StatusCode int    `json:"status_code"`
+			Retryable  bool   `json:"retryable"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(sseErrorData(t, body), &payload); err != nil {
+		t.Fatalf("structured error payload: %v\n%s", err, body)
+	}
+	if payload.Error.Message != "upstream stream failed" || payload.Error.Type != "5xx" {
+		t.Errorf("empty close must surface as an upstream 5xx error: %+v", payload.Error)
+	}
+	if !payload.Error.Retryable {
+		t.Errorf("empty close must be retryable: %+v", payload.Error)
+	}
+	if strings.Contains(body, "data: [DONE]") {
+		t.Fatalf("empty close without finish_reason must not end with [DONE]: %s", body)
+	}
+	if got := runner.availableTargets([]Target{{Provider: "a", Model: "native-model"}}); len(got) != 0 {
+		t.Fatalf("provider a must cool down after an empty close, available: %#v", got)
 	}
 }

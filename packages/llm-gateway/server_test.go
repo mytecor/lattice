@@ -139,9 +139,10 @@ func TestServerStreamsWinnerWithLogicalModel(t *testing.T) {
 	executor := &fakeExecutor{
 		do: func(context.Context, Target, ExecuteRequest) ([]byte, *CallError) { return nil, nil },
 		stream: func(ctx context.Context, target Target, _ ExecuteRequest) (<-chan StreamEvent, *CallError) {
-			stream := make(chan StreamEvent, 2)
+			stream := make(chan StreamEvent, 3)
 			stream <- StreamEvent{Data: []byte(`{"id":"chunk","model":"native-model","choices":[{"delta":{"role":"assistant"}}]}`)}
 			stream <- StreamEvent{Data: []byte(`{"id":"chunk","model":"native-model","choices":[{"delta":{"content":"hello"}}]}`), Meaningful: true}
+			stream <- StreamEvent{Data: []byte(`{"id":"chunk","model":"native-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`)}
 			close(stream)
 			return stream, nil
 		},

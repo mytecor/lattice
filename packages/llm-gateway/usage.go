@@ -12,6 +12,31 @@ type usageSummary struct {
 	CachedTokens int64
 }
 
+// extractFinishReason reports whether the relayed chat-completion chunk is
+// the terminal finish chunk (any non-empty choices[].finish_reason). A
+// provider-compliant stream always carries exactly one; a stream that closes
+// without one is a truncated or empty upstream response, which the caller
+// must surface as a failure instead of a successful completion.
+func extractFinishReason(body []byte) bool {
+	if len(body) == 0 {
+		return false
+	}
+	var envelope struct {
+		Choices []struct {
+			FinishReason string `json:"finish_reason"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return false
+	}
+	for _, choice := range envelope.Choices {
+		if choice.FinishReason != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // extractUsage parses token usage from a non-stream provider response body and
 // also reports the prompt-cache hit count when the provider supplies it. It
 // tolerates both OpenAI Chat Completions usage

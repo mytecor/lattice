@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -288,6 +289,21 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	// summed totals plus whether any usage was reported at all.
 	var inTokens, outTokens, cachedTokens int64
 	var hasUsage bool
+	// A chat-completion winner stream must end with a choices[].finish_reason
+	// chunk. A stream that closes cleanly without one is a truncated or empty
+	// upstream response (observed 2026-09-17: gonka carriers cutting long GLM
+	// streams at the ~300s mark and answering load with an instant empty
+	// stream), not a completed request — relaying it as success ([DONE], no
+	// error) makes the client finish an unfinished turn with
+	// "Stream ended without finish_reason" while the provider keeps a clean
+	// health record and keeps winning races. Such a close is therefore
+	// surfaced as a retryable upstream failure fed into cooldown/health.
+	sawFinishReason := false
+	markFinish := func(data []byte) {
+		if !sawFinishReason && executeRequest.Kind == RequestChat && extractFinishReason(data) {
+			sawFinishReason = true
+		}
+	}
 	requestID := requestIDFrom(request.Context())
 	// The idle watchdog bounds a silently stalled winner stream: the route
 	// deadline only guards the selection phase, so without it a winner that
@@ -327,6 +343,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	for _, event := range selected.Buffered {
 		bind(event)
 		observe(event.Data)
+		markFinish(event.Data)
 		if !writeStreamEvent(writer, flusher, logical, executeRequest.Kind, event) {
 			return
 		}
@@ -357,6 +374,31 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 			return
 		case event, open := <-selected.Remaining:
 			if !open {
+				// A chat stream that closes without any finish_reason chunk did
+				// not complete, whatever the transport says: the client would
+				// end its turn on a truncated response. Surface the same
+				// structured retryable error as a mid-stream break so the
+				// provider enters cooldown and a retry-capable client retries.
+				if executeRequest.Kind == RequestChat && !sawFinishReason {
+					broken := &CallError{Class: ErrorUpstream, Status: http.StatusBadGateway,
+						Cause: errors.New("winner stream ended without finish_reason")}
+					logEvent(request.Context(), s.logger, slog.LevelWarn, "request_failed",
+						"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
+						"provider", selected.Provider,
+						"status_code", callErrorStatus(broken), "error_type", string(broken.Class),
+						"reason", "missing_finish_reason",
+						"attempts", selected.Attempts,
+						"duration_ms", time.Since(started).Milliseconds(),
+						"input_tokens", inTokens,
+						"output_tokens", outTokens,
+						"cached_tokens", cachedTokens,
+						"has_usage", hasUsage,
+					)
+					s.observeRequest(logical, selected.Provider, "failed", time.Since(started))
+					s.runner.RecordStreamFailure(request.Context(), logical, selected.Provider, broken)
+					writeStreamError(writer, flusher, broken, requestID, s.runner.streamRetryable(logical, broken))
+					return
+				}
 				if executeRequest.Kind == RequestChat {
 					_, _ = io.WriteString(writer, "data: [DONE]\n\n")
 					flusher.Flush()
@@ -406,6 +448,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 			}
 			bind(event)
 			observe(event.Data)
+			markFinish(event.Data)
 		}
 	}
 }
