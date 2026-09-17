@@ -21,7 +21,7 @@ llm-gateway
  └─ stdout JSON ────> Alloy ──> Loki ──> Grafana (расследование запросов по request_id)
 ```
 
-Соответствует [вехе 12](../../ROADMAP.md#f12-observability-метрики-gateway-графана).
+Соответствует [вехе 12](../../ROADMAP.md#f12-observability-метрики-gateway--grafana).
 
 Задачи: [f12-01](./f12-01-gateway-metrics-endpoint.md),
 [f12-02](./f12-02-gateway-structured-events.md),
