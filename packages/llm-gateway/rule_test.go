@@ -134,6 +134,14 @@ func retryRuleBackoff(route, target string, attempts int, backoff *BackoffConfig
 	return r
 }
 
+func continueRule(route string, idle time.Duration, reshare string) Rule {
+	r := &ContinueRule{}
+	r.setIdentity(route, "continue")
+	r.Idle = Duration{Duration: idle}
+	r.Reshare = reshare
+	return r
+}
+
 func fallbackRule(route, target string) Rule {
 	r := &FallbackRule{}
 	r.setIdentity(route, "fallback")

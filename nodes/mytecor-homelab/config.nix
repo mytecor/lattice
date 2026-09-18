@@ -350,9 +350,21 @@ in
     };
     # Pipeline defaults equal the built-in ones (providers = all enabled,
     # balance p2c with equal weights, race 1, retry 2 exponential, no hedge,
-    # semaphore 4/3/1, timeout 60s, affinity 24h); the empty attrset is left
-    # here as the explicit marker of "we reviewed and accept the defaults".
-    pipeline = { };
+    # semaphore 4/3/1, timeout 60s, affinity 24h) plus the in-gateway stream
+    # takeover (`continue`) enabled for EVERY model: any winner that relays
+    # content and then stalls (silence > idle) or closes without finish_reason
+    # is continued on another provider with the partial output reshared,
+    # instead of surfacing "Stream ended without finish_reason" to the client
+    # (observed across smart/standard/stupid, not only GLM reasoning). The
+    # broken provider still enters cooldown/health. Per-model overrides remain
+    # possible through models.<name>.pipeline.continue.
+    pipeline = {
+      continue = {
+        enable = true;
+        idle = "90s";
+        reshare = "full";
+      };
+    };
     models = {
       stupid.native = "MiniMaxAI/MiniMax-M2.7";
       standard.native = "deepseek-ai/DeepSeek-V4-Flash-0731";

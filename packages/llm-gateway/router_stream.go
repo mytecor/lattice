@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -29,4 +30,57 @@ func (r *Runner) SelectStream(ctx context.Context, logical string, request Execu
 	outcome.selected.TTFT = outcome.ttft
 	outcome.selected.Attempts = outcome.attempts
 	return outcome.selected, nil
+}
+
+// ContinueStream re-dispatches a streaming chat request to a different
+// provider after the previously chosen winner stream stalled or broke before
+// a finish_reason (the "continue" routing rule). It appends the already
+// relayed partial output as an assistant context message (reshare) so the
+// next provider continues the answer instead of starting from scratch, and it
+// excludes the providers that actually broke during this request (via the
+// route runtime's exclude set) so the continuation does not re-hit the same
+// broken upstream. Providers that merely lost the original race stay eligible:
+// they were cancelled at the winner's first meaningful event, not broken.
+// It returns the fresh selected stream, or the terminal failure when no
+// remaining provider can serve the continuation; the caller then decides
+// whether to surface the original stream's structured error.
+func (r *Runner) ContinueStream(ctx context.Context, logical string, request ExecuteRequest, partial *partialStreamOutput, broken []string) (*SelectedStream, *CallError) {
+	entry, ok := r.config.models[logical]
+	if !ok {
+		return nil, &CallError{Class: ErrorInvalid, Status: 404, Cause: errors.New("continue: unknown logical model")}
+	}
+	if request.Kind != RequestChat {
+		return nil, &CallError{Class: ErrorInvalid, Status: 400, Cause: errors.New("continue requires a chat completion request")}
+	}
+	rewritten, err := appendPartialChatHistory(request.Body, partial)
+	if err != nil {
+		return nil, &CallError{Class: ErrorInvalid, Status: 502, Cause: err}
+	}
+	request.Body = rewritten
+	runtime := newRouteRuntime(entry)
+	for _, provider := range broken {
+		if provider != "" {
+			runtime.exclude[provider] = true
+		}
+	}
+	outcome := r.executeRoute(ctx, logical, entry, request, true, runtime)
+	if outcome.err != nil {
+		return nil, outcome.err
+	}
+	if outcome.selected == nil {
+		return nil, &CallError{Class: ErrorInvalid, Status: 502, Cause: errors.New("continue selected no stream")}
+	}
+	outcome.selected.TTFT = outcome.ttft
+	outcome.selected.Attempts = outcome.attempts
+	return outcome.selected, nil
+}
+
+// continuePolicy reports the compiled in-gateway takeover policy (the
+// "continue" rule) of a logical model's entry route, and whether it is active.
+func (r *Runner) continuePolicy(logical string) (ContinueConfig, bool) {
+	entry, ok := r.config.models[logical]
+	if !ok {
+		return ContinueConfig{}, false
+	}
+	return entry.Continue, entry.Continue.Enabled
 }

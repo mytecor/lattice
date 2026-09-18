@@ -58,6 +58,7 @@ const (
 	ActionSemaphore = "semaphore"
 	ActionTimeout   = "timeout"
 	ActionFallback  = "fallback"
+	ActionContinue  = "continue"
 )
 
 // ruleDescriptor declares one routing action: its canonical pipeline position
@@ -85,6 +86,7 @@ var ruleRegistry = map[string]ruleDescriptor{
 	ActionSemaphore: {rank: 10, new: func() Rule { return &SemaphoreRule{} }},
 	ActionTimeout:   {rank: 11, new: func() Rule { return &TimeoutRule{} }},
 	ActionFallback:  {rank: 12, new: func() Rule { return &FallbackRule{} }},
+	ActionContinue:  {rank: 13, new: func() Rule { return &ContinueRule{} }},
 }
 
 // ruleErrf formats a routing-rule error that always carries the rule index,

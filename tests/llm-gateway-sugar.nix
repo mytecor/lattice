@@ -35,6 +35,11 @@ let
             providers = [ "gonka-proxy" "gonka-openbroker" ];
             balance.strategy = "p2c";
             retry.attempts = 2;
+            continue = {
+              enable = true;
+              idle = "90s";
+              reshare = "full";
+            };
           };
           models = {
             standard.native = "deepseek-ai/DeepSeek-V4-Flash-0731";
@@ -337,5 +342,20 @@ pkgs.runCommand "llm-gateway-sugar-evaluation" { nativeBuildInputs = [ pkgs.jq ]
         exit 1
       fi
     done
+    # The pipeline-generated continue (in-gateway stream takeover) is typed
+    # and lands on EVERY generated entry route (deployment-level enable=true),
+    # carrying the idle threshold and the reshare mode.
+    for model in standard smart; do
+      if ! jq -e --arg model "$model" 'any(.routing_rules[]; .route == $model and .action == "continue"
+        and .idle == "90s" and .reshare == "full")' $cfg >/dev/null; then
+        echo "expected a typed continue action on the generated $model entry route" >&2
+        exit 1
+      fi
+    done
+    # Continue is declared once per entry route, after timeout.
+    if [ "$(jq '[.routing_rules[] | select(.action == "continue")] | length' $cfg)" -ne 2 ]; then
+      echo "expected exactly one continue action per entry route (standard, smart)" >&2
+      exit 1
+    fi
     touch $out
   ''

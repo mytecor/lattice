@@ -124,7 +124,8 @@ runtime directory и подставляет credentials через `jq`; ито�
 
 Production configuration must provide filter/map/race rules for every advertised logical model.
 Rules follow the canonical per-route order `filter → map → rank → lease | balance → affinity → race →
-retry/hedge → semaphore → timeout`; each entry is a discriminated rule for exactly one action and
+retry/hedge → semaphore → timeout` (the streaming `continue` takeover policy is an entry-route
+post-processing action declared last); each entry is a discriminated rule for exactly one action and
 owns only that action's fields. An unknown action, an unknown field, or a field owned by another
 action (e.g. `providers` on `map`, `scope`/`on` on `retry`, `fallback_strategy` on `fallback`
 — all removed with the old model) fails during Nix evaluation; the gateway binary independently
@@ -155,6 +156,49 @@ Responses affinity state (opaque id → provider mapping for `conversation` and
 set) with mode `0600`, owned by the gateway user; it survives service restarts and is cleared on a
 full service stop or reboot. The file contains no prompts, keys, or provider URLs. Failed writes
 remain dirty and are retried by the next periodic/final flush; persistence errors are logged.
+
+## Continue: внутренний takeover стрима при обрыве ответа
+
+Action `continue` реализует in-gateway продолжение ответа, когда стрим победителя
+оборвался до `finish_reason`. Проблема: апстрим может замолчать после первых чанков
+(долгий GLM-reasoning, обрыв под нагрузкой) или закрыться без `finish_reason`, и клиент,
+получивший начало ответа, видит `Stream ended without finish_reason`. Положиться на
+клиентский retry здесь нельзя — partial-контент уже ушёл клиенту, и повторный запрос с
+нуля продублировал бы его.
+
+`continue` решает это целиком на gateway: пока стрим жив, всё как обычно (никакой
+задержки). Как только победитель либо замолчал дольше `idle` после последнего события,
+либо закрылся без `finish_reason` — gateway берёт весь уже отрешённый partial-вывод,
+вставляет его как assistant-контекст в исходный запрос (`reshare = "full"`) и
+**продолжает тот же SSE-стрим ответом другого провайдера**,
+исключая сломанного. Сломанный провайдер уходит в cooldown/health через те же каналы,
+что и обычные mid-stream-обрывы. Клиент в итоге получает полный ответ с настоящим
+`[DONE]`, не видя ошибки; промежуточные partial-чанки просто продолжаются.
+
+```nix
+{
+  route = "smart";
+  action = "continue";
+  idle = "90s";   # тишина после последнего события → триггер takeover
+  reshare = "full";
+}
+```
+
+Требования и ограничения:
+
+- Действие объявляется **только на entry-route** (там, где есть `filter where.model`):
+  политика релея привязана к логической модели. В sugar включается на
+  deployment-уровне через `pipeline.continue.enable` и генерится для **каждой**
+  модели (per-model override через `models.<name>.pipeline.continue`).
+- `idle` должен быть ≥ 5s (иначе takeover перехватывал бы честно медленные ответы),
+  по умолчанию — `90s`.
+- `reshare` поддерживает только `"full"`: весь полученный partial-вывод добавляется в
+  history как assistant-контекст следующему провайдеру.
+- Работает только для streaming chat; non-stream и Responses-API не затронуты.
+- Исключаются **только сломанные** провайдеры (кто реально оборвал стрим), а не все
+  выбывшие из гонки: тот, кто проиграл гонку (был отменён на первом meaningful-токене
+  другого), остаётся доступным для продолжения.
+
 
 ## Balance: распределение и адаптивный выбор провайдера
 

@@ -148,6 +148,18 @@ let
           maxCallsPerProvider = pick [ "semaphore" "maxCallsPerProvider" ] 1;
         }
         { route = entry; action = "timeout"; duration = pick [ "timeout" "duration" ] "60s"; }
+      ]
+      # Continue (in-gateway stream takeover) is declared last on the entry
+      # route. Opt-in per pipeline; when enabled every logical model gets it.
+      ++ lib.optionals (pick [ "continue" "enable" ] false) [
+        {
+          route = entry;
+          action = "continue";
+          idle = pick [ "continue" "idle" ] "90s";
+          reshare = pick [ "continue" "reshare" ] "full";
+        }
+      ]
+      ++ [
         # Retry subroute: applies only to the listed failures and re-selects
         # unused providers, one target per retry entry.
         {

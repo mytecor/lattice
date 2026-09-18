@@ -72,6 +72,11 @@ type routeRuntime struct {
 	deadline time.Time
 	sem      semaphore
 	used     map[string]bool
+	// exclude is a request-scoped, provider-independent exclusion set seeded by
+	// a continuation (the "continue" rule): providers in this set must never
+	// be re-dispatched, regardless of the route's unused policy. It is empty for
+	// fresh requests and only populated by ContinueStream.
+	exclude map[string]bool
 	// attempts counts the route executions actually dispatched by this request
 	// graph (each raceRoute that launched branches), so request_completed and
 	// llm_attempt events can report how many upstream rounds happened.
@@ -79,7 +84,7 @@ type routeRuntime struct {
 }
 
 func newRouteRuntime(entry *compiledRoute) *routeRuntime {
-	runtime := &routeRuntime{used: make(map[string]bool)}
+	runtime := &routeRuntime{used: make(map[string]bool), exclude: make(map[string]bool)}
 	if entry != nil && entry.RouteTimeout > 0 {
 		runtime.deadline = time.Now().Add(entry.RouteTimeout)
 	}

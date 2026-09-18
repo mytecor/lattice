@@ -141,6 +141,8 @@ type compiledRoute struct {
 	Fallback  FallbackConfig
 	Hedge     HedgeConfig
 	Semaphore SemaphoreConfig
+	// Continue is the in-gateway stream takeover policy (see ContinueConfig).
+	Continue ContinueConfig
 	// RouteTimeout bounds the entire route graph.
 	RouteTimeout time.Duration
 
@@ -192,6 +194,26 @@ type SemaphoreConfig struct {
 	MaxCalls            int
 	MaxInFlight         int
 	MaxCallsPerProvider int
+}
+
+// ContinueConfig is the in-gateway stream takeover policy for a route. When
+// the relayed winner stream stalls (idle for longer than Idle, or closes
+// without a finish_reason) after having produced meaningful content or
+// reasoning, the gateway does not surface an error and stop: instead it
+// continues the same client stream by re-dispatching the request to a
+// different provider. Reshare controls how the partial output already relayed
+// is passed to the next provider ("full" appends all received reasoning and
+// content as assistant context so the continuation preserves the work).
+// Enabled true means the action was declared on the entry route.
+type ContinueConfig struct {
+	Enabled bool
+	// Idle is the stall threshold below which the takeover triggers. It
+	// replaces the route-wide stream idle timeout for the relayed winner.
+	Idle time.Duration
+	// Reshare is the partial-output handoff mode: "full" (default) reshapes
+	// every relayed reasoning/content delta into an assistant message appended
+	// to the request history before re-dispatching.
+	Reshare string
 }
 
 type LeaseConfig struct {

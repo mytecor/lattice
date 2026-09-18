@@ -392,6 +392,22 @@ func (r *Runner) buildDynamicPool(route *compiledRoute, _ ExecuteRequest, runtim
 		}
 		pool = filtered
 	}
+	// The continuation exclusion set is provider-independent: a takeover
+	// re-dispatch must never re-hit an upstream that already failed a previous
+	// round of the same request, even when the route does not carry the unused
+	// policy. Empty for fresh requests, so the normal path is untouched.
+	if len(runtime.exclude) > 0 {
+		filtered := make([]Target, 0, len(pool))
+		for _, target := range pool {
+			if !runtime.exclude[target.Provider] {
+				filtered = append(filtered, target)
+			}
+		}
+		if len(filtered) == 0 {
+			return nil, nil
+		}
+		pool = filtered
+	}
 	return r.availableFailOpen(pool), nil
 }
 

@@ -421,6 +421,31 @@ let
         };
       };
     };
+    # continue: in-gateway stream takeover policy on an entry route. When the
+    # relayed winner stream stalls past `idle` or closes without a
+    # finish_reason after producing meaningful content/reasoning, the gateway
+    # continues the same client stream by re-dispatching the request (with the
+    # partial output reshaped per `reshare`) to a different provider, instead
+    # of surfacing an error to the client. Only affects streaming chat.
+    continue = { config, ... }: {
+      options = {
+        idle = mkOption {
+          type = types.strMatching "[0-9]+(ms|s|m|h)";
+          description = "Stall threshold for the relayed winner stream at which the takeover triggers; replaces the route-wide stream idle timeout while the policy is active.";
+        };
+        reshare = mkOption {
+          type = types.enum [ "full" ];
+          default = "full";
+          description = "How partial output is handed to the next provider: `full` re-shapes every relayed reasoning/content delta as assistant context appended to the request history.";
+        };
+        _public = mkOption {
+          type = types.attrs;
+          internal = true;
+          readOnly = true;
+          default = { inherit (config) idle reshare; };
+        };
+      };
+    };
   };
 
   # rewriteRule validates one raw rule (route + action + the action's own
@@ -565,6 +590,29 @@ let
         type = types.nullOr (types.strMatching "[0-9]+(ms|s|m|h)");
         default = null;
         description = "Affinity mapping TTL; null leaves the built-in default (24h).";
+      };
+      continue = {
+        enable = mkOption {
+          type = types.nullOr types.bool;
+          default = null;
+          description = ''
+            In-gateway stream takeover for the generated entry route: when the
+            relayed winner stream stalls past `idle` or closes without a
+            finish_reason, the gateway continues the same client stream by
+            re-dispatching the request (with the partial output reshared) to a
+            different provider. null/false generates no continue action.
+          '';
+        };
+        idle = mkOption {
+          type = types.nullOr (types.strMatching "[0-9]+(ms|s|m|h)");
+          default = null;
+          description = "Stall threshold (silence after the last event) that trips the takeover; null leaves the sugar default (90s). Must be >= 5s.";
+        };
+        reshare = mkOption {
+          type = types.nullOr (types.enum [ "full" ]);
+          default = null;
+          description = "How partial output is handed to the next provider; null leaves the sugar default (full).";
+        };
       };
     };
   };

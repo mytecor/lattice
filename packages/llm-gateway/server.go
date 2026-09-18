@@ -265,7 +265,8 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 		writeCallError(writer, callErr)
 		return
 	}
-	defer selected.Cancel()
+	cancelCurrent := func() { selected.Cancel() }
+	defer func() { cancelCurrent() }()
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
 		writeAPIError(writer, http.StatusInternalServerError, "streaming_not_supported")
@@ -310,8 +311,14 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	// stops emitting events hangs until the client gives up. Any event (not
 	// only meaningful content — provider keep-alives count) re-arms the timer;
 	// zero disables the watchdog. The timeout is deliberately generous so
-	// legitimate reasoning pauses survive.
+	// legitimate reasoning pauses survive. When the route carries the
+	// "continue" policy, its own idle threshold replaces the global one: the
+	// stall is then a takeover trigger rather than a terminal error.
+	continueCfg, continueEnabled := s.runner.continuePolicy(logical)
 	idleTimeout := s.config.raw.StreamIdleTimeout.Duration
+	if continueEnabled && continueCfg.Idle > 0 {
+		idleTimeout = continueCfg.Idle
+	}
 	var idleTimer *time.Timer
 	var idleC <-chan time.Time
 	if idleTimeout > 0 {
@@ -340,8 +347,62 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 			s.metrics.ObserveTokens(logical, summary.Input, summary.Output)
 		}
 	}
+	// The partial output accumulator feeds the "continue" rule: every relayed
+	// assistant delta (content and reasoning) is remembered so a takeover can
+	// reshape it into assistant context for the next provider.
+	partial := &partialStreamOutput{}
+	observePartial := func(data []byte) { accumulatePartial(data, partial) }
+	cur := selected
+	// The providers whose streams have broken during this request. Only genuine
+	// breaks accumulate here — providers that merely lost the original race
+	// stay eligible for a takeover, so the continuation can still reach them.
+	var brokenProviders []string
+	// takeover attempts an in-gateway stream continuation: the current winner
+	// stalled or broke, so the request is re-dispatched to a different
+	// provider with the partial output reshared, and the same client SSE
+	// stream is continued with the new winner. Returns true when a
+	// continuation started; false leaves the caller to surface the terminal
+	// error for `broken`. Only streaming chat requests participate.
+	takeover := func(broken *CallError) bool {
+		if !continueEnabled || executeRequest.Kind != RequestChat {
+			return false
+		}
+		next, callErr := s.runner.ContinueStream(request.Context(), logical, executeRequest, partial, brokenProviders)
+		if callErr != nil {
+			logEvent(request.Context(), s.logger, slog.LevelWarn, "llm_continue_failed",
+				"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
+				"from_provider", cur.Provider,
+				"status_code", callErrorStatus(callErr), "error_type", string(callErr.Class),
+				"attempts", cur.Attempts,
+			)
+			return false
+		}
+		logEvent(request.Context(), s.logger, slog.LevelInfo, "llm_continue",
+			"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
+			"from_provider", cur.Provider,
+			"to_provider", next.Provider,
+			"reshare", continueCfg.Reshare,
+			"established_ms", time.Since(started).Milliseconds(),
+		)
+		cur.Cancel()
+		brokenProviders = append(brokenProviders, cur.Provider)
+		cancelCurrent = next.Cancel
+		cur = next
+		sawFinishReason = false
+		rearmIdle()
+		for _, event := range cur.Buffered {
+			observePartial(event.Data)
+			observe(event.Data)
+			markFinish(event.Data)
+			if !writeStreamEvent(writer, flusher, logical, executeRequest.Kind, event) {
+				return false
+			}
+		}
+		return true
+	}
 	for _, event := range selected.Buffered {
 		bind(event)
+		observePartial(event.Data)
 		observe(event.Data)
 		markFinish(event.Data)
 		if !writeStreamEvent(writer, flusher, logical, executeRequest.Kind, event) {
@@ -353,30 +414,34 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 		case <-request.Context().Done():
 			logEvent(request.Context(), s.logger, slog.LevelDebug, "request_cancelled",
 				"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
-				"provider", selected.Provider,
-				"attempts", selected.Attempts,
+				"provider", cur.Provider,
+				"attempts", cur.Attempts,
 				"duration_ms", time.Since(started).Milliseconds(),
 			)
-			s.observeRequest(logical, selected.Provider, "cancelled", time.Since(started))
+			s.observeRequest(logical, cur.Provider, "cancelled", time.Since(started))
 			return
 		case <-idleC:
 			stall := &CallError{Class: ErrorTimeout, Status: 504, Cause: fmt.Errorf("no stream events for %s", idleTimeout)}
 			logEvent(request.Context(), s.logger, slog.LevelWarn, "llm_stream_stalled",
 				"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
-				"provider", selected.Provider,
+				"provider", cur.Provider,
 				"idle_ms", idleTimeout.Milliseconds(),
-				"attempts", selected.Attempts,
+				"attempts", cur.Attempts,
 				"duration_ms", time.Since(started).Milliseconds(),
 			)
-			s.runner.RecordStreamFailure(request.Context(), logical, selected.Provider, stall)
-			s.observeRequest(logical, selected.Provider, "failed", time.Since(started))
+			s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, stall)
+			if !sawFinishReason && takeover(stall) {
+				continue
+			}
+			s.observeRequest(logical, cur.Provider, "failed", time.Since(started))
 			writeStreamError(writer, flusher, stall, requestID, s.runner.streamRetryable(logical, stall))
 			return
-		case event, open := <-selected.Remaining:
+		case event, open := <-cur.Remaining:
 			if !open {
 				// A chat stream that closes without any finish_reason chunk did
 				// not complete, whatever the transport says: the client would
-				// end its turn on a truncated response. Surface the same
+				// end its turn on a truncated response. With the "continue" rule
+				// the close is a takeover trigger; without it, surface the same
 				// structured retryable error as a mid-stream break so the
 				// provider enters cooldown and a retry-capable client retries.
 				if executeRequest.Kind == RequestChat && !sawFinishReason {
@@ -384,18 +449,21 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 						Cause: errors.New("winner stream ended without finish_reason")}
 					logEvent(request.Context(), s.logger, slog.LevelWarn, "request_failed",
 						"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
-						"provider", selected.Provider,
+						"provider", cur.Provider,
 						"status_code", callErrorStatus(broken), "error_type", string(broken.Class),
 						"reason", "missing_finish_reason",
-						"attempts", selected.Attempts,
+						"attempts", cur.Attempts,
 						"duration_ms", time.Since(started).Milliseconds(),
 						"input_tokens", inTokens,
 						"output_tokens", outTokens,
 						"cached_tokens", cachedTokens,
 						"has_usage", hasUsage,
 					)
-					s.observeRequest(logical, selected.Provider, "failed", time.Since(started))
-					s.runner.RecordStreamFailure(request.Context(), logical, selected.Provider, broken)
+					s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, broken)
+					if takeover(broken) {
+						continue
+					}
+					s.observeRequest(logical, cur.Provider, "failed", time.Since(started))
 					writeStreamError(writer, flusher, broken, requestID, s.runner.streamRetryable(logical, broken))
 					return
 				}
@@ -407,38 +475,41 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					"kind", executeRequest.Kind,
 					"route", s.routeOf(logical),
 					"logical_model", logical,
-					"provider", selected.Provider,
+					"provider", cur.Provider,
 					"stream", true,
 					"status_code", http.StatusOK,
 					"status", "success",
 					"duration_ms", time.Since(started).Milliseconds(),
-					"ttft_ms", selected.TTFT.Milliseconds(),
+					"ttft_ms", cur.TTFT.Milliseconds(),
 					"input_tokens", inTokens,
 					"output_tokens", outTokens,
 					"cached_tokens", cachedTokens,
 					"has_usage", hasUsage,
-					"attempts", selected.Attempts,
+					"attempts", cur.Attempts,
 				)
-				s.observeRequest(logical, selected.Provider, "success", time.Since(started))
+				s.observeRequest(logical, cur.Provider, "success", time.Since(started))
 				return
 			}
 			if event.Err != nil {
 				logEvent(request.Context(), s.logger, slog.LevelWarn, "request_failed",
 					"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
-					"provider", selected.Provider,
+					"provider", cur.Provider,
 					"status_code", callErrorStatus(event.Err), "error_type", string(event.Err.Class),
-					"attempts", selected.Attempts,
+					"attempts", cur.Attempts,
 					"duration_ms", time.Since(started).Milliseconds(),
 					"input_tokens", inTokens,
 					"output_tokens", outTokens,
 					"cached_tokens", cachedTokens,
 					"has_usage", hasUsage,
 				)
-				s.observeRequest(logical, selected.Provider, "failed", time.Since(started))
 				// Feed the failure back into cooldown/health/lease/metrics: the
 				// scheduler returned at selection, so without this the provider
 				// would stay "healthy" no matter how often it breaks streams.
-				s.runner.RecordStreamFailure(request.Context(), logical, selected.Provider, event.Err)
+				s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, event.Err)
+				if !sawFinishReason && takeover(event.Err) {
+					continue
+				}
+				s.observeRequest(logical, cur.Provider, "failed", time.Since(started))
 				writeStreamError(writer, flusher, event.Err, requestID, s.runner.streamRetryable(logical, event.Err))
 				return
 			}
@@ -447,6 +518,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 				return
 			}
 			bind(event)
+			observePartial(event.Data)
 			observe(event.Data)
 			markFinish(event.Data)
 		}
