@@ -71,6 +71,19 @@
 - **Зависит от:** [F2](#f2-секреты-и-идентичность), [F3](#f3-reticulum-поверх-tcpip),
   [F4](#f4-полезная-нагрузка)
 
+### [F13. Web-клиент ACP](./roadmap/f13-acp-web-client/README.md)
+
+> Второй ACP-клиент (браузерный workbench acp-components) против существующего LAN endpoint.
+
+- **Статус:** 🟡 начата — [f13-01](./roadmap/f13-acp-web-client/f13-01-deploy-acp-components.md)
+  (разворачивание [`acp-components`](https://github.com/zvzuola/acp-components) против LAN
+  ACP endpoint из [f8-06](#f8-интерактивный-pi)).
+- **Готово, когда:** клиент развёрнут декларативно, подключается к `ws://acp.<nodename>.local/`
+  и воспроизводит acceptance из [f8-06](#f8-интерактивный-pi) — либо зафиксирован
+  воспроизводимый отрицательный результат совместимости.
+- **Зависит от:** [F8](#f8-интерактивный-pi)
+- **Не блокирует:** [F10](#f10-disposable-worker), [F11](#f11-controller).
+
 ### [F6. Радио и mesh](./roadmap/f6-radio-mesh/README.md)
 
 > Работа на узком канале.
