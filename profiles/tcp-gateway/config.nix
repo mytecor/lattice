@@ -179,9 +179,13 @@ in
         # f4-05: DNS-01 через Cloudflare — сертификаты для mesh-сайтов
         # (*.homelab.myt.su) валидируются через публичную зону DNS, т.к. их
         # AAAA-записи ведут на yggdrasil-адрес и для публичных CA недостижимы
-        # по HTTP-01/TLS-ALPN. Токен берётся из секрета (services.caddy.environmentFile).
+        # по HTTP-01/TLS-ALPN. Секрет подаётся через services.caddy.environmentFile
+        # (переменная CLOUDFLARE_API_TOKEN), откуда Caddy подставляет её через
+        # placeholder {env.CLOUDFLARE_API_TOKEN} в субдирективу api_token
+        # (caddy-dns/cloudflare v0.2.4 принимает только api_token/zone_token,
+        # а не env — см. UnmarshalCaddyfile плагина).
         acme_dns cloudflare {
-          env CLOUDFLARE_API_TOKEN
+          api_token {env.CLOUDFLARE_API_TOKEN}
         }
       '';
     };
