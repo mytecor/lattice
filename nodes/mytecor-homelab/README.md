@@ -129,19 +129,22 @@ rnsh --config .secrets/rnsh-operator \
 указывает на расшифрованный файл, который Yggdrasil читает через systemd credentials
 (`LoadCredential`), поэтому приватный ключ не попадает в Nix store.
 
-Из адреса ноды выпущены публичные поддомены `*.homelab.myt.su`:
+Из адреса ноды выпущены публичные поддомены `*.homelab.myt.su` (AAAA-записи `homelab.myt.su`
+и `*.homelab.myt.su` в зоне Cloudflare `myt.su`, DNS-only — не proxied, иначе Cloudflare
+edge не смог бы доставить трафик до ygg-адреса; созданы через API токеном
+`caddy-cloudflare-token` 2026-09-18):
 
 ```text
-http://acp.homelab.myt.su/          — ACP (Pi)
-http://git-cache-proxy.homelab.myt.su/
-http://radicle.homelab.myt.su/
-http://status.homelab.myt.su/
+https://acp.homelab.myt.su/          — ACP (Pi)
+https://git-cache-proxy.homelab.myt.su/
+https://radicle.homelab.myt.su/
+https://status.homelab.myt.su/
 ```
 
 Grafana и LLM gateway в mesh НЕ выводятся (`meshExclude`): у них нет публичной TLS/API-key
 защиты, поэтому они остаются только на LAN-контракте `*.local`. Порт 80 (HTTP) открыт в
-firewall; 443 открывается, только когда оператор создаст `caddy-cloudflare-token.age` (тогда
-mesh-сайты обслуживаются по HTTPS через DNS-01 ACME Cloudflare).
+firewall; 443 открыт и mesh-сайты обслуживаются по HTTPS через DNS-01 ACME Cloudflare
+(токен `caddy-cloudflare-token.age` подключён, проверено 2026-09-18).
 
 ### Внешний DNS
 
@@ -163,7 +166,7 @@ mesh-оверлея). Это mesh-доступ, а не публичный ин�
 с `/etc/yggdrasil.conf`). Из терминала:
 
 ```sh
-curl --fail http://status.homelab.myt.su/
+curl --fail https://status.homelab.myt.su/
 ```
 
 Ожидаемый ответ — тот же JSON, что и `http://status.mytecor-homelab.local/`. Любой сервис с
