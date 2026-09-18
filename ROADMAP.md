@@ -103,7 +103,9 @@
 > Основной harness работает непосредственно на ноде.
 
 - **Статус:** ✅ выполнена 2026-09-11 — интерактивная работа идёт через ACP, Pi TUI не
-  используется; execution boundary для F10 задаёт контейнерный Pi runtime из f10-04.
+  используется; execution boundary для F10 задаёт контейнерный Pi runtime из f10-04. Follow-up
+  [f8-07](./roadmap/f8-pi-runtime/f8-07-telegram-acprouter.md) (Telegram-клиент ACP через
+  `vcoderun/acprouter` против закреплённого endpoint f8-06) заведён 2026-09-18, ещё не начат.
 - **Готово, когда:** Pi TUI выполняет реальную задачу через gateway и воспроизводимый набор tools.
 - **Зависит от:** [F7](#f7-llm-gateway)
 

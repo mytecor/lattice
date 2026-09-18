@@ -18,14 +18,17 @@ boundary будущих workers.
 [f8-03](./f8-03-reproducible-tool-profile.md),
 [f8-04](./f8-04-interactive-acceptance.md),
 [f8-05](./f8-05-pi-rpc-contract.md),
-[f8-06](./f8-06-network-acp-daemon.md).
+[f8-06](./f8-06-network-acp-daemon.md),
+[f8-07](./f8-07-telegram-acprouter.md).
 
 **Статус:** все задачи F8 закрыты ([f8-01](./f8-01-package-pi.md)…
 [f8-06](./f8-06-network-acp-daemon.md)). [f8-04](./f8-04-interactive-acceptance.md) и
 [f8-05](./f8-05-pi-rpc-contract.md) закрыты по решению «Pi TUI не используется, работа идёт через
 ACP»: интерактивная acceptance выполнена через ACP, отдельного сетевого Pi RPC-контракта нет. ACP
 endpoint остаётся ingress/session plane, а execution boundary для F10 задаёт контейнерный Pi runtime
-из [f10-04](../f10-disposable-worker/f10-04-pi-rpc-runner.md).
+из [f10-04](../f10-disposable-worker/f10-04-pi-rpc-runner.md). Follow-up
+[f8-07](./f8-07-telegram-acprouter.md) (Telegram-клиент ACP через `vcoderun/acprouter` против
+закреплённого endpoint f8-06) заведён 2026-09-18, ещё не начат.
 
 **Критерий готовности:** после декларативного rebuild пользователь работает с логическим классом
 модели и выполняет реальную задачу с `bash/git/tools` через ACP-клиента (Ferngeist) — Pi TUI не
