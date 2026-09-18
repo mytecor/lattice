@@ -467,6 +467,41 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					writeStreamError(writer, flusher, broken, requestID, s.runner.streamRetryable(logical, broken))
 					return
 				}
+				// A chat stream that closed WITH a finish_reason but delivered
+				// neither text content nor a tool-call is not an answer — the
+				// provider reasoned (or produced nothing) and stopped, leaving
+				// the client on an empty turn (observed 2026-09-18: GLM-5.3-Flash
+				// continuation relaying 3010 reasoning tokens and 0 content, and
+				// carriers capping completions at 4096 tokens; both end with a
+				// finish_reason so the plain sawFinishReason check cannot see
+				// them). Relaying it as success makes the client finish on an
+				// empty assistant message while the provider keeps a clean
+				// health record, exactly the class of failure "continue" exists
+				// to absorb — so surface it as a retryable outage and let the
+				// takeover re-dispatch instead.
+				if executeRequest.Kind == RequestChat && sawFinishReason && !partial.GotText && !partial.GotToolCalls {
+					broken := &CallError{Class: ErrorUpstream, Status: http.StatusBadGateway,
+						Cause: errors.New("winner stream ended with empty completion (no content, no tool calls)")}
+					logEvent(request.Context(), s.logger, slog.LevelWarn, "request_failed",
+						"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
+						"provider", cur.Provider,
+						"status_code", callErrorStatus(broken), "error_type", string(broken.Class),
+						"reason", "empty_completion",
+						"attempts", cur.Attempts,
+						"duration_ms", time.Since(started).Milliseconds(),
+						"input_tokens", inTokens,
+						"output_tokens", outTokens,
+						"cached_tokens", cachedTokens,
+						"has_usage", hasUsage,
+					)
+					s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, broken)
+					if takeover(broken) {
+						continue
+					}
+					s.observeRequest(logical, cur.Provider, "failed", time.Since(started))
+					writeStreamError(writer, flusher, broken, requestID, s.runner.streamRetryable(logical, broken))
+					return
+				}
 				if executeRequest.Kind == RequestChat {
 					_, _ = io.WriteString(writer, "data: [DONE]\n\n")
 					flusher.Flush()

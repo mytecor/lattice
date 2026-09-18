@@ -15,6 +15,14 @@ type partialStreamOutput struct {
 	Content   string
 	Reasoning string
 	GotText   bool
+	// GotToolCalls reports whether the relayed stream carried any tool-call
+	// delta (choices[].delta.tool_calls non-empty). A chat completion that ends
+	// with a finish_reason but delivered neither text content nor a tool-call
+	// is an empty answer (observed 2026-09-18: GLM-5.3-Flash finishing after
+	// reasoning-only, 3010 reasoning tokens, 0 content) and must not be relayed
+	// as a successful completion; a tool-call completion, by contrast, is a
+	// legitimate turn that must keep relaying as success.
+	GotToolCalls bool
 }
 
 // accumulatePartial folds one relayed chat-completion chunk (as sanitized by
@@ -31,9 +39,10 @@ func accumulatePartial(body []byte, out *partialStreamOutput) {
 	var envelope struct {
 		Choices []struct {
 			Delta struct {
-				Content          string `json:"content"`
-				Reasoning        string `json:"reasoning"`
-				ReasoningContent string `json:"reasoning_content"`
+				Content          string          `json:"content"`
+				Reasoning        string          `json:"reasoning"`
+				ReasoningContent string          `json:"reasoning_content"`
+				ToolCalls        json.RawMessage `json:"tool_calls"`
 			} `json:"delta"`
 		} `json:"choices"`
 	}
@@ -47,6 +56,9 @@ func accumulatePartial(body []byte, out *partialStreamOutput) {
 	if delta.Content != "" {
 		out.Content += delta.Content
 		out.GotText = true
+	}
+	if len(delta.ToolCalls) > 0 && string(delta.ToolCalls) != "[]" && string(delta.ToolCalls) != "null" {
+		out.GotToolCalls = true
 	}
 	reasoning := delta.Reasoning
 	if reasoning == "" {

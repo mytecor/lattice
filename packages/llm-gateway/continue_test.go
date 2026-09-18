@@ -36,6 +36,35 @@ func TestAccumulatePartialIgnoresEmptyAndUsages(t *testing.T) {
 	}
 }
 
+func TestAccumulatePartialTracksToolCalls(t *testing.T) {
+	out := &partialStreamOutput{}
+	accumulatePartial([]byte(`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"bash","arguments":""}}]}}]}`), out)
+	if !out.GotToolCalls {
+		t.Fatal("GotToolCalls must be set after a tool-call delta")
+	}
+	if out.GotText || out.Content != "" {
+		t.Fatalf("a tool-call delta must not count as text: %+v", out)
+	}
+
+	empty := &partialStreamOutput{}
+	accumulatePartial([]byte(`{"choices":[{"index":0,"delta":{"tool_calls":[]}}]}`), empty)
+	if empty.GotToolCalls {
+		t.Fatal("an empty tool_calls array must not set GotToolCalls")
+	}
+}
+
+func TestAccumulatePartialReasoningOnlyIsNotText(t *testing.T) {
+	out := &partialStreamOutput{}
+	accumulatePartial([]byte(`{"choices":[{"index":0,"delta":{"reasoning_content":"let me think"}}]}`), out)
+	accumulatePartial([]byte(`{"choices":[{"index":0,"delta":{"reasoning":"and more"}}]}`), out)
+	if out.Reasoning != "let me thinkand more" {
+		t.Fatalf("reasoning = %q", out.Reasoning)
+	}
+	if out.GotText || out.GotToolCalls || out.Content != "" {
+		t.Fatalf("reasoning-only stream must not count as a non-empty completion: %+v", out)
+	}
+}
+
 func TestAppendPartialChatHistoryAppendsAssistantMessage(t *testing.T) {
 	original := []byte(`{"model":"native","messages":[{"role":"user","content":"hi"}]}`)
 	partial := &partialStreamOutput{Content: "Hello there", Reasoning: "thinking", GotText: true}
@@ -225,5 +254,144 @@ func TestServerContinueTakeoverOnFinishReasonlessClose(t *testing.T) {
 	}
 	if got := runner.availableTargets([]Target{{Provider: "b", Model: "native-model"}}); len(got) != 1 {
 		t.Fatalf("provider b must stay healthy after the takeover, available: %#v", got)
+	}
+}
+
+// TestServerContinueTakeoverOnEmptyCompletion pins the empty-completion
+// contract: a winner chat stream that ends WITH a finish_reason but relayed
+// neither text content nor a tool-call (observed 2026-09-18: GLM-5.3-Flash
+// emitting 3010 reasoning tokens and 0 content, then finishing; and carriers
+// capping completions at 4096 tokens) is not an answer. The client must not
+// see a [DONE] success on an empty turn; with the continue rule the gateway
+// takes over to the next provider on the same SSE stream, and without the
+// rule the empty completion must surface as a retryable error.
+func TestServerContinueTakeoverOnEmptyCompletion(t *testing.T) {
+	compiled := continueConfig(t)
+	var bCalls int
+	executor := &fakeExecutor{
+		stream: func(ctx context.Context, target Target, request ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			ch := make(chan StreamEvent, 3)
+			if target.Provider == "a" {
+				// a wins the initial race on its reasoning delta, then ends with a
+				// normal finish_reason and zero content: the observed GLM case.
+				ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"reasoning_content":"leaking thought"}}]}`), Meaningful: true}
+				ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`), Meaningful: false}
+				close(ch)
+				return ch, nil
+			}
+			// provider b
+			bCalls++
+			if bCalls == 1 {
+				// Initial race: stay silent so a wins; closed when a wins.
+				go func() {
+					<-ctx.Done()
+					close(ch)
+				}()
+				return ch, nil
+			}
+			// Continuation: answer for real, then finish.
+			ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"real-answer"}}]}`), Meaningful: true}
+			ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`), Meaningful: false}
+			close(ch)
+			return ch, nil
+		},
+	}
+	api, runner := streamTestServer(t, compiled, executor)
+
+	body := postStream(t, api.URL)
+
+	// The empty winner must not end the turn: the continuation answers on the
+	// same stream and [DONE] only follows the real answer.
+	if strings.Contains(body, "data: [DONE]\n") && !strings.Contains(body, "real-answer") {
+		t.Fatalf("empty winner must not end the turn with [DONE] without an answer: %s", body)
+	}
+	if !strings.Contains(body, "real-answer") {
+		t.Fatalf("takeover after empty completion must relay the real answer: %s", body)
+	}
+	if strings.Contains(body, "event: error") {
+		t.Fatalf("takeover after empty completion must not surface a client-facing error: %s", body)
+	}
+	if !strings.Contains(body, "data: [DONE]") {
+		t.Fatalf("takeover must complete the turn with a final [DONE]: %s", body)
+	}
+	if bCalls != 2 {
+		t.Fatalf("provider b must be contacted exactly twice (race + continuation), got %d", bCalls)
+	}
+	if got := runner.availableTargets([]Target{{Provider: "a", Model: "native-model"}}); len(got) != 0 {
+		t.Fatalf("provider a must cool down after an empty completion, available: %#v", got)
+	}
+	if got := runner.availableTargets([]Target{{Provider: "b", Model: "native-model"}}); len(got) != 1 {
+		t.Fatalf("provider b must stay healthy after the takeover, available: %#v", got)
+	}
+}
+
+// TestServerEmptyCompletionSurfacesErrorWithoutContinue pins the contract when
+// no continue rule is present: an empty completion (finish_reason present, no
+// content, no tool calls) must surface as a retryable upstream error with no
+// [DONE], and the provider must cool down — not be relayed as a success.
+func TestServerEmptyCompletionSurfacesErrorWithoutContinue(t *testing.T) {
+	compiled := singleProviderStreamConfig(t)
+	events := make(chan StreamEvent, 3)
+	events <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"reasoning_content":"thinking"}}]}`), Meaningful: true}
+	events <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`), Meaningful: false}
+	close(events)
+	executor := &fakeExecutor{stream: func(context.Context, Target, ExecuteRequest) (<-chan StreamEvent, *CallError) {
+		return events, nil
+	}}
+	api, runner := streamTestServer(t, compiled, executor)
+
+	body := postStream(t, api.URL)
+
+	var payload struct {
+		Error struct {
+			Message    string `json:"message"`
+			Type       string `json:"type"`
+			StatusCode int    `json:"status_code"`
+			Retryable  bool   `json:"retryable"`
+			Partial    bool   `json:"partial"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(sseErrorData(t, body), &payload); err != nil {
+		t.Fatalf("structured error payload: %v\n%s", err, body)
+	}
+	if payload.Error.Type != "5xx" || payload.Error.StatusCode != 502 {
+		t.Errorf("empty completion must classify as 5xx: %+v", payload.Error)
+	}
+	if !payload.Error.Retryable || !payload.Error.Partial {
+		t.Errorf("empty completion must be retryable+partial: %+v", payload.Error)
+	}
+	if strings.Contains(body, "data: [DONE]\n") {
+		t.Fatalf("empty completion without continue must not end with [DONE]: %s", body)
+	}
+	if got := runner.availableTargets([]Target{{Provider: "a", Model: "native-model"}}); len(got) != 0 {
+		t.Fatalf("provider a must cool down after an empty completion, available: %#v", got)
+	}
+}
+
+// TestServerEmptyCompletionIsNotToolCallTurn guard-rails the tool-call
+// exception: a stream that ends with a finish_reason and relays only a
+// tool-call delta (no content text) is a legitimate turn and must keep
+// relaying as a completed success, not be misclassified as an empty answer.
+func TestServerEmptyCompletionIsNotToolCallTurn(t *testing.T) {
+	compiled := singleProviderStreamConfig(t)
+	events := make(chan StreamEvent, 3)
+	events <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"bash","arguments":"{}"}}]}}]}`), Meaningful: true}
+	events <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`), Meaningful: false}
+	close(events)
+	executor := &fakeExecutor{stream: func(context.Context, Target, ExecuteRequest) (<-chan StreamEvent, *CallError) {
+		return events, nil
+	}}
+	api, _ := streamTestServer(t, compiled, executor)
+
+	body := postStream(t, api.URL)
+
+	if strings.Contains(body, "event: error") {
+		t.Fatalf("a tool-call completion must not be treated as empty: %s", body)
+	}
+	if !strings.Contains(body, "data: [DONE]") {
+		t.Fatalf("a tool-call completion must end with [DONE]: %s", body)
+	}
+	if !strings.Contains(body, `"tool_calls"`) || !strings.Contains(body, `"id":"call_1"`) {
+		t.Fatalf("the tool-call delta must be relayed to the client: %s", body)
 	}
 }
