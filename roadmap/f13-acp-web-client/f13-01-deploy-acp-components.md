@@ -22,7 +22,7 @@ split-панелях, tool calls, permissions, стриминг. Его тран
       [`packages/hydra-acp`](../../packages/hydra-acp/README.md): источник, лицензия, процедура
       обновления; для сборки — pnpm lock + hashes по образцу
       [`pnpm-cli-builder`](../../packages/pnpm-cli-builder/README.md).
-- [ ] 2. **Проверить форму соединения.** Клиентский `WebSocketTransport` не выставляет subprotocol,
+- [x] 2. **Проверить форму соединения.** Клиентский `WebSocketTransport` не выставляет subprotocol,
       а Lattice ingress закреплён как «чистый ACP WebSocket с subprotocol `acp.v1`»
       ([tests/acp-ingress-smoke.mjs](../../tests/acp-ingress-smoke.mjs),
       [ARCHITECTURE.md](../../ARCHITECTURE.md)). Проверить фактически: принимает ли
@@ -70,9 +70,28 @@ split-панелях, tool calls, permissions, стриминг. Его тран
 - [`tests/`](../../tests/README.md) — контракт-тест.
 - [`ROADMAP.md`](../../ROADMAP.md) — веха F13.
 
+## Шаг 2 выполнен: форма соединения подтверждена (2026-09-19)
+
+Подключение проводилось с машины в той же LAN живыми WebSocket-запросами против
+`ws://acp.mytecor-homelab.local/` (192.168.60.184), ровно в форме `WebSocketTransport`
+`acp-components` (`packages/core/src/transport/ws.ts`): `new WebSocket(url)` **без** второго
+аргумента subprotocol, затем дефолтные ACP JSON-RPC-сообщения.
+
+Результат — **положительный, shim для формы соединения не требуется**:
+
+- **Без subprotocol** (как acp-components): handshake проходит, `negotiated-protocol=""`
+  (сервер не эхо возвращает subprotocol), и endpoint отвечает на `initialize`
+  (`agentInfo { name: hydra, version: 0.1.183 }`, sessionCapabilities и т.д.).
+- **С `['acp.v1']`** (классический клиент, форма Ferngeist) для сравнения: тоже открывается,
+  `protocol="acp.v1"`. Обе формы стабильно открываются в повторных прогонах.
+
+Поведение сервера совпадает с кодом daemon: `selectAcpSubprotocol`
+(`src/daemon/ws-protocol.ts`) возвращает `false` (не отклоняя upgrade) для клиентов без `acp.v1`,
+сохранение совместимости заявлено в комментарии. `WebSocketTransport` подключится к
+существующему endpoint без изменений daemon или Caddy ingress; кодировать subprotocol в
+Lattice-пакете клиента не нужно.
+
 ## Открытые вопросы
 
-- Принимает ли `hydra-acp` WebSocket-соединения без subprotocol `acp.v1` (шаг 2 решает до
-  основной сборки). Если нет — объём минимального shim фиксируется в задаче.
 - Хостинг статики из flake (plain Caddy `root`/`file_server` vs derivation-пакет) — выбрать при
   реализации по образцу существующих LAN-сервисов.
