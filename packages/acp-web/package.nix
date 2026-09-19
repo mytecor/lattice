@@ -4,8 +4,10 @@
   fetchPnpmDeps,
   nodejs,
   pnpm,
-  pnpmConfigHook,
   runCommand,
+  sqlite,
+  writableTmpDirAsHomeHook,
+  zstd,
 }:
 
 # Lattice web client for ACP (f13-01): the open-source acp-components workbench
@@ -16,10 +18,18 @@
 #
 # Unlike `buildPnpmCli` (which wraps a single published npm CLI package), this
 # is a full workspace build: `pnpm install --frozen-lockfile --offline` against
-# the pinned `pnpm-lock.yaml` (via `fetchPnpmDeps` + `pnpmConfigHook`), then
-# `pnpm build` (package-level vite build for core + react) and a final `vite
-# build` of the demo. The derivation's output is the demo's `dist/` — a
-# self-contained static site served by Caddy.
+# the pinned `pnpm-lock.yaml` (via `fetchPnpmDeps`), then `pnpm build`
+# (package-level vite build for core + react) and a final `vite build` of the
+# demo. The derivation's output is the demo's `dist/` — a self-contained static
+# site served by Caddy.
+#
+# NB: we deliberately do NOT use `pnpmConfigHook`. In the NixOS sandbox on the
+# target node the hook's SQLite index reconstruction ("rebuilt from a .sql dump
+# in fetcherVersion 4") did not take effect: pnpm saw the offline store as empty
+# and fell back to the network (EAI_AGAIN). The manual procedure below is the
+# pnpmConfigHook logic (store extraction + v11 index rebuild + arch/platform +
+# store-dir + `pnpm install --offline`) reproduced explicitly, verified to reuse
+# the whole FOD store with zero network access.
 let
   gitSrc = fetchFromGitHub {
     owner = "zvzuola";
@@ -56,7 +66,9 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   nativeBuildInputs = [
     nodejs
     pnpm
-    pnpmConfigHook
+    sqlite       # v11/index.db reconstruction from the .sql dump
+    writableTmpDirAsHomeHook # pnpm writes config to $HOME
+    zstd         # tar --zstd for the store tarball
   ];
 
   # Step 4 (f13-01): pre-configured default ACP agent (see
@@ -66,7 +78,45 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     node ${./patch-main-ts.mjs} examples/demo/src/main.tsx
   '';
 
-  dontConfigure = true;
+  # Skip the pnpmConfigHook (see header comment); we reproduce its store setup
+  # manually in configurePhase, where it is verified to work offline.
+  dontPnpmConfigure = true;
+
+  configurePhase = ''
+    runHook preConfigure
+
+    # Platform/arch must match the system the FOD store was fetched for.
+    export npm_config_arch="${stdenvNoCC.targetPlatform.node.arch}"
+    export pnpm_config_arch="${stdenvNoCC.targetPlatform.node.arch}"
+    export npm_config_platform="${stdenvNoCC.targetPlatform.node.platform}"
+    export pnpm_config_platform="${stdenvNoCC.targetPlatform.node.platform}"
+
+    # pnpm 11: use the pinned lock without re-checking supply-chain metadata
+    # (already enforced by the hash-verified FOD) and don't fail on package
+    # manager resolution.
+    export pnpm_config_trust_lockfile=true
+    export pnpm_config_pm_on_fail=ignore
+
+    export STORE_PATH=$(mktemp -d)
+    tar --zstd -xf "$pnpmDeps/pnpm-store.tar.zst" -C "$STORE_PATH"
+    chmod -R u+w "$STORE_PATH"
+
+    # Reconstruct the SQLite index from the reproducible SQL dump (fetcherVersion 4).
+    if [ -f "$STORE_PATH/v11/index.db.sql" ]; then
+      sqlite3 "$STORE_PATH/v11/index.db" < "$STORE_PATH/v11/index.db.sql"
+      rm "$STORE_PATH/v11/index.db.sql"
+    fi
+
+    pnpm config set reporter append-only
+    pnpm config set store-dir "$STORE_PATH"
+    # Prevent hard-linking across the store/build dir (sandbox may lack clone support).
+    pnpm config set package-import-method clone-or-copy
+
+    echo "Installing dependencies (offline)..."
+    pnpm install --offline --ignore-scripts --frozen-lockfile
+
+    runHook postConfigure
+  '';
 
   buildPhase = ''
     runHook preBuild
