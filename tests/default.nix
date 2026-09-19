@@ -114,7 +114,7 @@ in
   };
 
   grafana-dashboards = import ./grafana-dashboards.nix {
-    inherit nixpkgs pkgs;
+    inherit nixpkgs pkgs self;
     lib = nixpkgs.lib;
     observabilityModules = observabilityModules;
     observabilityProfile = "${profiles}/observability/config.nix";

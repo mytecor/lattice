@@ -1,4 +1,4 @@
-{ nixpkgs, pkgs, lib, observabilityModules, observabilityProfile }:
+{ nixpkgs, pkgs, lib, observabilityModules, observabilityProfile, self }:
 
 # Contract test for the f12-04 Grafana dashboards and the `environment` scrape
 # label.
@@ -30,7 +30,14 @@ let
   }).config;
 
   # Dashboard JSON files shipped by the grafana module (source of truth).
-  dashboardsDir = ../modules/grafana/dashboards;
+  # Read the dashboards from the flake source (self) rather than by raw
+  # path coercion. On a dirty working tree the coerced `../modules/...` path
+  # becomes a floating store path with no GC root and `nix flake check
+  # --no-build` does not re-materialize it after `nix-collect-garbage`,
+  # failing with "path '...-dashboards' is not valid". `self.outPath` is part
+  # of the materialized flake source and stays valid, so the test (and the
+  # source-of-truth check below) is self-sufficient after GC.
+  dashboardsDir = self.outPath + "/modules/grafana/dashboards";
   dashboardFiles = builtins.filter
     (name: lib.hasSuffix ".json" name)
     (builtins.attrNames (builtins.readDir dashboardsDir));
@@ -55,7 +62,12 @@ in
 # --- Dashboards ship from the repository and are provisioned ---
 assert lib.length dashboardFiles >= 3;
 assert builtins.any (p: (p.name or "") == "lattice") providers;
-assert lib.all (p: (p.options.path or "") == "${dashboardsDir}") providers;
+# The provider must be pointed at the dashboards directory. We do not compare
+# store paths for equality nor readDir the provider path: the module's
+# `path = "${./dashboards}"` coercion materializes a floating store path on a
+# dirty working tree that `nix flake check --no-build` does not keep valid after
+# GC. Check only that the configured path is the dashboards directory by name.
+assert lib.all (p: lib.hasSuffix "dashboards" (p.options.path or "")) providers;
 
 # --- Stable uids, titles, datasource wiring ---
 assert lib.all (d: (d.uid or "") != "" && (d.title or "") != "") dashboards;
