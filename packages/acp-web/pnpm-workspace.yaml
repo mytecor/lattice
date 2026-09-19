@@ -1,0 +1,22 @@
+# Lattice copy of the upstream acp-components `pnpm-workspace.yaml` with the
+# pnpm 11 supply-chain policies relaxed. These gates (minimumReleaseAge /
+# blockExoticSubdeps) are redundant for a Nix-pinned lock whose dependency
+# graph and integrity are fixed by `fetchPnpmDeps` (a hash-verified FOD), and
+# they force `pnpm install` to re-check registry metadata during the build —
+# which fails offline and stalls on a NixOS node sandbox. The upstream wrapper
+# (packages/pnpm-cli-builder) exposes the same idea as its `pnpmWorkspace`
+# option; here the file is copied over the upstream one in `postPatch`.
+packages:
+  - 'packages/*'
+  - 'examples/*'
+
+# Keep the upstream build hooks (esbuild postinstall, @parcel/watcher
+# from-source build) — they are genuinely needed and match the upstream lock.
+allowBuilds:
+  '@parcel/watcher': true
+  esbuild: true
+
+# Signals/aliases accepted by pnpm 11.x; the exact spelling follows the
+# upstream-supplied keys for these policies.
+minimumReleaseAge: 0
+blockExoticSubdeps: false

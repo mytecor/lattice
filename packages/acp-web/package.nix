@@ -1,11 +1,11 @@
 {
-  lib,
   stdenvNoCC,
   fetchFromGitHub,
   fetchPnpmDeps,
   nodejs,
   pnpm,
   pnpmConfigHook,
+  runCommand,
 }:
 
 # Lattice web client for ACP (f13-01): the open-source acp-components workbench
@@ -20,17 +20,31 @@
 # `pnpm build` (package-level vite build for core + react) and a final `vite
 # build` of the demo. The derivation's output is the demo's `dist/` — a
 # self-contained static site served by Caddy.
-stdenvNoCC.mkDerivation (finalAttrs: {
-  pname = "acp-web";
-  upstreamVersion = "0.1.0";
-  version = "${finalAttrs.upstreamVersion}-20260919"; # pinned upstream commit
-
-  src = fetchFromGitHub {
+let
+  gitSrc = fetchFromGitHub {
     owner = "zvzuola";
     repo = "acp-components";
     rev = "1708c20274c9f15ee3a072009e5ca9fd3b71a9de";
     hash = "sha256-Jn/q4fAUjL+QikWOzj5VQPBD9Ch4r9obV2uDwzYKmt8=";
   };
+
+  # Overlay our pnpm-workspace.yaml (supply-chain relaxed, see file header)
+  # onto the fetched source *before* fetchPnpmDeps, so the FOD store and the
+  # later `pnpm install --offline` see the same workspace definition. This is
+  # the buildPnpmCli `pnpmWorkspace` trick, done inline because this is a
+  # workspace monorepo rather than a single published package.
+  src = runCommand "acp-web-source" { } ''
+    cp -r ${gitSrc} "$out"
+    chmod -R u+w "$out"
+    cp ${./pnpm-workspace.yaml} "$out/pnpm-workspace.yaml"
+  '';
+in
+stdenvNoCC.mkDerivation (finalAttrs: {
+  pname = "acp-web";
+  upstreamVersion = "0.1.0";
+  version = "${finalAttrs.upstreamVersion}-20260919"; # pinned upstream commit
+
+  inherit src;
 
   pnpmDeps = fetchPnpmDeps {
     inherit (finalAttrs) pname version src;
