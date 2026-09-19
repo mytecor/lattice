@@ -157,6 +157,7 @@ let
           action = "continue";
           idle = pick [ "continue" "idle" ] "90s";
           reshare = pick [ "continue" "reshare" ] "full";
+          retries = pick [ "continue" "retries" ] 0;
         }
       ]
       ++ [

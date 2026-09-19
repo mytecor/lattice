@@ -8,8 +8,10 @@ import "time"
 // past Idle or closes without a finish_reason, the gateway continues the same
 // client stream by re-dispatching the request (with the partial output
 // reshared per Reshare) to another provider, instead of surfacing an error to
-// the client. It affects only streaming chat requests at runtime; the rule
-// itself is inert for non-streaming requests.
+// the client. When every provider in the pool has already broken during the
+// request (the chain is exhausted), Retries gives the whole chain a fresh
+// pass from the top with the reshared partial. It affects only streaming chat
+// requests at runtime; the rule itself is inert for non-streaming requests.
 type ContinueRule struct {
 	ruleBase
 	// Idle is the stall threshold for the relayed winner stream (replaces the
@@ -20,6 +22,12 @@ type ContinueRule struct {
 	// every relayed reasoning/content delta as assistant context before
 	// re-dispatching; any other value is rejected.
 	Reshare string `json:"reshare,omitempty"`
+	// Retries is the whole-chain retry budget: how many times an exhausted
+	// chain (every provider in the pool already broke during the request, so a
+	// takeover has no eligible provider left) is re-dispatched from the top
+	// with the partial output reshared. 0 (default) preserves the pre-chain-
+	// retry behavior of surfacing a terminal error once the chain runs out.
+	Retries int `json:"retries,omitempty"`
 }
 
 // apply validates the takeover policy and stores it in the compiled entry
@@ -44,10 +52,17 @@ func (r *ContinueRule) apply(ctx *stageContext) error {
 	if reshare != "full" {
 		return ctx.errf("continue reshare supports only \"full\", got %q", reshare)
 	}
+	if r.Retries < 0 {
+		return ctx.errf("continue retries must be non-negative, got %d", r.Retries)
+	}
+	if r.Retries > maxContinueChainRetries {
+		return ctx.errf("continue retries exceeds the cap of %d, got %d", maxContinueChainRetries, r.Retries)
+	}
 	ctx.plan.Continue = ContinueConfig{
 		Enabled: true,
 		Idle:    r.Idle.Duration,
 		Reshare: reshare,
+		Retries: r.Retries,
 	}
 	return nil
 }

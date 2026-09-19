@@ -59,6 +59,62 @@ func TestContinueRuleRejectsBadReshare(t *testing.T) {
 	}
 }
 
+func TestContinueRuleRejectsNegativeRetries(t *testing.T) {
+	r := continueRule("standard", 90*time.Second, "full")
+	r.(*ContinueRule).Retries = -1
+	if _, err := compileRules(r); err == nil {
+		t.Fatal("continue with negative retries must fail")
+	}
+}
+
+func TestContinueRuleRejectsRetriesAboveCap(t *testing.T) {
+	r := continueRule("standard", 90*time.Second, "full")
+	r.(*ContinueRule).Retries = maxContinueChainRetries + 1
+	if _, err := compileRules(r); err == nil {
+		t.Fatal("continue with retries above the cap must fail")
+	}
+}
+
+func TestContinueRuleAcceptsRetriesAtCap(t *testing.T) {
+	res := mustCompile(t,
+		filterModel("standard", "standard"),
+		filterProvider("standard", "a", "b"),
+		mapRule("standard", "native-model"),
+		rankRule("standard"),
+		raceRule("standard", 2),
+		continueRuleRetries("standard", 90*time.Second, "full", maxContinueChainRetries),
+	)
+	route := entryRoute(t, res, "standard")
+	if !route.Continue.Enabled || route.Continue.Retries != maxContinueChainRetries {
+		t.Fatalf("continue retries at cap = %d, want %d", route.Continue.Retries, maxContinueChainRetries)
+	}
+}
+
+func TestContinueRuleRetriesCompiles(t *testing.T) {
+	res := mustCompile(t,
+		filterModel("standard", "standard"),
+		filterProvider("standard", "a", "b"),
+		mapRule("standard", "native-model"),
+		rankRule("standard"),
+		raceRule("standard", 2),
+		continueRuleRetries("standard", 90*time.Second, "full", 2),
+	)
+	route := entryRoute(t, res, "standard")
+	if !route.Continue.Enabled || route.Continue.Retries != 2 {
+		t.Fatalf("continue retries = %v, want 2", route.Continue.Retries)
+	}
+}
+
+func TestContinueRuleRetriesDefaultZero(t *testing.T) {
+	// A continue rule without an explicit retries keeps the pre-chain-retry
+	// behavior: retries defaults to zero.
+	res := mustCompile(t, continueEntry(90*time.Second, "")...)
+	route := entryRoute(t, res, "standard")
+	if route.Continue.Retries != 0 {
+		t.Fatalf("continue retries default = %d, want 0", route.Continue.Retries)
+	}
+}
+
 func TestContinueRuleRequiresEntryRoute(t *testing.T) {
 	// A continue action on a subroute (no entry model filter) must fail: the
 	// relay policy belongs to the discoverable entry model.
@@ -86,8 +142,8 @@ func TestContinueRuleUnknownActionRejectedByRegistry(t *testing.T) {
 }
 
 // TestContinueRuleDecodesNixShape pins the exact JSON projection the Nix
-// module emits for a continue rule (route, action, idle, reshare) and that the
-// strict decoder + config compiler accept it end-to-end.
+// module emits for a continue rule (route, action, idle, reshare, retries) and
+// that the strict decoder + config compiler accept it end-to-end.
 func TestContinueRuleDecodesNixShape(t *testing.T) {
 	rule := decodeRuleJSON(t, `{"route":"smart","action":"continue","idle":"90s","reshare":"full"}`)
 	cr, ok := rule.(*ContinueRule)
@@ -96,5 +152,19 @@ func TestContinueRuleDecodesNixShape(t *testing.T) {
 	}
 	if cr.Idle.Duration != 90*time.Second {
 		t.Fatalf("decoded idle = %v, want 90s", cr.Idle.Duration)
+	}
+	if cr.Retries != 0 {
+		t.Fatalf("decoded retries (absent) = %d, want 0", cr.Retries)
+	}
+
+	// The Nix pipeline now always emits retries (default 0); a Nix deploy
+	// opting into whole-chain retry sets it explicitly.
+	rule = decodeRuleJSON(t, `{"route":"smart","action":"continue","idle":"30s","reshare":"full","retries":1}`)
+	cr, ok = rule.(*ContinueRule)
+	if !ok {
+		t.Fatalf("decoded type = %T, want *ContinueRule", rule)
+	}
+	if cr.Retries != 1 {
+		t.Fatalf("decoded retries = %d, want 1", cr.Retries)
 	}
 }

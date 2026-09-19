@@ -176,6 +176,39 @@ func TestFallbacksMetric(t *testing.T) {
 	}
 }
 
+func TestContinueMetric(t *testing.T) {
+	m := newMetrics()
+	m.ObserveContinue("a", "b", "takeover")
+	m.ObserveContinue("b", "a", "chain_retry")
+	m.ObserveContinue("b", "a", "chain_retry")
+	body := scrape(t, m)
+	if !strings.Contains(body, `llm_continues_total{from_provider="a",to_provider="b",kind="takeover"} 1`) {
+		t.Errorf("missing takeover series")
+	}
+	if !strings.Contains(body, `llm_continues_total{from_provider="b",to_provider="a",kind="chain_retry"} 2`) {
+		t.Errorf("missing chain_retry series (merged twice):\n%s", body)
+	}
+}
+
+func TestChainRetryMetric(t *testing.T) {
+	m := newMetrics()
+	m.ObserveChainRetry("started")
+	m.ObserveChainRetry("completed")
+	m.ObserveChainRetry("started")
+	m.ObserveChainRetry("started")
+	m.ObserveChainRetry("exhausted")
+	body := scrape(t, m)
+	if !strings.Contains(body, `llm_chain_retries_total{status="started"} 3`) {
+		t.Errorf("missing started series:\n%s", body)
+	}
+	if !strings.Contains(body, `llm_chain_retries_total{status="completed"} 1`) {
+		t.Errorf("missing completed series:\n%s", body)
+	}
+	if !strings.Contains(body, `llm_chain_retries_total{status="exhausted"} 1`) {
+		t.Errorf("missing exhausted series:\n%s", body)
+	}
+}
+
 func TestCooldownUntilMetric(t *testing.T) {
 	m := newMetrics()
 	m.ObserveCooldownUntil("a", "native-model", time.Unix(1_700_000_100, 0))

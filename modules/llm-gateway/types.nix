@@ -8,6 +8,10 @@
 let
   inherit (lib) mkOption types;
 
+  # Upper bound of the continue rule's whole-chain retry budget; mirrors
+  # maxContinueChainRetries in packages/llm-gateway/config.go.
+  maxContinueChainRetries = 10;
+
   # Supported typed failure classes, shared by all error filters.
   errorClasses = [ "timeout" "connection_error" "429" "404" "invalid_response" "model_not_found" "5xx" ];
 
@@ -426,7 +430,11 @@ let
     # finish_reason after producing meaningful content/reasoning, the gateway
     # continues the same client stream by re-dispatching the request (with the
     # partial output reshaped per `reshare`) to a different provider, instead
-    # of surfacing an error to the client. Only affects streaming chat.
+    # of surfacing an error to the client. `retries` bounds whole-chain
+    # re-dispatches: when every provider in the pool has broken during the
+    # request, the gateway re-dispatches the whole chain from the top with the
+    # reshared partial while the budget lasts, instead of surfacing a terminal
+    # error. Only affects streaming chat.
     continue = { config, ... }: {
       options = {
         idle = mkOption {
@@ -438,11 +446,16 @@ let
           default = "full";
           description = "How partial output is handed to the next provider: `full` re-shapes every relayed reasoning/content delta as assistant context appended to the request history.";
         };
+        retries = mkOption {
+          type = types.ints.between 0 maxContinueChainRetries;
+          default = 0;
+          description = "Whole-chain retry budget: how many times an exhausted chain (every provider broke during the request) is re-dispatched from the top with the reshared partial. 0 disables (a terminal error is surfaced once the chain runs out). Bounded by ${toString maxContinueChainRetries} to keep the worst-case per-request work finite.";
+        };
         _public = mkOption {
           type = types.attrs;
           internal = true;
           readOnly = true;
-          default = { inherit (config) idle reshare; };
+          default = { inherit (config) idle reshare retries; };
         };
       };
     };
@@ -612,6 +625,11 @@ let
           type = types.nullOr (types.enum [ "full" ]);
           default = null;
           description = "How partial output is handed to the next provider; null leaves the sugar default (full).";
+        };
+        retries = mkOption {
+          type = types.nullOr (types.ints.between 0 maxContinueChainRetries);
+          default = null;
+          description = "Whole-chain retry budget: how many times an exhausted chain is re-dispatched from the top with the reshared partial; null leaves the sugar default (0, disabled — a terminal error is surfaced once the chain runs out). Bounded by ${toString maxContinueChainRetries}.";
         };
       };
     };

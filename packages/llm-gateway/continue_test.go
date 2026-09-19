@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -108,6 +109,13 @@ func TestAppendPartialChatHistoryNoPartialIsNoop(t *testing.T) {
 // declares the continue policy, for runner/server takeover tests.
 func continueConfig(t *testing.T) *compiledConfig {
 	t.Helper()
+	return continueConfigRetries(t, 0)
+}
+
+// continueConfigRetries builds a two-provider streaming entry route that
+// declares the continue policy with the given whole-chain retry budget.
+func continueConfigRetries(t *testing.T, retries int) *compiledConfig {
+	t.Helper()
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:2] // a, b
 	cfg.RoutingRules = []Rule{
@@ -116,7 +124,7 @@ func continueConfig(t *testing.T) *compiledConfig {
 		mapRule("standard", "native-model"),
 		rankRule("standard"),
 		raceRule("standard", 2),
-		continueRule("standard", 90*time.Second, "full"),
+		continueRuleRetries("standard", 90*time.Second, "full", retries),
 	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {
@@ -393,5 +401,320 @@ func TestServerEmptyCompletionIsNotToolCallTurn(t *testing.T) {
 	}
 	if !strings.Contains(body, `"tool_calls"`) || !strings.Contains(body, `"id":"call_1"`) {
 		t.Fatalf("the tool-call delta must be relayed to the client: %s", body)
+	}
+}
+
+// TestServerChainRetryOnExhaustedChain pins the whole-chain retry contract:
+// when every provider in the pool breaks during the request (the continue
+// chain is exhausted), the gateway re-dispatches the whole chain from the top
+// with the accumulated partial output reshared — so the client still gets a
+// completed turn instead of a terminal error. Each provider breaks once, the
+// chain exhausts, and the fresh pass lets one provider answer for real.
+func TestServerChainRetryOnExhaustedChain(t *testing.T) {
+	compiled := continueConfigRetries(t, 1)
+	var callsA, callsB int
+	var mu sync.Mutex
+	var bodies [][]byte
+	executor := &fakeExecutor{
+		stream: func(ctx context.Context, target Target, request ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			mu.Lock()
+			bodies = append(bodies, append([]byte(nil), request.Body...))
+			mu.Unlock()
+			ch := make(chan StreamEvent, 3)
+			switch target.Provider {
+			case "a":
+				callsA++
+				if callsA == 1 {
+					// Initial race winner: relays partial, then breaks without a
+					// finish_reason.
+					ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"from-a-part"}}]}`), Meaningful: true}
+					close(ch)
+					return ch, nil
+				}
+				// Chain-retry winner: answers for real, then finishes.
+				ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"final-answer"}}]}`), Meaningful: true}
+				ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`), Meaningful: false}
+				close(ch)
+				return ch, nil
+			case "b":
+				callsB++
+				if callsB == 1 {
+					// Initial race loser: silent until cancelled (a wins first).
+					go func() {
+						<-ctx.Done()
+						close(ch)
+					}()
+					return ch, nil
+				}
+				if callsB == 2 {
+					// First takeover target: relays partial, then breaks.
+					ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"from-b-part"}}]}`), Meaningful: true}
+					close(ch)
+					return ch, nil
+				}
+				if callsB == 3 {
+					// Second takeover target (fail-open keeps b eligible while
+					// cooling): relays more partial, then breaks again. This second
+					// success adds b to the broken set, exhausting the chain.
+					ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"from-b-part-2"}}]}`), Meaningful: true}
+					close(ch)
+					return ch, nil
+				}
+				// Chain-retry loser: silent until cancelled (a answers first).
+				go func() {
+					<-ctx.Done()
+					close(ch)
+				}()
+				return ch, nil
+			}
+			panic("unknown provider")
+		},
+	}
+	api, runner := streamTestServer(t, compiled, executor)
+
+	body := postStream(t, api.URL)
+
+	// All four waves of output must be relayed on the same SSE stream, ending
+	// in a real answer and [DONE], with no client-facing error.
+	if !strings.Contains(body, "from-a-part") {
+		t.Fatalf("initial winner partial must be relayed: %s", body)
+	}
+	if !strings.Contains(body, "from-b-part") {
+		t.Fatalf("first takeover partial must be relayed: %s", body)
+	}
+	if !strings.Contains(body, "from-b-part-2") {
+		t.Fatalf("second takeover partial must be relayed: %s", body)
+	}
+	if !strings.Contains(body, "final-answer") {
+		t.Fatalf("chain retry must relay the final answer: %s", body)
+	}
+	if strings.Contains(body, "event: error") {
+		t.Fatalf("chain retry must not surface a client-facing error: %s", body)
+	}
+	if !strings.Contains(body, "data: [DONE]") {
+		t.Fatalf("chain retry must complete the turn with [DONE]: %s", body)
+	}
+	// a races twice (initial + chain retry); b races in all four waves
+	// (initial loss, two takeovers, chain-retry loss).
+	if callsA != 2 {
+		t.Fatalf("provider a calls = %d, want 2 (initial + chain retry)", callsA)
+	}
+	if callsB != 4 {
+		t.Fatalf("provider b calls = %d, want 4 (initial + 2 takeovers + chain retry)", callsB)
+	}
+	// The final chain-retry request must carry the reshared partial: the
+	// accumulated output of both earlier waves as an assistant message.
+	lastBody := string(bodies[len(bodies)-1])
+	if !strings.Contains(lastBody, `"role":"assistant"`) || !strings.Contains(lastBody, "from-a-part") || !strings.Contains(lastBody, "from-b-part") {
+		t.Fatalf("chain retry must reshape the accumulated partial into assistant context: %s", lastBody)
+	}
+	// The retried winners' cooldown reflects their true outcomes: provider a
+	// broke in wave 1 but succeeded as the chain-retry winner, so its cooldown
+	// is cleared on success; provider b only ever broke (wave 2) and never
+	// succeeded, so it stays cooling.
+	t.Run("cooldown", func(t *testing.T) {
+		if got := runner.availableTargets([]Target{{Provider: "a", Model: "native-model"}}); len(got) != 1 {
+			t.Fatalf("provider a must be healthy again after winning the chain retry, available: %#v", got)
+		}
+		if got := runner.availableTargets([]Target{{Provider: "b", Model: "native-model"}}); len(got) != 0 {
+			t.Fatalf("provider b must stay cooling after its break, available: %#v", got)
+		}
+	})
+}
+
+// TestRunnerChainRetryReracesWholePoolWithResharedPartial pins the runner-level
+// contract of a whole-chain retry (the let's-retry-the-whole-chain step): after
+// an exhausted chain (ContinueStream with every provider broken fails), a
+// re-dispatch with an empty broken set gives the whole pool a fresh pass and
+// reshapes the accumulated partial output into the request body. Deterministic
+// at the runner layer, independent of the SSE server's cooldown/fail-open
+// scheduling.
+func TestRunnerChainRetryReracesWholePoolWithResharedPartial(t *testing.T) {
+	compiled := continueConfig(t)
+	var callsA, callsB int
+	var bodies [][]byte
+	var mu sync.Mutex
+	executor := &fakeExecutor{
+		stream: func(ctx context.Context, target Target, request ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			mu.Lock()
+			bodies = append(bodies, append([]byte(nil), request.Body...))
+			mu.Unlock()
+			ch := make(chan StreamEvent, 3)
+			switch target.Provider {
+			case "a":
+				callsA++
+				if callsA == 1 {
+					ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"from-a-part"}}]}`), Meaningful: true}
+					close(ch)
+					return ch, nil
+				}
+				// Chain-rety pass: answers for real.
+				ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"final-answer"}}]}`), Meaningful: true}
+				ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`), Meaningful: false}
+				close(ch)
+				return ch, nil
+			case "b":
+				callsB++
+				if callsB == 1 {
+					go func() {
+						<-ctx.Done()
+						close(ch)
+					}()
+					return ch, nil
+				}
+				if callsB == 2 {
+					ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"from-b-part"}}]}`), Meaningful: true}
+					close(ch)
+					return ch, nil
+				}
+				go func() {
+					<-ctx.Done()
+					close(ch)
+				}()
+				return ch, nil
+			}
+			panic("unknown provider")
+		},
+	}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	request := ExecuteRequest{Kind: RequestChat, Body: []byte(`{"messages":[{"role":"user","content":"hi"}]}`)}
+	ctx := context.Background()
+	partial := &partialStreamOutput{}
+
+	// Wave 1: initial selection — a wins (from-a-part) then breaks.
+	sel, callErr := runner.SelectStream(ctx, "standard", request)
+	if callErr != nil {
+		t.Fatalf("select failed: %v", callErr)
+	}
+	if sel.Provider != "a" {
+		t.Fatalf("initial winner = %q, want a", sel.Provider)
+	}
+	for _, ev := range sel.Buffered {
+		accumulatePartial(ev.Data, partial)
+	}
+	partial.GotText = true
+	sel.Cancel()
+
+	// Wave 2: takeover to the one remaining provider — b wins then breaks.
+	next, callErr := runner.ContinueStream(ctx, "standard", request, partial, []string{"a"})
+	if callErr != nil {
+		t.Fatalf("takeover failed: %v", callErr)
+	}
+	if next.Provider != "b" {
+		t.Fatalf("takeover provider = %q, want b", next.Provider)
+	}
+	for _, ev := range next.Buffered {
+		accumulatePartial(ev.Data, partial)
+	}
+	next.Cancel()
+
+	// Wave 3: the chain is exhausted — every provider is broken.
+	if _, callErr := runner.ContinueStream(ctx, "standard", request, partial, []string{"a", "b"}); callErr == nil {
+		t.Fatal("ContinueStream must fail once every provider is broken")
+	}
+
+	// Wave 4: the whole-chain retry re-dispatches with an empty broken set,
+	// resharing the accumulated partial — a races again and answers.
+	retry, callErr := runner.ContinueStream(ctx, "standard", request, partial, nil)
+	if callErr != nil {
+		t.Fatalf("chain retry failed: %v", callErr)
+	}
+	if retry.Provider != "a" {
+		t.Fatalf("chain retry provider = %q, want a", retry.Provider)
+	}
+	if callsA != 2 || callsB != 3 {
+		t.Fatalf("chain retry must re-race the whole pool: callsA=%d callsB=%d, want 2/3", callsA, callsB)
+	}
+	lastBody := string(bodies[len(bodies)-1])
+	if !strings.Contains(lastBody, `"role":"assistant"`) || !strings.Contains(lastBody, "from-a-part") || !strings.Contains(lastBody, "from-b-part") {
+		t.Fatalf("chain retry must reshape the accumulated partial into assistant context: %s", lastBody)
+	}
+}
+
+// TestServerChainRetryBudgetExhausted pins the bound: a finite chain-retry
+// budget cannot loop forever. Every provider always breaks after relaying a
+// partial, so no provider ever completes a turn. Cooldown is fail-open, so a
+// chain retry still re-selects a winner (the race re-runs over the pool) —
+// but that winner also breaks, and once the single retry is spent the next
+// exhaustion has no budget left: the request surfaces the terminal retryable
+// 502 rather than looping or completing with [DONE]. The metric records the
+// one whole-chain retry as started+completed (it did select a winner) and
+// never as exhausted (no budget round was fully empty).
+func TestServerChainRetryBudgetExhausted(t *testing.T) {
+	compiled := continueConfigRetries(t, 1)
+	// Every provider always breaks after relaying a partial: no provider ever
+	// completes, so the chain exhausts, and the single chain retry also
+	// re-selects a winner that breaks again — the terminal error comes from the
+	// budget being spent, not from a retry that failed to dispatch.
+	breakAll := func(ctx context.Context, target Target, request ExecuteRequest) (<-chan StreamEvent, *CallError) {
+		ch := make(chan StreamEvent, 3)
+		ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"partial"}}]}`), Meaningful: true}
+		close(ch)
+		return ch, nil
+	}
+	api, runner := streamTestServer(t, compiled, &fakeExecutor{stream: breakAll})
+
+	body := postStream(t, api.URL)
+
+	if strings.Contains(body, "data: [DONE]") {
+		t.Fatalf("an exhausted chain with a spent budget must not end with [DONE]: %s", body)
+	}
+	var payload struct {
+		Error struct {
+			Message    string `json:"message"`
+			Type       string `json:"type"`
+			StatusCode int    `json:"status_code"`
+			Retryable  bool   `json:"retryable"`
+			Partial    bool   `json:"partial"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(sseErrorData(t, body), &payload); err != nil {
+		t.Fatalf("structured error payload: %v\n%s", err, body)
+	}
+	if !payload.Error.Retryable || !payload.Error.Partial {
+		t.Errorf("exhausted chain with spent budget must stay retryable+partial: %+v", payload.Error)
+	}
+	if payload.Error.StatusCode != 502 {
+		t.Errorf("exhausted chain must surface as 5xx: %+v", payload.Error)
+	}
+	// A single whole-chain retry ran and selected a winner (which then also
+	// broke); the terminal error is the next exhaustion with the budget spent,
+	// which is not itself a whole-chain retry. So: one started, one completed,
+	// never exhausted, and no pass looped past the budget.
+	met := scrape(t, runner.metrics)
+	if !strings.Contains(met, `llm_chain_retries_total{status="started"} 1`) {
+		t.Errorf("exactly one whole-chain retry must be recorded as started:\n%s", met)
+	}
+	if !strings.Contains(met, `llm_chain_retries_total{status="completed"} 1`) {
+		t.Errorf("the single retry selected a winner and must be recorded as completed:\n%s", met)
+	}
+	if strings.Contains(met, `llm_chain_retries_total{status="exhausted"}`) {
+		t.Errorf("no whole-chain retry ran with an empty pool, so exhausted must stay absent:\n%s", met)
+	}
+}
+
+// TestServerChainRetryBudgetZeroKeepsOldBehavior pins that chain retry is
+// opt-in: a continue rule without retries surfaces the terminal error once the
+// whole chain is exhausted, exactly as before the feature.
+func TestServerChainRetryBudgetZeroKeepsOldBehavior(t *testing.T) {
+	compiled := continueConfig(t) // retries 0
+	breakAll := func(ctx context.Context, target Target, request ExecuteRequest) (<-chan StreamEvent, *CallError) {
+		ch := make(chan StreamEvent, 3)
+		ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"partial"}}]}`), Meaningful: true}
+		close(ch)
+		return ch, nil
+	}
+	api, runner := streamTestServer(t, compiled, &fakeExecutor{stream: breakAll})
+
+	body := postStream(t, api.URL)
+
+	if strings.Contains(body, "data: [DONE]") {
+		t.Fatalf("retries=0 must keep surfacing terminal errors, not [DONE]: %s", body)
+	}
+	sseErrorData(t, body) // must be a valid structured SSE error
+	// retries=0 means no whole-chain retry was ever attempted, so the
+	// chain_retry metric family must stay absent (not a zeroed series).
+	if got := scrape(t, runner.metrics); strings.Contains(got, "llm_chain_retries_total") {
+		t.Errorf("retries=0 must not emit any whole-chain retry series:\n%s", got)
 	}
 }

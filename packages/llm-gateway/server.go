@@ -363,27 +363,12 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	// stream is continued with the new winner. Returns true when a
 	// continuation started; false leaves the caller to surface the terminal
 	// error for `broken`. Only streaming chat requests participate.
-	takeover := func(broken *CallError) bool {
-		if !continueEnabled || executeRequest.Kind != RequestChat {
-			return false
-		}
-		next, callErr := s.runner.ContinueStream(request.Context(), logical, executeRequest, partial, brokenProviders)
-		if callErr != nil {
-			logEvent(request.Context(), s.logger, slog.LevelWarn, "llm_continue_failed",
-				"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
-				"from_provider", cur.Provider,
-				"status_code", callErrorStatus(callErr), "error_type", string(callErr.Class),
-				"attempts", cur.Attempts,
-			)
-			return false
-		}
-		logEvent(request.Context(), s.logger, slog.LevelInfo, "llm_continue",
-			"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
-			"from_provider", cur.Provider,
-			"to_provider", next.Provider,
-			"reshare", continueCfg.Reshare,
-			"established_ms", time.Since(started).Milliseconds(),
-		)
+	// swapTo adopts a freshly selected continuation stream as the current
+	// winner on the same client SSE stream: cancels the previous winner, records
+	// it in the broken set (so an in-chain continuation never re-hits it) and
+	// relays the new winner's buffered prelude. Shared by single-provider
+	// takeovers and whole-chain retries.
+	swapTo := func(next *SelectedStream) bool {
 		cur.Cancel()
 		brokenProviders = append(brokenProviders, cur.Provider)
 		cancelCurrent = next.Cancel
@@ -399,6 +384,88 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 			}
 		}
 		return true
+	}
+	logoutContinue := func(event string, from string, next *SelectedStream) {
+		logEvent(request.Context(), s.logger, slog.LevelInfo, event,
+			"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
+			"from_provider", from,
+			"to_provider", next.Provider,
+			"reshare", continueCfg.Reshare,
+			"established_ms", time.Since(started).Milliseconds(),
+		)
+	}
+	// dispatchContinue re-dispatches the request through the continue path with
+	// the given broken-exclusion set, adopting the fresh winner. A nil result
+	// reports that the re-dispatch produced no winner (ContinueStream error).
+	dispatchContinue := func(broken []string) *SelectedStream {
+		next, callErr := s.runner.ContinueStream(request.Context(), logical, executeRequest, partial, broken)
+		if callErr != nil {
+			logEvent(request.Context(), s.logger, slog.LevelWarn, "llm_continue_failed",
+				"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
+				"from_provider", cur.Provider,
+				"status_code", callErrorStatus(callErr), "error_type", string(callErr.Class),
+				"attempts", cur.Attempts,
+			)
+			return nil
+		}
+		return next
+	}
+	// chainRetriesLeft is the whole-chain retry budget: after a takeover has no
+	// eligible provider left (every provider already broke during this request),
+	// the gateway re-dispatches the entire chain from the top with the partial
+	// output reshared, instead of surfacing a terminal error. Cooldown still
+	// gates the just-broken providers, so the fresh pass races the healthy ones.
+	chainRetriesLeft := continueCfg.Retries
+	// takeover attempts an in-gateway stream continuation: the current winner
+	// stalled or broke, so the request is re-dispatched to a different provider
+	// with the partial output reshared, and the same client SSE stream is
+	// continued with the new winner. When no provider remains (ContinueStream
+	// finds no eligible target), the whole chain is re-dispatched from the top
+	// while the chain-retry budget lasts. Returns true when any continuation
+	// started; false leaves the caller to surface the terminal error.
+	takeover := func(broken *CallError) bool {
+		if !continueEnabled || executeRequest.Kind != RequestChat {
+			return false
+		}
+		if next := dispatchContinue(brokenProviders); next != nil {
+			from := cur.Provider
+			continued := swapTo(next)
+			s.metrics.ObserveContinue(from, next.Provider, "takeover")
+			logoutContinue("llm_continue", from, next)
+			return continued
+		}
+		// The chain is exhausted: every provider in the pool broke during this
+		// request. Re-dispatch the whole chain from the top, forgetting which
+		// providers broke (cooldown still gates them), reusing the accumulated
+		// partial output so the model continues instead of restarting. Only when
+		// the budget is positive do we attempt whole-chain retries, so the
+		// exhausted metric stays honest: zero retries means no whole-chain
+		// re-dispatch happened at all, and that is just the plain terminal error.
+		retried := false
+		for chainRetriesLeft > 0 {
+			chainRetriesLeft--
+			retried = true
+			logEvent(request.Context(), s.logger, slog.LevelWarn, "llm_chain_retry",
+				"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
+				"from_provider", cur.Provider,
+				"retries_left", chainRetriesLeft,
+				"established_ms", time.Since(started).Milliseconds(),
+			)
+			s.metrics.ObserveChainRetry("started")
+			brokenProviders = nil
+			if next := dispatchContinue(nil); next != nil {
+				from := cur.Provider
+				continued := swapTo(next)
+				s.metrics.ObserveContinue(from, next.Provider, "chain_retry")
+				s.metrics.ObserveChainRetry("completed")
+				logoutContinue("llm_continue", from, next)
+				return continued
+			}
+		}
+		if retried {
+			s.metrics.ObserveChainRetry("exhausted")
+		}
+		return false
 	}
 	for _, event := range selected.Buffered {
 		bind(event)

@@ -41,6 +41,18 @@ type Metrics struct {
 	// fallbackTotal counts explicit fallback transitions. The same transition
 	// may fire multiple times per request; the counter reflects that.
 	fallbackTotal *counterVec
+	// continueTotal counts in-gateway stream continuations (the "continue"
+	// rule), split by handoff kind: "takeover" is a single-provider handoff to
+	// an unused provider, "chain_retry" is a full re-dispatch of an exhausted
+	// chain from the top. Labels carry the source and destination provider.
+	continueTotal *counterVec
+	// chainRetriesTotal counts whole-chain retries (an exhausted continue
+	// chain re-dispatched from the top), split by outcome: "started" on each
+	// fresh pass, "completed" on the pass that finally won, "exhausted" when
+	// the budget ran out without any pass winning. continueTotal above only
+	// fires on a successful chain_retry handoff; this separate family makes
+	// the retries that did not succeed observable too.
+	chainRetriesTotal *counterVec
 	// streamBreaks counts mid-stream (post-selection) winner stream failures
 	// by provider and error class. These failures escape the scheduler (the
 	// route graph already returned a winner); the stream-failure feedback
@@ -98,6 +110,8 @@ func newMetrics() *Metrics {
 		attemptTotal:      newCounterVec([]string{"provider", "error_type"}),
 		streamBreaks:      newCounterVec([]string{"provider", "error_type"}),
 		fallbackTotal:     newCounterVec([]string{"from_provider", "to_provider", "reason"}),
+		continueTotal:     newCounterVec([]string{"from_provider", "to_provider", "kind"}),
+		chainRetriesTotal: newCounterVec([]string{"status"}),
 		balanceSelections: newCounterVec([]string{"route", "provider"}),
 		inputTokens:       newCounterVec([]string{"model"}),
 		outputTokens:      newCounterVec([]string{"model"}),
@@ -182,6 +196,26 @@ func (m *Metrics) ObserveFallback(fromProvider, toProvider, reason string) {
 	m.fallbackTotal.inc(fromProvider, toProvider, reason)
 }
 
+// ObserveContinue records an in-gateway stream continuation (the "continue"
+// rule). kind is "takeover" for a single-provider handoff to an unused
+// provider, or "chain_retry" for a full re-dispatch of an exhausted chain
+// from the top.
+func (m *Metrics) ObserveContinue(fromProvider, toProvider, kind string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.continueTotal.inc(fromProvider, toProvider, kind)
+}
+
+// ObserveChainRetry records a whole-chain retry (an exhausted continue chain
+// re-dispatched from the top). status is "started" for each fresh pass,
+// "completed" for the pass that finally produced a winner, or "exhausted"
+// when the budget ran out without any pass winning.
+func (m *Metrics) ObserveChainRetry(status string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.chainRetriesTotal.inc(status)
+}
+
 // ObserveBalanceSelection and ObserveBalanceHealth record the balance action:
 // which provider was chosen for a route and the current health of each
 // provider in the pool.
@@ -236,6 +270,8 @@ func (m *Metrics) WriteExposition(writer io.Writer) error {
 	m.attemptTotal.write(buffered, "llm_attempts_total", "Upstream branch attempts by provider and terminal error type.")
 	m.streamBreaks.write(buffered, "llm_stream_breaks_total", "Mid-stream (post-selection) winner stream failures by provider and error type.")
 	m.fallbackTotal.write(buffered, "llm_fallbacks_total", "Explicit fallback transitions by source and destination provider.")
+	m.continueTotal.write(buffered, "llm_continues_total", "In-gateway stream continuations (continue rule) by source/destination provider and kind (takeover vs chain_retry).")
+	m.chainRetriesTotal.write(buffered, "llm_chain_retries_total", "Whole-chain retries of an exhausted continue chain by outcome (started, completed, exhausted).")
 	m.balanceSelections.write(buffered, "llm_balance_selections_total", "Provider chosen by the balance action per route.")
 	m.inputTokens.write(buffered, "llm_input_tokens_total", "Accumulated input tokens by model.")
 	m.outputTokens.write(buffered, "llm_output_tokens_total", "Accumulated output tokens by model.")

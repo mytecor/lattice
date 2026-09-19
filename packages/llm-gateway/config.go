@@ -214,7 +214,25 @@ type ContinueConfig struct {
 	// every relayed reasoning/content delta into an assistant message appended
 	// to the request history before re-dispatching.
 	Reshare string
+	// Retries is how many times a fully-exhausted chain (the takeover has no
+	// eligible provider left because every provider in the pool already broke
+	// during the request) is re-dispatched from the top with the accumulated
+	// partial output reshared. Each retry is a fresh pass over the whole pool
+	// (cooldown still gates the just-broken providers), so a provider that was
+	// unlucky in an earlier round gets another chance instead of the request
+	// surfacing a terminal failure once the chain runs out. Bounded by
+	// maxContinueChainRetries so a misconfigured rule cannot spin the gateway
+	// across dozens of full-pass re-dispatches.
+	Retries int
 }
+
+// maxContinueChainRetries caps the whole-chain retry budget of a continue
+// rule. A retry is a full re-dispatch of the whole pool with a freshly
+// rewritten (partial-appended) request body, so an unbounded value would let
+// a single request hammer every provider repeatedly under sustained outages;
+// the cap keeps the worst-case per-request work finite while still leaving
+// headroom for a real outage to ride out.
+const maxContinueChainRetries = 10
 
 type LeaseConfig struct {
 	Enabled                bool
