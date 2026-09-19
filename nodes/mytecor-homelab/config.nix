@@ -372,6 +372,16 @@ in
         # shadowed by this value while continue is enabled, so leave it alone.
         idle = "30s";
         reshare = "full";
+        # Chain retry budget: when every provider in the pool has already broken
+        # during the request (takeover finds no eligible target left), the
+        # gateway re-dispatches the WHOLE chain from the top with the accumulated
+        # partial output reshared, instead of surfacing a terminal 504 and
+        # breaking the client stream. Default is 0 (surface terminal error);
+        # without it a fully-exhausted pool left the turn on "504 Gateway
+        # Timeout" for the pi client to retry externally. 2 gives a dead pool
+        # two fresh passes (cooldown gates the just-broken providers, so the
+        # retry re-races the survivors). Bounded by maxContinueChainRetries (10).
+        retries = 2;
       };
     };
     models = {
