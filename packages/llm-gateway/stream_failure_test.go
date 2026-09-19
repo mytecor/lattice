@@ -107,7 +107,7 @@ func TestRecordStreamFailureCooldownHealthMetrics(t *testing.T) {
 	})
 	target := []Target{{Provider: "a", Model: "native-model"}}
 
-	runner.RecordStreamFailure(context.Background(), "standard", "a", &CallError{Class: ErrorUpstream, Status: 502})
+	runner.RecordStreamFailure(context.Background(), "standard", "a", "native-model", &CallError{Class: ErrorUpstream, Status: 502})
 	if got := runner.availableTargets(target); len(got) != 0 {
 		t.Fatalf("provider a must be cooling after a mid-stream 5xx, available: %#v", got)
 	}
@@ -116,7 +116,7 @@ func TestRecordStreamFailureCooldownHealthMetrics(t *testing.T) {
 	}
 
 	// Cancelled streams are health-neutral, exactly like cancelled branches.
-	runner.RecordStreamFailure(context.Background(), "standard", "b", &CallError{Class: ErrorCancelled, Status: 499})
+	runner.RecordStreamFailure(context.Background(), "standard", "b", "native-model", &CallError{Class: ErrorCancelled, Status: 499})
 	if got := runner.availableTargets([]Target{{Provider: "b", Model: "native-model"}}); len(got) != 1 {
 		t.Fatalf("cancelled mid-stream failure must not cool the provider")
 	}
@@ -143,7 +143,7 @@ func TestRecordStreamFailureCooldownHealthMetrics(t *testing.T) {
 	// stream's success is already recorded at selection time (TTFT branch),
 	// and feeding it again here would double-count successes in the health
 	// window.
-	runner.RecordStreamFailure(context.Background(), "standard", "a", nil)
+	runner.RecordStreamFailure(context.Background(), "standard", "a", "native-model", nil)
 	if health := runner.scores.Health("a", 5*time.Minute, 0.2); health != 0 {
 		t.Fatalf("nil must be a no-op, provider a health = %v, want 0", health)
 	}

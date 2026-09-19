@@ -160,7 +160,11 @@ in
           cooldown = mkOption {
             type = types.strMatching "[0-9]+(ms|s|m|h)";
             default = "15s";
-            description = "Circuit-breaker cooldown after retryable failures.";
+            description = ''
+              Circuit-breaker cooldown after retryable failures, keyed per
+              (provider, native model) pair: a broken mapping cools down alone
+              while the provider's other models stay in the candidate pool.
+            '';
           };
           requestTimeout = mkOption {
             type = types.strMatching "[0-9]+(ms|s|m|h)";

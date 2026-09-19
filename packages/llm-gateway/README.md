@@ -51,10 +51,10 @@ credentials. Метрики считаются в счётчиках и гист
 - `llm_fallbacks_total{from_provider,to_provider,reason}` — явные fallback-переходы.
 - `llm_balance_selections_total{route,provider}` — выбор провайдера балансировкой.
 - `llm_balance_health{provider}` — текущий health score (0..1) пула.
-- `llm_cooldown_until_seconds{provider}` — unix-дедлайн, до которого провайдер
-  охлаждается после retryable-ошибки (в семье отсутствует, когда не охлаждён);
-  остаток окна считается как `deadline − now` на стороне панели, так что значение
-  правдиво убывает между скрейпами.
+- `llm_cooldown_until_seconds{provider,model}` — unix-дедлайн, до которого пара
+  (провайдер, нативная модель) охлаждается после retryable-ошибки (в семье отсутствует, когда
+  не охлаждена); остаток окна считается как `deadline − now` на стороне панели, так что
+  значение правдиво убывает между скрейпами.
 - `go_*` / `process_start_time_seconds` — минимальное runtime-состояние процесса.
 
 Скрейп-чек:
@@ -105,8 +105,9 @@ curl -s localhost:9209/metrics
 - **Обратная связь о здоровье.** Ошибка обрыва (`llm_stream_break`) попадает в ту же машину
   состояния, что и ошибки до выбора: cooldown по retryable-классам, health-скор
   (окно/errorBudget балансировки), release lease по `release_on`, `llm_attempts_total` и
-  отдельный `llm_stream_breaks_total`. Провайдер, регулярно рвущий стримы, перестаёт
-  выигрывать выбор так же, как при ошибках соединения.
+  отдельный `llm_stream_breaks_total`. Пара (провайдер, нативная модель), регулярно рвущая
+  стримы, перестаёт выигрывать выбор так же, как при ошибках соединения, не вытесняя этим
+  остальные модели провайдера.
 - **Idle-таймаут** (`stream_idle_timeout`, по умолчанию `5m`): winner-стрим, не приславший
   ни одного события (включая keep-alive) этот срок, отменяется; клиент получает
   типизированный timeout-error, а неудача записывается против провайдера как `llm_stream_stalled`.
@@ -253,9 +254,11 @@ budget новые upstream calls не стартуют. Локально отк�
 discovery ниже) никогда не стартуют upstream call и не расходуют `max_calls`/
 `max_calls_per_provider`, поэтому провайдер с другим native alias в subroute всё ещё достижим.
 
-Provider с retryable failure получает cooldown, по умолчанию 15 секунд. Охлаждённые providers не
-входят в candidate pool; если охлаждаются все, gateway fail-open пробует pool снова. Отменённые
-losers не влияют ни на cooldown, ни на lease.
+Provider с retryable failure получает cooldown, по умолчанию 15 секунд. Ключ кулдауна — пара
+(провайдер, нативная модель): ошибка одной нативной модели охлаждает только её, остальные
+модели того же провайдера остаются в candidate pool. Охлаждённые пары не входят в candidate
+pool; если охлаждаются все, gateway fail-open пробует pool снова. Отменённые losers не влияют
+ни на cooldown, ни на lease.
 
 Compilation строго валидирует граф перед запуском: пустой `route`, route без race, `map` без
 активной provider selection, duplicate provider в pool, `race.count` сверх pool, missing target,

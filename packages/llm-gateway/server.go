@@ -429,7 +429,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 				"attempts", cur.Attempts,
 				"duration_ms", time.Since(started).Milliseconds(),
 			)
-			s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, stall)
+			s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, cur.Model, stall)
 			if !sawFinishReason && takeover(stall) {
 				continue
 			}
@@ -459,7 +459,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 						"cached_tokens", cachedTokens,
 						"has_usage", hasUsage,
 					)
-					s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, broken)
+					s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, cur.Model, broken)
 					if takeover(broken) {
 						continue
 					}
@@ -494,7 +494,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 						"cached_tokens", cachedTokens,
 						"has_usage", hasUsage,
 					)
-					s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, broken)
+					s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, cur.Model, broken)
 					if takeover(broken) {
 						continue
 					}
@@ -540,7 +540,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 				// Feed the failure back into cooldown/health/lease/metrics: the
 				// scheduler returned at selection, so without this the provider
 				// would stay "healthy" no matter how often it breaks streams.
-				s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, event.Err)
+				s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, cur.Model, event.Err)
 				if !sawFinishReason && takeover(event.Err) {
 					continue
 				}

@@ -1031,6 +1031,44 @@ func TestCooldownSkipsRecentlyFailedProvider(t *testing.T) {
 	}
 }
 
+// TestCooldownIsolatesByProviderModelPair pins the key isolation contract of
+// the cooldown machinery: failure of one (provider, native model) pair cools
+// only that pair, leaving the same provider's other native models available.
+// Conversely, a success on the same pair clears only its own window.
+func TestCooldownIsolatesByProviderModelPair(t *testing.T) {
+	compiled := raceOnlyConfig(t)
+	runner := newRunner(compiled, newCatalog(compiled), &fakeExecutor{do: func(context.Context, Target, ExecuteRequest) ([]byte, *CallError) {
+		return successBody("a"), nil
+	}})
+
+	coolA := []Target{{Provider: "a", Model: "model-x"}}
+	coolB := []Target{{Provider: "a", Model: "model-y"}}
+
+	// Nothing cooling: both native models of provider a are available.
+	if got := runner.availableTargets(append(append([]Target{}, coolA...), coolB...)); len(got) != 2 {
+		t.Fatalf("pristine pool must have both models available, got %#v", got)
+	}
+
+	// A retryable failure of (a, model-x) cools only that pair.
+	runner.record(context.Background(), "a", "model-x", &CallError{Class: ErrorUpstream, Status: 503})
+	if got := runner.availableTargets(coolA); len(got) != 0 {
+		t.Fatalf("(a, model-x) must be cooling after its failure, available: %#v", got)
+	}
+	if got := runner.availableTargets(coolB); len(got) != 1 {
+		t.Fatalf("(a, model-y) must stay available after (a, model-x) failed, available: %#v", got)
+	}
+
+	// Success on the cooling pair clears only its window; the other pair
+	// remains available throughout.
+	runner.record(context.Background(), "a", "model-x", nil)
+	if got := runner.availableTargets(coolA); len(got) != 1 {
+		t.Fatalf("(a, model-x) must re-enter the pool after success, available: %#v", got)
+	}
+	if got := runner.availableTargets(coolB); len(got) != 1 {
+		t.Fatalf("(a, model-y) must stay available, available: %#v", got)
+	}
+}
+
 // TestCooldownUntilGaugeFlow pins the metric feedback of the
 // cooldown cycle: the gauge enters with the window, refreshes while the window
 // re-extends, clears on success, and never reports a stale window as cooling.
@@ -1058,7 +1096,7 @@ func TestCooldownUntilGaugeFlow(t *testing.T) {
 	remainingOf := func(body, provider string) (float64, bool) {
 		t.Helper()
 		for _, line := range strings.Split(body, "\n") {
-			if strings.HasPrefix(line, `llm_cooldown_until_seconds{provider="`+provider+`"} `) {
+			if strings.HasPrefix(line, `llm_cooldown_until_seconds{provider="`+provider+`",model="native-model"} `) {
 				value, err := strconv.ParseFloat(strings.Fields(line)[1], 64)
 				if err != nil {
 					t.Fatalf("cooldown deadline gauge parse: %v", err)
@@ -1086,7 +1124,7 @@ func TestCooldownUntilGaugeFlow(t *testing.T) {
 	}
 
 	// Window extension re-snapshots rather than stacking a second value.
-	runner.record(context.Background(), "a", &CallError{Class: ErrorUpstream, Status: 503})
+	runner.record(context.Background(), "a", "native-model", &CallError{Class: ErrorUpstream, Status: 503})
 	value, ok = remainingOf(exposition(), "a")
 	if !ok || value != 1_000_015 {
 		t.Fatalf("cooldown deadline after extension = %v (present %v), want 1000015", value, ok)
@@ -1096,7 +1134,7 @@ func TestCooldownUntilGaugeFlow(t *testing.T) {
 	// nil error is exactly what the scheduler feeds on a winner's success, and
 	// the metric must drop the series rather than keep a stale deadline.
 	current = current.Add(16 * time.Second)
-	runner.record(context.Background(), "a", nil)
+	runner.record(context.Background(), "a", "native-model", nil)
 	if _, ok := remainingOf(exposition(), "a"); ok {
 		t.Fatalf("expired cooldown must drop the series after a success reset")
 	}

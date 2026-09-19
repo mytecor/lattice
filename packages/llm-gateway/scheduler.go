@@ -15,6 +15,7 @@ import (
 type branchResult struct {
 	id        int
 	provider  string
+	model     string
 	winner    bool
 	prefailed bool // catalog-rejected before dispatch: no upstream call, no semaphore slot
 	body      []byte
@@ -359,7 +360,7 @@ func (sc *schedule) launch(g int) bool {
 func (sc *schedule) deliverPreFailed(id int, target Target, callErr *CallError) {
 	started := sc.r.now()
 	res := &branchResult{
-		id: id, provider: target.Provider, winner: false, prefailed: true,
+		id: id, provider: target.Provider, model: target.Model, winner: false, prefailed: true,
 		err: callErr, started: started, finished: started,
 	}
 	select {
@@ -444,6 +445,7 @@ func (sc *schedule) runBranch(ctx context.Context, id int, cancel context.Cancel
 		res = sc.r.probeStream(ctx, target, sc.request)
 		if res.selected != nil {
 			res.selected.Provider = target.Provider
+			res.selected.Model = target.Model
 			res.selected.Cancel = cancel
 		}
 	} else {
@@ -453,6 +455,7 @@ func (sc *schedule) runBranch(ctx context.Context, id int, cancel context.Cancel
 	}
 	res.id = id
 	res.provider = target.Provider
+	res.model = target.Model
 	res.started = started
 	if res.finished.IsZero() {
 		res.finished = sc.r.now()
@@ -587,7 +590,7 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 			// Cancellations (route timeout, client cancel, loser cancel) are
 			// neutral for health and lease state.
 			if res.err == nil || res.err.Class != ErrorCancelled {
-				r.record(ctx, res.provider, res.err)
+				r.record(ctx, res.provider, res.model, res.err)
 				r.observeLeaseFailure(logical, route, res.provider, res.err)
 				r.observeBranch(res)
 				// Not a res.err class-wise for cancellation: the latency is only

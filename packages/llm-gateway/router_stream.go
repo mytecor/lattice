@@ -13,6 +13,9 @@ type SelectedStream struct {
 	Remaining <-chan StreamEvent
 	Cancel    context.CancelFunc
 	Provider  string
+	// Model is the winner's native model (empty when the caller does not
+	// carry one, e.g. a continuation takeover built outside the scheduler).
+	Model string
 	// TTFT is the winner's time to first meaningful event.
 	TTFT time.Duration
 	// Attempts is the number of route executions dispatched for the request.

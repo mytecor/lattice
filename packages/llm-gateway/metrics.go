@@ -65,12 +65,12 @@ type Metrics struct {
 	// balanceHealth is the last computed balance health per provider,
 	// snapshotted by the runner alongside balance selections.
 	balanceHealth *gaugeVec
-	// cooldownUntil is the unix-second deadline until which a provider is
-	// cooling, snapshotted by the runner whenever cooldown state changes. A
-	// provider that is not cooling is absent from the family (not zero):
-	// absence is the healthy state, and a literal zero deadline would be
-	// indistinguishable from a just-expired (and thus no longer cooling)
-	// window. Panels compute the remaining window at scrape time with
+	// cooldownUntil is the unix-second deadline until which a (provider,
+	// model) pair is cooling, snapshotted by the runner whenever cooldown
+	// state changes. A pair that is not cooling is absent from the family
+	// (not zero): absence is the healthy state, and a literal zero deadline
+	// would be indistinguishable from a just-expired (and thus no longer
+	// cooling) window. Panels compute the remaining window at scrape time with
 	// deadline − time() so the value decays truthfully between snapshots.
 	cooldownUntil *gaugeVec
 
@@ -105,7 +105,7 @@ func newMetrics() *Metrics {
 		ttft:              newHistogramVec([]string{"model"}, ttftBucketsSec),
 		requestsInFlight:  newGaugeVec([]string{"provider"}),
 		balanceHealth:     newGaugeVec([]string{"provider"}),
-		cooldownUntil:     newGaugeVec([]string{"provider"}),
+		cooldownUntil:     newGaugeVec([]string{"provider", "model"}),
 		startTime:         time.Now(),
 	}
 }
@@ -198,17 +198,17 @@ func (m *Metrics) ObserveBalanceHealth(provider string, health float64) {
 }
 
 // ObserveCooldownUntil records the unix-second deadline until which a
-// provider is cooling. A zero deadline clears the provider from the family:
-// a cleared (expired or success-reset) cooldown must not linger as a stale
-// entry, so the dashboard's presence-based panels stay truthful.
-func (m *Metrics) ObserveCooldownUntil(provider string, until time.Time) {
+// (provider, model) pair is cooling. A zero deadline clears the pair from the
+// family: a cleared (expired or success-reset) cooldown must not linger as a
+// stale entry, so the dashboard's presence-based panels stay truthful.
+func (m *Metrics) ObserveCooldownUntil(provider, model string, until time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if until.IsZero() {
-		m.cooldownUntil.clear(provider)
+		m.cooldownUntil.clear(provider, model)
 		return
 	}
-	m.cooldownUntil.set(provider, float64(until.UnixNano())/1e9)
+	m.cooldownUntil.set(provider, model, float64(until.UnixNano())/1e9)
 }
 
 // WriteExposition renders the full metric surface in the Prometheus text
@@ -241,7 +241,7 @@ func (m *Metrics) WriteExposition(writer io.Writer) error {
 	m.outputTokens.write(buffered, "llm_output_tokens_total", "Accumulated output tokens by model.")
 	m.requestsInFlight.write(buffered, "llm_requests_in_flight", "Current in-flight upstream branches by provider.")
 	m.balanceHealth.write(buffered, "llm_balance_health", "Latest balance health score per provider (0 unhealthy … 1 healthy).")
-	m.cooldownUntil.write(buffered, "llm_cooldown_until_seconds", "Unix seconds until a cooling provider re-enters the candidate pool.")
+	m.cooldownUntil.write(buffered, "llm_cooldown_until_seconds", "Unix seconds until a cooling provider model pair re-enters the candidate pool.")
 	m.requestDuration.write(buffered, "llm_request_duration_seconds", "Request duration histogram by route and model.")
 	m.ttft.write(buffered, "llm_ttft_seconds", "Time to first meaningful event histogram by model.")
 
@@ -381,16 +381,22 @@ func (g *gaugeVec) dec(values ...string) {
 	g.v[g.keyFor(values...)] = value
 }
 
-func (g *gaugeVec) set(provider string, health float64) {
-	g.v[g.keyFor(provider)] = health
+// set writes the last value under the given label values; the final argument
+// is the gauge value, the rest are label values.
+func (g *gaugeVec) set(values ...any) {
+	key := make([]string, 0, len(values)-1)
+	for _, value := range values[:len(values)-1] {
+		key = append(key, value.(string))
+	}
+	g.v[g.keyFor(key...)] = values[len(values)-1].(float64)
 }
 
-// clear removes one provider's entry entirely. Cooldown state uses this so an
+// clear removes one label set's entry entirely. Cooldown state uses this so an
 // expired window disappears from the exposition instead of lingering as a
 // stale 0: the value may only be observed on the next scrape after expiry,
 // and by then absence is the truthful value.
-func (g *gaugeVec) clear(provider string) {
-	delete(g.v, g.keyFor(provider))
+func (g *gaugeVec) clear(provider, model string) {
+	delete(g.v, g.keyFor(provider, model))
 }
 
 func (g *gaugeVec) write(buffered *bufio.Writer, name, help string) {

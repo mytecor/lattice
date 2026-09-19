@@ -1497,15 +1497,15 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "clamp_min(llm_cooldown_until_seconds{environment=\"$environment\",provider=~\"$provider\"} - time(), 0)",
-          "legendFormat": "{{provider}}",
+          "expr": "clamp_min(llm_cooldown_until_seconds{environment=\"$environment\",provider=~\"$provider\",model=~\"$model\"} - time(), 0)",
+          "legendFormat": "{{provider}} / {{model}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Остаток кулдауна по провайдеру",
+      "title": "Остаток кулдауна по паре провайдер/модель",
       "type": "timeseries",
-      "description": "Секунды до возврата провайдера в пул (llm_cooldown_until_seconds − now). Пики — это кулдаун-окона (обычно 15s) после retryable-ошибок; ноль — не в кулдауне. Если провайдер сидит в нуле и не растёт — он просто не охлаждён, а не «завис»."
+      "description": "Секунды до возврата пары (провайдер, нативная модель) в пул (llm_cooldown_until_seconds − now). Пики — это кулдаун-окна (обычно 15s) после retryable-ошибок; ноль — не в кулдауне. Ошибка одной нативной модели охлаждает только её, остальные модели провайдера остаются в пуле."
     },
     {
       "collapsed": false,

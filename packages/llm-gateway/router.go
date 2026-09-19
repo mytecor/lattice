@@ -86,11 +86,23 @@ type Runner struct {
 	now      func() time.Time
 	sleep    func(context.Context, time.Duration) error
 	mu       sync.Mutex
-	cooling  map[string]time.Time
+	// cooling maps a (provider, native model) pair to the absolute deadline
+	// until which that pair is excluded from candidate pools. The window is
+	// lazy: no timer rearms it, entries are checked at request time and an
+	// expired entry is dropped on the pair's next success.
+	cooling  map[cooldownKey]time.Time
 	leases   *LeaseStore
 	scores   *ScoreStore
 	affinity *AffinityStore
 	metrics  *Metrics
+}
+
+// cooldownKey identifies the unit of provider failure isolation: one native
+// model served by one provider. A provider that serves several logical models
+// keeps serving the healthy ones while a broken mapping cools down alone.
+type cooldownKey struct {
+	provider string
+	model    string
 }
 
 func newRunner(config *compiledConfig, catalog *Catalog, executor Executor) *Runner {
@@ -107,7 +119,7 @@ func newRunnerMetrics(config *compiledConfig, catalog *Catalog, executor Executo
 	}
 	runner := &Runner{
 		config: config, catalog: catalog, executor: executor, logger: logger,
-		now: time.Now, sleep: sleepContext, cooling: make(map[string]time.Time),
+		now: time.Now, sleep: sleepContext, cooling: make(map[cooldownKey]time.Time),
 		metrics: metrics,
 	}
 	runner.leases = newLeaseStore(runner.now)
@@ -152,11 +164,19 @@ func (r *Runner) observeBranchCancelled(res *branchResult) {
 // are health-neutral, exactly like cancelled branches. The lease (if enabled)
 // is released per the entry route's ReleaseOn policy, and both the branch
 // attempt counter and the dedicated stream-break counter are observed.
-func (r *Runner) RecordStreamFailure(ctx context.Context, logical, provider string, callErr *CallError) {
+// RecordStreamFailure feeds a mid-stream (post-selection) failure of the
+// winning stream back into the same health machinery that pre-selection branch
+// failures use. The scheduler has already returned by the time the winner's
+// stream breaks, so without this call the provider would keep a clean health
+// record no matter how often it breaks streams mid-flight. Cancelled streams
+// are health-neutral, exactly like cancelled branches. The lease (if enabled)
+// is released per the entry route's ReleaseOn policy, and both the branch
+// attempt counter and the dedicated stream-break counter are observed.
+func (r *Runner) RecordStreamFailure(ctx context.Context, logical, provider, model string, callErr *CallError) {
 	if callErr == nil || callErr.Class == ErrorCancelled || provider == "" {
 		return
 	}
-	r.record(ctx, provider, callErr)
+	r.record(ctx, provider, model, callErr)
 	if entry, ok := r.config.models[logical]; ok {
 		r.observeLeaseFailure(logical, entry, provider, callErr)
 	}
@@ -339,9 +359,9 @@ func (r *Runner) executeRoute(ctx context.Context, logical string, route *compil
 // known affinity mapping narrows the route to the pinned provider for the
 // whole request graph; an unknown state identifier is ignored (on_missing =
 // "ignore"). The unused-provider routing policy excludes providers already
-// used by this request graph; cooling providers are skipped with fail-open so
-// the route is never artificially idle. Exact catalog validation happens at
-// branch execution, so a missing native produces a model_not_found failure
+// used by this request graph; cooling (provider, model) pairs are skipped with
+// fail-open so the route is never artificially idle. Exact catalog validation
+// happens at branch execution, so a missing native produces a model_not_found failure
 // that can activate the configured fallback.
 func (r *Runner) buildPool(logical string, route *compiledRoute, request ExecuteRequest, runtime *routeRuntime) ([]Target, bool, *CallError) {
 	if route.Affinity.Enabled && request.Kind == RequestResponses {
@@ -411,8 +431,9 @@ func (r *Runner) buildDynamicPool(route *compiledRoute, _ ExecuteRequest, runtim
 	return r.availableFailOpen(pool), nil
 }
 
-// availableFailOpen skips cooling providers and fails open with the full pool
-// when every target is cooling, so the route is never artificially idle.
+// availableFailOpen skips cooling (provider, model) pairs and fails open with
+// the full pool when every target is cooling, so the route is never
+// artificially idle.
 func (r *Runner) availableFailOpen(pool []Target) []Target {
 	available := r.availableTargets(pool)
 	if len(available) == 0 {
@@ -493,28 +514,51 @@ func (r *Runner) validateTarget(target Target) *CallError {
 	return r.catalog.Validate(target.Provider, target.Model)
 }
 
+// availableTargets filters the pool against cooling (provider, native model)
+// pairs. The cooling map is consulted lazily at request time — no timer rearms
+// it — so an expired window is simply no longer filtered out. An empty Model
+// (callers without a native mapping) matches any cooling entry for the
+// provider, the conservative direction for an unkeyed lookup.
 func (r *Runner) availableTargets(targets []Target) []Target {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := r.now()
 	available := make([]Target, 0, len(targets))
 	for _, target := range targets {
-		if until, ok := r.cooling[target.Provider]; !ok || !now.Before(until) {
+		if !r.coolingLocked(target.Provider, target.Model, now) {
 			available = append(available, target)
 		}
 	}
 	return available
 }
 
-func (r *Runner) record(ctx context.Context, providerID string, callErr *CallError) {
-	before := r.cooldownUntil(providerID)
+// coolingLocked reports whether the (provider, model) pair is cooling at now.
+// The caller must hold r.mu. An empty model matches any cooling entry for the
+// provider (conservative for callers without a native mapping).
+func (r *Runner) coolingLocked(providerID, model string, now time.Time) bool {
+	for key, until := range r.cooling {
+		if key.provider != providerID {
+			continue
+		}
+		if key.model == "" || model == "" || key.model == model {
+			if now.Before(until) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (r *Runner) record(ctx context.Context, providerID, model string, callErr *CallError) {
+	key := cooldownKey{provider: providerID, model: model}
+	before := r.cooldownUntil(providerID, model)
 	r.mu.Lock()
 	newUntil := time.Time{}
 	if callErr == nil {
-		delete(r.cooling, providerID)
+		delete(r.cooling, key)
 	} else if allRetryableClasses()[callErr.Class] {
 		newUntil = r.now().Add(r.config.providers[providerID].Cooldown.Duration)
-		r.cooling[providerID] = newUntil
+		r.cooling[key] = newUntil
 	}
 	r.mu.Unlock()
 	// Snapshot the cooldown gauge on every cooldown-state transition the
@@ -527,10 +571,10 @@ func (r *Runner) record(ctx context.Context, providerID string, callErr *CallErr
 		if before.IsZero() {
 			return
 		}
-		r.metrics.ObserveCooldownUntil(providerID, time.Time{})
+		r.metrics.ObserveCooldownUntil(providerID, model, time.Time{})
 		return
 	}
-	r.metrics.ObserveCooldownUntil(providerID, newUntil)
+	r.metrics.ObserveCooldownUntil(providerID, model, newUntil)
 	// Emit cooldown_put only when the provider actually enters the cooling
 	// window (was not cooling, now is); re-extending an active window is not a
 	// new event worth a line.
@@ -539,17 +583,18 @@ func (r *Runner) record(ctx context.Context, providerID string, callErr *CallErr
 	}
 	logEvent(ctx, r.logger, slog.LevelWarn, "cooldown_put",
 		"provider", providerID,
+		"model", model,
 		"error_type", string(callErr.Class),
 		"cooldown_ms", int64(r.config.providers[providerID].Cooldown.Duration.Milliseconds()),
 	)
 }
 
-// cooldownUntil reports the current cooling deadline of a provider (zero when
-// not cooling), read under the runner lock.
-func (r *Runner) cooldownUntil(providerID string) time.Time {
+// cooldownUntil reports the current cooling deadline of a (provider, model)
+// pair (zero when not cooling), read under the runner lock.
+func (r *Runner) cooldownUntil(providerID, model string) time.Time {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.cooling[providerID]
+	return r.cooling[cooldownKey{provider: providerID, model: model}]
 }
 
 // observeLeaseFailure releases the model lease when its holder fails with a

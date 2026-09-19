@@ -327,7 +327,7 @@ func TestCooldownPutEventFiresOnRetryableFailure(t *testing.T) {
 	for _, e := range events {
 		if e["event"] == "cooldown_put" {
 			cooldowns++
-			if e["provider"] != "a" || e["error_type"] != string(ErrorRateLimit) {
+			if e["provider"] != "a" || e["model"] != "native-model" || e["error_type"] != string(ErrorRateLimit) {
 				t.Errorf("cooldown_put dims wrong: %#v", e)
 			}
 		}
