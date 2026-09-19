@@ -361,7 +361,16 @@ in
     pipeline = {
       continue = {
         enable = true;
-        idle = "90s";
+        # idle lowered from the inherited 90s to 30s (2026-09-18): the GLM
+        # smart route kept burning ~5min in dead upstream streams that relayed
+        # keep-alives but never delivered content (empty_completion /
+        # missing_finish_reason at ~300s, see session 01a0b3c1). The idle
+        # takeover only reacts to real upstream silence (any event re-arms it),
+        # so 30s is a safe lower bound — a healthy stream emits a delta or a
+        # keep-alive well within 30s, and a truly dead one gets re-dispatched
+        # three times faster. The global streamIdleTimeout (still 5m) is
+        # shadowed by this value while continue is enabled, so leave it alone.
+        idle = "30s";
         reshare = "full";
       };
     };
