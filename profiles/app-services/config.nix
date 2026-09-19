@@ -48,6 +48,47 @@ let
     isExecutable = true;
   };
   statusWriter = "${statusWriterPkg}/bin/lattice-node-status-write";
+
+  # f13-01: web-клиент ACP (acp-components) как статический SPA. LAN-only,
+  # обслуживается Caddy file_server из store-path пакета packages/acp-web;
+  # mDNS-alias acp-ui.<node>.local публикуется avahi-сервисом ниже. Клиент
+  # подключается к существующему ACP ingress ws://acp.<node>.local/ (f8-06),
+  # выводя host из своего собственного (см. patch-main-ts.mjs).
+  acpUiHost = "acp-ui.${hostName}.local";
+  acpWebPkg = pkgs.lattice.acp-web;
+  # SPA: все пути, кроме реальных файлов, отдаём index.html (клиентская
+  # маршрутизация); file_server поверх store-каталога пакета.
+  acpUiSiteConfig = ''
+    root * ${acpWebPkg}
+    try_files {path} /index.html
+    file_server
+  '';
+
+  # f13-01: публикация service-specific mDNS alias (avahi-publish --address)
+  # — тот же приём, что у статус-сайта; параметризуем, чтобы не дублировать
+  # юнит. Алias отдельного имения убирает необходимость в Host-заголовке и
+  # дополнительной DNS-записи на стороне клиента.
+  mdnsPublishService = alias: {
+    description = "Publish the ${alias} mDNS alias";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "avahi-daemon.service" "network-online.target" ];
+    requires = [ "avahi-daemon.service" ];
+    wants = [ "network-online.target" ];
+    script = ''
+      address="$(${pkgs.iproute2}/bin/ip -4 -o route get 1.1.1.1 \
+        | ${pkgs.gawk}/bin/awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')"
+      if [ -z "$address" ]; then
+        echo "could not determine the primary IPv4 address" >&2
+        exit 1
+      fi
+      exec ${config.services.avahi.package}/bin/avahi-publish --address --no-reverse \
+        ${lib.escapeShellArg alias} "$address"
+    '';
+    serviceConfig = {
+      Restart = "always";
+      RestartSec = 5;
+    };
+  };
 in
 {
   imports = [ ../tcp-gateway/config.nix ];
@@ -55,6 +96,8 @@ in
   config = {
     services.caddy.virtualHosts = {
       "http://${statusHost}".extraConfig = statusSiteConfig;
+      # f13-01: static SPA acp-web на LAN-имени acp-ui.<node>.local.
+      "http://${acpUiHost}".extraConfig = acpUiSiteConfig;
     } // lib.optionalAttrs (statusMeshHost != null) {
       "${statusMeshHost}".extraConfig = statusSiteConfig;
     };
@@ -74,26 +117,9 @@ in
       '';
     };
 
-    systemd.services.node-status-mdns = {
-      description = "Publish the node status mDNS alias";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "avahi-daemon.service" "network-online.target" ];
-      requires = [ "avahi-daemon.service" ];
-      wants = [ "network-online.target" ];
-      script = ''
-        address="$(${pkgs.iproute2}/bin/ip -4 -o route get 1.1.1.1 \
-          | ${pkgs.gawk}/bin/awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')"
-        if [ -z "$address" ]; then
-          echo "could not determine the primary IPv4 address" >&2
-          exit 1
-        fi
-        exec ${config.services.avahi.package}/bin/avahi-publish \
-          --address --no-reverse ${lib.escapeShellArg statusHost} "$address"
-      '';
-      serviceConfig = {
-        Restart = "always";
-        RestartSec = 5;
-      };
-    };
+    systemd.services.node-status-mdns = mdnsPublishService statusHost;
+    # f13-01: alias для web-клиента ACP. Отдельный юнит: статус-сайт и acp-ui
+    # живут независимо, и падение одного alias не роняет другой.
+    systemd.services.acp-ui-mdns = mdnsPublishService acpUiHost;
   };
 }

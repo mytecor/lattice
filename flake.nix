@@ -170,6 +170,8 @@
             isExecutable = true;
           };
           acp-normalizer = final.callPackage ./packages/acp-normalizer/package.nix { };
+          # f13-01: web client for ACP — acp-components workbench as a static SPA.
+          acp-web = final.callPackage ./packages/acp-web/package.nix { };
           rns-server = final.callPackage "${rns-rs}/package.nix" { bin = "rns-server"; };
           rnsh = final.callPackage "${rns-rs}/package.nix" { bin = "rnsh"; };
           hydra-acp = final.callPackage ./packages/hydra-acp/package.nix { };
@@ -234,7 +236,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) acp-normalizer git-cache-proxy hydra-acp llm-gateway pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile r1s rns-server rnsh verdaccio;
+          inherit (pkgs.lattice) acp-normalizer acp-web git-cache-proxy hydra-acp llm-gateway pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile r1s rns-server rnsh verdaccio;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
         });
