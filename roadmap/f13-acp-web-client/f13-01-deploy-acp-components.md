@@ -143,6 +143,15 @@ ingress, что и Ferngeist (граница trusted LAN f8-06 сохранен�
 --no-build` зелёный, включая контракт-тест `tests/app-services.nix` (ассерты acp-ui site,
 SPA-fallback, mdns-юниты).
 
+## Проверка клиента в браузере (ручная, 2026-09-20)
+
+Оператор открыл `http://acp-ui.mytecor-homelab.local` в браузере той же LAN и подтвердил, что
+клиент загружается и работает (`проверил, … работает`). Это закрывает браузерную загрузку
+(load-check) client-части step 5. Полноценный acceptance по контракту f8-06 (≥2 параллельные
+сессии, reconnect с `session/list` + `session/attach`, два клиента одной live-сессии, стриминг с
+глобальным [`acp-normalizer`](../../packages/acp-normalizer/README.md)) остаётся как углублённая
+проверка поверх подтверждённой загрузки, до полного закрытия задачи.
+
 ## Открытые вопросы
 
 - Хостинг статики выбран: derivation-пакет `pkgs.lattice.acp-web` с `root *` + `try_files
