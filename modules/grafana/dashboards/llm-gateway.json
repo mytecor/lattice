@@ -281,7 +281,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(llm_request_duration_seconds_bucket{environment=\"$environment\",route=~\"$route\",model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(llm_request_duration_seconds_bucket{environment=\"$environment\",route=~\"$route\",native_model=~\"$native_model\"}[$__rate_interval])))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -357,7 +357,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(llm_ttft_seconds_bucket{environment=\"$environment\",model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(llm_ttft_seconds_bucket{environment=\"$environment\",native_model=~\"$native_model\"}[$__rate_interval])))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -641,7 +641,7 @@
               }
             ]
           },
-          "unit": "percent",
+          "unit": "reqps",
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -668,7 +668,7 @@
             "spanNulls": true,
             "stacking": {
               "group": "A",
-              "mode": "percent"
+              "mode": "normal"
             },
             "thresholdsStyle": {
               "mode": "off"
@@ -706,16 +706,16 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by (status) (rate(llm_requests_total{environment=\"$environment\",route=~\"$route\",provider=~\"$provider\",status=~\"$status\"}[$__rate_interval]))",
+          "expr": "sum by (provider, native_model, status) (rate(llm_requests_total{environment=\"$environment\",route=~\"$route\",provider=~\"$provider\",native_model=~\"$native_model\",status=~\"$status\"}[$__rate_interval]))",
           "instant": false,
-          "legendFormat": "{{status}}",
+          "legendFormat": "{{provider}} · {{native_model}} · {{status}}",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Распределение результатов запросов",
       "type": "timeseries",
-      "description": "Доля success/failed за окно, нормировано к 100%."
+      "description": "RPS по провайдеру, нативной модели и статусу за окно: заменяет прежний двусерийный split, показывая кто именно отвечал, каким результатом."
     },
     {
       "collapsed": false,
@@ -819,9 +819,9 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "histogram_quantile(0.50, sum by (le, route) (rate(llm_request_duration_seconds_bucket{environment=\"$environment\",route=~\"$route\",model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le, provider, native_model) (rate(llm_request_duration_seconds_bucket{environment=\"$environment\",route=~\"$route\",provider=~\"$provider\",native_model=~\"$native_model\"}[$__rate_interval])))",
           "instant": false,
-          "legendFormat": "p50 · {{route}}",
+          "legendFormat": "p50 · {{provider}} · {{native_model}}",
           "range": true,
           "refId": "A"
         },
@@ -832,9 +832,9 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(llm_request_duration_seconds_bucket{environment=\"$environment\",route=~\"$route\",model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, provider, native_model) (rate(llm_request_duration_seconds_bucket{environment=\"$environment\",route=~\"$route\",provider=~\"$provider\",native_model=~\"$native_model\"}[$__rate_interval])))",
           "instant": false,
-          "legendFormat": "p95 · {{route}}",
+          "legendFormat": "p95 · {{provider}} · {{native_model}}",
           "range": true,
           "refId": "B"
         },
@@ -845,16 +845,16 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "histogram_quantile(0.99, sum by (le, route) (rate(llm_request_duration_seconds_bucket{environment=\"$environment\",route=~\"$route\",model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le, provider, native_model) (rate(llm_request_duration_seconds_bucket{environment=\"$environment\",route=~\"$route\",provider=~\"$provider\",native_model=~\"$native_model\"}[$__rate_interval])))",
           "instant": false,
-          "legendFormat": "p99 · {{route}}",
+          "legendFormat": "p99 · {{provider}} · {{native_model}}",
           "range": true,
           "refId": "C"
         }
       ],
-      "title": "Длительность ответа по маршруту",
+      "title": "Длительность ответа по провайдеру и модели",
       "type": "timeseries",
-      "description": "p50/p95/p99 полного времени ответа по гистограмме llm_request_duration_seconds_bucket."
+      "description": "p50/p95/p99 полного времени ответа по гистограмме llm_request_duration_seconds_bucket, разрез по провайдеру и нативной модели."
     },
     {
       "datasource": {
@@ -941,9 +941,9 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "histogram_quantile(0.50, sum by (le, model) (rate(llm_ttft_seconds_bucket{environment=\"$environment\",model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le, provider, native_model) (rate(llm_ttft_seconds_bucket{environment=\"$environment\",provider=~\"$provider\",native_model=~\"$native_model\"}[$__rate_interval])))",
           "instant": false,
-          "legendFormat": "p50 · {{model}}",
+          "legendFormat": "p50 · {{provider}} · {{native_model}}",
           "range": true,
           "refId": "A"
         },
@@ -954,9 +954,9 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "histogram_quantile(0.95, sum by (le, model) (rate(llm_ttft_seconds_bucket{environment=\"$environment\",model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, provider, native_model) (rate(llm_ttft_seconds_bucket{environment=\"$environment\",provider=~\"$provider\",native_model=~\"$native_model\"}[$__rate_interval])))",
           "instant": false,
-          "legendFormat": "p95 · {{model}}",
+          "legendFormat": "p95 · {{provider}} · {{native_model}}",
           "range": true,
           "refId": "B"
         },
@@ -967,16 +967,16 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "histogram_quantile(0.99, sum by (le, model) (rate(llm_ttft_seconds_bucket{environment=\"$environment\",model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le, provider, native_model) (rate(llm_ttft_seconds_bucket{environment=\"$environment\",provider=~\"$provider\",native_model=~\"$native_model\"}[$__rate_interval])))",
           "instant": false,
-          "legendFormat": "p99 · {{model}}",
+          "legendFormat": "p99 · {{provider}} · {{native_model}}",
           "range": true,
           "refId": "C"
         }
       ],
-      "title": "TTFT по модели",
+      "title": "TTFT по провайдеру и модели",
       "type": "timeseries",
-      "description": "p50/p95/p99 времени до первого значимого события по модели (llm_ttft_seconds_bucket)."
+      "description": "p50/p95/p99 времени до первого значимого события по провайдеру и нативной модели (llm_ttft_seconds_bucket)."
     },
     {
       "collapsed": false,
@@ -1080,14 +1080,14 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by (provider, error_type) (rate(llm_attempts_total{environment=\"$environment\",provider=~\"$provider\",error_type=~\".+\"}[$__rate_interval]))",
+          "expr": "sum by (provider, native_model, error_type) (rate(llm_attempts_total{environment=\"$environment\",provider=~\"$provider\",native_model=~\"$native_model\",error_type=~\".+\"}[$__rate_interval]))",
           "instant": false,
-          "legendFormat": "{{provider}} · {{error_type}}",
+          "legendFormat": "{{provider}} · {{native_model}} · {{error_type}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Попытки по провайдеру и типу ошибки",
+      "title": "Попытки по провайдеру, модели и типу ошибки",
       "type": "timeseries",
       "description": "Upstream-ветки с терминальной ошибкой, по провайдеру и классу ошибки (error_type=\"\" — успешные попытки, они отфильтрованы)."
     },
@@ -1497,8 +1497,8 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "clamp_min(llm_cooldown_until_seconds{environment=\"$environment\",provider=~\"$provider\",model=~\"$model\"} - time(), 0)",
-          "legendFormat": "{{provider}} / {{model}}",
+          "expr": "clamp_min(llm_cooldown_until_seconds{environment=\"$environment\",provider=~\"$provider\",native_model=~\"$native_model\"} - time(), 0)",
+          "legendFormat": "{{provider}} · {{native_model}}",
           "range": true,
           "refId": "A"
         }
@@ -1609,9 +1609,9 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by (model) (rate(llm_input_tokens_total{environment=\"$environment\",model=~\"$model\"}[$__rate_interval]))",
+          "expr": "sum by (provider, native_model) (rate(llm_input_tokens_total{environment=\"$environment\",provider=~\"$provider\",native_model=~\"$native_model\"}[$__rate_interval]))",
           "instant": false,
-          "legendFormat": "вход · {{model}}",
+          "legendFormat": "вход · {{provider}} · {{native_model}}",
           "range": true,
           "refId": "A"
         },
@@ -1622,16 +1622,16 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by (model) (rate(llm_output_tokens_total{environment=\"$environment\",model=~\"$model\"}[$__rate_interval]))",
+          "expr": "sum by (provider, native_model) (rate(llm_output_tokens_total{environment=\"$environment\",provider=~\"$provider\",native_model=~\"$native_model\"}[$__rate_interval]))",
           "instant": false,
-          "legendFormat": "выход · {{model}}",
+          "legendFormat": "выход · {{provider}} · {{native_model}}",
           "range": true,
           "refId": "B"
         }
       ],
-      "title": "Токены в секунду по модели",
+      "title": "Токены в секунду по провайдеру и модели",
       "type": "timeseries",
-      "description": "Скорость потребления токенов (llm_input_tokens_total / llm_output_tokens_total)."
+      "description": "Скорость потребления токенов (llm_input_tokens_total / llm_output_tokens_total) по провайдеру и нативной модели."
     },
     {
       "datasource": {
@@ -1718,16 +1718,16 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by (model) (rate(llm_output_tokens_total{environment=\"$environment\",model=~\"$model\"}[$__rate_interval])) / sum by (model) (rate(llm_requests_total{environment=\"$environment\",route=~\"$route\",model=~\"$model\"}[$__rate_interval]))",
+          "expr": "sum by (provider, native_model) (rate(llm_output_tokens_total{environment=\"$environment\",provider=~\"$provider\",native_model=~\"$native_model\"}[$__rate_interval])) / sum by (provider, native_model) (rate(llm_requests_total{environment=\"$environment\",route=~\"$route\",provider=~\"$provider\",native_model=~\"$native_model\"}[$__rate_interval]))",
           "instant": false,
-          "legendFormat": "{{model}}",
+          "legendFormat": "{{provider}} · {{native_model}}",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Средняя длина ответа",
       "type": "timeseries",
-      "description": "Среднее число выходных токенов на один завершённый запрос."
+      "description": "Среднее число выходных токенов на один завершённый запрос по провайдеру и нативной модели."
     },
     {
       "collapsed": false,
@@ -1906,16 +1906,16 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(llm_request_duration_seconds_bucket, model)",
+        "definition": "label_values(llm_requests_total, native_model)",
         "hide": 0,
         "includeAll": true,
         "allValue": ".*",
-        "label": "model",
+        "label": "native_model",
         "multi": true,
-        "name": "model",
+        "name": "native_model",
         "options": [],
         "query": {
-          "query": "label_values(llm_request_duration_seconds_bucket, model)",
+          "query": "label_values(llm_requests_total, native_model)",
           "refId": "stdlib-llm-gateway-D"
         },
         "refresh": 1,

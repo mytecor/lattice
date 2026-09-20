@@ -70,6 +70,9 @@ type Executor interface {
 type RunOutcome struct {
 	Body     []byte
 	Provider string
+	// Model is the winner's native provider model ID (empty when no branch
+	// ever succeeded).
+	Model string
 	// Attempts is the number of route executions dispatched for this request
 	// (races plus retry/fallback rounds), used by request-level events.
 	Attempts int
@@ -146,14 +149,14 @@ func (r *Runner) observeBranch(res *branchResult) {
 	if res.err != nil {
 		errorType = string(res.err.Class)
 	}
-	r.metrics.ObserveAttempt(res.provider, errorType)
+	r.metrics.ObserveAttempt(res.provider, res.model, errorType)
 }
 
 // observeBranchCancelled records a cancelled branch (client cancel, loser
 // cancel, route deadline) without updating health. The in-flight gauge slot is
 // released by the branch's own defer in runBranch, not here.
 func (r *Runner) observeBranchCancelled(res *branchResult) {
-	r.metrics.ObserveAttempt(res.provider, "cancelled")
+	r.metrics.ObserveAttempt(res.provider, res.model, "cancelled")
 }
 
 // RecordStreamFailure feeds a mid-stream (post-selection) failure of the
@@ -181,10 +184,11 @@ func (r *Runner) RecordStreamFailure(ctx context.Context, logical, provider, mod
 		r.observeLeaseFailure(logical, entry, provider, callErr)
 	}
 	r.scores.Observe(provider, callErr, 0)
-	r.metrics.ObserveAttempt(provider, string(callErr.Class))
-	r.metrics.ObserveStreamBreak(provider, string(callErr.Class))
+	r.metrics.ObserveAttempt(provider, model, string(callErr.Class))
+	r.metrics.ObserveStreamBreak(provider, model, string(callErr.Class))
 	logEvent(ctx, r.logger, slog.LevelWarn, "llm_stream_break",
 		"provider", provider,
+		"native_model", model,
 		"error_type", string(callErr.Class),
 		"status_code", callErrorStatus(callErr),
 	)
@@ -258,7 +262,7 @@ func (r *Runner) RunWithResult(ctx context.Context, logical string, request Exec
 	if outcome.ttft > 0 {
 		ttft = outcome.ttft
 	}
-	return &RunOutcome{Body: outcome.body, Provider: outcome.provider, Attempts: outcome.attempts, TTFT: ttft}, nil
+	return &RunOutcome{Body: outcome.body, Provider: outcome.provider, Model: outcome.model, Attempts: outcome.attempts, TTFT: ttft}, nil
 }
 
 // runPlan resolves the request-level entry route for the logical model and
@@ -314,6 +318,7 @@ func (r *Runner) executeRoute(ctx context.Context, logical string, route *compil
 					logEvent(ctx, r.logger, slog.LevelInfo, "llm_attempt",
 						"route", route.retryTarget.Name,
 						"provider", next.provider,
+						"native_model", next.model,
 						"status", "success",
 						"attempt", attempt+1,
 					)
@@ -583,7 +588,7 @@ func (r *Runner) record(ctx context.Context, providerID, model string, callErr *
 	}
 	logEvent(ctx, r.logger, slog.LevelWarn, "cooldown_put",
 		"provider", providerID,
-		"model", model,
+		"native_model", model,
 		"error_type", string(callErr.Class),
 		"cooldown_ms", int64(r.config.providers[providerID].Cooldown.Duration.Milliseconds()),
 	)

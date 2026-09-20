@@ -13,7 +13,15 @@ Fleet (rev. 2026-09-16, полная переработка):
   Ниже: трафик по route/status, задержки p50/p95/p99, надёжность (attempts,
   fallback, in-flight, `llm_balance_health`, кулдаун `llm_cooldown_until_seconds`),
   токены; логи по `request_id` — внизу. Переменные `environment`, `route`,
-  `provider`, `model`, `status`, `request_id`.
+  `provider`, `native_model`, `status`, `request_id`. (Панель «Распределение
+  результатов запросов» — теперь `sum by (provider, native_model, status)`:
+  видно, кто именно ответил и с каким результатом, а не только success/failed.)
+- [`gateway-providers.json`](./gateway-providers.json) — «Gateway: модели по
+  провайдерам» (f12-06): динамический разрез `native_model`. Одна повторяющаяся
+  строка на провайдера (row `repeat: provider`), внутри — RPS, latency/TTFT
+  p50/p95/p99, ошибочные попытки, здоровье пула, кулдаун и токены вход/выход
+  по нативным моделям этого провайдера. Панели фильтруются точным
+  `provider="$provider"`, так что каждая строка видит только свой провайдер.
 - [`gateway-runtime.json`](./gateway-runtime.json) — «Gateway runtime»: сервис
   (версия `llm_gateway_build_info`, аптайм, горутины, куча Go), балансировка
   (выборы `llm_balance_selections_total`, здоровье пула `llm_balance_health`),
@@ -49,18 +57,34 @@ Fleet (rev. 2026-09-16, полная переработка):
   для `duration_ms`/`ttft_ms`, клик по `request_id` фильтрует расследование);
   счёт событий по типу; полная лента запроса — внизу, по возрастанию времени.
 
+### Ревизия 2026-09-16 (f12-06: димензия `native_model`)
+
+Настоящий id модели провайдера (`native_model`) добавлен в каждую метрику и
+событие gateway (f12-06), а дашборды перешли с логической `model` (одинаковой
+у всех провайдеров — она скрывала, кто именно отвечал) на `native_model`.
+
+- `llm-gateway`: панель «Распределение результатов запросов» переписана с
+  `sum by (status)` на `sum by (provider, native_model, status)` (RPS по тому,
+  кто ответил и каким результатом); задержки/TTFT/токены/попытки/кулдаун
+  сгруппированы `by (provider, native_model)`; переменная `model` заменена на
+  `native_model` (`label_values(llm_requests_total, native_model)`).
+- `gateway-providers`: **новый** дашборд — динамический разрез по нативным
+  моделям каждого провайдера (повторяющаяся строка `repeat: provider`), см. выше.
+- `loki-investigation`: столбец `model` в трансформации `organize` переименован
+  в `native_model` («модель (натив.)») — события теперь несут `native_model`.
+
 ## Используемые метрики (источник — `/metrics` gateway, f12-01)
 
 | Метрика | Что показывает |
 | --- | --- |
-| `llm_requests_total{route,model,provider,status}` | завершённые client-запросы (status = success/failed) |
-| `llm_request_duration_seconds_bucket{route,model}` | гистограмма длительности (p50/p95/p99) |
-| `llm_ttft_seconds_bucket{model}` | гистограмма TTFT (p50/p95/p99) |
-| `llm_input_tokens_total` / `llm_output_tokens_total{model}` | накопленные токены |
-| `llm_attempts_total{provider,error_type}` | попытки веток по провайдеру и классу ошибки (errors фильтрует `error_type=~".+"`) |
+| `llm_requests_total{route,model,provider,native_model,status}` | завершённые client-запросы (status = success/failed); `model` — логический, `native_model` — реальный id у провайдера |
+| `llm_request_duration_seconds_bucket{route,model,provider,native_model}` | гистограмма длительности (p50/p95/p99) |
+| `llm_ttft_seconds_bucket{model,provider,native_model}` | гистограмма TTFT (p50/p95/p99) |
+| `llm_input_tokens_total` / `llm_output_tokens_total{model,provider,native_model}` | накопленные токены |
+| `llm_attempts_total{provider,native_model,error_type}` | попытки веток по провайдеру/модели и классу ошибки (errors фильтрует `error_type=~".+"`) |
 | `llm_fallbacks_total{from_provider,to_provider,reason}` | явные fallback-переходы |
 | `llm_balance_health{provider}` | скользящее здоровье пула [0..1] (окно ошибок против бюджета; 0 ≠ cooldown) |
-| `llm_cooldown_until_seconds{provider}` | unix-deadline до возврата провайдера из кулдауна; панель считает остаток `deadline − time()` |
+| `llm_cooldown_until_seconds{provider,native_model}` | unix-deadline до возврата провайдера/модели из кулдауна; панель считает остаток `deadline − time()` |
 | `llm_balance_selections_total{route,provider}` | кого выбрала balance-действие |
 | `llm_requests_in_flight{provider}` | ветки в полёте по провайдеру |
 | `llm_gateway_build_info{version,service}` | версия сборки gateway |
@@ -80,10 +104,13 @@ Fleet (rev. 2026-09-16, полная переработка):
 ## Димензии
 
 Все дашборды фильтруются по `environment` (постоянный label scrape job,
-см. `modules/observability-prometheus`), `route`, `provider`, `model`, `status`.
-`request_id` — единственная текстовая переменная, для Loki-запросов только;
-никогда не label (F12 низкая cardinality). Loki-поток не имеет `environment`
-label, поэтому Loki-панели не фильтруются по среде. Панели используют
-`$__rate_interval` (Prometheus) и `$__rate_interval`/`$__range` (Loki).
-Фильтр `request_id` — точное равенство (`request_id="${request_id}"`): пустая
-переменная оставляет панель пустой вместо вывода всего потока.
+см. `modules/observability-prometheus`), `route`, `provider`, `native_model`,
+`status`. `native_model` — реальный id модели у провайдера; логическая `model`
+остаётся в метриках, но дашборды не фильтруются по ней (она одинакова у всех
+провайдеров и скрывала, кто ответил). `request_id` — единственная текстовая
+переменная, для Loki-запросов только; никогда не label (F12 низкая cardinality).
+Loki-поток не имеет `environment` label, поэтому Loki-панели не фильтруются по
+среде. Панели используют `$__rate_interval` (Prometheus) и `$__rate_interval`/
+`$__range` (Loki). Фильтр `request_id` — точное равенство
+(`request_id="${request_id}"`): пустая переменная оставляет панель пустой
+вместо вывода всего потока.

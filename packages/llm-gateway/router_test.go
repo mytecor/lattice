@@ -1096,7 +1096,7 @@ func TestCooldownUntilGaugeFlow(t *testing.T) {
 	remainingOf := func(body, provider string) (float64, bool) {
 		t.Helper()
 		for _, line := range strings.Split(body, "\n") {
-			if strings.HasPrefix(line, `llm_cooldown_until_seconds{provider="`+provider+`",model="native-model"} `) {
+			if strings.HasPrefix(line, `llm_cooldown_until_seconds{provider="`+provider+`",native_model="native-model"} `) {
 				value, err := strconv.ParseFloat(strings.Fields(line)[1], 64)
 				if err != nil {
 					t.Fatalf("cooldown deadline gauge parse: %v", err)

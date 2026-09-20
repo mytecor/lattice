@@ -134,7 +134,7 @@ func TestRequestCompletedEventCarriesFullFields(t *testing.T) {
 			t.Errorf("request_completed missing %q: %#v", field, completed)
 		}
 	}
-	if completed["provider"] != "a" || completed["status"] != "success" || completed["stream"] != false {
+	if completed["provider"] != "a" || completed["native_model"] != "native-model" || completed["status"] != "success" || completed["stream"] != false {
 		t.Errorf("unexpected request_completed dims: %#v", completed)
 	}
 	if completed["attempts"] != float64(1) {
@@ -251,7 +251,7 @@ func TestRetryEmitsAttemptEvents(t *testing.T) {
 	if retry["error_type"] != string(ErrorRateLimit) || retry["provider"] != "a" {
 		t.Errorf("llm_retry dims wrong: %#v", retry)
 	}
-	if attempt["status"] != "success" || attempt["provider"] != "b" {
+	if attempt["status"] != "success" || attempt["provider"] != "b" || attempt["native_model"] != "native-model" {
 		t.Errorf("llm_attempt dims wrong: %#v", attempt)
 	}
 }
@@ -327,7 +327,7 @@ func TestCooldownPutEventFiresOnRetryableFailure(t *testing.T) {
 	for _, e := range events {
 		if e["event"] == "cooldown_put" {
 			cooldowns++
-			if e["provider"] != "a" || e["model"] != "native-model" || e["error_type"] != string(ErrorRateLimit) {
+			if e["provider"] != "a" || e["native_model"] != "native-model" || e["error_type"] != string(ErrorRateLimit) {
 				t.Errorf("cooldown_put dims wrong: %#v", e)
 			}
 		}

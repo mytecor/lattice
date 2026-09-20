@@ -66,22 +66,22 @@ func TestMetricsFlowThroughServer(t *testing.T) {
 	text := scrape.String()
 
 	// Request-level counter: 3 successes on provider a/route standard.
-	if !strings.Contains(text, `llm_requests_total{route="standard",model="standard",provider="a",status="success"} 3`) {
+	if !strings.Contains(text, `llm_requests_total{route="standard",model="standard",provider="a",native_model="native-model",status="success"} 3`) {
 		t.Errorf("request counter missing/inaccurate:\n%s", text)
 	}
 	// Duration histogram count.
-	if !strings.Contains(text, `llm_request_duration_seconds_count{route="standard",model="standard"} 3`) {
+	if !strings.Contains(text, `llm_request_duration_seconds_count{route="standard",model="standard",provider="a",native_model="native-model"} 3`) {
 		t.Errorf("request duration count missing:\n%s", text)
 	}
 	// Attempts: 3 successful attempts (empty error_type).
-	if !strings.Contains(text, `llm_attempts_total{provider="a",error_type=""} 3`) {
+	if !strings.Contains(text, `llm_attempts_total{provider="a",native_model="native-model",error_type=""} 3`) {
 		t.Errorf("attempt counter missing:\n%s", text)
 	}
 	// Tokens accumulated: 3 * (10 in, 20 out).
-	if !strings.Contains(text, `llm_input_tokens_total{model="standard"} 30`) {
+	if !strings.Contains(text, `llm_input_tokens_total{model="standard",provider="a",native_model="native-model"} 30`) {
 		t.Errorf("input tokens missing:\n%s", text)
 	}
-	if !strings.Contains(text, `llm_output_tokens_total{model="standard"} 60`) {
+	if !strings.Contains(text, `llm_output_tokens_total{model="standard",provider="a",native_model="native-model"} 60`) {
 		t.Errorf("output tokens missing:\n%s", text)
 	}
 	// Balance health snapshot exists for provider a.

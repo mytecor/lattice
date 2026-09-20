@@ -61,6 +61,11 @@ assert lib.hasInfix "loki.source.journal" alloyConfig;
 assert lib.hasInfix "_SYSTEMD_UNIT=llm-gateway.service" alloyConfig;
 assert lib.hasInfix "loki.write" alloyConfig;
 assert lib.hasInfix "stage.structured_metadata" alloyConfig;
+# Both the provider's real model ID and the gateway's logical mapping survive
+# as structured metadata (the logical model drives the request events, the
+# native model the cooldown/upstream events).
+assert lib.hasInfix "native_model = \"\"" alloyConfig;
+assert lib.hasInfix "logical_model = \"\"" alloyConfig;
 
 # --- Grafana datasources point at loopback Prometheus + Loki ---
 assert builtins.any (ds: ds.type == "prometheus" && ds.uid == "prometheus") grafanaDatasources;
