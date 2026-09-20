@@ -80,6 +80,11 @@
       flake = false;
     };
 
+    module-authentik = {
+      url = "path:./modules/authentik";
+      flake = false;
+    };
+
     module-observability-prometheus = {
       url = "path:./modules/observability-prometheus";
       flake = false;
@@ -129,6 +134,7 @@
     module-wireless,
     module-git-cache-proxy,
     module-verdaccio,
+    module-authentik,
     module-observability-prometheus,
     module-observability-loki,
     module-observability-alloy,
@@ -272,6 +278,7 @@
         observability-loki.imports = [ "${module-observability-loki}" ];
         observability-alloy.imports = [ "${module-observability-alloy}" ];
         grafana.imports = [ "${module-grafana}" ];
+        authentik.imports = [ "${module-authentik}" ];
 
         default.imports = [
           self.nixosModules.ephemeral-root
@@ -287,6 +294,7 @@
           self.nixosModules.observability-loki
           self.nixosModules.observability-alloy
           self.nixosModules.grafana
+          self.nixosModules.authentik
         ];
       };
 
@@ -304,6 +312,7 @@
           "${profiles}/radicle/config.nix"
           "${profiles}/rns-network/config.nix"
           "${profiles}/rnsh/config.nix"
+          "${profiles}/sso/config.nix"
         ];
       };
     };

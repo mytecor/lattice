@@ -26,15 +26,15 @@ type branchResult struct {
 }
 
 // routeOutcome carries the winner and its payload out of the scheduler.
-// pinned marks a route narrowed by a known affinity mapping so the caller can
-// keep the request fail-closed (no transitions). empty marks a transition
-// route whose dynamic pool had no available targets: the transition is not
-// applicable and must never mask the original terminal failure. failedProvider
-// names the provider of the selected terminal failure (empty when the failure
-// is local, for example an empty pool or a route deadline), used for fallback
-// observability.
+// model names the winner's native provider model (set only for a successful
+// selection); failedProvider is recorded separately for fallback
+// observability. pinned marks a route narrowed by a known affinity mapping so
+// the caller can keep the request fail-closed (no transitions). empty marks a
+// transition route whose dynamic pool had no available targets: the transition
+// is not applicable and must never mask the original terminal failure.
 type routeOutcome struct {
 	provider       string
+	model          string
 	body           []byte
 	selected       *SelectedStream
 	err            *CallError
@@ -619,10 +619,10 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 			if res.winner {
 				r.observeLeaseWinner(logical, route, res.provider, res)
 				if !res.finished.IsZero() && !res.started.IsZero() {
-					r.metrics.ObserveTTFT(logical, res.finished.Sub(res.started))
+					r.metrics.ObserveTTFT(logical, res.provider, res.model, res.finished.Sub(res.started))
 				}
 				sc.cancelOthers(res.id)
-				outcome := &routeOutcome{provider: res.provider, attempts: runtime.attempts}
+				outcome := &routeOutcome{provider: res.provider, model: res.model, attempts: runtime.attempts}
 				if !res.finished.IsZero() && !res.started.IsZero() {
 					outcome.ttft = res.finished.Sub(res.started)
 				}

@@ -156,6 +156,18 @@
         "type": "github"
       }
     },
+    "module-authentik": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/authentik",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/authentik",
+        "type": "path"
+      },
+      "parent": []
+    },
     "module-ephemeral-root": {
       "flake": false,
       "locked": {
@@ -395,6 +407,7 @@
         "disko": "disko",
         "hardware-intel-n100": "hardware-intel-n100",
         "impermanence": "impermanence",
+        "module-authentik": "module-authentik",
         "module-ephemeral-root": "module-ephemeral-root",
         "module-git-cache-proxy": "module-git-cache-proxy",
         "module-grafana": "module-grafana",

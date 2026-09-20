@@ -35,23 +35,27 @@ Gateway экспортирует числовые метрики в Prometheus t
 Эндпоинт сознательно не публичен, не требует `client_api_key` и не раскрывает provider
 credentials. Метрики считаются в счётчиках и гистограммах на лету, а не из логов.
 
-Димензии только низкой cardinality: `service`, `route`, `provider`, `model`, `status`,
-`error_type`, `from_provider`, `to_provider`, `reason`. Высок-cardinality идентификаторы
-(`request_id`, session, user, api_key, client_ip, prompt hash) никогда не становятся лейблами.
+Димензии только низкой cardinality: `service`, `route`, `provider`, `native_model`,
+`model` (логическая), `status`, `error_type`, `from_provider`, `to_provider`,
+`reason`. `native_model` — реальный id модели у провайдера (`claude-sonnet-4`,
+`gpt-4o` …), `model` — логическое имя из маппинга gateway (`standard`, `fast` …);
+оба низкой cardinality (конечное множество маппинга). Высок-cardinality
+идентификаторы (`request_id`, session, user, api_key, client_ip, prompt hash)
+никогда не становятся лейблами.
 
 Семейства:
 
-- `llm_requests_total{route,model,provider,status}` — завершённые клиентские запросы.
-- `llm_request_duration_seconds{route,model}` — гистограмма полного времени запроса (p50/p95).
-- `llm_ttft_seconds{model}` — гистограмма времени до первого значимого события (winner).
-- `llm_input_tokens_total{model}` / `llm_output_tokens_total{model}` — накопленные токены usage.
-- `llm_attempts_total{provider,error_type}` — upstream попытки по терминальному классу ошибки.
-- `llm_stream_breaks_total{provider,error_type}` — обрывы winner-стрима после выбора (mid-stream). Обратная связь инкрементит и `llm_attempts_total` (тот же срез provider/error_type), так что провайдер деградирует так же, как при ошибках до выбора; отдельный счётчик отделяет mid-stream-обрывы от попыток планировщика.
+- `llm_requests_total{route,model,provider,native_model,status}` — завершённые клиентские запросы.
+- `llm_request_duration_seconds{route,model,provider,native_model}` — гистограмма полного времени запроса (p50/p95).
+- `llm_ttft_seconds{model,provider,native_model}` — гистограмма времени до первого значимого события (winner).
+- `llm_input_tokens_total{model,provider,native_model}` / `llm_output_tokens_total{model,provider,native_model}` — накопленные токены usage.
+- `llm_attempts_total{provider,native_model,error_type}` — upstream попытки по терминальному классу ошибки.
+- `llm_stream_breaks_total{provider,native_model,error_type}` — обрывы winner-стрима после выбора (mid-stream). Обратная связь инкрементит и `llm_attempts_total` (тот же срез provider/native_model/error_type), так что провайдер деградирует так же, как при ошибках до выбора; отдельный счётчик отделяет mid-stream-обрывы от попыток планировщика.
 - `llm_requests_in_flight{provider}` — текущие in-flight ветви.
 - `llm_fallbacks_total{from_provider,to_provider,reason}` — явные fallback-переходы.
 - `llm_balance_selections_total{route,provider}` — выбор провайдера балансировкой.
 - `llm_balance_health{provider}` — текущий health score (0..1) пула.
-- `llm_cooldown_until_seconds{provider,model}` — unix-дедлайн, до которого пара
+- `llm_cooldown_until_seconds{provider,native_model}` — unix-дедлайн, до которого пара
   (провайдер, нативная модель) охлаждается после retryable-ошибки (в семье отсутствует, когда
   не охлаждена); остаток окна считается как `deadline − now` на стороне панели, так что
   значение правдиво убывает между скрейпами.
@@ -72,9 +76,9 @@ curl -s localhost:9209/metrics
 а не источником RPS/latency — это делают метрики.
 
 Димензии только низкой cardinality, те же, что у метрик: `service`, `route`, `provider`,
-`model`, `status`, `error_type`. `request_id` допустим **в поле** (для связывания), но никогда
-не становится лейблом метрики и не попадает в высоко-cardinality поля. Prompt, body, headers
-и API keys никогда не логируются.
+`native_model`, `model` (логическая), `status`, `error_type`. `request_id` допустим **в поле**
+(для связывания), но никогда не становится лейблом метрики и не попадает в
+высоко-cardinality поля. Prompt, body, headers и API keys никогда не логируются.
 
 Иерархия событий — request → attempt, связывание по `request_id` (`attempt_id` опционален):
 

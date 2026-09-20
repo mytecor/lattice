@@ -110,23 +110,23 @@ func (s *Server) metricsHandler(writer http.ResponseWriter, _ *http.Request) {
 
 // observeRequest records the request-level observation: counter, histogram and
 // token accumulation share one call so the request lifecycle is recorded once
-// at exactly one terminal point. The empty provider conveys that no branch
-// ever succeeded (for example a pre-dispatch rejection).
-func (s *Server) observeRequest(logical, provider, status string, duration time.Duration) {
-	s.metrics.ObserveRequest(s.routeOf(logical), logical, provider, status, duration)
+// at exactly one terminal point. The empty provider and native convey that no
+// branch ever succeeded (for example a pre-dispatch rejection).
+func (s *Server) observeRequest(logical, provider, native, status string, duration time.Duration) {
+	s.metrics.ObserveRequest(s.routeOf(logical), logical, provider, native, status, duration)
 }
 
 // observeTokens accumulates usage from a non-stream response body and returns
 // the parsed usage so the caller can embed it into the request_completed event.
 // Providers that omit usage contribute nothing. The hasUsage flag tells whether
 // the provider reported usage at all (zero tokens with hasUsage=false mean
-// "unknown", not "zero").
-func (s *Server) observeTokens(logical string, response []byte) (input, output, cached int64, hasUsage bool) {
+// "unknown", not "zero"). provider and native identify the winning branch.
+func (s *Server) observeTokens(logical, provider, native string, response []byte) (input, output, cached int64, hasUsage bool) {
 	summary, ok := extractUsageFull(response)
 	if !ok {
 		return 0, 0, 0, false
 	}
-	s.metrics.ObserveTokens(logical, summary.Input, summary.Output)
+	s.metrics.ObserveTokens(logical, provider, native, summary.Input, summary.Output)
 	return summary.Input, summary.Output, summary.CachedTokens, true
 }
 
@@ -206,7 +206,7 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 			"error_type", string(callErr.Class),
 			"duration_ms", time.Since(started).Milliseconds(),
 		)
-		s.observeRequest(metadata.Model, "", "failed", time.Since(started))
+		s.observeRequest(metadata.Model, "", "", "failed", time.Since(started))
 		writeCallError(writer, callErr)
 		return
 	}
@@ -217,7 +217,7 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 		s.bindResponsesAffinity(metadata.Model, result.Provider, response, "")
 	}
 	provider := result.Provider
-	input, output, cached, hasUsage := s.observeTokens(metadata.Model, response)
+	input, output, cached, hasUsage := s.observeTokens(metadata.Model, result.Provider, result.Model, response)
 	response, err = sanitizeJSON(response, metadata.Model)
 	if err != nil {
 		logEvent(request.Context(), s.logger, slog.LevelError, "request_failed",
@@ -228,7 +228,7 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 			"error_type", string(ErrorInvalid),
 			"duration_ms", time.Since(started).Milliseconds(),
 		)
-		s.observeRequest(metadata.Model, provider, "failed", time.Since(started))
+		s.observeRequest(metadata.Model, provider, result.Model, "failed", time.Since(started))
 		writeAPIError(writer, http.StatusBadGateway, "invalid_upstream_response")
 		return
 	}
@@ -240,6 +240,7 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 		"route", s.routeOf(metadata.Model),
 		"logical_model", metadata.Model,
 		"provider", provider,
+		"native_model", result.Model,
 		"stream", metadata.Stream,
 		"status_code", http.StatusOK,
 		"status", "success",
@@ -251,7 +252,7 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 		"has_usage", hasUsage,
 		"attempts", result.Attempts,
 	)
-	s.observeRequest(metadata.Model, provider, "success", time.Since(started))
+	s.observeRequest(metadata.Model, provider, result.Model, "success", time.Since(started))
 }
 
 func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logical string, executeRequest ExecuteRequest, started time.Time) {
@@ -338,13 +339,14 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 		}
 		idleTimer.Reset(idleTimeout)
 	}
+cur := selected
 	observe := func(data []byte) {
 		if summary, ok := extractUsageFull(data); ok {
 			inTokens += summary.Input
 			outTokens += summary.Output
 			cachedTokens += summary.CachedTokens
 			hasUsage = true
-			s.metrics.ObserveTokens(logical, summary.Input, summary.Output)
+			s.metrics.ObserveTokens(logical, cur.Provider, cur.Model, summary.Input, summary.Output)
 		}
 	}
 	// The partial output accumulator feeds the "continue" rule: every relayed
@@ -352,7 +354,6 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	// reshape it into assistant context for the next provider.
 	partial := &partialStreamOutput{}
 	observePartial := func(data []byte) { accumulatePartial(data, partial) }
-	cur := selected
 	// The providers whose streams have broken during this request. Only genuine
 	// breaks accumulate here — providers that merely lost the original race
 	// stay eligible for a takeover, so the continuation can still reach them.
@@ -493,16 +494,18 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 			logEvent(request.Context(), s.logger, slog.LevelDebug, "request_cancelled",
 				"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
 				"provider", cur.Provider,
+				"native_model", cur.Model,
 				"attempts", cur.Attempts,
 				"duration_ms", time.Since(started).Milliseconds(),
 			)
-			s.observeRequest(logical, cur.Provider, "cancelled", time.Since(started))
+			s.observeRequest(logical, cur.Provider, cur.Model, "cancelled", time.Since(started))
 			return
 		case <-idleC:
 			stall := &CallError{Class: ErrorTimeout, Status: 504, Cause: fmt.Errorf("no stream events for %s", idleTimeout)}
 			logEvent(request.Context(), s.logger, slog.LevelWarn, "llm_stream_stalled",
 				"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
 				"provider", cur.Provider,
+				"native_model", cur.Model,
 				"idle_ms", idleTimeout.Milliseconds(),
 				"attempts", cur.Attempts,
 				"duration_ms", time.Since(started).Milliseconds(),
@@ -511,7 +514,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 			if !sawFinishReason && takeover(stall) {
 				continue
 			}
-			s.observeRequest(logical, cur.Provider, "failed", time.Since(started))
+			s.observeRequest(logical, cur.Provider, cur.Model, "failed", time.Since(started))
 			writeStreamError(writer, flusher, stall, requestID, s.runner.streamRetryable(logical, stall))
 			return
 		case event, open := <-cur.Remaining:
@@ -528,6 +531,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					logEvent(request.Context(), s.logger, slog.LevelWarn, "request_failed",
 						"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
 						"provider", cur.Provider,
+						"native_model", cur.Model,
 						"status_code", callErrorStatus(broken), "error_type", string(broken.Class),
 						"reason", "missing_finish_reason",
 						"attempts", cur.Attempts,
@@ -541,7 +545,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					if takeover(broken) {
 						continue
 					}
-					s.observeRequest(logical, cur.Provider, "failed", time.Since(started))
+					s.observeRequest(logical, cur.Provider, cur.Model, "failed", time.Since(started))
 					writeStreamError(writer, flusher, broken, requestID, s.runner.streamRetryable(logical, broken))
 					return
 				}
@@ -563,6 +567,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					logEvent(request.Context(), s.logger, slog.LevelWarn, "request_failed",
 						"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
 						"provider", cur.Provider,
+						"native_model", cur.Model,
 						"status_code", callErrorStatus(broken), "error_type", string(broken.Class),
 						"reason", "empty_completion",
 						"attempts", cur.Attempts,
@@ -576,7 +581,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					if takeover(broken) {
 						continue
 					}
-					s.observeRequest(logical, cur.Provider, "failed", time.Since(started))
+					s.observeRequest(logical, cur.Provider, cur.Model, "failed", time.Since(started))
 					writeStreamError(writer, flusher, broken, requestID, s.runner.streamRetryable(logical, broken))
 					return
 				}
@@ -589,6 +594,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					"route", s.routeOf(logical),
 					"logical_model", logical,
 					"provider", cur.Provider,
+					"native_model", cur.Model,
 					"stream", true,
 					"status_code", http.StatusOK,
 					"status", "success",
@@ -600,13 +606,14 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					"has_usage", hasUsage,
 					"attempts", cur.Attempts,
 				)
-				s.observeRequest(logical, cur.Provider, "success", time.Since(started))
+				s.observeRequest(logical, cur.Provider, cur.Model, "success", time.Since(started))
 				return
 			}
 			if event.Err != nil {
 				logEvent(request.Context(), s.logger, slog.LevelWarn, "request_failed",
 					"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
 					"provider", cur.Provider,
+					"native_model", cur.Model,
 					"status_code", callErrorStatus(event.Err), "error_type", string(event.Err.Class),
 					"attempts", cur.Attempts,
 					"duration_ms", time.Since(started).Milliseconds(),
@@ -622,7 +629,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 				if !sawFinishReason && takeover(event.Err) {
 					continue
 				}
-				s.observeRequest(logical, cur.Provider, "failed", time.Since(started))
+				s.observeRequest(logical, cur.Provider, cur.Model, "failed", time.Since(started))
 				writeStreamError(writer, flusher, event.Err, requestID, s.runner.streamRetryable(logical, event.Err))
 				return
 			}

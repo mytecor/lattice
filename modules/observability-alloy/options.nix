@@ -63,14 +63,16 @@ in
         "status_code"
         "error_type"
         "provider"
-        "model"
+        "native_model"
+        "logical_model"
         "attempts"
         "event"
       ];
       description = ''
         JSON fields extracted into Loki structured metadata for searching by
-        request_id / route / outcome. Deliberately not promoted to labels —
-        cardinality stays bounded.
+        request_id / route / outcome. native_model is the provider's real model
+        ID, logical_model the gateway mapping; both stay as non-indexed
+        searchable fields (NOT labels) — cardinality stays bounded.
       '';
     };
   };

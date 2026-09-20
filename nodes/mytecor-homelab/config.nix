@@ -121,6 +121,33 @@ in
         file = ./secrets/grafana-secret-key.age;
         mode = "0400";
       };
+      # F14: Grafana OAuth2 client secret for SSO login via Authentik (OIDC).
+      grafana-oauth-client-secret = {
+        file = ./secrets/grafana-oauth-client-secret.age;
+        mode = "0400";
+      };
+      # F14: Authentik secrets. Each file is a single `AUTHENTIK_*=...` line,
+      # loaded by the authentik systemd units as EnvironmentFile (never in store).
+      authentik-secret-key = {
+        file = ./secrets/authentik-secret-key.age;
+        mode = "0400";
+      };
+      authentik-bootstrap-token = {
+        file = ./secrets/authentik-bootstrap-token.age;
+        mode = "0400";
+      };
+      authentik-bootstrap-user = {
+        file = ./secrets/authentik-bootstrap-user.age;
+        mode = "0400";
+      };
+      authentik-bootstrap-email = {
+        file = ./secrets/authentik-bootstrap-email.age;
+        mode = "0400";
+      };
+      authentik-bootstrap-password = {
+        file = ./secrets/authentik-bootstrap-password.age;
+        mode = "0400";
+      };
       # f4-05: стабильная идентичность ноды Yggdrasil (PKCS8 PEM private key — формат,
       # который требует PrivateKeyPath, см. src/config/config.go "...in PEM format").
       # Адрес в 200::/7 выводится из этого ключа и должен переживать перезагрузки — поэтому
@@ -600,6 +627,38 @@ in
     secretKeyFile = config.age.secrets.grafana-secret-key.path;
   };
 
+  # F14: центральный SSO (Authentik) за Caddy-ингрессом. Loopback-only; наружу
+  # выставляется только Caddy-сайтом `auth` (см. sso-профиль и tcp-gateway).
+  # Значения всех секретов — только runtime-файлами agenix (EnvironmentFile),
+  # в Nix store не попадают.
+  lattice.authentik = {
+    secretKeyFile = config.age.secrets.authentik-secret-key.path;
+    bootstrapTokenFile = config.age.secrets.authentik-bootstrap-token.path;
+    bootstrapUserFile = config.age.secrets.authentik-bootstrap-user.path;
+    bootstrapEmailFile = config.age.secrets.authentik-bootstrap-email.path;
+    bootstrapPasswordFile = config.age.secrets.authentik-bootstrap-password.path;
+    # F14: acp-ui (статический web-клиент ACP, f13-01, без собственного SSO)
+    # оборачивается в Caddy ForwardAuth — защищается только браузерный UI,
+    # backend-контракт ACP (forms/ws) не трогается.
+    forwardAuth = [
+      {
+        service = "acp-ui";
+      }
+    ];
+  };
+
+  # F14: нативный OIDC-вход Grafana через Authentik. client_secret — agenix-секрет,
+  # не в store. Grafana остаётся доступной только на LAN-контракте (meshExclude).
+  lattice.grafana.oauth = {
+    clientId = "grafana";
+    clientSecretFile = config.age.secrets.grafana-oauth-client-secret.path;
+    authUrl = "http://auth.${config.networking.hostName}.local/application/o/authorize/";
+    tokenUrl = "http://auth.${config.networking.hostName}.local/application/o/token/";
+    apiUrl = "http://auth.${config.networking.hostName}.local/application/o/userinfo/";
+    scopes = [ "openid" "profile" "email" ];
+    adminGroup = "authentik Admins";
+  };
+
   lattice.rnsh = {
     # Public hash only; private operator identity stays on the Mac in .secrets/rnsh-operator.
     allowed = [ "59bfffc440ddc304749fd9477865b811" ];
@@ -657,6 +716,8 @@ in
     { directory = "/var/lib/prometheus"; user = "prometheus"; group = "prometheus"; mode = "0750"; }
     { directory = "/var/lib/loki"; user = "loki"; group = "loki"; mode = "0750"; }
     { directory = "/var/lib/grafana"; user = "grafana"; group = "grafana"; mode = "0750"; }
+    # F14: Authentik SSO data (media/storage) survives reboots (impermanence).
+    { directory = "/var/lib/authentik"; user = "authentik"; group = "authentik"; mode = "0750"; }
   ];
 
   system.stateVersion = "26.05";

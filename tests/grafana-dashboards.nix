@@ -60,7 +60,7 @@ let
   providers = cfg.services.grafana.provision.dashboards.settings.providers;
 in
 # --- Dashboards ship from the repository and are provisioned ---
-assert lib.length dashboardFiles >= 3;
+assert lib.length dashboardFiles >= 4;
 assert builtins.any (p: (p.name or "") == "lattice") providers;
 # The provider must be pointed at the dashboards directory. We do not compare
 # store paths for equality nor readDir the provider path: the module's
@@ -156,9 +156,34 @@ assert lib.hasInfix "request_id=\"\${request_id}\"" (joinExprs lokiDb);
 assert !lib.hasInfix "request_id=~\"\${request_id}\"" (joinExprs llm);
 assert !lib.hasInfix "request_id=~\"\${request_id}\"" (joinExprs lokiDb);
 
+# --- f12-06 native_model dimension (per-provider dashboard) ---
+# The provider's real model id (native_model) is now a first-class dimension:
+# every metric carries it and the dashboards slice by it instead of the logical
+# model (which is identical across providers and hid who actually answered).
+# 1. A dedicated per-provider dashboard exists with a stable uid and repeats its
+#    block per provider value (row repeat), so each provider gets its own view.
+let providersDb = byUid "gateway-providers"; in
+assert providersDb.title != "";
+assert lib.any (p: (p.type or "") == "row" && (p.repeat or "") == "provider")
+  providersDb.panels;
+# 2. All metric-bearing dashboards filter/slice by native_model, never by the
+#    plain model label (the old dimension that hid which provider answered).
+assert lib.hasInfix "native_model=" (joinExprs llm);
+assert lib.hasInfix "native_model=" (joinExprs providersDb);
+assert lib.hasInfix "label_values(llm_requests_total, native_model)" (builtins.toJSON llm.templating.list);
+# 3. The per-provider dashboard keeps each row scoped to exactly one provider:
+#    every panel filters by provider = "$provider" (exact match), not a regex.
+assert lib.hasInfix "provider=\"$provider\"" (joinExprs providersDb);
+assert !lib.hasInfix "provider=~\"$provider\"" (joinExprs providersDb);
+# 4. The f12-05 behaviour must survive: no plain `model=~"$model"` filter (the
+#    old logical-model dimension is gone from the overview too).
+assert !lib.hasInfix "model=~\"$model\"" (joinExprs llm);
+assert !lib.hasInfix "model=~\"$model\"" (joinExprs providersDb);
+
 pkgs.runCommand "grafana-dashboards-contract" { } ''
   echo "f12-04 grafana dashboards contract holds:
   dashboards: ${builtins.concatStringsSep ", " (map (d: d.uid) dashboards)}
   environment label (scrape): ${(builtins.elemAt gatewayJob.static_configs 0).labels.environment}
-  f12-05 polish: status used, p50/p99 percentiles, data links to investigation" > "$out"
+  f12-05 polish: status used, p50/p99 percentiles, data links to investigation
+  f12-06 native_model: per-provider dashboard repeats per provider, native_model dimension on overview" > "$out"
 ''

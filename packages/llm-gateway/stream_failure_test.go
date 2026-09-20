@@ -129,10 +129,10 @@ func TestRecordStreamFailureCooldownHealthMetrics(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := scrape.String()
-	if !strings.Contains(text, `llm_stream_breaks_total{provider="a",error_type="5xx"} 1`) {
+	if !strings.Contains(text, `llm_stream_breaks_total{provider="a",native_model="native-model",error_type="5xx"} 1`) {
 		t.Errorf("stream break counter missing/inaccurate:\n%s", text)
 	}
-	if !strings.Contains(text, `llm_attempts_total{provider="a",error_type="5xx"} 1`) {
+	if !strings.Contains(text, `llm_attempts_total{provider="a",native_model="native-model",error_type="5xx"} 1`) {
 		t.Errorf("branch attempt counter missing/inaccurate:\n%s", text)
 	}
 	if strings.Contains(text, `llm_stream_breaks_total{provider="b"`) {
@@ -233,7 +233,7 @@ func TestStreamMidStreamBreakEmitsStructuredError(t *testing.T) {
 	if err := runner.Metrics().WriteExposition(&scrape); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(scrape.String(), `llm_stream_breaks_total{provider="a",error_type="5xx"} 1`) {
+	if !strings.Contains(scrape.String(), `llm_stream_breaks_total{provider="a",native_model="native-model",error_type="5xx"} 1`) {
 		t.Errorf("stream break counter missing after mid-stream 5xx:\n%s", scrape.String())
 	}
 }
@@ -375,7 +375,7 @@ func TestStreamMissingFinishReasonEmitsStructuredError(t *testing.T) {
 	if err := runner.Metrics().WriteExposition(&scrape); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(scrape.String(), `llm_stream_breaks_total{provider="a",error_type="5xx"} 1`) {
+	if !strings.Contains(scrape.String(), `llm_stream_breaks_total{provider="a",native_model="native-model",error_type="5xx"} 1`) {
 		t.Errorf("stream break counter missing after missing-finish-reason close:\n%s", scrape.String())
 	}
 }

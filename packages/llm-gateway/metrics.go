@@ -19,10 +19,13 @@ import (
 var version = "0.1.0"
 
 // Metrics is the gateway's numeric observability surface. It is deliberately
-// label-restricted (low cardinality only: route, provider, model, status and
-// error_type are the only dimensions) and rendered on demand in the Prometheus
-// text exposition format. request_id, session_id, api_key, client_ip or any
-// prompt material never become labels.
+// label-restricted (low cardinality only: route, model, provider, native_model,
+// status and error_type are the only dimensions) and rendered on demand in the
+// Prometheus text exposition format. request_id, session_id, api_key,
+// client_ip or any prompt material never become labels. "model" is always the
+// logical gateway model (1:1 with the of a request), "native_model" the
+// provider's real model ID: both are bounded by the catalog (provider × native
+// model, ~a dozen live pairs), so cardinality stays low.
 //
 // The registry is a hand-rolled minimal implementation on the standard
 // library: the repository carries no vendor metrics dependency, and the
@@ -31,12 +34,12 @@ var version = "0.1.0"
 type Metrics struct {
 	mu sync.RWMutex
 
-	// requestsTotal counts completed client requests by route, model, winning
-	// provider and final status.
+	// requestsTotal counts completed client requests by route, model (logical),
+	// winning provider, native model and final status.
 	requestsTotal *counterVec
-	// attemptTotal counts upstream branch attempts by provider and terminal
-	// error class (the empty error_type labels a successful attempt, mirroring
-	// the event-level model).
+	// attemptTotal counts upstream branch attempts by provider, native model and
+	// terminal error class (the empty error_type labels a successful attempt,
+	// mirroring the event-level model).
 	attemptTotal *counterVec
 	// fallbackTotal counts explicit fallback transitions. The same transition
 	// may fire multiple times per request; the counter reflects that.
@@ -54,17 +57,19 @@ type Metrics struct {
 	// the retries that did not succeed observable too.
 	chainRetriesTotal *counterVec
 	// streamBreaks counts mid-stream (post-selection) winner stream failures
-	// by provider and error class. These failures escape the scheduler (the
-	// route graph already returned a winner); the stream-failure feedback
-	// increments llm_attempts_total too, and this dedicated slice keeps
-	// mid-stream failures observable apart from branch-scoped attempts.
+	// by provider, native model and error class. These failures escape the
+	// scheduler (the route graph already returned a winner); the
+	// stream-failure feedback increments llm_attempts_total too, and this
+	// dedicated slice keeps mid-stream failures observable apart from
+	// branch-scoped attempts.
 	streamBreaks *counterVec
 	// balanceSelections counts the provider chosen by the balance action per
 	// route, so the p2c / round_robin / adaptive selection movement is
 	// observable without reading scheduler internals.
 	balanceSelections *counterVec
 	// inputTokens / outputTokens accumulate usage from responses and streams,
-	// keyed by model (zero when a provider omits usage).
+	// keyed by logical model, provider and native model (zero when a provider
+	// omits usage).
 	inputTokens  *counterVec
 	outputTokens *counterVec
 	// requestDuration / ttft are cumulative histograms with stable buckets so
@@ -78,12 +83,13 @@ type Metrics struct {
 	// snapshotted by the runner alongside balance selections.
 	balanceHealth *gaugeVec
 	// cooldownUntil is the unix-second deadline until which a (provider,
-	// model) pair is cooling, snapshotted by the runner whenever cooldown
-	// state changes. A pair that is not cooling is absent from the family
-	// (not zero): absence is the healthy state, and a literal zero deadline
-	// would be indistinguishable from a just-expired (and thus no longer
-	// cooling) window. Panels compute the remaining window at scrape time with
-	// deadline − time() so the value decays truthfully between snapshots.
+	// native_model) pair is cooling, snapshotted by the runner whenever
+	// cooldown state changes. A pair that is not cooling is absent from the
+	// family (not zero): absence is the healthy state, and a literal zero
+	// deadline would be indistinguishable from a just-expired (and thus no
+	// longer cooling) window. Panels compute the remaining window at scrape
+	// time with deadline − time() so the value decays truthfully between
+	// snapshots.
 	cooldownUntil *gaugeVec
 
 	startTime time.Time
@@ -106,64 +112,68 @@ var (
 
 func newMetrics() *Metrics {
 	return &Metrics{
-		requestsTotal:     newCounterVec([]string{"route", "model", "provider", "status"}),
-		attemptTotal:      newCounterVec([]string{"provider", "error_type"}),
-		streamBreaks:      newCounterVec([]string{"provider", "error_type"}),
+		requestsTotal:     newCounterVec([]string{"route", "model", "provider", "native_model", "status"}),
+		attemptTotal:      newCounterVec([]string{"provider", "native_model", "error_type"}),
+		streamBreaks:      newCounterVec([]string{"provider", "native_model", "error_type"}),
 		fallbackTotal:     newCounterVec([]string{"from_provider", "to_provider", "reason"}),
 		continueTotal:     newCounterVec([]string{"from_provider", "to_provider", "kind"}),
 		chainRetriesTotal: newCounterVec([]string{"status"}),
 		balanceSelections: newCounterVec([]string{"route", "provider"}),
-		inputTokens:       newCounterVec([]string{"model"}),
-		outputTokens:      newCounterVec([]string{"model"}),
-		requestDuration:   newHistogramVec([]string{"route", "model"}, requestDurationBucketsSec),
-		ttft:              newHistogramVec([]string{"model"}, ttftBucketsSec),
+		inputTokens:       newCounterVec([]string{"model", "provider", "native_model"}),
+		outputTokens:      newCounterVec([]string{"model", "provider", "native_model"}),
+		requestDuration:   newHistogramVec([]string{"route", "model", "provider", "native_model"}, requestDurationBucketsSec),
+		ttft:              newHistogramVec([]string{"model", "provider", "native_model"}, ttftBucketsSec),
 		requestsInFlight:  newGaugeVec([]string{"provider"}),
 		balanceHealth:     newGaugeVec([]string{"provider"}),
-		cooldownUntil:     newGaugeVec([]string{"provider", "model"}),
+		cooldownUntil:     newGaugeVec([]string{"provider", "native_model"}),
 		startTime:         time.Now(),
 	}
 }
 
 // ObserveRequest records one completed client request at the request level.
 // The duration spans the whole request, the provider is the winner and status
-// is "success" or "failed".
-func (m *Metrics) ObserveRequest(route, model, provider, status string, duration time.Duration) {
+// is "success" or "failed". model is the logical gateway model; native is the
+// winner's provider model ID (empty when no branch ever succeeded, e.g. a
+// pre-dispatch rejection).
+func (m *Metrics) ObserveRequest(route, model, provider, native, status string, duration time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.requestsTotal.inc(route, model, provider, status)
-	m.requestDuration.observe([]string{route, model}, duration.Seconds())
+	m.requestsTotal.inc(route, model, provider, native, status)
+	m.requestDuration.observe([]string{route, model, provider, native}, duration.Seconds())
 }
 
 // ObserveAttempt records one completed upstream branch. errorType is the
-// terminal ErrorClass string and the empty string labels a success.
-func (m *Metrics) ObserveAttempt(provider string, errorType string) {
+// terminal ErrorClass string and the empty string labels a success. native is
+// the branch target's provider model ID.
+func (m *Metrics) ObserveAttempt(provider, native, errorType string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.attemptTotal.inc(provider, errorType)
+	m.attemptTotal.inc(provider, native, errorType)
 }
 
-// ObserveTTFT records the winner's time-to-first-meaningful-event.
-func (m *Metrics) ObserveTTFT(model string, duration time.Duration) {
+// ObserveTTFT records the winner's time-to-first-meaningful-event. provider
+// is the winner's provider, native the winner's provider model ID.
+func (m *Metrics) ObserveTTFT(model, provider, native string, duration time.Duration) {
 	if duration <= 0 {
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.ttft.observe([]string{model}, duration.Seconds())
+	m.ttft.observe([]string{model, provider, native}, duration.Seconds())
 }
 
 // ObserveTokens accumulates usage tokens for a model. Providers that omit
 // usage contribute zero; the caller decides whether zero means "no tokens" or
 // "unknown" (the structured events mark unknown usage explicitly, metrics do
-// not carry an unknown carrier dimension).
-func (m *Metrics) ObserveTokens(model string, input, output int64) {
+// not carry an unknown carrier dimension). native is the provider model ID.
+func (m *Metrics) ObserveTokens(model, provider, native string, input, output int64) {
 	if input == 0 && output == 0 {
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.inputTokens.add(input, model)
-	m.outputTokens.add(output, model)
+	m.inputTokens.add(input, model, provider, native)
+	m.outputTokens.add(output, model, provider, native)
 }
 
 // IncrInFlight and DecrInFlight drive the in-flight gauge; they are kept
@@ -182,11 +192,12 @@ func (m *Metrics) DecrInFlight(provider string) {
 }
 
 // ObserveStreamBreak records one mid-stream (post-selection) winner stream
-// failure. errorType is the terminal ErrorClass string.
-func (m *Metrics) ObserveStreamBreak(provider, errorType string) {
+// failure. errorType is the terminal ErrorClass string, native the winner's
+// provider model ID.
+func (m *Metrics) ObserveStreamBreak(provider, native, errorType string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.streamBreaks.inc(provider, errorType)
+	m.streamBreaks.inc(provider, native, errorType)
 }
 
 // ObserveFallback records an explicit fallback transition.
@@ -232,17 +243,18 @@ func (m *Metrics) ObserveBalanceHealth(provider string, health float64) {
 }
 
 // ObserveCooldownUntil records the unix-second deadline until which a
-// (provider, model) pair is cooling. A zero deadline clears the pair from the
-// family: a cleared (expired or success-reset) cooldown must not linger as a
-// stale entry, so the dashboard's presence-based panels stay truthful.
-func (m *Metrics) ObserveCooldownUntil(provider, model string, until time.Time) {
+// (provider, native_model) pair is cooling. A zero deadline clears the pair
+// from the family: a cleared (expired or success-reset) cooldown must not
+// linger as a stale entry, so the dashboard's presence-based panels stay
+// truthful.
+func (m *Metrics) ObserveCooldownUntil(provider, native string, until time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if until.IsZero() {
-		m.cooldownUntil.clear(provider, model)
+		m.cooldownUntil.clear(provider, native)
 		return
 	}
-	m.cooldownUntil.set(provider, model, float64(until.UnixNano())/1e9)
+	m.cooldownUntil.set(provider, native, float64(until.UnixNano())/1e9)
 }
 
 // WriteExposition renders the full metric surface in the Prometheus text
@@ -266,20 +278,20 @@ func (m *Metrics) WriteExposition(writer io.Writer) error {
 	emit(fmt.Sprintf("llm_gateway_build_info{version=%q,service=%q} 1", version, metricService))
 	emitRuntimeMetrics(buffered, m.startTime)
 
-	m.requestsTotal.write(buffered, "llm_requests_total", "Completed client requests by route, model, winning provider and status.")
-	m.attemptTotal.write(buffered, "llm_attempts_total", "Upstream branch attempts by provider and terminal error type.")
-	m.streamBreaks.write(buffered, "llm_stream_breaks_total", "Mid-stream (post-selection) winner stream failures by provider and error type.")
+	m.requestsTotal.write(buffered, "llm_requests_total", "Completed client requests by route, logical model, winning provider, native model and status.")
+	m.attemptTotal.write(buffered, "llm_attempts_total", "Upstream branch attempts by provider, native model and terminal error type.")
+	m.streamBreaks.write(buffered, "llm_stream_breaks_total", "Mid-stream (post-selection) winner stream failures by provider, native model and error type.")
 	m.fallbackTotal.write(buffered, "llm_fallbacks_total", "Explicit fallback transitions by source and destination provider.")
 	m.continueTotal.write(buffered, "llm_continues_total", "In-gateway stream continuations (continue rule) by source/destination provider and kind (takeover vs chain_retry).")
 	m.chainRetriesTotal.write(buffered, "llm_chain_retries_total", "Whole-chain retries of an exhausted continue chain by outcome (started, completed, exhausted).")
 	m.balanceSelections.write(buffered, "llm_balance_selections_total", "Provider chosen by the balance action per route.")
-	m.inputTokens.write(buffered, "llm_input_tokens_total", "Accumulated input tokens by model.")
-	m.outputTokens.write(buffered, "llm_output_tokens_total", "Accumulated output tokens by model.")
+	m.inputTokens.write(buffered, "llm_input_tokens_total", "Accumulated input tokens by logical model, provider and native model.")
+	m.outputTokens.write(buffered, "llm_output_tokens_total", "Accumulated output tokens by logical model, provider and native model.")
 	m.requestsInFlight.write(buffered, "llm_requests_in_flight", "Current in-flight upstream branches by provider.")
 	m.balanceHealth.write(buffered, "llm_balance_health", "Latest balance health score per provider (0 unhealthy … 1 healthy).")
-	m.cooldownUntil.write(buffered, "llm_cooldown_until_seconds", "Unix seconds until a cooling provider model pair re-enters the candidate pool.")
-	m.requestDuration.write(buffered, "llm_request_duration_seconds", "Request duration histogram by route and model.")
-	m.ttft.write(buffered, "llm_ttft_seconds", "Time to first meaningful event histogram by model.")
+	m.cooldownUntil.write(buffered, "llm_cooldown_until_seconds", "Unix seconds until a cooling provider native-model pair re-enters the candidate pool.")
+	m.requestDuration.write(buffered, "llm_request_duration_seconds", "Request duration histogram by route, logical model, provider and native model.")
+	m.ttft.write(buffered, "llm_ttft_seconds", "Time to first meaningful event histogram by logical model, provider and native model.")
 
 	return buffered.Flush()
 }

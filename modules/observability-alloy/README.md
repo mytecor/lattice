@@ -8,13 +8,17 @@ observability). Читает systemd journal и шлёт структуриро�
 
 `loki.source.journal` читает unit `llm-gateway.service` (`matches =
 "_SYSTEMD_UNIT=llm-gateway.service"`), `loki.process` парсит JSON-строку события
-и кладёт димензии в **structured metadata** (`request_id`, `route`, `status_code`,
-`error_type`, `provider`, `model`, `attempts`, `event`), а в лейблы оставляет
-только константный `service="llm-gateway"`. `loki.write` пушит в loopback Loki.
+и кладёт димензии в **structured metadata** (`request_id`, `route`, `route_stage`,
+`status_code`, `error_type`, `provider`, `native_model`, `logical_model`,
+`attempts`, `event`), а в лейблы оставляет только константный
+`service="llm-gateway"`. `loki.write` пушит в loopback Loki.
 
 Димензии не становятся лейблами: соглашение F12 о низкой cardinality. Поиск по
 `request_id` — через structured metadata (см.
-[`observability-loki`](../observability-loki/README.md)).
+[`observability-loki`](../observability-loki/README.md)). `native_model` — это
+реальный id модели у провайдера (например `claude-sonnet-4` у Anthropic или
+`gpt-4o` у OpenAI), `logical_model` — логическое имя из маппинга gateway
+(`standard`, `fast` и т.п.); оба остаются неловерческим, неиндексируемым полем.
 
 ## Песочница
 

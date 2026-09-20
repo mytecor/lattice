@@ -87,6 +87,50 @@ http://grafana.mytecor-homelab.local/
 Сам Grafana слушает на loopback `127.0.0.1:9215`; в LAN открыт только Caddy на порту 80.
 Admin-логин защищён паролем из agenix-секрета (см. `modules/grafana/README.md`).
 
+Authentik (центральный SSO, F14) доступен через тот же Caddy ingress:
+
+```text
+http://auth.mytecor-homelab.local/
+```
+
+Сам Authentik слушает loopback `127.0.0.1:9220`; в LAN открыт только Caddy на порту 80.
+Входы пользовательских сервисов, подключённых к SSO (ForwardAuth или нативный OIDC),
+ведут на эту логин-страницу как на единственную точку входа. Секреты (SECRET_KEY,
+bootstrap token, bootstrap password) — только agenix runtime-файлами через EnvironmentFile,
+см. [modules/authentik/README.md](../../modules/authentik/README.md).
+
+### Оператор: живое подтверждение Authentik (F14)
+
+Всё развёрнуто декларативно (module, sso-профиль, секреты); живых шагов на ноде не выполнялось.
+Для подтверждения на живой ноде выполните по порядку:
+
+1. **Подготовка ноды**: `nixos-rebuild switch` (или comin-цикл) — реально поднимутся
+   postgresql, юниты `authentik-migrate`/`server`/`worker`, Caddy-сайт `auth` и mDNS-алиас
+   `auth-mdns`. Проверка юнитов и логов:
+
+   ```sh
+   sudo systemctl status authentik-server authentik-worker authentik-migrate
+   sudo journalctl -u authentik-server -n 50 --no-pager
+   ```
+
+2. **Достижимость**: с Mac
+
+   ```sh
+   curl --fail http://auth.mytecor-homelab.local/if/flow/initial/       # страница логина
+   curl --fail http://acp-ui.mytecor-homelab.local/                     # 302/401 до входа
+   ```
+
+3. **Оператор-аккаунт**: bootstrap-учётные данные лежат в agenix-секретах
+   (`authentik-bootstrap-*`); токен — постоянный (intent=api, expiring=false) для
+   декларативного provisioning. Войти: `http://auth.mytecor-homelab.local/if/flow/initial/`
+
+4. **Provisioning провайдеров**: выполнить blueprint/скрипт из `tasks/f14/` (появится при
+   создании) или вручную через REST с bootstrap-токеном: OIDC-провайдер (Grafana),
+   ForwardAuth endpoint для acp-ui. Идемпотентно, источник истины — репозиторий.
+
+5. **Проверка Grafana через SSO**: http://grafana.mytecor-homelab.local/ → редирект на
+   `auth`, вход → admin-роль из группы `authentik Admins`.
+
 Слушатель работает как пользователь `rnsh` без sudo/root-привилегий. Его destination:
 `4cf57c92d739f498d2d007b79da66624`. Этот адрес получен по доверенному SSH-каналу; fingerprint
 не следует принимать заново из недоверенного сетевого анонса при смене identity.
