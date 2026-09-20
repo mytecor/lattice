@@ -108,6 +108,22 @@
 - **Зависит от:** [F4](#f4-полезная-нагрузка), [F2](#f2-секреты-и-идентичность)
 - **Не блокирует:** [F10](#f10-disposable-worker), [F11](#f11-controller).
 
+### [F15. Разработка с ноды (node dev-loop)](./roadmap/f15-node-dev-loop/README.md)
+
+> Полный цикл работы над Lattice прямо с ноды через ACP: сессии открываются в рабочем checkout
+> на ноде, публикация `main` — в Radicle и GitHub с самой ноды, deploy — штатным `comin`.
+
+- **Статус:** ⏳ только заведена 2026-09-20 — [f15-01](./roadmap/f15-node-dev-loop/f15-01-workspace-checkout.md)
+  (рабочий checkout на ноде + `lattice.pi-acp-daemon.defaultCwd`),
+  [f15-02](./roadmap/f15-node-dev-loop/f15-02-publish-access.md) (Radicle peer-identity ноды +
+  GitHub deploy key), [f15-03](./roadmap/f15-node-dev-loop/f15-03-dev-loop-acceptance.md)
+  (acceptance полного цикла).
+- **Готово, когда:** из ACP-сессии на ноде коммит доезжает до Radicle и GitHub одним
+  `git push publish main` и применяется нодой через comin; состояние переживает reboot.
+- **Зависит от:** [F4](#f4-полезная-нагрузка) (f4-01 выполнен), [F8](#f8-интерактивный-pi)
+- **Не блокирует:** [F10](#f10-disposable-worker), [F11](#f11-controller) — workspace/cwd
+  и push-доступы переиспользуются f10-04, но F10 от них не зависит.
+
 ## Выполненные (в порядке закрытия)
 
 ### [F2. Секреты и идентичность](./roadmap/f2-secrets-identity/README.md)

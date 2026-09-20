@@ -1,0 +1,28 @@
+# F15. Разработка с ноды (node dev-loop)
+
+Полный цикл работы над Lattice прямо с ноды через ACP: ACP-сессия (Ferngeist / acp-ui) открывается
+в рабочем checkout Lattice на ноде, агент коммитит и публикует `main` одновременно в Radicle и
+GitHub (общий remote `publish` по правилу из [DEPLOYMENT.md](../../DEPLOYMENT.md)), а нода
+применяет коммит через штатный `comin` — на том же железе, где работает её собственная ACP-сессия.
+
+До этой фазы нода умеет только получать `main` (seed + comin из f4-01) и обслуживать ACP-сессии
+(f8-06), но сессии стартуют в `/root` (хардкод `defaultCwd` в
+[`modules/pi-acp-daemon/config.nix`](../../modules/pi-acp-daemon/config.nix)) без рабочего
+checkout и без прав публикации: push в Radicle требует peer-identity ноды, push в GitHub —
+credential. Рабочая копия, ключи и опция cwd закрывают dev-loop; они же переиспользуются
+контейнерным Pi runtime из [f10-04](../f10-disposable-worker/f10-04-pi-rpc-runner.md), поэтому
+работа не выбрасывается при переходе к F10.
+
+Задачи: [f15-01](./f15-01-workspace-checkout.md),
+[f15-02](./f15-02-publish-access.md), [f15-03](./f15-03-dev-loop-acceptance.md).
+
+**Критерий готовности:** из ACP-сессии на ноде коммит доезжает до Radicle и GitHub одним
+`git push publish main` и применяется нодой через comin; checkout, ключи и конфигурация переживают
+reboot (impermanence); `nix flake check --all-systems --no-build` гоняется нативно на ноде.
+
+**Осознанно откладываем (до F…):** возврат `pi-acp-daemon` к strict sandbox —
+запись 5 [BACKLOG.md](../BACKLOG.md) (не специфика этой фичи); контейнерная execution boundary —
+[F10](../f10-disposable-worker/README.md); auth на ACP endpoint — запись 4
+[BACKLOG.md](../BACKLOG.md); мульти-воркспейсы и несколько checkout'ов на ноде — по потребности
+после подтверждения одного цикла; запуск публикаций не-интерактивным агентом без человека —
+[F11](../f11-controller/README.md).
