@@ -428,15 +428,20 @@ func (r *Runner) buildDynamicPool(route *compiledRoute, _ ExecuteRequest, runtim
 		}
 		pool = filtered
 	}
-	return r.availableFailOpen(pool), nil
+	return r.availableFromPool(pool, runtime.strictAvailability), nil
 }
 
-// availableFailOpen skips cooling (provider, model) pairs and fails open with
-// the full pool when every target is cooling, so the route is never
-// artificially idle.
-func (r *Runner) availableFailOpen(pool []Target) []Target {
+// availableFromPool filters the pool against cooling (provider, model) pairs.
+// A non-strict pool fails open with the full pool when every target is
+// cooling, so a route is never artificially idle because one provider cools.
+// A strict pool (a continuation with the cached-exclusion strictAvailability
+// policy) does NOT fail open: when everything is cooling, it returns no
+// targets, so the continuation never re-races a still-cooling provider that
+// just broke. The caller then decides (chain-retry budget, terminal error)
+// instead of burning the re-dispatch on known-dead carriers.
+func (r *Runner) availableFromPool(pool []Target, strict bool) []Target {
 	available := r.availableTargets(pool)
-	if len(available) == 0 {
+	if len(available) == 0 && !strict {
 		return append([]Target(nil), pool...)
 	}
 	return available
@@ -445,10 +450,10 @@ func (r *Runner) availableFailOpen(pool []Target) []Target {
 // buildHedgeBatch derives the hedge target route's runtime pool (the full
 // ordered selection, not yet capped): the hedge target's unused routing policy
 // and race count are applied at launch time, because the request's used set
-// grows while the source route races. Here only cooling (with fail-open) and
-// the lease promotion are applied.
+// grows while the source route races. Here only cooling (honoring
+// strictAvailability) and the lease promotion are applied.
 func (r *Runner) buildHedgeBatch(logical string, target *compiledRoute, _ ExecuteRequest, runtime *routeRuntime) []Target {
-	pool := r.availableFailOpen(target.Pool)
+	pool := r.availableFromPool(target.Pool, runtime.strictAvailability)
 	if len(pool) == 0 {
 		return nil
 	}

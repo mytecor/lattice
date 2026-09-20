@@ -78,6 +78,14 @@ type routeRuntime struct {
 	// be re-dispatched, regardless of the route's unused policy. It is empty for
 	// fresh requests and only populated by ContinueStream.
 	exclude map[string]bool
+	// strictAvailability disables the availability fail-open: when every
+	// candidate is cooling, a strict runtime returns no targets instead of
+	// re-adding the whole (cooling) pool. Continuations must never re-race a
+	// provider that is still cooling — a cooling provider just broke, and
+	// fail-open would make the continuation re-hit the upstream it exists to
+	// flee, burning the chain-retry budget on known-dead carriers. Fresh
+	// requests keep fail-open so a single cooling provider never idles a route.
+	strictAvailability bool
 	// attempts counts the route executions actually dispatched by this request
 	// graph (each raceRoute that launched branches), so request_completed and
 	// llm_attempt events can report how many upstream rounds happened.

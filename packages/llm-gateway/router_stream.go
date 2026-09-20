@@ -61,6 +61,12 @@ func (r *Runner) ContinueStream(ctx context.Context, logical string, request Exe
 	}
 	request.Body = rewritten
 	runtime := newRouteRuntime(entry)
+	// A continuation must never re-race a provider that is still cooling
+	// (it just broke): the strict policy disables the availability fail-open,
+	// so an all-cooling pool yields no targets here instead of re-adding the
+	// whole cooling pool that fail-open would otherwise bring back. Fresh
+	// selection keeps fail-open; a continuation deliberately does not.
+	runtime.strictAvailability = true
 	for _, provider := range broken {
 		if provider != "" {
 			runtime.exclude[provider] = true

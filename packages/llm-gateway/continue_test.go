@@ -491,32 +491,28 @@ func TestServerEmptyCompletionIsNotToolCallTurn(t *testing.T) {
 // when every provider in the pool breaks during the request (the continue
 // chain is exhausted), the gateway re-dispatches the whole chain from the top
 // with the accumulated partial output reshared — so the client still gets a
-// completed turn instead of a terminal error. Each provider breaks once, the
-// chain exhausts, and the fresh pass lets one provider answer for real.
-func TestServerChainRetryOnExhaustedChain(t *testing.T) {
+// TestServerChainRetryFleesCoolingProvidersOnExhaustedChain pins the fix for
+// the "upstream stream failed persists" report: when every provider in the
+// pool broke mid-stream and is still cooling, the whole-chain retry must NOT
+// re-race them (fail-open would re-hit the just-broke uplink it exists to
+// flee, burning the retry budget on known-dead carriers and pushing the error
+// to the client / pi which then restarts from scratch). The chain-retry
+// dispatch honors cooldown strictly, so an all-cooling pool yields no winner:
+// the re-dispatch does not contact any still-cooling provider and the request
+// surfaces the terminal retryable partial error. The retry value is earned
+// only once a provider's cooldown expires (see the clock test).
+func TestServerChainRetryFleesCoolingProvidersOnExhaustedChain(t *testing.T) {
 	compiled := continueConfigRetries(t, 1)
 	var callsA, callsB int
-	var mu sync.Mutex
-	var bodies [][]byte
 	executor := &fakeExecutor{
 		stream: func(ctx context.Context, target Target, request ExecuteRequest) (<-chan StreamEvent, *CallError) {
-			mu.Lock()
-			bodies = append(bodies, append([]byte(nil), request.Body...))
-			mu.Unlock()
 			ch := make(chan StreamEvent, 3)
 			switch target.Provider {
 			case "a":
 				callsA++
-				if callsA == 1 {
-					// Initial race winner: relays partial, then breaks without a
-					// finish_reason.
-					ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"from-a-part"}}]}`), Meaningful: true}
-					close(ch)
-					return ch, nil
-				}
-				// Chain-retry winner: answers for real, then finishes.
-				ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"final-answer"}}]}`), Meaningful: true}
-				ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`), Meaningful: false}
+				// Initial race winner: relays partial, then breaks without a
+				// finish_reason.
+				ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"from-a-part"}}]}`), Meaningful: true}
 				close(ch)
 				return ch, nil
 			case "b":
@@ -529,25 +525,9 @@ func TestServerChainRetryOnExhaustedChain(t *testing.T) {
 					}()
 					return ch, nil
 				}
-				if callsB == 2 {
-					// First takeover target: relays partial, then breaks.
-					ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"from-b-part"}}]}`), Meaningful: true}
-					close(ch)
-					return ch, nil
-				}
-				if callsB == 3 {
-					// Second takeover target (fail-open keeps b eligible while
-					// cooling): relays more partial, then breaks again. This second
-					// success adds b to the broken set, exhausting the chain.
-					ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"from-b-part-2"}}]}`), Meaningful: true}
-					close(ch)
-					return ch, nil
-				}
-				// Chain-retry loser: silent until cancelled (a answers first).
-				go func() {
-					<-ctx.Done()
-					close(ch)
-				}()
+				// Takeover target: relays partial, then breaks too.
+				ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"from-b-part"}}]}`), Meaningful: true}
+				close(ch)
 				return ch, nil
 			}
 			panic("unknown provider")
@@ -557,68 +537,57 @@ func TestServerChainRetryOnExhaustedChain(t *testing.T) {
 
 	body := postStream(t, api.URL)
 
-	// All four waves of output must be relayed on the same SSE stream, ending
-	// in a real answer and [DONE], with no client-facing error.
-	if !strings.Contains(body, "from-a-part") {
-		t.Fatalf("initial winner partial must be relayed: %s", body)
+	// Both provider partials relayed on the same stream.
+	if !strings.Contains(body, "from-a-part") || !strings.Contains(body, "from-b-part") {
+		t.Fatalf("both provider partials must be relayed before the error: %s", body)
 	}
-	if !strings.Contains(body, "from-b-part") {
-		t.Fatalf("first takeover partial must be relayed: %s", body)
+	// The chain is exhausted: BOTH providers broke and are still cooling, so
+	// the whole-chain retry must not re-race them. It surfaces the terminal
+	// retryable partial error rather than burning the retry on known-dead
+	// carriers or ending the turn with [DONE].
+	var payload struct {
+		Error struct {
+			Message    string `json:"message"`
+			Type       string `json:"type"`
+			StatusCode int    `json:"status_code"`
+			Retryable  bool   `json:"retryable"`
+			Partial    bool   `json:"partial"`
+		} `json:"error"`
 	}
-	if !strings.Contains(body, "from-b-part-2") {
-		t.Fatalf("second takeover partial must be relayed: %s", body)
+	if err := json.Unmarshal(sseErrorData(t, body), &payload); err != nil {
+		t.Fatalf("structured error payload: %v\n%s", err, body)
 	}
-	if !strings.Contains(body, "final-answer") {
-		t.Fatalf("chain retry must relay the final answer: %s", body)
+	if !payload.Error.Retryable || !payload.Error.Partial || payload.Error.StatusCode != 502 {
+		t.Fatalf("exhausted all-cooling chain must surface retryable+partial 5xx: %+v", payload.Error)
 	}
-	if strings.Contains(body, "event: error") {
-		t.Fatalf("chain retry must not surface a client-facing error: %s", body)
+	if strings.Contains(body, "data: [DONE]") {
+		t.Fatalf("an exhausted all-cooling chain must not end with [DONE]: %s", body)
 	}
-	if !strings.Contains(body, "data: [DONE]") {
-		t.Fatalf("chain retry must complete the turn with [DONE]: %s", body)
+	// The whole-chain retry starting pass honored cooldown: neither provider
+	// is re-contacted after it broke, exactly as a continuation must flee a
+	// still-cooling uplink. a races the win once; b races the initial loss
+	// plus the single takeover.
+	if callsA != 1 {
+		t.Fatalf("provider a must not be re-contacted once it broke: calls=%d, want 1", callsA)
 	}
-	// With the takeover ordering fix (the just-broke provider is excluded from
-	// the immediate takeover), the corrected path is: a wins the initial race
-	// then breaks; the takeover excludes a and lands on b (takeover 1), which
-	// breaks too; excluding both empties the pool for the immediate takeover,
-	// so a whole-chain retry re-races the full pool (fail-open lets the cooled
-	// b win again), and b breaking there lets the final takeover land on a,
-	// which answers for real. So a is contacted 3 times (initial win, chain-
-	// retry loss, final win) and b 3 times (initial loss, takeover, chain-
-	// retry win) — the counts assert the corrected re-dispatch order, not a
-	// re-hit of the just-broke provider on the immediate takeover.
-	if callsA != 3 {
-		t.Fatalf("provider a calls = %d, want 3 (initial win + chain-retry loss + final win)", callsA)
+	if callsB != 2 {
+		t.Fatalf("provider b must be contacted for the race and the takeover only: calls=%d, want 2", callsB)
 	}
-	if callsB != 3 {
-		t.Fatalf("provider b calls = %d, want 3 (initial loss + takeover + chain-retry win)", callsB)
+	// The chain retry started (budget spent attempting a pass) but the pass
+	// found no available provider (both cooling) and reported exhausted — not
+	// completed, since no winner was selected.
+	met := scrape(t, runner.metrics)
+	if !strings.Contains(met, `llm_chain_retries_total{status="started"} 1`) {
+		t.Errorf("the whole-chain retry must be recorded as started:\n%s", met)
 	}
-	// The final chain-retry request must carry the reshared partial: the
-	// accumulated output of both earlier waves as an assistant message.
-	lastBody := string(bodies[len(bodies)-1])
-	if !strings.Contains(lastBody, `"role":"assistant"`) || !strings.Contains(lastBody, "from-a-part") || !strings.Contains(lastBody, "from-b-part") {
-		t.Fatalf("chain retry must reshape the accumulated partial into assistant context: %s", lastBody)
+	if !strings.Contains(met, `llm_chain_retries_total{status="exhausted"} 1`) {
+		t.Errorf("the all-cooling retry pass must be recorded as exhausted:\n%s", met)
 	}
-	// The retried winners' cooldown reflects their true outcomes: provider a
-	// broke in wave 1 but succeeded as the chain-retry winner, so its cooldown
-	// is cleared on success; provider b only ever broke (wave 2) and never
-	// succeeded, so it stays cooling.
-	t.Run("cooldown", func(t *testing.T) {
-		if got := runner.availableTargets([]Target{{Provider: "a", Model: "native-model"}}); len(got) != 1 {
-			t.Fatalf("provider a must be healthy again after winning the chain retry, available: %#v", got)
-		}
-		if got := runner.availableTargets([]Target{{Provider: "b", Model: "native-model"}}); len(got) != 0 {
-			t.Fatalf("provider b must stay cooling after its break, available: %#v", got)
-		}
-	})
+	if strings.Contains(met, `llm_chain_retries_total{status="completed"}`) {
+		t.Errorf("no winner was selected, so completed must stay absent:\n%s", met)
+	}
 }
 
-// TestRunnerChainRetryReracesWholePoolWithResharedPartial pins the runner-level
-// contract of a whole-chain retry (the let's-retry-the-whole-chain step): after
-// an exhausted chain (ContinueStream with every provider broken fails), a
-// re-dispatch with an empty broken set gives the whole pool a fresh pass and
-// reshapes the accumulated partial output into the request body. Deterministic
-// at the runner layer, independent of the SSE server's cooldown/fail-open
 // scheduling.
 func TestRunnerChainRetryReracesWholePoolWithResharedPartial(t *testing.T) {
 	compiled := continueConfig(t)
@@ -733,10 +702,11 @@ func TestRunnerChainRetryReracesWholePoolWithResharedPartial(t *testing.T) {
 // never as exhausted (no budget round was fully empty).
 func TestServerChainRetryBudgetExhausted(t *testing.T) {
 	compiled := continueConfigRetries(t, 1)
-	// Every provider always breaks after relaying a partial: no provider ever
-	// completes, so the chain exhausts, and the single chain retry also
-	// re-selects a winner that breaks again — the terminal error comes from the
-	// budget being spent, not from a retry that failed to dispatch.
+	// Every provider always breaks after relaying a partial, so no provider
+	// ever completes and both stay cooling for the whole request. The single
+	// whole-chain retry pass therefore finds no available (non-cooling)
+	// provider and exhausts the budget without selecting a winner — the
+	// request surfaces the terminal retryable partial 502.
 	breakAll := func(ctx context.Context, target Target, request ExecuteRequest) (<-chan StreamEvent, *CallError) {
 		ch := make(chan StreamEvent, 3)
 		ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"partial"}}]}`), Meaningful: true}
@@ -768,19 +738,19 @@ func TestServerChainRetryBudgetExhausted(t *testing.T) {
 	if payload.Error.StatusCode != 502 {
 		t.Errorf("exhausted chain must surface as 5xx: %+v", payload.Error)
 	}
-	// A single whole-chain retry ran and selected a winner (which then also
-	// broke); the terminal error is the next exhaustion with the budget spent,
-	// which is not itself a whole-chain retry. So: one started, one completed,
-	// never exhausted, and no pass looped past the budget.
+	// A single whole-chain retry ran (budget spent attempting a pass) but the
+	// strict-cooldown pass found no available provider — both are still
+	// cooling — so it reported exhausted rather than completed, and never
+	// re-contacted the broken providers.
 	met := scrape(t, runner.metrics)
 	if !strings.Contains(met, `llm_chain_retries_total{status="started"} 1`) {
 		t.Errorf("exactly one whole-chain retry must be recorded as started:\n%s", met)
 	}
-	if !strings.Contains(met, `llm_chain_retries_total{status="completed"} 1`) {
-		t.Errorf("the single retry selected a winner and must be recorded as completed:\n%s", met)
+	if !strings.Contains(met, `llm_chain_retries_total{status="exhausted"} 1`) {
+		t.Errorf("the retry pass over an all-cooling pool must be recorded as exhausted:\n%s", met)
 	}
-	if strings.Contains(met, `llm_chain_retries_total{status="exhausted"}`) {
-		t.Errorf("no whole-chain retry ran with an empty pool, so exhausted must stay absent:\n%s", met)
+	if strings.Contains(met, `llm_chain_retries_total{status="completed"}`) {
+		t.Errorf("no winner was selected (all providers cooling), so completed must stay absent:\n%s", met)
 	}
 }
 
@@ -808,4 +778,68 @@ func TestServerChainRetryBudgetZeroKeepsOldBehavior(t *testing.T) {
 	if got := scrape(t, runner.metrics); strings.Contains(got, "llm_chain_retries_total") {
 		t.Errorf("retries=0 must not emit any whole-chain retry series:\n%s", got)
 	}
+}
+
+// TestRunnerContinuationFleesCoolingProviderUntilCooldownExpires pins the
+// strict-cooldown continuation contract introduced for the "upstream stream
+// failed persists" report: a continuation must never re-race a provider that
+// is still cooling (it just broke), even when that provider is the only other
+// candidate and a non-strict (fresh-request) pool would fail-open onto it.
+// The retry "second chance" is preserved: once the provider's cooldown
+// expires, the continuation legitimately re-races it again. This is the
+// time-based recovery the whole-chain-retry budget is meant to deliver — but
+// only after the provider has had a real recovery window, never in the same
+// instant it broke.
+func TestRunnerContinuationFleesCoolingProviderUntilCooldownExpires(t *testing.T) {
+	compiled := continueConfig(t) // providers a, b; retries 0
+	current := time.Unix(1_700_000_000, 0)
+	executor := &fakeExecutor{
+		stream: func(ctx context.Context, target Target, request ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			ch := make(chan StreamEvent, 3)
+			ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"` + target.Provider + `-answer"}}]}`), Meaningful: true}
+			close(ch)
+			return ch, nil
+		},
+	}
+	runner := newRunner(compiled, newCatalog(compiled), executor)
+	runner.now = func() time.Time { return current }
+	request := ExecuteRequest{Kind: RequestChat, Body: []byte(`{"messages":[{"role":"user","content":"hi"}]}`)}
+	ctx := context.Background()
+	partial := &partialStreamOutput{Content: "x", GotText: true}
+
+	// Both providers break and cool down, staggered so a's window expires
+	// before b's. A strict continuation over an all-cooling pool must fail
+	// (no winner) rather than fail-open and re-race the just-broke carriers —
+	// the core of the fix.
+	cooldown := compiled.providers["a"].Cooldown.Duration
+	runner.RecordStreamFailure(ctx, "standard", "a", "native-model",
+		&CallError{Class: ErrorUpstream, Status: 502})
+	current = current.Add(time.Second) // b breaks one second after a
+	runner.now = func() time.Time { return current }
+	runner.RecordStreamFailure(ctx, "standard", "b", "native-model",
+		&CallError{Class: ErrorUpstream, Status: 502})
+	if _, callErr := runner.ContinueStream(ctx, "standard", request, partial, nil); callErr == nil {
+		t.Fatal("a continuation over an all-cooling pool must fail, not fail-open onto the breakers")
+	}
+
+	// Advance the clock past a's cooldown only (b's window is still open): a
+	// recovers, b stays cooling. A strict continuation now re-races the
+	// survivor — a is the sole eligible candidate and is reached, preserving
+	// the time-based "second chance".
+	current = current.Add(cooldown - 500*time.Millisecond)
+	runner.now = func() time.Time { return current }
+	if got := runner.availableTargets([]Target{{Provider: "a", Model: "native-model"}}); len(got) != 1 {
+		t.Fatalf("a must be eligible again once its cooldown expires, available: %#v", got)
+	}
+	if got := runner.availableTargets([]Target{{Provider: "b", Model: "native-model"}}); len(got) != 0 {
+		t.Fatalf("b must still be cooling, available: %#v", got)
+	}
+	recovered, callErr := runner.ContinueStream(ctx, "standard", request, partial, nil)
+	if callErr != nil {
+		t.Fatalf("continuation after cooldown expiry failed: %v", callErr)
+	}
+	if recovered.Provider != "a" {
+		t.Fatalf("the recovered provider must be re-raceable once its cooldown expires, got %q", recovered.Provider)
+	}
+	recovered.Cancel()
 }
