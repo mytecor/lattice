@@ -427,7 +427,18 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 		if !continueEnabled || executeRequest.Kind != RequestChat {
 			return false
 		}
-		if next := dispatchContinue(brokenProviders); next != nil {
+		// Exclude the provider whose stream just broke from the immediate
+		// takeover. brokenProviders only absorbs a broken provider when swapTo
+		// appends it AFTER the dispatch that produced the next winner, so
+		// without this the just-broke provider stays eligible for exactly one
+		// more round: when it is also the fastest (or fail-open re-races the
+		// pool while everyone is cooling), the continuation re-hits the same
+		// upstream it should be fleeing — burning a full re-dispatch on the
+		// provider the takeover exists to avoid ("continue on other
+		// providers"). The set is deduplicated later by runtime.exclude, so the
+		// overlap with swapTo's own append is harmless.
+		excluded := append(append([]string(nil), brokenProviders...), cur.Provider)
+		if next := dispatchContinue(excluded); next != nil {
 			from := cur.Provider
 			continued := swapTo(next)
 			s.metrics.ObserveContinue(from, next.Provider, "takeover")

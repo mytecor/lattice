@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -333,6 +334,88 @@ func TestServerContinueTakeoverOnEmptyCompletion(t *testing.T) {
 	}
 }
 
+// TestServerContinueTakeoverExcludesJustBrokenProvider pins the ordering
+// contract of the takeover exclusion: the provider whose stream just broke
+// must be excluded from the IMMEDIATE next takeover, not only from the one
+// after. The break uses ErrorModelNotFound (not in allRetryableClasses) so the
+// provider does NOT enter health cooldown — without the exclusion the broken
+// provider would re-enter the continuation race and win again (it is still the
+// fastest), making it impossible to "continue on other providers". The fix
+// seeds the just-broke provider into the exclusion set before dispatch, the
+// continuation lands on the other provider, and the turn completes.
+func TestServerContinueTakeoverExcludesJustBrokenProvider(t *testing.T) {
+	cfg := testConfig()
+	cfg.Providers = cfg.Providers[:2] // a, b
+	cfg.RoutingRules = []Rule{
+		filterModel("standard", "standard"),
+		filterProvider("standard", "a", "b"),
+		mapRule("standard", "native-model"),
+		rankRule("standard"),
+		raceRule("standard", 2),
+		continueRule("standard", 90*time.Second, "full"),
+	}
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var aCalls, bCalls int
+	winnerBreak := &CallError{Class: ErrorModelNotFound, Status: http.StatusNotFound}
+	executor := &fakeExecutor{
+		stream: func(ctx context.Context, target Target, request ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			ch := make(chan StreamEvent, 3)
+			if target.Provider == "a" {
+				aCalls++
+				// a wins every race it participates in (fast responder) but breaks
+				// with a non-retryable stream error: no cooldown, so a stays fully
+				// eligible and, without the exclusion, would keep winning the
+				// continuation too.
+				ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"from-a"}}]}`), Meaningful: true}
+				ch <- StreamEvent{Err: winnerBreak}
+				close(ch)
+				return ch, nil
+			}
+			// provider b
+			bCalls++
+			if bCalls == 1 {
+				// Initial race: stay silent so a wins; closed when a wins.
+				go func() {
+					<-ctx.Done()
+					close(ch)
+				}()
+				return ch, nil
+			}
+			// Continuation: answer for real, then finish.
+			ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"from-b"}}]}`), Meaningful: true}
+			ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`), Meaningful: false}
+			close(ch)
+			return ch, nil
+		},
+	}
+	api, _ := streamTestServer(t, compiled, executor)
+
+	body := postStream(t, api.URL)
+
+	// The takeover must flee the broken provider: the continuation answers on
+	// `b`, never on `a`, and the turn completes with [DONE] and no error.
+	if !strings.Contains(body, "from-b") {
+		t.Fatalf("takeover must continue on the other provider (b): %s", body)
+	}
+	if strings.Contains(body, "event: error") {
+		t.Fatalf("takeover must not surface a client-facing error: %s", body)
+	}
+	if !strings.Contains(body, "data: [DONE]") {
+		t.Fatalf("takeover must complete the turn with [DONE]: %s", body)
+	}
+	// a races the initial win only; it must never be re-contacted by the
+	// takeover. b races the initial loss + the continuation.
+	if aCalls != 1 {
+		t.Fatalf("broken provider a must not be re-contacted by the takeover: calls=%d, want 1", aCalls)
+	}
+	if bCalls != 2 {
+		t.Fatalf("provider b must be contacted for the race and the continuation: calls=%d, want 2", bCalls)
+	}
+}
+
 // TestServerEmptyCompletionSurfacesErrorWithoutContinue pins the contract when
 // no continue rule is present: an empty completion (finish_reason present, no
 // content, no tool calls) must surface as a retryable upstream error with no
@@ -494,13 +577,21 @@ func TestServerChainRetryOnExhaustedChain(t *testing.T) {
 	if !strings.Contains(body, "data: [DONE]") {
 		t.Fatalf("chain retry must complete the turn with [DONE]: %s", body)
 	}
-	// a races twice (initial + chain retry); b races in all four waves
-	// (initial loss, two takeovers, chain-retry loss).
-	if callsA != 2 {
-		t.Fatalf("provider a calls = %d, want 2 (initial + chain retry)", callsA)
+	// With the takeover ordering fix (the just-broke provider is excluded from
+	// the immediate takeover), the corrected path is: a wins the initial race
+	// then breaks; the takeover excludes a and lands on b (takeover 1), which
+	// breaks too; excluding both empties the pool for the immediate takeover,
+	// so a whole-chain retry re-races the full pool (fail-open lets the cooled
+	// b win again), and b breaking there lets the final takeover land on a,
+	// which answers for real. So a is contacted 3 times (initial win, chain-
+	// retry loss, final win) and b 3 times (initial loss, takeover, chain-
+	// retry win) — the counts assert the corrected re-dispatch order, not a
+	// re-hit of the just-broke provider on the immediate takeover.
+	if callsA != 3 {
+		t.Fatalf("provider a calls = %d, want 3 (initial win + chain-retry loss + final win)", callsA)
 	}
-	if callsB != 4 {
-		t.Fatalf("provider b calls = %d, want 4 (initial + 2 takeovers + chain retry)", callsB)
+	if callsB != 3 {
+		t.Fatalf("provider b calls = %d, want 3 (initial loss + takeover + chain-retry win)", callsB)
 	}
 	// The final chain-retry request must carry the reshared partial: the
 	// accumulated output of both earlier waves as an assistant message.
