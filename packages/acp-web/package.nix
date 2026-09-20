@@ -75,7 +75,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   # ./patch-main-ts.mjs for rationale). Pure source edit of the demo entrypoint,
   # fails loudly if upstream changes the shape it relies on.
   postPatch = ''
-    node ${./patch-main-ts.mjs} examples/demo/src/main.tsx
+    node ${./patch-main-ts.mjs} examples/demo/src/main.tsx "${finalAttrs.version}"
   '';
 
   # Skip the pnpmConfigHook (see header comment); we reproduce its store setup
