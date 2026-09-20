@@ -298,14 +298,17 @@ in
   # latency-weighted selection (adaptive) and priority-derived weights both
   # re-concentrate on the fastest provider; p2c's in-flight signal is the
   # missing distribution mechanism. round_robin/adaptive/weighted remain
-  # available as pipeline.balance.strategy overrides. Hedge is opt-in and stays
-  # disabled: the f7-13 live run showed `hedge after 3s` re-concentrates
+  # available as pipeline.balance.strategy overrides. Hedge is enabled at
+  # 20s (see the pipeline block below) as a selection-phase safety net, with
+  # the f7-13 caveat kept in mind: an aggressive `hedge after 3s` re-concentrates
   # completions (~2/3 on the fastest provider) even with a distributed primary
-  # choice.
-  # One request never creates more than four upstream calls (race 1 + two
-  # retries), more than three concurrent ones, or a repeated call to one
-  # provider (the unused provider policy); smart overrides to 6/4 with
-  # race count 0 (see below).
+  # choice — 20s is deliberately outside the healthy-response head of the
+  # distribution, so healthy requests never trigger it and only a genuinely
+  # mute upstream pays the second call.
+  # One request never creates more than five upstream calls (race 1 + hedge 1
+  # + two retries + fallback), more than three concurrent ones, or a repeated
+  # call to one provider (the unused provider policy restricts retry/hedge/
+  # fallback; smart overrides to 6/4 with race count 0 (see below).
   lattice.llm-gateway = {
     # Debug logs contain routing metadata and sanitized upstream errors, never prompts or keys.
     logLevel = "debug";
@@ -363,12 +366,13 @@ in
       };
     };
     # Pipeline defaults equal the built-in ones (providers = all enabled,
-    # balance p2c with equal weights, race 1, retry 2 exponential, no hedge,
-    # semaphore 4/3/1, timeout 60s, affinity 24h) plus the in-gateway stream
-    # takeover (`continue`) enabled for EVERY model: any winner that relays
-    # content and then stalls (silence > idle) or closes without finish_reason
-    # is continued on another provider with the partial output reshared,
-    # instead of surfacing "Stream ended without finish_reason" to the client
+    # balance p2c with equal weights, race 1, retry 2 exponential, hedge
+    # enabled 20s, semaphore 4/3/1, timeout 60s, affinity 24h) plus the
+    # in-gateway stream takeover (`continue`) enabled for EVERY model: any
+    # winner that relays content and then stalls (silence > idle) or closes
+    # without finish_reason is continued on another provider with the partial
+    # output reshared, instead of surfacing "Stream ended without
+    # finish_reason" to the client
     # (observed across smart/standard/stupid, not only GLM reasoning). The
     # broken provider still enters cooldown/health. Per-model overrides remain
     # possible through models.<name>.pipeline.continue.
@@ -397,6 +401,22 @@ in
         # retry re-races the survivors). Bounded by maxContinueChainRetries (10).
         retries = 2;
       };
+      # Selection-phase hedge (opt-in): a primary race winner that produces no
+      # meaningful token within `after` starts the <model>.hedge subroute in
+      # parallel (race count 1 more provider, rank priority), so a mute/hung
+      # upstream no longer consumes the whole 60s route deadline alone — the
+      # observed 30/32 selection 504s on `standard` were exactly this: race 1
+      # on a concurrency-capped DeepSeek channel (429) sitting silent until the
+      # global deadline, retry/fallback having no room. 20s < 60s leaves the
+      # hedge winner time to deliver its first token. The hedge subroute's
+      # unused policy means it only launches providers not already raced by
+      # the entry route, so the pool for retry/fallback survives; on `smart`
+      # (raceCount=0) the whole pool is already used, so the hedge finds an
+      # empty unused set and launches nothing (harmless).
+      hedge = {
+        enable = true;
+        after = "20s";
+      };
     };
     models = {
       stupid.native = "MiniMaxAI/MiniMax-M2.7";
@@ -408,9 +428,11 @@ in
       # the request returned 504. The override restores the f7-13 topology:
       # race count 0 races the whole provider universe in parallel (carriers
       # without the exact GLM native pre-fail locally and are skipped), and
-      # maxInFlight 4 launches all carriers concurrently. The hedge stays
-      # disabled: it raced every provider and marked them used, emptying the
-      # unused pool that retry/fallback depend on.
+      # maxInFlight 4 launches all carriers concurrently. The 20s hedge stays
+      # inert here: race count 0 already launches the whole pool at t=0, so by
+      # the time the hedge fires every carrier is `used` and the unused filter
+      # parses to an empty batch — harmless, and the pool for retry/fallback
+      # survives.
       #
       # providers excludes dahl and gonkarouter: their GLM-5.3-Flash endpoint
       # caps completion at 4096 tokens — the gateway logs show successful
