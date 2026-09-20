@@ -50,7 +50,7 @@ split-панелях, tool calls, permissions, стриминг. Его тран
 
 ## Критерий готовности (Definition of Done)
 
-- [ ] Клиент доступен в LAN по фиксированному имени, развёрнут декларативно из закреплённого
+- [x] Клиент доступен в LAN по фиксированному имени, развёрнут декларативно из закреплённого
       источника, и не требует изменений в конфигурации daemon или Caddy ingress самого ACP
       endpoint.
 - [ ] Через клиента воспроизведён acceptance из [f8-06](../f8-pi-runtime/f8-06-network-acp-daemon.md):
@@ -118,7 +118,34 @@ upstream-формы): `VITE_ACP_ENDPOINT`-override или вывод endpoint и
 `"ACP Endpoint"`, `acp-ui.` и `ws://` — агент попадает в прод-минифицированный JS. Пользовательские
 агенты — через built-in persistence клиента (не трогаем daemon/ingress).
 
+## Деплой на ноду выполнен: acp-ui доступен в LAN (2026-09-20)
+
+`main` опубликован в Radicle и GitHub (общий remote `publish`), нода `mytecor-homelab`
+переключилась через comin (`switch successfully terminated`). Новые юниты `acp-ui-mdns.service`
+и `node-status-mdns.service` активны; `caddy.service` перезагружен с новым конфигом.
+
+Проверено с dev-машины в той же LAN:
+
+- `acp-ui.mytecor-homelab.local` резолвится по mDNS → `192.168.60.184` (нода);
+- `GET http://acp-ui.mytecor-homelab.local/` → **HTTP 200**, отдаётся `<title>acp-components
+  interactive demo</title>` + ассет `index-CsUzZzjs.js` из store-path пакета acp-web
+  (SPA-fallback: все пути кроме реальных файлов → `index.html`, клиентская маршрутизация);
+- прод-бандл подтверждён (извлечён из store): runtime-деривация defaults-агента на месте
+  (`startsWith("acp-ui.") && endsWith(".local")` → `ws://${host поменять acp-ui. на acp.}/`),
+  т.е. на `acp-ui.mytecor-homelab.local` клиент подключается к `ws://acp.mytecor-homelab.local/` —
+  ровно форма транспорта, подтверждённая на шаге 2 (без subprotocol, `hydra-acp 0.1.183`).
+
+**Частичный чек шага 6 (граница trusted LAN / утечка токена):** в прод-бандле из store не найдено
+Hydra-токена, cloudflare/api-key паттернов или захардкоженного endpoint/хост-
+`VITE_ACP_ENDPOINT` (minifier выкинул unset-override как dead code). Клиентский ingress не
+публикует daemon напрямую — UI-клиент ходит только на `ws://acp.<node>.local/` через тот же Caddy
+ingress, что и Ferngeist (граница trusted LAN f8-06 сохранена). `nix flake check --all-systems
+--no-build` зелёный, включая контракт-тест `tests/app-services.nix` (ассерты acp-ui site,
+SPA-fallback, mdns-юниты).
+
 ## Открытые вопросы
 
-- Хостинг статики из flake (plain Caddy `root`/`file_server` vs derivation-пакет) — выбрать при
-  реализации по образцу существующих LAN-сервисов.
+- Хостинг статики выбран: derivation-пакет `pkgs.lattice.acp-web` с `root *` + `try_files
+  {path} /index.html` + `file_server` в Caddy (LAN-only `http://acp-ui.<node>.local`); `plain
+  Caddy root` не использован, так как пакет даёт воспроизводимый store-path из закреплённого
+  источника.
