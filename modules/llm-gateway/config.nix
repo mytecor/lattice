@@ -163,11 +163,24 @@ let
       ++ [
         # Retry subroute: applies only to the listed failures and re-selects
         # unused providers, one target per retry entry.
+        #
+        # The retryable set is the gateway's full retryable class universe
+        # (allRetryableClasses), including live upstream 404 ("404") and the
+        # catalog pre-dispatch rejection ("model_not_found"). Both mean "this
+        # carrier does not serve the mapped native right now" — e.g. an
+        # upstream whose serving pool dropped a model while its /models list
+        # still advertises it (gonka-proxy dropped DeepSeek-V4-Flash-0731 for
+        # ~15 min on 2026-09-20, session 01a0bd52). Retrying re-races unused
+        # providers with the same per-native mapping, and the pair-level
+        # cooldown gates the failing (provider, native) so the retry lands on
+        # a different carrier. Excluding these two classes made a live 404 a
+        # terminal error surfaced verbatim to the client ({message: Not Found,
+        # type: 404}) instead of failing over.
         {
           route = retryRoute;
           action = "filter";
           where = {
-            error = { "in" = [ "429" "5xx" "timeout" "connection_error" "invalid_response" ]; };
+            error = { "in" = [ "404" "model_not_found" "429" "5xx" "timeout" "connection_error" "invalid_response" ]; };
           };
         }
       ]

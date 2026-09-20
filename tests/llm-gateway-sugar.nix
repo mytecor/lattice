@@ -268,6 +268,24 @@ pkgs.runCommand "llm-gateway-sugar-evaluation" { nativeBuildInputs = [ pkgs.jq ]
       echo "expected retry transition to standard.retry with 2 attempts" >&2
       exit 1
     fi
+    # Every generated retry subroute must react to the full retryable class
+    # universe, including a live upstream 404 and the catalog model_not_found.
+    # Regression (2026-09-20, session 01a0bd52): gonka-proxy dropped
+    # DeepSeek-V4-Flash-0731 from its serving pool while /models still listed
+    # it; the live HTTP 404 (class "404") matched neither retry nor fallback
+    # and was surfaced verbatim to the client. A retry subroute missing either
+    # of these classes would reintroduce the silent terminal 404.
+    # The sugar error-filter is a single emitted list shared by every
+    # subroute, so asserting the unique set is both robust and specific
+    # (avoids the jq 1.7 any/all nesting hazard noted above).
+    if ! jq -e '([.routing_rules[] | select(.route | endswith(".retry"))
+      | select(.action == "filter") | .where.error
+      | select(. != null) | .["in"]] | unique)
+      == [["404","model_not_found","429","5xx","timeout","connection_error","invalid_response"]]' \
+      $cfg >/dev/null; then
+      echo "every <model>.retry error filter must carry the uniform retryable set (incl. 404, model_not_found)" >&2
+      exit 1
+    fi
 
     # Hedge is opt-in: smart opted in (with a custom delay), standard did not.
     if ! jq -e 'any(.routing_rules[]; .action == "hedge" and .route == "smart" and .after == "2s" and .target == "smart.hedge")' $cfg >/dev/null; then

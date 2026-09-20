@@ -426,15 +426,32 @@ in
       };
     };
     # Escape hatch: raw rules appended after the generated pipelines. Only
-    # fallbacks live here (the sugar owns everything else). The standard
-    # fallback gives Hyperfusion its second catalog alias so a model_not_found
-    # in the primary alias can fail over to the prefixed native Hyperfusion
-    # actually serves; the smart fallback is a generic universe-wide safety
-    # net (unused, race 0) for the 404/model_not_found and all-down cases —
-    # carriers without the exact GLM native pre-fail locally and the valid
-    # ones re-race in parallel.
+    # fallbacks live here (the sugar owns everything else).
+    #
+    # Every fallback carries the SAME failure-class set
+    # (fallbackErrorClasses): the full retryable universe, including both a
+    # live upstream 404 ("404") and the catalog pre-dispatch rejection
+    # ("model_not_found"). The standard route once omitted "404" (2026-09-20,
+    # session 01a0bd52): gonka-proxy dropped DeepSeek-V4-Flash-0731 from its
+    # serving pool while still advertising it in /models, the upstream returned
+    # a live HTTP 404 (class "404", not "model_not_found"), neither retry nor
+    # fallback matched, and the terminal 404 was surfaced verbatim to the
+    # client. The generated <model>.retry subroutes (sugar) now share the same
+    # classes, so a carrier that 404s is re-raced against unused providers and
+    # the failing (provider, native) pair is cooldown-gated.
     routingRules =
       let
+        # The one error set every fallback transition accepts. Mirrors
+        # allRetryableClasses() plus the catalog model_not_found.
+        fallbackErrorClasses = [
+          "404"
+          "model_not_found"
+          "429"
+          "5xx"
+          "timeout"
+          "connection_error"
+          "invalid_response"
+        ];
         allProviders = [
           "gonka-proxy"
           "gonka-openbroker"
@@ -452,6 +469,10 @@ in
         ];
       in
       [
+        # standard: Hyperfusion's second catalog alias. Narrow on purpose — the
+        # entry+retry chain (now 404-aware via the sugar) already re-races all
+        # plain-deepseek carriers, so this net only gives Hyperfusion its
+        # gonka/-prefixed native for the model_not_found/404 case.
         {
           route = "standard";
           action = "fallback";
@@ -460,9 +481,7 @@ in
         {
           route = "standard.fallback";
           action = "filter";
-          where = {
-            error = { "in" = [ "model_not_found" "429" "5xx" "timeout" "connection_error" ]; };
-          };
+          where = { error = { "in" = fallbackErrorClasses; }; };
         }
         {
           route = "standard.fallback";
@@ -478,6 +497,39 @@ in
         { route = "standard.fallback"; action = "race"; count = 1; }
       ]
       ++ [
+        # stupid: universe-wide safety net (all providers serve the plain
+        # MiniMax native, no capability exclusion needed), mirrored from smart
+        # so every model has a uniform generic fallback.
+        {
+          route = "stupid";
+          action = "fallback";
+          target = "stupid.fallback";
+        }
+        {
+          route = "stupid.fallback";
+          action = "filter";
+          where = { error = { "in" = fallbackErrorClasses; }; };
+        }
+        {
+          route = "stupid.fallback";
+          action = "filter";
+          where = { provider = { "in" = allProviders; unused = true; }; };
+        }
+        {
+          route = "stupid.fallback";
+          action = "map";
+          native = "MiniMaxAI/MiniMax-M2.7";
+        }
+        { route = "stupid.fallback"; action = "rank"; strategy = "priority"; }
+        { route = "stupid.fallback"; action = "race"; count = 0; }
+      ]
+      ++ [
+        # smart (GLM): generic universe-wide safety net (unused, race 0) for
+        # the 404/model_not_found and all-down cases — carriers without the
+        # exact GLM native pre-fail locally and the valid ones re-race in
+        # parallel. Hyperfusion maps its gonka/-prefixed GLM native on the
+        # entry route (nativeByProvider), so here it pre-fails locally and is
+        # skipped; the gonka carriers serve the plain native.
         {
           route = "smart";
           action = "fallback";
@@ -486,9 +538,7 @@ in
         {
           route = "smart.fallback";
           action = "filter";
-          where = {
-            error = { "in" = [ "404" "model_not_found" "429" "5xx" "timeout" "connection_error" "invalid_response" ]; };
-          };
+          where = { error = { "in" = fallbackErrorClasses; }; };
         }
         {
           route = "smart.fallback";

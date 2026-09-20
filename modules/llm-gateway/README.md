@@ -90,7 +90,7 @@ runtime directory и подставляет credentials через `jq`; ито�
       {
         route = "standard.retry";
         action = "filter";
-        where = { error = { "in" = [ "429" "5xx" "timeout" "connection_error" "invalid_response" ]; }; };
+        where = { error = { "in" = [ "404" "model_not_found" "429" "5xx" "timeout" "connection_error" "invalid_response" ]; }; };
       }
       {
         route = "standard.retry";
@@ -107,7 +107,7 @@ runtime directory и подставляет credentials через `jq`; ито�
       {
         route = "standard.fallback";
         action = "filter";
-        where = { error = { "in" = [ "model_not_found" "429" "5xx" "timeout" "connection_error" ]; }; };
+        where = { error = { "in" = [ "404" "model_not_found" "429" "5xx" "timeout" "connection_error" "invalid_response" ]; }; };
       }
       {
         route = "standard.fallback";
