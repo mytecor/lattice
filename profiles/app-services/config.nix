@@ -71,6 +71,41 @@ let
     file_server
   '';
 
+  # F14: Authentik Caddy ForwardAuth for browser-facing sites without their own
+  # SSO. The wrap prepends `forward_auth` against the loopback Authentik before
+  # the service's own handlers, gating only the browser UI — the backend
+  # contract (API/ws) is untouched. Which sites get wrapped is decided by the
+  # node via lattice.authentik.forwardAuth (source of truth), not hardcoded
+  # here.
+  # Defensive: app-services runs in tests/nodes that may not import the
+  # authentik module at all; treat that as "SSO off" rather than erroring.
+  authentikCfg = config.lattice.authentik or {
+    enable = false;
+    forwardAuth = [ ];
+    listenAddress = "127.0.0.1";
+    port = 9220;
+  };
+  forwardAuthEntry = service:
+    lib.findFirst (e: e.service == service) null (authentikCfg.forwardAuth or [ ]);
+  # Wrap a site's extraConfig with Authentik forward_auth when the service is
+  # listed in lattice.authentik.forwardAuth; otherwise return it unchanged.
+  wrapForwardAuth = service: baseConfig:
+    let
+      entry = forwardAuthEntry service;
+      uri = entry.uri or "/akprox/auth/";
+    in
+    if entry == null || !authentikCfg.enable then
+      baseConfig
+    else
+      ''
+        # F14: Authentik SSO gate (browser UI only). 401/302 → Authentik login.
+        forward_auth ${authentikCfg.listenAddress}:${toString authentikCfg.port} {
+            uri ${uri}
+        }
+
+        ${baseConfig}
+      '';
+
   # f13-01: публикация service-specific mDNS alias (avahi-publish --address)
   # — тот же приём, что у статус-сайта; параметризуем, чтобы не дублировать
   # юнит. Алias отдельного имения убирает необходимость в Host-заголовке и
@@ -104,13 +139,14 @@ in
     services.caddy.virtualHosts = {
       "http://${statusHost}".extraConfig = statusSiteConfig;
       # f13-01: static SPA acp-web на LAN-имени acp-ui.<node>.local.
-      "http://${acpUiHost}".extraConfig = acpUiSiteConfig;
+      # f14: acp-ui может быть защищён Authentik ForwardAuth (см. wrapForwardAuth).
+      "http://${acpUiHost}".extraConfig = wrapForwardAuth "acp-ui" acpUiSiteConfig;
     } // lib.optionalAttrs (statusMeshHost != null) {
       "${statusMeshHost}".extraConfig = statusSiteConfig;
     } // lib.optionalAttrs (acpUiMeshHost != null) {
       # f13-01 (mesh): внешний HTTPS-доступ к acp-ui на mesh-домене — тот же
       # статический SPA-контент, что и на LAN.
-      "${acpUiMeshHost}".extraConfig = acpUiSiteConfig;
+      "${acpUiMeshHost}".extraConfig = wrapForwardAuth "acp-ui" acpUiSiteConfig;
     };
 
     # f4-04: пишем статус-документ при каждой активации. Специальный

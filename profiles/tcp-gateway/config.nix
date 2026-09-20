@@ -43,6 +43,11 @@ let
   gitCacheProxyCfg = config.lattice.git-cache-proxy;
   grafanaEnabled = config.lattice.grafana.enable or false;
   grafanaCfg = config.lattice.grafana;
+  # F14: central SSO (Authentik) behind the same Caddy ingress. `auth` is the
+  # login site; it must be reachable from both LAN and mesh (the login page is
+  # the single entry point), so it is NOT added to meshExclude anywhere.
+  authentikEnabled = config.lattice.authentik.enable or false;
+  authentikCfg = config.lattice.authentik;
 
   mdnsPublisher = service: {
     description = "Publish the ${service} mDNS alias";
@@ -108,6 +113,15 @@ let
     # admin login is still gated by the agenix-backed admin password.
     (mkIf grafanaEnabled (serviceSites "grafana" ''
       reverse_proxy ${grafanaCfg.listenAddress}:${toString grafanaCfg.port}
+    ''))
+
+    # F14: the Authentik login site. Proxied to its loopback listener by the
+    # same serviceSites helper, so `auth.<node>.local` (LAN) and
+    # `auth.<meshDomain>` (mesh) both reach the single loopback SSO. `auth` is
+    # deliberately NOT in meshExclude — the login page must be reachable from
+    # mesh clients (f14-01 step 4).
+    (mkIf authentikEnabled (serviceSites "auth" ''
+      reverse_proxy ${authentikCfg.listenAddress}:${toString authentikCfg.port}
     ''))
   ];
 in
@@ -218,6 +232,10 @@ in
       })
       (mkIf grafanaEnabled {
         grafana-mdns = mdnsPublisher "grafana";
+      })
+      (mkIf authentikEnabled {
+        # F14: publish the `auth` mDNS alias so `auth.<node>.local` resolves.
+        auth-mdns = mdnsPublisher "auth";
       })
     ];
   };

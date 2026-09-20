@@ -16,6 +16,14 @@ in
   "llm-provider-gonkarouter.age".publicKeys = [ admin node ];
   "grafana-admin-password.age".publicKeys = [ admin node ];
   "grafana-secret-key.age".publicKeys = [ admin node ];
+  # F14: Authentik SSO secrets (each .age is a single AUTHENTIK_*=... line).
+  "authentik-secret-key.age".publicKeys = [ admin node ];
+  "authentik-bootstrap-token.age".publicKeys = [ admin node ];
+  "authentik-bootstrap-user.age".publicKeys = [ admin node ];
+  "authentik-bootstrap-email.age".publicKeys = [ admin node ];
+  "authentik-bootstrap-password.age".publicKeys = [ admin node ];
+  # F14: Grafana OAuth2 client secret for authentic Login via OIDC.
+  "grafana-oauth-client-secret.age".publicKeys = [ admin node ];
   # f4-05: Yggdrasil node identity (PKCS8 PEM private key — формат PrivateKeyPath).
   # Стабильный адрес ноды в 200::/7 выводится из этого ключа, поэтому ключ живёт в agenix,
   # а не генерируется заново.

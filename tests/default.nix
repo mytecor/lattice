@@ -127,6 +127,18 @@ in
     gatewayProfile = "${profiles}/tcp-gateway/config.nix";
   };
 
+  # f14-01: central SSO (Authentik) wiring: loopback binding, auth Caddy site
+  # (LAN + mesh), ForwardAuth wrapping of the acp-ui browser UI, backend port
+  # out of the firewall, non-root systemd units, secrets via EnvironmentFile.
+  authentik = import ./authentik.nix {
+    inherit nixpkgs pkgs;
+    authentikModule = self.nixosModules.authentik;
+    ssoProfile = "${profiles}/sso/config.nix";
+    gatewayProfile = "${profiles}/tcp-gateway/config.nix";
+    appServicesProfile = "${profiles}/app-services/config.nix";
+    grafanaModule = self.nixosModules.grafana;
+  };
+
   comin-source-sync = import ./comin-source-sync.nix {
     inherit pkgs;
     syncPackage = pkgs.lattice.comin-source-sync;
