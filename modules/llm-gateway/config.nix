@@ -19,6 +19,7 @@ let
     bifrost_max_retries = provider.bifrostMaxRetries;
     allow_private_network = provider.allowPrivateNetwork;
     strip_params = provider.stripParams;
+    set_params = provider.setParams;
   };
 
   # Emits exactly the fields a routing action owns plus the rule envelope

@@ -128,6 +128,55 @@ func TestStripParamsRemovesUnsupportedReasoningControl(t *testing.T) {
 	}
 }
 
+func TestSetParamsForcesDisabledThinking(t *testing.T) {
+	// The gateway hard-disables reasoning upstream where the provider accepts
+	// the control: set_params forces thinking:{"type":"disabled"} and, being
+	// applied after strip_params, wins even if the client sent its own value.
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		thinking, ok := body["thinking"].(map[string]any)
+		if !ok {
+			t.Fatalf("thinking control missing after set_params: %#v", body)
+		}
+		if thinking["type"] != "disabled" {
+			t.Errorf("thinking control not forced to disabled: %#v", body["thinking"])
+		}
+		if body["model"] != "native-model" {
+			t.Errorf("model rewrite lost: %#v", body["model"])
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(writer, `{"id":"chat-1","object":"chat.completion","created":1,"model":"native-model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer upstream.Close()
+
+	compiled := bifrostTestConfig(t, upstream.URL)
+	compiled.raw.Providers[0].StripParams = []string{"thinking"}
+	compiled.raw.Providers[0].SetParams = map[string]json.RawMessage{
+		"thinking": json.RawMessage(`{"type":"disabled"}`),
+	}
+	compiled2, err := compileConfig(compiled.raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor, err := newBifrostExecutor(context.Background(), compiled2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer executor.Close()
+	_, callErr := executor.Do(context.Background(), Target{Provider: "mock-openai", Model: "native-model"}, ExecuteRequest{
+		Kind: RequestChat,
+		// The client tried to enable thinking; strip_params drops it, then
+		// set_params forces the disabled value.
+		Body: []byte(`{"model":"standard","thinking":{"type":"enabled"},"messages":[{"role":"user","content":"hello"}]}`),
+	})
+	if callErr != nil {
+		t.Fatal(callErr)
+	}
+}
+
 func TestBifrostExecutorCustomProviderChatWithVersionedBasePath(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		// A provider whose OpenAI-compatible server lives under an arbitrary

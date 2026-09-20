@@ -23,6 +23,9 @@ let
               apiKeyFile = "/run/agenix/llm-provider-proxy";
               priority = 20;
               stripParams = [ "thinking" "reasoning_effort" ];
+              setParams = {
+                thinking = { type = "disabled"; };
+              };
             };
             openbroker = {
               id = "gonka-openbroker";
@@ -248,6 +251,12 @@ pkgs.runCommand "llm-gateway-sugar-evaluation" { nativeBuildInputs = [ pkgs.jq ]
     # A provider's stripParams reach the public config as strip_params.
     if ! jq -e '.providers[] | select(.id == "gonka-proxy") | .strip_params == ["thinking","reasoning_effort"]' $cfg >/dev/null; then
       echo "provider strip_params must be emitted as strip_params in the public config" >&2
+      exit 1
+    fi
+    # A provider's setParams reach the public config as set_params, applied
+    # after strip_params (the forced value wins over a client control).
+    if ! jq -e '.providers[] | select(.id == "gonka-proxy") | .set_params.thinking.type == "disabled"' $cfg >/dev/null; then
+      echo "provider set_params must be emitted as set_params in the public config" >&2
       exit 1
     fi
 

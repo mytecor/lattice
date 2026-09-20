@@ -78,6 +78,14 @@ type Provider struct {
 	// can carry the same logical model. Other providers keep their native
 	// control untouched.
 	StripParams []string `json:"strip_params,omitempty"`
+	// SetParams force top-level request-body keys to fixed JSON values before
+	// the request reaches this provider. Applied after strip_params, so a key
+	// listed in both ends up as its forced value, never the client's. The
+	// gateway uses this to hard-disable reasoning upstream (e.g.
+	// thinking:{"type":"disabled"}) on providers that accept the control,
+	// while strip_params covers the providers that reject it. Values are raw
+	// JSON so nested structures (maps, arrays) pass through verbatim.
+	SetParams map[string]json.RawMessage `json:"set_params,omitempty"`
 }
 
 type BackoffConfig struct {

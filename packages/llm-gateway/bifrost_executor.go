@@ -309,7 +309,8 @@ func (e *BifrostExecutor) logUpstreamSuccess(ctx context.Context, target Target,
 }
 
 func (e *BifrostExecutor) chatRequest(ctx *schemas.BifrostContext, target Target, body []byte) (*schemas.BifrostChatRequest, *CallError) {
-	rewritten, err := rewriteRequestBody(body, target, e.providers[target.Provider].StripParams)
+	provider := e.providers[target.Provider]
+	rewritten, err := rewriteRequestBody(body, target, provider.StripParams, provider.SetParams)
 	if err != nil {
 		return nil, &CallError{Class: ErrorInvalid, Status: 400, Cause: err}
 	}
@@ -341,7 +342,8 @@ func (e *BifrostExecutor) chatRequest(ctx *schemas.BifrostContext, target Target
 }
 
 func (e *BifrostExecutor) responsesRequest(ctx *schemas.BifrostContext, target Target, body []byte) (*schemas.BifrostResponsesRequest, *CallError) {
-	rewritten, err := rewriteRequestBody(body, target, e.providers[target.Provider].StripParams)
+	provider := e.providers[target.Provider]
+	rewritten, err := rewriteRequestBody(body, target, provider.StripParams, provider.SetParams)
 	if err != nil {
 		return nil, &CallError{Class: ErrorInvalid, Status: 400, Cause: err}
 	}
@@ -374,19 +376,29 @@ func (e *BifrostExecutor) responsesRequest(ctx *schemas.BifrostContext, target T
 
 // rewriteRequestBody sets the routed native model and, per the target
 // provider's strip_params, removes top-level reasoning-control keys the
-// upstream does not support. The gateway serves clients that encode a
+// upstream does not support, then applies set_params, which force the listed
+// top-level keys to fixed JSON values (used to hard-disable reasoning upstream,
+// e.g. thinking:{"type":"disabled"}). The gateway serves clients that encode a
 // provider-specific reasoning control (zai's `thinking`) which generic
-// OpenAI-compatible upstreams (hyperfusion/litellm) reject with 400; without
-// stripping it those providers would fail every request even though their
-// model is fully routable. Keys are removed top-level only: nested fields
-// (e.g. a per-message reasoning block) are preserved.
-func rewriteRequestBody(body []byte, target Target, strip []string) ([]byte, error) {
+// OpenAI-compatible upstreams (hyperfusion/litellm) reject with 400; stripping
+// it lets such a provider carry the same logical model with that control
+// removed, while other providers keep their native control. Keys are removed
+// top-level only: nested fields (e.g. a per-message reasoning block) are
+// preserved. Stripping runs before setting, so a key present in both ends up as
+// its forced value.
+func rewriteRequestBody(body []byte, target Target, strip []string, set map[string]json.RawMessage) ([]byte, error) {
 	rewritten, err := sjson.SetBytes(body, "model", target.Model)
 	if err != nil {
 		return nil, err
 	}
 	for _, key := range strip {
 		rewritten, err = sjson.DeleteBytes(rewritten, key)
+		if err != nil {
+			return nil, err
+		}
+	}
+	for key, value := range set {
+		rewritten, err = sjson.SetRawBytes(rewritten, key, value)
 		if err != nil {
 			return nil, err
 		}

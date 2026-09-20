@@ -17,6 +17,17 @@ let
   # choice stays a native-model concern and no provider fails a race over an
   # unsupported request parameter.
   stripReasoningParams = [ "thinking" "reasoning_effort" ];
+  # Gateways serving OpenAI-compatible models natively (the gonka carriers)
+  # accept the zai `thinking` control. For these we don't just strip it: we
+  # force `thinking:{"type":"disabled"}` on every request so reasoning is
+  # hard-off for all models (standard/stupid DeepSeek-V4-Flash & MiniMax, and
+  # smart GLM which — always-reasoning — ignores the toggle anyway). Applied
+  # after strip_params, so the forced value wins even over a client that asked
+  # for reasoning. hyperfusion/dahl/gonkarouter stay strip-only: litellm
+  # rejects the zai `thinking` key with 400, and the others are untested.
+  forceReasoningOff = {
+    thinking = { type = "disabled"; };
+  };
 in
 {
   networking.hostName = "mytecor-homelab";
@@ -311,6 +322,7 @@ in
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
         priority = 50;
         stripParams = stripReasoningParams;
+        setParams = forceReasoningOff;
       };
       gonka-openbroker = {
         id = "gonka-openbroker";
@@ -318,6 +330,7 @@ in
         apiKeyFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
         priority = 40;
         stripParams = stripReasoningParams;
+        setParams = forceReasoningOff;
       };
       gonka-api = {
         id = "gonka-api";
@@ -325,6 +338,7 @@ in
         apiKeyFile = config.age.secrets.llm-provider-gonka-api.path;
         priority = 30;
         stripParams = stripReasoningParams;
+        setParams = forceReasoningOff;
       };
       dahl = {
         id = "dahl";

@@ -198,6 +198,18 @@ in
               stripped, while other providers keep their native control.
             '';
           };
+          setParams = mkOption {
+            type = types.attrsOf types.json;
+            default = { };
+            description = ''
+              Top-level request-body keys forced to fixed JSON values before the
+              request reaches this provider. Applied after `stripParams`, so a key
+              listed in both ends up as its forced value, never the client's.
+              Used to hard-disable reasoning upstream (e.g. `thinking = { type =
+              "disabled"; }`) on providers that accept the control, while
+              `stripParams` covers the providers that reject it.
+            '';
+          };
         };
       }));
     };
