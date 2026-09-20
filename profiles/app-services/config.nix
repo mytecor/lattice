@@ -11,6 +11,12 @@ let
   meshCloudflare = config.lattice.tcp-gateway.cloudflareToken != null;
   meshScheme = if meshCloudflare then "https" else "http";
   statusMeshHost = if meshDomain != null then "${meshScheme}://status.${meshDomain}" else null;
+  # f13-01 (mesh, 2026-09-20): acp-ui получает HTTPS на mesh-домене так же, как
+  # и остальные сервисы (см. serviceSites в tcp-gateway). Раньше сайт существовал
+  # только на LAN-контракте http://acp-ui.<node>.local, и на https://acp-ui.<meshDomain>
+  # у Caddy не было ни сайта, ни сертификата — TLS-хендшейк падал ("SSL не работает").
+  # Без токена (meshCloudflare) mesh-сайт обслуживается по plain HTTP через тот же :80.
+  acpUiMeshHost = if meshDomain != null then "${meshScheme}://acp-ui.${meshDomain}" else null;
 
   # Общий extraConfig статус-сайта (LAN и mesh используют один и тот же контент-блок).
   statusSiteConfig = ''
@@ -49,10 +55,11 @@ let
   };
   statusWriter = "${statusWriterPkg}/bin/lattice-node-status-write";
 
-  # f13-01: web-клиент ACP (acp-components) как статический SPA. LAN-only,
-  # обслуживается Caddy file_server из store-path пакета packages/acp-web;
-  # mDNS-alias acp-ui.<node>.local публикуется avahi-сервисом ниже. Клиент
-  # подключается к существующему ACP ingress ws://acp.<node>.local/ (f8-06),
+  # f13-01: web-клиент ACP (acp-components) как статический SPA. Обслуживается
+  # Caddy file_server из store-path пакета packages/acp-web; mDNS-alias
+  # acp-ui.<node>.local публикуется avahi-сервисом ниже, а на mesh-домене
+  # (f13-01 mesh, 2026-09-20) тот же контент доступен по https://acp-ui.<meshDomain>.
+  # Клиент подключается к существующему ACP ingress ws(s)://acp.<host>/ (f8-06),
   # выводя host из своего собственного (см. patch-main-ts.mjs).
   acpUiHost = "acp-ui.${hostName}.local";
   acpWebPkg = pkgs.lattice.acp-web;
@@ -100,6 +107,10 @@ in
       "http://${acpUiHost}".extraConfig = acpUiSiteConfig;
     } // lib.optionalAttrs (statusMeshHost != null) {
       "${statusMeshHost}".extraConfig = statusSiteConfig;
+    } // lib.optionalAttrs (acpUiMeshHost != null) {
+      # f13-01 (mesh): внешний HTTPS-доступ к acp-ui на mesh-домене — тот же
+      # статический SPA-контент, что и на LAN.
+      "${acpUiMeshHost}".extraConfig = acpUiSiteConfig;
     };
 
     # f4-04: пишем статус-документ при каждой активации. Специальный

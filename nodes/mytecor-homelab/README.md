@@ -136,6 +136,7 @@ edge не смог бы доставить трафик до ygg-адреса; �
 
 ```text
 https://acp.homelab.myt.su/          — ACP (Pi)
+https://acp-ui.homelab.myt.su/       — web-клиент ACP (f13-01, с 2026-09-20)
 https://git-cache-proxy.homelab.myt.su/
 https://radicle.homelab.myt.su/
 https://status.homelab.myt.su/
@@ -170,7 +171,11 @@ curl --fail https://status.homelab.myt.su/
 ```
 
 Ожидаемый ответ — тот же JSON, что и `http://status.mytecor-homelab.local/`. Любой сервис с
-mesh-поддомена должен возвращать тот же ответ, что и его LAN-контракт.
+mesh-поддомена должен возвращать тот же ответ, что и его LAN-контракт:
+
+```sh
+curl --fail https://acp-ui.homelab.myt.su/   # HTML SPA, тот же контент, что и acp-ui.mytecor-homelab.local
+```
 
 ### Создание/ротация секрета `yggdrasil-keys.age`
 

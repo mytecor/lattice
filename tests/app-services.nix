@@ -20,6 +20,26 @@ let
   gateway = config.services.caddy.virtualHosts."http://${statusHost}";
   acpUi = config.services.caddy.virtualHosts."http://${acpUiHost}";
   statusWriter = config.system.activationScripts.lattice-node-status;
+
+  # f13-01 (mesh, 2026-09-20): как и status, acp-ui живёт не только на LAN;
+  # на mesh-домене тот же статический SPA обслуживается по HTTPS (f4-05
+  # acme_dns) — с тем же extraConfig, что и LAN-сайт. Это контракт: вне пары
+  # LAN+mesh сайт должен быть один и тот же (не копия конфига).
+  meshConfig = (lib.nixosSystem {
+    modules = [
+      appServicesProfile
+      {
+        nixpkgs.pkgs = pkgs;
+        networking.hostName = "node-a";
+        system.stateVersion = "26.05";
+        lattice.tcp-gateway.meshDomain = "homelab.myt.su";
+        lattice.tcp-gateway.cloudflareToken = "/run/agenix/caddy-cloudflare-token";
+      }
+    ];
+  }).config;
+  meshUi = meshConfig.services.caddy.virtualHosts."https://acp-ui.homelab.myt.su";
+  meshUiLan = meshConfig.services.caddy.virtualHosts."http://acp-ui.node-a.local";
+  meshStatus = meshConfig.services.caddy.virtualHosts."https://status.homelab.myt.su";
 in
 assert !config.services.nginx.enable;
 assert config.services.caddy.enable;
@@ -50,4 +70,12 @@ assert lib.hasInfix statusHost config.systemd.services.node-status-mdns.script;
 assert lib.hasInfix acpUiHost config.systemd.services."acp-ui-mdns".script;
 # HTTP-status endpoint must be reachable; extra ports may legitimately be added.
 assert builtins.elem 80 config.networking.firewall.allowedTCPPorts;
+# f13-01 (mesh): acp-ui имеет mesh-HTTPS site на той же статике, что и LAN;
+# без него регрессирует «SSL не работает» на https://acp-ui.homelab.myt.su.
+assert builtins.hasAttr "https://acp-ui.homelab.myt.su" meshConfig.services.caddy.virtualHosts;
+assert meshUi.extraConfig == meshUiLan.extraConfig;
+assert builtins.hasAttr "http://acp-ui.node-a.local" meshConfig.services.caddy.virtualHosts;
+# status тоже остаётся на mesh (не регрессия соседнего сайта).
+assert builtins.hasAttr "https://status.homelab.myt.su" meshConfig.services.caddy.virtualHosts;
+assert meshStatus.extraConfig == meshConfig.services.caddy.virtualHosts."http://status.node-a.local".extraConfig;
 pkgs.runCommand "app-services-profile-evaluation" { } "touch $out"

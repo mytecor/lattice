@@ -18,6 +18,31 @@ Avahi публикует service-specific address alias, поэтому допо
 curl --fail http://status.mytecor-homelab.local/
 ```
 
+## web-клиент ACP (f13-01)
+
+Профиль также раздаёт статический SPA `acp-web` ([`packages/acp-web`](../../packages/acp-web/package.nix))
+на адресе `acp-ui.<node>.local` через Caddy `file_server` (SPA-fallback на `index.html`).
+Публикуется service-specific mDNS alias, как и у статус-сайта:
+
+```text
+http://acp-ui.<node>.local/
+```
+
+### Mesh-доступ (f13-01, 2026-09-20)
+
+Как и status, `acp-ui` выкладывается дополнительно и на mesh-домене (`tcp-gateway.meshDomain`),
+обслуживая тот же статический SPA, что и на LAN. При наличии Cloudflare-токена (`acme_dns`)
+это HTTPS, с тем же контентом, что у LAN-контракта:
+
+```text
+https://acp-ui.<meshDomain>/
+```
+
+Между LAN- и mesh-сайтами используется один и тот же `extraConfig` — внешний адрес не несёт
+отдельной копии конфигурации сайта. Клиент (см. `patch-main-ts.mjs`) сам выводит ACP ingress
+из собственного hostname и выбирает `wss://`/`ws://` по схеме страницы, так что mesh-UI
+подключается к `wss://acp.<meshDomain>/` без ручной настройки и без mixed-content блокировки.
+
 ## Формат ответа (f4-04)
 
 Endpoint отдаёт JSON с runtime-метаинформацией узла, сгенерированный на каждой активации

@@ -143,6 +143,36 @@ ingress, что и Ferngeist (граница trusted LAN f8-06 сохранен�
 --no-build` зелёный, включая контракт-тест `tests/app-services.nix` (ассерты acp-ui site,
 SPA-fallback, mdns-юниты).
 
+## Mesh-HTTPS включён: исправлен «SSL не работает» на внешнем адресе acp-ui (2026-09-20)
+
+После подтверждения LAN-контракта оператор попробовал внешний адрес `https://acp-ui.homelab.myt.su/`
+и получил отказ TLS. Диагностика: сайт `acp-ui` существовал **только** на LAN-контракте
+`http://acp-ui.<node>.local` (см. [`profiles/app-services/config.nix`](../../profiles/app-services/config.nix)) —
+в отличие от сервисов tcp-gateway, которые уезжают на mesh через `serviceSites`, acp-ui не имел
+mesh-виртуалхоста. Поэтому для `acp-ui.homelab.myt.su` у Caddy не было ни сайта, ни сертификата
+(при глобальном `acme_dns cloudflare` сертификаты выдаются только для настроенных host), и TLS
+хендшейк падал. Прочие сервисы работали, потому что у них mesh-сайты есть.
+
+Исправление (3 части, контракт сохранён):
+
+1. **Caddy**: в app-services добавлен mesh-виртуалхост `acpUiMeshHost`
+   (`https://acp-ui.<meshDomain>` при Cloudflare-токене, `http://…` без него) тем же
+   `lib.optionalAttrs`, что и status. Mesh-сайт использует **тот же** `extraConfig`, что и LAN —
+   без отдельной копии конфигурации.
+2. **acp-web bundle**: `patch-main-ts.mjs` больше не ограничен `*.local` — endpoint
+   деривируется для любого `acp-ui.<host>` (`acp-ui.<host>` → `acp.<host>`, тот же паттерн),
+   а схема выбирается по странице: `wss://` на https (mesh), `ws://` на plain http (LAN).
+   Раньше на mesh-странице (https) дефолтного агента не было вовсе, а `ws://` на https-странице
+   заблокировал бы браузер как mixed-content. Прод-деривация на `https://acp-ui.homelab.myt.su`
+   теперь даёт `wss://acp.homelab.myt.su/` — существующий mesh-ingress ACP (f8-06).
+3. **Тест-контракт** (`tests/app-services.nix`): добавлен mesh-сценарий — при заданных
+   `meshDomain` + `cloudflareToken` у acp-ui есть и LAN, и mesh-HTTPS сайты, и их `extraConfig`
+   идентичен; status при этом не деградирует.
+
+Сертификат `acp-ui.homelab.myt.su` выдаётся автоматически при следующей перезагрузке Caddy
+(DNS-01 через Cloudflare, wildcard `*.homelab.myt.su` уже резолвится на ygg-адрес — внешняя DNS
+не меняется). LAN `ws://acp.mytecor-homelab.local/` (http-страница) сохраняет прежнее поведение.
+
 ## Проверка клиента в браузере (ручная, 2026-09-20)
 
 Оператор открыл `http://acp-ui.mytecor-homelab.local` в браузере той же LAN и подтвердил, что
@@ -155,6 +185,7 @@ SPA-fallback, mdns-юниты).
 ## Открытые вопросы
 
 - Хостинг статики выбран: derivation-пакет `pkgs.lattice.acp-web` с `root *` + `try_files
-  {path} /index.html` + `file_server` в Caddy (LAN-only `http://acp-ui.<node>.local`); `plain
-  Caddy root` не использован, так как пакет даёт воспроизводимый store-path из закреплённого
-  источника.
+  {path} /index.html` + `file_server` в Caddy (контракт `http://acp-ui.<node>.local` на LAN и
+  `https://acp-ui.<meshDomain>` на mesh — см. раздел «Mesh-HTTPS…» выше в этом файле);
+  `plain Caddy root` не использован, так как пакет даёт воспроизводимый store-path из
+  закреплённого источника.

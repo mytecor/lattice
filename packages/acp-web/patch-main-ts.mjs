@@ -1,12 +1,16 @@
 // Lattice patch (f13-01 step 4 + fix): pre-configure a default ACP agent in the
 // acp-components demo. Upstream ships an empty `builtinAgents` list in
 // production builds (it only fills the list during `vite dev` against a local
-// dev agent). This script edits examples/demo/src/main.tsx so the LAN ACP
-// ingress is always available without manual input: the default agent URL is
-// derived from the serving hostname (acp-ui.<node>.local -> acp.<node>.local,
-// the sibling mDNS host of this UI), with a build-time VITE_ACP_ENDPOINT
-// override. A pure source edit — reproducible, and touches neither the daemon
-// nor the Caddy ingress of the ACP endpoint.
+// dev agent). This script edits examples/demo/src/main.tsx so the ACP ingress
+// is always available without manual input: the default agent URL is derived
+// from the serving hostname (acp-ui.<host> -> acp.<host>, the sibling host of
+// this UI — on the LAN mDNS acp-ui.<node>.local -> acp.<node>.local, on the
+// mesh acp-ui.<meshDomain> -> acp.<meshDomain>), with a build-time
+// VITE_ACP_ENDPOINT override. The websocket scheme follows the serving page:
+// wss:// behind https (mesh), ws:// on plain http (LAN), so the derived
+// endpoint never trips browser mixed-content blocking. A pure source edit —
+// reproducible, and touches neither the daemon nor the Caddy ingress of the ACP
+// endpoint.
 //
 // The patch keys on the exact upstream block so it fails loudly if upstream
 // changes the shape we rely on (instead of silently building a UI without the
@@ -46,9 +50,11 @@ if (!src.includes(oldBlock)) {
 const newBlock = [
   "const builtinAgents: AgentConfig[] = (() => {",
   "  // Lattice (f13-01 step 4): pre-configured default ACP agent. The client is",
-  "  // served from acp-ui.<node>.local and talks to the sibling ACP ingress",
-  "  // acp.<node>.local. Derive the default endpoint from the serving hostname so",
-  "  // the bundle is node-agnostic; a build-time VITE_ACP_ENDPOINT overrides it.",
+  "  // served from acp-ui.<host> (LAN mDNS or mesh) and talks to the sibling",
+  "  // ACP ingress acp.<host>. Derive the default endpoint from the serving",
+  "  // hostname so the bundle is node-agnostic; a build-time VITE_ACP_ENDPOINT",
+  "  // overrides it. The scheme is wss:// on https pages (mesh) and ws:// on",
+  "  // plain http (LAN), so mixed-content is never tripped.",
   "  // clientInfo is required: without it AcpClient sends clientInfo: null and",
   "  // hydra-acp (zod) rejects initialize (\"Expected object, received null\").",
   "  const clientInfo = { name: 'acp-ui', version: '" + clientVersion + "' };",
@@ -57,8 +63,9 @@ const newBlock = [
   "    return [{ id: 'acp', name: 'ACP Endpoint', clientInfo, transport: { type: 'websocket', url: override } }];",
   "  }",
   "  const host = typeof window !== 'undefined' ? window.location.hostname : '';",
-  "  if (host.startsWith('acp-ui.') && host.endsWith('.local')) {",
-  "    return [{ id: 'acp', name: 'ACP Endpoint', clientInfo, transport: { type: 'websocket', url: `ws://${host.replace(/^acp-ui\\./, 'acp.')}/` } }];",
+  "  if (host.startsWith('acp-ui.')) {",
+  "    const wss = typeof window !== 'undefined' && window.location.protocol === 'https:';",
+  "    return [{ id: 'acp', name: 'ACP Endpoint', clientInfo, transport: { type: 'websocket', url: `${wss ? 'wss' : 'ws'}://${host.replace(/^acp-ui\\./, 'acp.')}/` } }];",
   "  }",
   "  return [];",
   '})();',
