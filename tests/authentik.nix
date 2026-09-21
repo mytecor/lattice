@@ -92,6 +92,13 @@ assert !(lib.elem ak.port config.networking.firewall.allowedTCPPorts);
 # Per-service mDNS publisher for the `auth` alias exists.
 assert builtins.hasAttr "auth-mdns" config.systemd.services;
 assert lib.hasInfix "auth.${hostName}.local" config.systemd.services.auth-mdns.script;
+# The publisher must enumerate ALL IPv4 uplinks — it must NOT pick a single
+# address from the default route (`ip route get … src`), which on a dual-homed
+# node silently republishes whichever interface currently holds the default
+# route and kills the alias for clients on the other subnet (auth was published
+# on the unreachable 192.168.3.12 instead of 192.168.60.184).
+assert !(lib.hasInfix "route get 1.1.1.1" config.systemd.services.auth-mdns.script);
+assert lib.hasInfix "addr show up" config.systemd.services.auth-mdns.script;
 # Authentik runs as an unprivileged system user (wrapper skips root branch).
 assert config.users.users.authentik.isSystemUser;
 assert config.users.groups ? authentik;

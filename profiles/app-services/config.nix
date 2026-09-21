@@ -117,21 +117,37 @@ let
   # — тот же приём, что у статус-сайта; параметризуем, чтобы не дублировать
   # юнит. Алias отдельного имения убирает необходимость в Host-заголовке и
   # дополнительной DNS-записи на стороне клиента.
+  #
+  # f14-fix: алиас публикуется на КАЖДОМ реальном LAN-аплинке ноды (а не на
+  # адресе из маршрута по умолчанию — на многодомной ноде default-route
+  # менявшийся после F14 restart уводил auth-mdns на недостижимый 192.168.3.12
+  # вместо 192.168.60.184). См. mdnsPublisher в profiles/tcp-gateway/config.nix —
+  # здесь тот же подход.
   mdnsPublishService = alias: {
-    description = "Publish the ${alias} mDNS alias";
+    description = "Publish the ${alias} mDNS alias on all LAN uplinks";
     wantedBy = [ "multi-user.target" ];
     after = [ "avahi-daemon.service" "network-online.target" ];
     requires = [ "avahi-daemon.service" ];
     wants = [ "network-online.target" ];
     script = ''
-      address="$(${pkgs.iproute2}/bin/ip -4 -o route get 1.1.1.1 \
-        | ${pkgs.gawk}/bin/awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')"
-      if [ -z "$address" ]; then
-        echo "could not determine the primary IPv4 address" >&2
+      published=0
+      while read -r iface addr; do
+        [ -z "$addr" ] && continue
+        ${config.services.avahi.package}/bin/avahi-publish --address --no-reverse \
+          ${lib.escapeShellArg alias} "$addr" >> /dev/null 2>&1
+        published=$((published + 1))
+      done < <(
+        ${pkgs.iproute2}/bin/ip -4 -o addr show up \
+          | ${pkgs.gawk}/bin/awk '
+            ! / lo / && $2 !~ /^(tun|tap|wg|br|veth|docker|virbr)/ {
+              if (match($4, /^([0-9.]+)\/[0-9]+/, m)) print $2, m[1]
+            }'
+      )
+      if [ "$published" -eq 0 ]; then
+        echo "no usable IPv4 uplink to publish ${alias} on" >&2
         exit 1
       fi
-      exec ${config.services.avahi.package}/bin/avahi-publish --address --no-reverse \
-        ${lib.escapeShellArg alias} "$address"
+      wait
     '';
     serviceConfig = {
       Restart = "always";

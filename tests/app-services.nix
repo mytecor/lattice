@@ -68,6 +68,14 @@ assert builtins.hasAttr "node-status-mdns" config.systemd.services;
 assert builtins.hasAttr "acp-ui-mdns" config.systemd.services;
 assert lib.hasInfix statusHost config.systemd.services.node-status-mdns.script;
 assert lib.hasInfix acpUiHost config.systemd.services."acp-ui-mdns".script;
+# Публикация идёт по ВСЕМ IPv4-аплинкам, а не по адресу из default-route
+# (`route get … src`) — на многодомной ноде это молча оставляет алиас пустым в
+# подсетях, чей интерфейс не держит маршрут по умолчанию (инцидент с auth-mdns
+# на 192.168.3.12 вместо 192.168.60.184 после F14 restart).
+assert !(lib.hasInfix "route get 1.1.1.1" config.systemd.services.node-status-mdns.script);
+assert !(lib.hasInfix "route get 1.1.1.1" config.systemd.services."acp-ui-mdns".script);
+assert lib.hasInfix "addr show up" config.systemd.services.node-status-mdns.script;
+assert lib.hasInfix "addr show up" config.systemd.services."acp-ui-mdns".script;
 # HTTP-status endpoint must be reachable; extra ports may legitimately be added.
 assert builtins.elem 80 config.networking.firewall.allowedTCPPorts;
 # f13-01 (mesh): acp-ui имеет mesh-HTTPS site на той же статике, что и LAN;

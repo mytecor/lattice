@@ -49,21 +49,47 @@ let
   authentikEnabled = config.lattice.authentik.enable or false;
   authentikCfg = config.lattice.authentik;
 
+  # Публикует mDNS-алиас на КАЖДОМ реальном LAN-аплинке ноды. Ранее адрес для
+  # avahi-publish брался один раз из маршрута по умолчанию (`ip route get
+  # 1.1.1.1` → src) — на многодомной ноде (enp3s0 провода + wlp2s0 Wi-Fi, а то
+  # и больше аплинков) это давало адрес того интерфейса, который сейчас держит
+  # default-route, т.е. перезапуск юнита молча менял публикуемый адрес на
+  # другой, недостижимый из клиентской подсети (см. инцидент с auth-mdns:
+  # после F14 restart он уехал на 192.168.3.12, пока клиенты в 192.168.60.0/24
+  # ждали 192.168.60.184). Решение оператора: распространять алиас по ВСЕМ
+  # аплинкам, чтобы клиент из любой подсети разрешал релевантный для себя адрес
+  # (mDNS живёт в пределах L2-сегмента). Исключаем loopback и туннели
+  # (ygg0 — IPv6, в `ip -4` и так не попадёт; tun/tap/wg/br/veth/docker — не
+  # реальные клиентские аплинки). Каждому адресу — свой процесс avahi-publish;
+  # хоть один опубликованный адрес считается успехом.
   mdnsPublisher = service: {
-    description = "Publish the ${service} mDNS alias";
+    description = "Publish the ${service} mDNS alias on all LAN uplinks";
     wantedBy = [ "multi-user.target" ];
     after = [ "avahi-daemon.service" "network-online.target" ];
     requires = [ "avahi-daemon.service" ];
     wants = [ "network-online.target" ];
     script = ''
-      address="$(${pkgs.iproute2}/bin/ip -4 -o route get 1.1.1.1 \
-        | ${pkgs.gawk}/bin/awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')"
-      if [ -z "$address" ]; then
-        echo "could not determine the primary IPv4 address" >&2
+      alias=${lib.escapeShellArg (serviceHost service)}
+      published=0
+      while read -r iface addr; do
+        [ -z "$addr" ] && continue
+        ${config.services.avahi.package}/bin/avahi-publish --address --no-reverse "$alias" "$addr" \
+          >> /dev/null 2>&1
+        published=$((published + 1))
+      done < <(
+        ${pkgs.iproute2}/bin/ip -4 -o addr show up \
+          | ${pkgs.gawk}/bin/awk '
+            ! / lo / && $2 !~ /^(tun|tap|wg|br|veth|docker|virbr)/ {
+              if (match($4, /^([0-9.]+)\/[0-9]+/, m)) print $2, m[1]
+            }'
+      )
+      if [ "$published" -eq 0 ]; then
+        echo "no usable IPv4 uplink to publish $alias on" >&2
         exit 1
       fi
-      exec ${config.services.avahi.package}/bin/avahi-publish \
-        --address --no-reverse ${lib.escapeShellArg (serviceHost service)} "$address"
+      # Все процессы avahi-publish запущены в фоне; держим юнит живым, пока они
+      # живы. Restart=always поднимет юнит заново, когда все упали.
+      wait
     '';
     serviceConfig = {
       Restart = "always";
