@@ -124,6 +124,19 @@
 - **Не блокирует:** [F10](#f10-disposable-worker), [F11](#f11-controller) — workspace/cwd
   и push-доступы переиспользуются f10-04, но F10 от них не зависит.
 
+### [F16. Context transformation](./roadmap/f16-context-transformation/README.md)
+
+> Встроенное управление контекстом LLM gateway: compression старых tool outputs,
+> reusable summaries и query-dependent selection при сохранении полной исходной истории.
+
+- **Статус:** ⏳ запланирована 2026-09-21, ещё не начата; задачи
+  [f16-01..f16-09](./roadmap/f16-context-transformation/README.md#задачи-и-порядок).
+- **Готово, когда:** provider-facing context укладывается в budget, recent tail сохраняется
+  verbatim, неизменившиеся segments переиспользуют cache; пройдена runtime-приёмка MVP.
+- **Зависит от:** [F7](#f7-llm-gateway); наблюдаемость использует
+  [F12](#f12-observability-метрики-gateway--grafana).
+- **После MVP:** embeddings/hybrid retrieval, hierarchical summaries и raw-page promotion.
+
 ## Выполненные (в порядке закрытия)
 
 ### [F2. Секреты и идентичность](./roadmap/f2-secrets-identity/README.md)
@@ -159,7 +172,8 @@
 > Единая точка доступа к моделям и provider credentials.
 
 - **Статус:** ✅ выполнена 2026-09-14 (f7-01..f7-13, включая provider balancing с live-прогоном);
-  follow-up f7-14 (декларативные модели + p2c) реализован 2026-09-16. Дальнейшая наблюдаемость
+  follow-up f7-14 (декларативные модели + p2c) реализован 2026-09-16.
+  Дальнейшая наблюдаемость
   (метрики `/metrics`, structured события, Grafana) вынесена в
   [F12](#f12-observability-метрики-gateway--grafana), а не в follow-up закрытой F7.
 - **Готово, когда:** клиенты используют только логические классы моделей, а отказ upstream

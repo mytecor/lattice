@@ -528,3 +528,10 @@ nix flake check --no-build
 
 Полный план и незавершённые шаги cutover находятся в
 [`f7-07-bifrost-go-proxy.md`](../../roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md).
+
+## План: context transformation
+
+Встроенный pre-routing pipeline `tool-output-compress` → `history-compact` → `context-select`
+описан в [F16: design и задачи f16-01..f16-09](./../../roadmap/f16-context-transformation/README.md).
+Это план, текущий runtime историю не сжимает. MVP ограничен полной `messages[]` в Chat
+Completions; Responses/affinity сохраняют текущий контракт.

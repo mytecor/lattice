@@ -44,3 +44,9 @@ group; retry, cooldown, fallback, priority, race и hedging проверены �
 > [F12 — Observability](../f12-observability/README.md): числа считаются в Prometheus-
 > счётчиках, логи остаются событийными для расследования по `request_id`. Это новая вертикаль,
 > а не follow-up закрытой F7.
+
+## Связанная фича
+
+Встроенный context-transformation pipeline вынесен в отдельную
+[F16. Context transformation](./../f16-context-transformation/README.md).
+F7 предоставляет ему Go/Bifrost runtime и routing; задачи F16 находятся в собственном каталоге.
