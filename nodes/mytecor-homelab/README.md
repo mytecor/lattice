@@ -128,7 +128,7 @@ bootstrap token, bootstrap password) — только agenix runtime-файла�
    создании) или вручную через REST с bootstrap-токеном: OIDC-провайдер (Grafana),
    ForwardAuth endpoint для acp-ui. Идемпотентно, источник истины — репозиторий.
 
-5. **Проверка Grafana через SSO**: http://grafana.mytecor-homelab.local/ → редирект на
+5. **Проверка Grafana через SSO**: `http://grafana.mytecor-homelab.local/` → редирект на
    `auth`, вход → admin-роль из группы `authentik Admins`.
 
 Слушатель работает как пользователь `rnsh` без sudo/root-привилегий. Его destination:
