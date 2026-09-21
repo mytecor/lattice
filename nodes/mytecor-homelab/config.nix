@@ -108,6 +108,10 @@ in
         file = ./secrets/llm-provider-dahl.age;
         mode = "0400";
       };
+      llm-provider-dahl-2 = {
+        file = ./secrets/llm-provider-dahl-2.age;
+        mode = "0400";
+      };
       llm-provider-hyperfusion = {
         file = ./secrets/llm-provider-hyperfusion.age;
         mode = "0400";
@@ -382,6 +386,13 @@ in
         priority = 20;
         stripParams = stripReasoningParams;
       };
+      dahl-2 = {
+        id = "dahl-2";
+        inferenceUrl = "https://inference.dahl.global/v1";
+        apiKeyFile = config.age.secrets.llm-provider-dahl-2.path;
+        priority = 20;
+        stripParams = stripReasoningParams;
+      };
       hyperfusion = {
         id = "hyperfusion";
         inferenceUrl = "https://api.hyperfusion.io/v1";
@@ -466,24 +477,24 @@ in
       # parses to an empty batch — harmless, and the pool for retry/fallback
       # survives.
       #
-      # providers excludes dahl and gonkarouter: their GLM-5.3-Flash endpoint
-      # caps completion at 4096 tokens — the gateway logs show successful
-      # responses finishing with exactly 4096 output tokens (dahl 10/34 smart
-      # completions in 24h, gonkarouter 1/9) — which the race cannot see as a
-      # failure (the winner is chosen on the first meaningful token, long
-      # before the truncating final chunk). Carriers must opt in here: a newly
-      # enabled provider with a smaller cap would otherwise start truncating
-      # long answers again. dahl/gonkarouter keep serving standard/stupid,
-      # whose completions stay well under 4K.
       smart = {
         native = "zai-org/GLM-5.3-Flash";
         nativeByProvider = { hyperfusion = "gonka/zai-org/GLM-5.3-Flash"; };
+        # The historical 4096-token completion cap on dahl/gonkarouter is
+        # absorbed by the continue rule (idle 30s + wait 10m): a winner that
+        # truncates at 4096 and goes silent is continued on another provider
+        # with the partial output reshared. All carriers serve the exact GLM
+        # native (live /models check), so keep the full universe in the smart
+        # pool.
         pipeline = {
           providers = [
             "gonka-proxy"
             "gonka-openbroker"
             "gonka-api"
+            "dahl"
+            "dahl-2"
             "hyperfusion"
+            "gonkarouter"
           ];
           raceCount = 0;
           semaphore = {
@@ -525,16 +536,13 @@ in
           "gonka-openbroker"
           "gonka-api"
           "dahl"
+          "dahl-2"
           "hyperfusion"
           "gonkarouter"
         ];
-        # Same GLM-cap exclusion as models.smart.pipeline.providers: the raw
-        # fallback must not resurrect the 4096-cap carriers (dahl, gonkarouter)
-        # after entry+retry exhausted the narrowed universe.
-        smartExcluded = [
-          "dahl"
-          "gonkarouter"
-        ];
+        # Smart fallback covers the whole universe too: continue absorbs the
+        # historical 4096-cap carriers, so nothing is excluded here.
+        smartExcluded = [];
       in
       [
         # standard: Hyperfusion's second catalog alias. Narrow on purpose — the

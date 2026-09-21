@@ -12,6 +12,7 @@ in
   "llm-provider-gonka-gg-openbroker.age".publicKeys = [ admin node ];
   "llm-provider-gonka-api.age".publicKeys = [ admin node ];
   "llm-provider-dahl.age".publicKeys = [ admin node ];
+  "llm-provider-dahl-2.age".publicKeys = [ admin node ];
   "llm-provider-hyperfusion.age".publicKeys = [ admin node ];
   "llm-provider-gonkarouter.age".publicKeys = [ admin node ];
   "grafana-admin-password.age".publicKeys = [ admin node ];
