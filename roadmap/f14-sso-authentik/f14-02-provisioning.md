@@ -62,8 +62,36 @@ ak-api -X POST "$AK_BASE/flows/instances/" \
 ## 2. OIDC provider для Grafana
 
 Grafana подключается нативно (f14-01, шаг 7): модуль читает `authUrl`/`tokenUrl`/`apiUrl`
-`http://auth.<node>.local/application/o/{authorize,token,userinfo}/`, `client_id=grafana` и
-client_secret из agenix. Создаём провайдера (идемпотентно по имени) в Authentik:
+`https://auth.<meshDomain>/application/o/{authorize,token,userinfo}/` (mesh-canonical —
+тот же backend, что и LAN `auth.<node>.local`, но достижим и для ygg-клиентов),
+`client_id=grafana` и client_secret из agenix (голое hex-значение).
+
+**Без провайдера** Grafana нет в списке сервисов на странице входа Authentik, а вход через
+OIDC падает на authorize-endpoint ошибкой **«Client ID Error — The client identifier
+(client_id) is missing or invalid»** (в Authentik нет оauth2-провайдера с `client_id=grafana`).
+
+Рекомендуемый путь — идемпотентный скрипт
+[`scripts/provision-authentik-grafana.sh`](../../scripts/provision-authentik-grafana.sh):
+создаёт OAuth2-провайдера (`client_type=confidential`, `client_id=grafana`) + application
+(`slug=grafana`) с redirect_uri `/login/generic_oauth` на каждый внешний хост Grafana
+(LAN всегда, mesh — если задан `MESH_HOST`), после чего проверяет, что `client_id`
+зарегистрирован. Запускать на ноде от root:
+
+```sh
+# LAN + mesh (ygg):
+MESH_HOST=https://grafana.homelab.myt.su \
+  ./scripts/provision-authentik-grafana.sh
+
+# или только LAN:
+./scripts/provision-authentik-grafana.sh
+```
+
+> **Почему redirect_uri на каждый host.** Grafana формирует callback как
+> `<root_url>/login/generic_oauth`, где `root_url` — внешний URL (`lattice.grafana.domain`).
+> Провиджеры должен разрешать redirect_uri на каждый host, через который оператор ходит
+> в Grafana (LAN `.local` и mesh `.homelab.myt.su`), иначе Authorize-запрос отклоняется.
+
+Эквивалент вручную — создать провайдера и application (ниже пример):
 
 ```sh
 AK_GRAFANA_CLIENT_SECRET=$(sudo cat /run/agenix/grafana-oauth-client-secret)
@@ -76,7 +104,10 @@ ak-api -X POST "$AK_BASE/providers/oauth2/" \
     \"client_id\": \"grafana\",
     \"client_secret\": \"$AK_GRAFANA_CLIENT_SECRET\",
     \"authorization_flow\": \"$(ak-api "$AK_BASE/flows/instances/?slug=default-provider-authorization-explicit-consent" | jq -r '.results[0].pk')\",
-    \"redirect_uris\": [\"http://grafana.mytecor-homelab.local/login/generic_oauth\"],
+    \"redirect_uris\": [
+      \"https://grafana.homelab.myt.su/login/generic_oauth\",
+      \"http://grafana.mytecor-homelab.local/login/generic_oauth\"
+    ],
     \"signing_key\": \"\",
     \"access_code_validity\": \"minutes=1\",
     \"access_token_validity\": \"minutes=5\",
@@ -86,8 +117,7 @@ ak-api -X POST "$AK_BASE/providers/oauth2/" \
   }"
 ```
 
-Затем — application, привязывающий провайдера (нужен, чтобы пользователь увидел вход и чтобы
-Grafana могла по нему аутентифицироваться):
+Затем — application, привязывающий провайдера:
 
 ```sh
 OIDC_PK=$(ak-api "$AK_BASE/providers/oauth2/?name=grafana" | jq -r '.results[0].pk')
@@ -97,7 +127,7 @@ ak-api -X POST "$AK_BASE/core/applications/" \
     \"name\": \"grafana\",
     \"slug\": \"grafana\",
     \"provider\": $OIDC_PK,
-    \"meta_launch_url\": \"http://grafana.mytecor-homelab.local/\"
+    \"meta_launch_url\": \"https://grafana.homelab.myt.su/\"
   }"
 ```
 

@@ -35,17 +35,21 @@ let
 
         # Grafana enabled with native OIDC through Authentik (F14 step 7): the
         # client secret is an agenix runtime path read via the file provider.
+        # domain is mesh-canonical (full https URL) and the OIDC endpoints use
+        # the mesh auth host, mirroring the production node: root_url drives
+        # the OIDC callback and must be the external host, not the loopback.
         lattice.grafana = {
           enable = true;
           port = 3000;
           adminPasswordFile = "/run/agenix/grafana-admin-password";
           secretKeyFile = "/run/agenix/grafana-secret-key";
+          domain = "https://grafana.homelab.myt.su";
           oauth = {
             clientId = "grafana";
             clientSecretFile = "/run/agenix/grafana-oauth-client-secret";
-            authUrl = "http://auth.${hostName}.local/application/o/authorize/";
-            tokenUrl = "http://auth.${hostName}.local/application/o/token/";
-            apiUrl = "http://auth.${hostName}.local/application/o/userinfo/";
+            authUrl = "https://auth.homelab.myt.su/application/o/authorize/";
+            tokenUrl = "https://auth.homelab.myt.su/application/o/token/";
+            apiUrl = "https://auth.homelab.myt.su/application/o/userinfo/";
             scopes = [ "openid" "profile" "email" ];
             adminGroup = "authentik Admins";
           };
@@ -179,6 +183,17 @@ assert !(lib.hasInfix "X-Forwarded-Host"
 # Grafana native OIDC config is present when oauth is enabled (F14 step 7).
 assert grafanaSettings."auth.generic_oauth".enabled or false;
 assert grafanaSettings."auth.generic_oauth".client_id or "" == "grafana";
+# F14/F4-05 (mesh): Grafana is closed behind Authentik via native OIDC and is
+# exposed on the public mesh. The mesh site must exist (grafana NOT meshExcluded)
+# and root_url must be the mesh-canonical external https URL (it drives the OIDC
+# callback /login/generic_oauth), not the loopback listener.
+assert grafanaSettings.server.root_url or "" == "https://grafana.homelab.myt.su/";
+assert builtins.hasAttr "https://grafana.homelab.myt.su" config.services.caddy.virtualHosts;
+# OIDC endpoints use the mesh auth host (reachable from LAN and ygg clients);
+# the same backend as LAN auth.<node>.local.
+assert grafanaSettings."auth.generic_oauth".auth_url or "" == "https://auth.homelab.myt.su/application/o/authorize/";
+assert grafanaSettings."auth.generic_oauth".token_url or "" == "https://auth.homelab.myt.su/application/o/token/";
+assert grafanaSettings."auth.generic_oauth".api_url or "" == "https://auth.homelab.myt.su/application/o/userinfo/";
 # Mesh site exists for auth (login page is NOT meshExcluded).
 assert builtins.any
   (name: lib.hasSuffix "auth.homelab.myt.su" name)

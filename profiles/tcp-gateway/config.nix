@@ -13,8 +13,9 @@ let
   # указывающий на тот же backend. Когда оператор предоставит Cloudflare-токен
   # (DNS-01, acme_dns), mesh-сайты обслуживаются по HTTPS с автоматическим
   # сертификатом; без токена mesh остаётся на plain HTTP через тот же :80.
-  # Сервисы из meshExclude mesh-адрес НЕ получают — только LAN (например,
-  # grafana/llm-gateway обязаны остаться непубличными).
+  # Сервисы из meshExclude mesh-адрес НЕ получают — только LAN.
+  # (Grafana выпущена на mesh, т.к. закрыта за Authentik SSO; llm-gateway без
+  # публичной TLS/API-key защиты остаётся непубличным.)
   meshEnabled = cfg.meshDomain != null;
   enableCloudflare = cfg.cloudflareToken != null;
   meshScheme = if enableCloudflare then "https" else "http";
@@ -172,13 +173,13 @@ in
 
     # f4-05: сервисы, которые на mesh-адресе НЕ выпускаются (остаются только
     # на LAN-контракте *.local). Оператор задаёт сетевое имя сервиса (то же,
-    # что и в hostname: "grafana", "llm-gateway", ...). Нужно для сервисов,
-    # которые по политике нельзя открывать извне (grafana/llm-gateway — нет
+    # что и в hostname: "llm-gateway", ...). Нужно для сервисов,
+    # которые по политике нельзя открывать извне (llm-gateway — нет
     # TLS/API-key защиты).
     meshExclude = mkOption {
       type = types.listOf types.str;
       default = [ ];
-      example = [ "grafana" "llm-gateway" ];
+      example = [ "llm-gateway" ];
       description = ''
         Services that are NOT exposed on the mesh (external) address and keep
         only their LAN `.local` site. Useful for services that must stay

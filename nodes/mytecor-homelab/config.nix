@@ -28,6 +28,10 @@ let
   forceReasoningOff = {
     thinking = { type = "disabled"; };
   };
+  # f4-05: внешний mesh-домен (aaa-записи *.homelab.myt.su → yggdrasil-адрес ноды).
+  # Совпадает с lattice.tcp-gateway.meshDomain; используется для внешнего URL Grafana
+  # и OIDC-контрактов Authentik (mesh-canonical, см. lattice.grafana ниже).
+  meshDomain = "homelab.myt.su";
 in
 {
   networking.hostName = "mytecor-homelab";
@@ -56,11 +60,12 @@ in
 
   # f4-05: внешний (mesh) ingress поверх LAN-контракта. Caddy обслуживает сервисы
   # по Host заголовку и для *.homelab.myt.su параллельно *.local. domain null → mesh закрыт.
-  # grafana/llm-gateway в meshExclude: у них нет публичной TLS/API-key защиты, поэтому
-  # они остаются только на LAN-контракте *.local и извне (через mesh) недоступны.
+  # Grafana выпускается на mesh (https://grafana.homelab.myt.su) — доступ через ygg
+  # закрыт Authentik SSO (F14, нативный OIDC). llm-gateway остаётся только на
+  # LAN-контракте *.local (нет публичной TLS/API-key защиты — извне недоступен).
   lattice.tcp-gateway = {
     meshDomain = "homelab.myt.su";
-    meshExclude = [ "grafana" "llm-gateway" ];
+    meshExclude = [ "llm-gateway" ];
     # Cloudflare DNS-01: включается автоматически, как только оператор создаст секрет.
     cloudflareToken = lib.mkIf hasCaddyCloudflare config.age.secrets.caddy-cloudflare-token.path;
   };
@@ -622,9 +627,14 @@ in
   # the file provider (never plaintext in the store). Datasources (Prometheus +
   # Loki) and dashboard provisioning are configured by the module; only the
   # secret is node-specific. Everything binds 127.0.0.1 (non-public).
+  # F14: public-facing external URL — mesh-canonical. root_url drives the OIDC
+  # callback (/login/generic_oauth), so it is the external https host, not the
+  # loopback listener (which stays 127.0.0.1:9215 for Caddy); LAN browsers reach
+  # the same server through http://grafana.<node>.local and SSO via https://auth.homelab.myt.su.
   lattice.grafana = {
     adminPasswordFile = config.age.secrets.grafana-admin-password.path;
     secretKeyFile = config.age.secrets.grafana-secret-key.path;
+    domain = "https://grafana.${meshDomain}";
   };
 
   # F14: центральный SSO (Authentik) за Caddy-ингрессом. Loopback-only; наружу
@@ -648,13 +658,18 @@ in
   };
 
   # F14: нативный OIDC-вход Grafana через Authentik. client_secret — agenix-секрет,
-  # не в store. Grafana остаётся доступной только на LAN-контракте (meshExclude).
+  # не в store. URL-контракты OIDC указывают на mesh-хост auth.homelab.myt.su
+  # (тот же backend, что и LAN auth.<node>.local): вход работает как для mesh-
+  # клиентов (ygg), так и для LAN-клиентов, у которых поднят ygg
+  # (mesh-адрес резолвится через yggdrasil и доступен из обеих сред).
+  # redirect_uris в Authentik зарегистрированы на оба хоста (см.
+  # scripts/provision-authentik-grafana.sh).
   lattice.grafana.oauth = {
     clientId = "grafana";
     clientSecretFile = config.age.secrets.grafana-oauth-client-secret.path;
-    authUrl = "http://auth.${config.networking.hostName}.local/application/o/authorize/";
-    tokenUrl = "http://auth.${config.networking.hostName}.local/application/o/token/";
-    apiUrl = "http://auth.${config.networking.hostName}.local/application/o/userinfo/";
+    authUrl = "https://auth.${meshDomain}/application/o/authorize/";
+    tokenUrl = "https://auth.${meshDomain}/application/o/token/";
+    apiUrl = "https://auth.${meshDomain}/application/o/userinfo/";
     scopes = [ "openid" "profile" "email" ];
     adminGroup = "authentik Admins";
   };

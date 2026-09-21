@@ -72,8 +72,10 @@ Reticulum (это отдельный вопрос в [BACKLOG](../BACKLOG.md)). 
   (`caddy-cloudflare-token.age`) mesh-сайты обслуживаются по TLS через DNS-01, порт 443
   открывается автоматически.
 - Какие именно сервисы F4 выводятся наружу — решено: `acp`, `git-cache-proxy`, `radicle`,
-  `status` идут на `*.homelab.myt.su`; `grafana` и `llm-gateway` в mesh НЕ выпускаются
-  (`meshExclude` — нет публичной TLS/API-key защиты), остаются только на `*.local`.
+  `status` и `grafana` идут на `*.homelab.myt.su`; `llm-gateway` в mesh НЕ выпускается
+  (`meshExclude` — нет публичной TLS/API-key защиты), остаётся только на `*.local`.
+  Grafana выпущена на mesh, потому что закрыта за Authentik (F14, нативный OIDC) —
+  без SSO-защиты извне не публиковалась бы.
   DNS-зона `homelab.myt.su` создаётся оператором вручную; репозиторий её не содержит.
 
 ## Принятые решения

@@ -233,21 +233,23 @@ in
     assert builtins.any
       (name: lib.hasSuffix ".homelab.myt.su" name)
       (builtins.attrNames homelabConfig.services.caddy.virtualHosts);
-    # f4-05 (policy): internal-only services stay OFF the public mesh (no TLS /
-    # API-key protection). Their LAN *.local sites must survive; no *.homelab.myt.su
-    # site for them may exist. This is the user's hard constraint, not an
-    # operational value, so it is pinned here.
+    # f4-05/F14 (policy): Grafana is now exposed on the public mesh but ONLY
+    # because it is closed behind Authentik SSO (mesh site is a real Caddy
+    # virtualHost, HTTPS because the Cloudflare token is present — so it is
+    # https://grafana.homelab.myt.su, not http://). llm-gateway stays OFF the
+    # public mesh (no TLS / API-key protection). This is the user's hard
+    # constraint, not an operational value, so it is pinned here.
     let
       lanSuffix = ".mytecor-homelab.local";
       hosts = builtins.attrNames homelabConfig.services.caddy.virtualHosts;
       meshHosts = builtins.filter (n: lib.hasSuffix ".homelab.myt.su" n) hosts;
       graphLan = "http://grafana" + lanSuffix;
-      graphMesh = "http://grafana.homelab.myt.su";
+      graphMesh = "https://grafana.homelab.myt.su";
       llmLan = "http://llm-gateway" + lanSuffix;
       llmMesh = "http://llm-gateway.homelab.myt.su";
     in
     assert builtins.any (n: n == graphLan) hosts;
-    assert !(builtins.any (n: n == graphMesh) meshHosts);
+    assert builtins.any (n: n == graphMesh) meshHosts;
     assert builtins.any (n: n == llmLan) hosts;
     assert !(builtins.any (n: n == llmMesh) meshHosts);
     # SSH remains reachable through the firewall.

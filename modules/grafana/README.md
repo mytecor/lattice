@@ -32,7 +32,11 @@ admin-пароль — из agenix-секрета через file provider (не
 ## Ключевые опции
 
 - `listenAddress` / `port` — bind (loopback).
-- `domain` — влияет на `root_url`.
+- `domain` — влияет на `root_url`. Либо голый хост (легаси: `root_url =
+  http://<domain>:<port>/`), либо полный URL со схемой (канонический внешний
+  адрес с SSO/edge, например `https://grafana.homelab.myt.su` — именно его
+  подставляет прод-нода как mesh-canonical). `root_url` формирует OIDC-callback
+  (`/login/generic_oauth`), поэтому он обязан быть внешним хостом, а не loopback.
 - `adminUser` / `adminPasswordFile` / `secretKeyFile` — admin username + агентским
   secret paths для пароля и secret_key.
 - `dataDir` — `/var/lib/grafana` (персистится через /persist).

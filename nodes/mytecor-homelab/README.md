@@ -182,12 +182,15 @@ edge не смог бы доставить трафик до ygg-адреса; �
 https://acp.homelab.myt.su/          — ACP (Pi)
 https://acp-ui.homelab.myt.su/       — web-клиент ACP (f13-01, с 2026-09-20)
 https://git-cache-proxy.homelab.myt.su/
+https://grafana.homelab.myt.su/      — Grafana (с 2026-09-21, за Authentik/SSO)
 https://radicle.homelab.myt.su/
 https://status.homelab.myt.su/
 ```
 
-Grafana и LLM gateway в mesh НЕ выводятся (`meshExclude`): у них нет публичной TLS/API-key
-защиты, поэтому они остаются только на LAN-контракте `*.local`. Порт 80 (HTTP) открыт в
+Grafana выведена в mesh 2026-09-21 (`https://grafana.homelab.myt.su`), потому что закрыта
+за Authentik (F14, нативный OIDC — см. `scripts/provision-authentik-grafana.sh`). LLM gateway
+в mesh НЕ выводится (`meshExclude`): у него нет публичной TLS/API-key защиты, поэтому он
+остаётся только на LAN-контракте `*.local`. Порт 80 (HTTP) открыт в
 firewall; 443 открыт и mesh-сайты обслуживаются по HTTPS через DNS-01 ACME Cloudflare
 (токен `caddy-cloudflare-token.age` подключён, проверено 2026-09-18).
 

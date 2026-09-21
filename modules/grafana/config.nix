@@ -43,6 +43,17 @@ let
     };
   };
 
+  # The public-facing external URL Grafana advertises. `root_url` drives the
+  # OIDC callback (`/login/generic_oauth`) and every absolute link Grafana
+  # emits, so it must match the host the operator's browser actually uses —
+  # never the loopback listener. `domain` is either a bare host (legacy form:
+  # root_url http://<domain>:<port>/, the pre-SSO default) or a full URL with
+  # scheme (canonical for SSO/edge, e.g. https://grafana.homelab.myt.su).
+  externalRootUrl =
+    if lib.hasPrefix "http://" cfg.domain || lib.hasPrefix "https://" cfg.domain
+    then "${cfg.domain}/"
+    else "http://${cfg.domain}:${toString cfg.port}/";
+
   # F14: OIDC sign-in through Authentik is on only when a client secret is
   # supplied (an agenix runtime path). Without it, the admin-password login
   # stays the only way in.
@@ -80,7 +91,7 @@ in
             http_addr = cfg.listenAddress;
             http_port = cfg.port;
             domain = cfg.domain;
-            root_url = "http://${cfg.domain}:${toString cfg.port}/";
+            root_url = externalRootUrl;
           };
           security = {
             admin_user = cfg.adminUser;
