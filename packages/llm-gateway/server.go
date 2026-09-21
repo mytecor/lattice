@@ -428,6 +428,16 @@ cur := selected
 		if !continueEnabled || executeRequest.Kind != RequestChat {
 			return false
 		}
+		// Never let the in-gateway continuation cross a tool-call boundary:
+		// once the relayed winner has emitted any tool-call delta, a stall or
+		// break can only land in the middle of that call's arguments JSON.
+		// Continuing on another provider would reshare the dangling tool-call
+		// as prose (see appendPartialChatHistory) and produce a truncated call
+		// on the client, so surface a retryable error here and let a
+		// retry-capable client (pi) re-issue the request cleanly instead.
+		if partial.GotToolCalls {
+			return false
+		}
 		// Exclude the provider whose stream just broke from the immediate
 		// takeover. brokenProviders only absorbs a broken provider when swapTo
 		// appends it AFTER the dispatch that produced the next winner, so

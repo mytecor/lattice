@@ -77,7 +77,17 @@ func accumulatePartial(body []byte, out *partialStreamOutput) {
 // a nil error so the caller can still decide what to do with a continuation
 // that failed to build.
 func appendPartialChatHistory(body []byte, partial *partialStreamOutput) ([]byte, error) {
-	if partial == nil || !partial.GotText {
+	// A partial that already carried a tool-call delta must never be reshared
+	// as plain assistant text: the relayed stream was cut mid tool-call (or at
+	// a completed tool-call whose finish_reason never arrived), and its
+	// arguments JSON is either truncated or, at best, unfit to hand to a
+	// different provider as prose. Re-dispatching with that prose in context
+	// makes the successor provider echo the dangling tool-call as text and
+	// emit an empty/truncated structured tool-call — the "tool-call written
+	// into the text with an empty call block below" symptom (observed on
+	// `standard`). Leave the request untouched so the caller can surface a
+	// clean retryable error instead of a malformed continuation.
+	if partial == nil || !partial.GotText || partial.GotToolCalls {
 		return body, nil
 	}
 	var envelope struct {

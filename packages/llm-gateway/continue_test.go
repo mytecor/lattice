@@ -106,6 +106,51 @@ func TestAppendPartialChatHistoryNoPartialIsNoop(t *testing.T) {
 	}
 }
 
+// TestAppendPartialChatHistoryRefusesToReshareToolCallPartial pins the
+// tool-call boundary guard: a partial that already carries a tool-call delta
+// must not be reshaped into an assistant message. The relayed stream was cut
+// mid/with tool-call — its arguments JSON is truncated or unfit to hand to a
+// successor provider as prose — and re-dispatching with that prose in context
+// historically made the successor echo the dangling tool-call as text plus a
+// truncated structured tool-call ("tool-call written into the text with an
+// empty call block below", seen on `standard`). The request must stay
+// untouched so the caller surfaces a clean retryable error instead.
+func TestAppendPartialChatHistoryRefusesToReshareToolCallPartial(t *testing.T) {
+	original := []byte(`{"messages":[{"role":"user","content":"hi"}]}`)
+	// A partial with tool-call deltas AND some text content: the dangerous
+	// shape, where text may be the dangling tool-call prose itself.
+	partial := &partialStreamOutput{Content: "<invoke name=\"write\">", GotText: true, GotToolCalls: true}
+	rewritten, err := appendPartialChatHistory(original, partial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(rewritten) != string(original) {
+		t.Fatalf("a tool-call partial must not be reshared as assistant text: %s", rewritten)
+	}
+
+	// Even a completed tool-call (no finish_reason yet) must not be reshared
+	// as prose: the successor provider would not reliably re-emit it as a
+	// structured call.
+	completed := &partialStreamOutput{GotToolCalls: true}
+	rewritten, err = appendPartialChatHistory(original, completed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(rewritten) != string(original) {
+		t.Fatalf("a completed tool-call partial must not be reshared either: %s", rewritten)
+	}
+
+	// Sanity: a plain text partial still reshapes as before.
+	textOnly := &partialStreamOutput{Content: "thinking out loud", GotText: true}
+	rewritten, err = appendPartialChatHistory(original, textOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rewritten), "thinking out loud") {
+		t.Fatalf("a text-only partial must still be reshared: %s", rewritten)
+	}
+}
+
 // continueConfig builds a two-provider streaming entry route that also
 // declares the continue policy, for runner/server takeover tests.
 func continueConfig(t *testing.T) *compiledConfig {
@@ -484,6 +529,82 @@ func TestServerEmptyCompletionIsNotToolCallTurn(t *testing.T) {
 	}
 	if !strings.Contains(body, `"tool_calls"`) || !strings.Contains(body, `"id":"call_1"`) {
 		t.Fatalf("the tool-call delta must be relayed to the client: %s", body)
+	}
+}
+
+// TestServerContinueNeverCrossesToolCallBoundary pins the fix for the
+// "tool-call written into the text with an empty call block below" symptom:
+// when the relayed winner emits a tool-call delta and then stalls or closes
+// without finish_reason, the in-gateway continuation MUST NOT re-dispatch to
+// another provider — it could only reshare the dangling tool-call as prose and
+// produce a truncated call on the client. The client gets a clean retryable
+// partial error instead of a [DONE] success or a malformed continuation, and
+// the other provider is never consumed.
+func TestServerContinueNeverCrossesToolCallBoundary(t *testing.T) {
+	compiled := continueConfig(t)
+	var bCalls int
+	executor := &fakeExecutor{
+		stream: func(ctx context.Context, target Target, request ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			ch := make(chan StreamEvent, 3)
+			if target.Provider == "a" {
+				// a wins the race on a tool-call delta (a large write call whose
+				// arguments JSON was cut mid-stream), then closes without a
+				// finish_reason: the exact mid-tool-call truncation observed on
+				// `standard`.
+				ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"write","arguments":"{\"path\":\"/tmp/x.go\",\""}}]}}]}`), Meaningful: true}
+				close(ch)
+				return ch, nil
+			}
+			// provider b
+			bCalls++
+			// Initial race: stay silent so a wins; closed when a wins. It must
+			// never be contacted again for a continuation.
+			go func() {
+				<-ctx.Done()
+				close(ch)
+			}()
+			return ch, nil
+		},
+	}
+	api, runner := streamTestServer(t, compiled, executor)
+
+	body := postStream(t, api.URL)
+
+	// The tool-call delta itself is relayed (pi can see work started), but the
+	// turn must NOT complete as a clean [DONE] success — that would be the
+	// truncated tool-call symptom.
+	if !strings.Contains(body, `"tool_calls"`) {
+		t.Fatalf("the tool-call delta must be relayed: %s", body)
+	}
+	if strings.Contains(body, "data: [DONE]\n") {
+		t.Fatalf("a truncated tool-call stream must not end with [DONE]: %s", body)
+	}
+	// A retryable partial error must surface so a retry-capable client re-issues
+	// the request cleanly instead of completing on a dangling call.
+	var payload struct {
+		Error struct {
+			Type       string `json:"type"`
+			StatusCode int    `json:"status_code"`
+			Retryable  bool   `json:"retryable"`
+			Partial    bool   `json:"partial"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(sseErrorData(t, body), &payload); err != nil {
+		t.Fatalf("structured error payload: %v\n%s", err, body)
+	}
+	if payload.Error.Type != "5xx" || payload.Error.StatusCode != 502 {
+		t.Errorf("truncated tool-call must classify as 5xx: %+v", payload.Error)
+	}
+	if !payload.Error.Retryable || !payload.Error.Partial {
+		t.Errorf("truncated tool-call must be retryable+partial: %+v", payload.Error)
+	}
+	// The continuation must never have consumed provider b.
+	if bCalls != 1 {
+		t.Fatalf("takeover must not cross the tool-call boundary; provider b calls = %d, want 1 (race only)", bCalls)
+	}
+	// Provider a cools down after the break.
+	if got := runner.availableTargets([]Target{{Provider: "a", Model: "native-model"}}); len(got) != 0 {
+		t.Fatalf("provider a must cool down after the truncated tool-call break, available: %#v", got)
 	}
 }
 
