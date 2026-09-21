@@ -111,9 +111,10 @@ in
     # F14 step 6: Caddy ForwardAuth for browser-facing sites that have no SSO
     # of their own. Each entry names an existing Caddy site (a `serviceSites`
     # host) that is *not* touched at the backend: the site's extraConfig is
-    # wrapped with a Caddy `forward_auth` against Authentik's /akprox/...
-    # endpoint, so only the browser UI is gated. API endpoints of a service
-    # with split UI/API are reached through their own (unwrapped) site.
+    # wrapped with a Caddy `forward_auth` against Authentik's loopback
+    # /outpost.goauthentik.io/auth/caddy subrequest endpoint, so only the
+    # browser UI is gated. API endpoints of a service with split UI/API are
+    # reached through their own (unwrapped) site.
     forwardAuth = mkOption {
       type = types.listOf (types.submodule {
         options = {
@@ -147,7 +148,8 @@ in
       description = ''
         Browser-facing sites to wrap with Authentik Caddy ForwardAuth. The
         backend is untouched: only the site's extraConfig wraps a
-        `forward_auth` + `auth_request` against /akprox/... on the loopback
+        `forward_auth` + `auth_request` against the Authentik forward-auth
+        subrequest /outpost.goauthentik.io/auth/caddy on the loopback
         Authentik. Set the `lattice.tcp-gateway` ingress to expose `auth` and
         enable this list to protect each named site's browser UI.
       '';

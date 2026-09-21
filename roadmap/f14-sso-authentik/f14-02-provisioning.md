@@ -105,7 +105,7 @@ ak-api -X POST "$AK_BASE/core/applications/" \
 
 Caddy-директива в `profiles/app-services/config.nix` для сайта `acp-ui` использует
 `forward_auth` на loopback Authentik `http://127.0.0.1:9220` с `uri` по умолчанию
-`/akprox/auth/` (или `entry.uri` из `lattice.authentik.forwardAuth`). Authentik должен иметь
+`/outpost.goauthentik.io/auth/caddy` (или `entry.uri` из `lattice.authentik.forwardAuth`). Authentik должен иметь
 ForwardAuth-провайдера + application. Идемпотентно:
 
 ```sh
@@ -129,9 +129,12 @@ ak-api -X POST "$AK_BASE/providers/proxy/" \
 Затем application `acp-ui-fa` с этим провайдером (аналогично шагу 2). После этого `forward_auth`
 Caddy будет возвращать 302 на логин Authentik для неаутентифицированных браузерных запросов.
 
-> Примечание. `lattice.authentik.forwardAuth[].uri` по умолчанию `/akprox/auth/` — это slug, под
-> которым Authentik обслуживает forward-auth endpoint. Если фактический slug отличается, укажите
-> его в опции `uri` на ноде (это легальная настройка, не инвариант).
+> Примечание. `lattice.authentik.forwardAuth[].uri` по умолчанию
+> `/outpost.goauthentik.io/auth/caddy` — подзапрос, который обслуживает встроенный outpost
+> Go-сервера Authentik (определяет приложение по `X-Forwarded-*`/`Host`, возвращает 302 → логин
+> для неаутентифицированных запросов). Устаревший `/akprox/auth/` в этой версии (2026.5.6)
+> Django больше не маршрутизирует и отвечает 404, поэтому как дефолт он не годен. Если оператор
+> запускает собственный outpost на отдельном пути, укажите его в опции `uri` (легальная настройка).
 
 ## 4. Проверка
 

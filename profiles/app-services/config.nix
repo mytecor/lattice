@@ -91,8 +91,15 @@ let
   # listed in lattice.authentik.forwardAuth; otherwise return it unchanged.
   wrapForwardAuth = service: baseConfig:
     let
+      # F14: Authentik's forward-auth subrequest path. The loopback server's
+      # embedded outpost serves it at /outpost.goauthentik.io/auth/caddy (it
+      # detects the target app from the X-Forwarded-* headers / Host), NOT the
+      # legacy /akprox/auth/ which Django no longer routes and answers 404 —
+      # that 404 made Caddy's forward_auth treat every acp-ui request as
+      # denied. Default matches the documented Caddy integration for this
+      # Authentik (2026.5.6). A node may override per service via uri.
       entry = forwardAuthEntry service;
-      uri = entry.uri or "/akprox/auth/";
+      uri = entry.uri or "/outpost.goauthentik.io/auth/caddy";
     in
     if entry == null || !authentikCfg.enable then
       baseConfig

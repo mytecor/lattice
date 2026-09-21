@@ -119,6 +119,15 @@ assert config.systemd.services.authentik-server.serviceConfig.EnvironmentFile or
 assert lib.hasInfix
   "forward_auth"
   config.services.caddy.virtualHosts."http://acp-ui.${hostName}.local".extraConfig;
+# The forward_auth subrequest must hit the embedded outpost's forward-auth
+# endpoint (/outpost.goauthentik.io/auth/caddy), which returns 302 → login for
+# unauthenticated requests. The legacy /akprox/auth/ is NOT routed by this
+# Authentik (answers 404) and broke every acp-ui request.
+assert lib.hasInfix
+  "/outpost.goauthentik.io/auth/caddy"
+  config.services.caddy.virtualHosts."http://acp-ui.${hostName}.local".extraConfig;
+assert !(lib.hasInfix "/akprox/"
+  config.services.caddy.virtualHosts."http://acp-ui.${hostName}.local".extraConfig);
 # Grafana native OIDC config is present when oauth is enabled (F14 step 7).
 assert grafanaSettings."auth.generic_oauth".enabled or false;
 assert grafanaSettings."auth.generic_oauth".client_id or "" == "grafana";

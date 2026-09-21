@@ -24,8 +24,9 @@ admin-пароль из agenix, у статических сайтов защи�
   (`modules/authentik/`), по образцу остальных Lattice-модулей: типизированные опции,
   `default.nix` + `options.nix`, agenix-секреты как runtime-пути, никаких секретов в store;
 - в пакете отдельными store-путями собраны `authentik-proxy` и `authentik-worker`, но для
-  ForwardAuth (шаг 6) используется Caddy `forward_auth` против готового `/akprox/...` endpoint
-  самого Authentik, а не самосборный outpost.
+  ForwardAuth (шаг 6) используется Caddy `forward_auth` против готового
+  `/outpost.goauthentik.io/auth/caddy` endpoint встроенного outpost'а Go-сервера, а не
+  самосборный outpost.
 
 ## Что сделать
 
@@ -53,8 +54,9 @@ admin-пароль из agenix, у статических сайтов защи�
       подключений. Скрипт через `ak manage shell`/REST, bootstrap-token из agenix; идемпотентный.
 - [ ] 6. **Caddy ForwardAuth для сервисов без собственного SSO**: опция профиля
       `tcp-gateway`/общий шаблон, которая оборачивает `extraConfig` уже существующего сайта
-      (`serviceSites`) директивой `forward_auth` + `auth_request` на `/akprox/...`, чтобы не
-      трогать backend. Применение к статике (`acp-ui`, `status`) — по решению оператора; проверка,
+      (`serviceSites`) директивой `forward_auth` + `auth_request` на
+      `/outpost.goauthentik.io/auth/caddy`, чтобы не трогать backend. Применение к статике
+      (`acp-ui`, `status`) — по решению оператора; проверка,
       что `acp-ui` за ActuallyAuthenticate защищает браузерный UI, не ломая WebSocket-контракт
       с backend (формы соединения f8-06 не меняются).
 - [ ] 7. **Нативный OIDC: Grafana** — в [`modules/grafana`](../../modules/grafana/README.md)
@@ -71,7 +73,8 @@ admin-пароль из agenix, у статических сайтов защи�
       заданных секретах; assertion без секретов падает; Caddy-сайт `auth` существует и
       проксирует на loopback; backend-порт не в firewall; `auth-mdns` публикует alias; Authentik
       binds 127.0.0.1; у ForwardAuth-сайтов `extraConfig` содержит `forward_auth` на
-      `/akprox/...`; Grafana-конфиг содержит `auth.generic_oauth`. Плюс `nix flake check`.
+      `/outpost.goauthentik.io/auth/caddy`; Grafana-конфиг содержит `auth.generic_oauth`. Плюс
+      `nix flake check`.
 - [ ] 10. **Живое подтверждение** на `mytecor-homelab`: вход в Authentik (bootstrap-token →
       оператор), создание провайдера, вход Grafana через SSO, проверка ForwardAuth-сайта,
       достижимость `auth` на LAN и mesh. Зафиксировать результат в этой задаче.
