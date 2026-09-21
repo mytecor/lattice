@@ -99,6 +99,11 @@ assert lib.hasInfix "auth.${hostName}.local" config.systemd.services.auth-mdns.s
 # on the unreachable 192.168.3.12 instead of 192.168.60.184).
 assert !(lib.hasInfix "route get 1.1.1.1" config.systemd.services.auth-mdns.script);
 assert lib.hasInfix "addr show up" config.systemd.services.auth-mdns.script;
+# Each publisher must launch avahi-publish in the BACKGROUND (&) inside the
+# loop: avahi-publish is long-running, so a foreground call would block the
+# while-loop on the first uplink and silently drop every later address (this
+# caused ALL aliases to publish only 192.168.3.12 after the F14-aera deploy).
+assert lib.hasInfix "2>&1 &" config.systemd.services.auth-mdns.script;
 # Authentik runs as an unprivileged system user (wrapper skips root branch).
 assert config.users.users.authentik.isSystemUser;
 assert config.users.groups ? authentik;

@@ -74,7 +74,7 @@ let
       while read -r iface addr; do
         [ -z "$addr" ] && continue
         ${config.services.avahi.package}/bin/avahi-publish --address --no-reverse "$alias" "$addr" \
-          >> /dev/null 2>&1
+          >> /dev/null 2>&1 &
         published=$((published + 1))
       done < <(
         ${pkgs.iproute2}/bin/ip -4 -o addr show up \

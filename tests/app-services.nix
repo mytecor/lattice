@@ -76,6 +76,11 @@ assert !(lib.hasInfix "route get 1.1.1.1" config.systemd.services.node-status-md
 assert !(lib.hasInfix "route get 1.1.1.1" config.systemd.services."acp-ui-mdns".script);
 assert lib.hasInfix "addr show up" config.systemd.services.node-status-mdns.script;
 assert lib.hasInfix "addr show up" config.systemd.services."acp-ui-mdns".script;
+# avahi-publish должен запускаться в фоне (2>&1 &): иначе долгоживущий процесс
+# блокирует while-цикл на первом учебнике и остальные аплинки не публикуются
+# (инцидент: все алиасы уехали на 192.168.3.12 после F14 deploy).
+assert lib.hasInfix "2>&1 &" config.systemd.services.node-status-mdns.script;
+assert lib.hasInfix "2>&1 &" config.systemd.services."acp-ui-mdns".script;
 # HTTP-status endpoint must be reachable; extra ports may legitimately be added.
 assert builtins.elem 80 config.networking.firewall.allowedTCPPorts;
 # f13-01 (mesh): acp-ui имеет mesh-HTTPS site на той же статике, что и LAN;
