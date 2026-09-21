@@ -101,6 +101,22 @@ assert builtins.hasAttr "authentik-worker" config.systemd.services;
 assert builtins.hasAttr "authentik-migrate" config.systemd.services;
 assert config.systemd.services.authentik-server.serviceConfig.User == "authentik";
 assert config.systemd.services.authentik-worker.serviceConfig.User == "authentik";
+# The Rust worker must NOT share the server's loopback HTTP port (it binds its
+# own healthcheck/metrics listeners itself and would fail with Address already
+# in use), and its listen.http/listen.metrics must be valid non-empty socket
+# addresses (an empty string crashes the Rust config parser with "invalid
+# socket address syntax"). Both are enforced by workerEnv overriding these
+# two keys with ephemeral loopback ports (127.0.0.1:0).
+let
+  serverEnv = config.systemd.services.authentik-server.environment;
+  workerEnv = config.systemd.services.authentik-worker.environment;
+in
+assert serverEnv.AUTHENTIK_LISTEN__HTTP or "" != workerEnv.AUTHENTIK_LISTEN__HTTP or "";
+assert workerEnv.AUTHENTIK_LISTEN__HTTP or "" == "127.0.0.1:0";
+assert workerEnv.AUTHENTIK_LISTEN__METRICS or "" == "127.0.0.1:0";
+# Every other listenEnv value stays intact for the worker (the Rust ListenConfig
+# has no such fields; serde ignores them, Django tolerates them).
+assert workerEnv.AUTHENTIK_LISTEN__HTTPS or "" == "";
 # Migration one-shot must NOT invoke the buggy `ak manage migrate` (the
 # wrapper's non-root branch injects a leading `manage`, so Django fails with
 # `Unknown command: 'manage'` and the schema is never created → server/worker

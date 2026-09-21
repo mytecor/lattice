@@ -20,6 +20,25 @@ Postgres (`django_postgres_cache`), поэтому **Redis не требуетс
 - по умолчанию отключает все неиспользуемые listener'ы Authentik (HTTPS/LDAP/RADIUS/
   metrics/debug) и поднимает только HTTP на `127.0.0.1:<port>` — ничего не открывается наружу.
 
+## Сервер и воркер: раздельные listener'ы (Rust-воркер)
+
+`ak server` и `ak worker` — это **разные бинарники**: сервер это Python/Django (+ Go-proxy),
+а воркер (2026.5.x) — Rust (`ak-common`, конфиг через config_rs/serde). Оба читают один
+неймспейс `AUTHENTIK_LISTEN__*`, но по-разному:
+
+- Django терпит пустое значение listener'а как «не биндить»;
+- Rust-воркер парсит `listen.http`/`listen.metrics` как списки `SocketAddr` — **пустая строка
+  становится `[""]` и падает** с `invalid socket address syntax` (crash-loop, который чинит
+  этот сплит). Пустые `HTTPS/LDAP/LDAPS/RADIUS/DEBUG/DEBUG_PY` в Rust-воркере безвредны —
+  таких полей в `ListenConfig` нет, serde их игнорирует;
+- воркер **сам биндит** `listen.http` и `listen.metrics` (его healthcheck/metrics на TCP),
+  поэтому не может делить `127.0.0.1:<port>` сервера.
+
+Поэтому у воркера отдельный env: `AUTHENTIK_LISTEN__HTTP` и `AUTHENTIK_LISTEN__METRICS`
+равны `127.0.0.1:0` (эфемерный порт, назначается ядром при bind — валиден для парсера и не
+конфликтует ни с портом сервера, ни друг с другом). Наружу эти TCP-эндпоинты не нужны:
+health-live/ready и metrics воркера ходят через unix-сокет, не по TCP.
+
 ## Безопасность / секреты
 
 Все секреты — agenix-файлы по одному `AUTHENTIK_*=...` на файл, которые systemd грузит как

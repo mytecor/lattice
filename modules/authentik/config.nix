@@ -36,9 +36,10 @@ let
   # value ever lands in the Nix store or in this module's generated text.
   #
   # Listeners: Authentik defaults to binding HTTP/HTTPS/LDAP/RADIUS/metrics on
-  # `[::]` (f14 hard-constraint: non-public). We pin only the HTTP listener to
-  # the operator-chosen loopback address:port and set every other listener to
-  # an empty list so nothing opens on the host.
+  # `[::]` (f14 hard-constraint: non-public). The Python/Django server tolerates
+  # an empty listener value as "don't bind", so we pin only the HTTP listener to
+  # the operator-chosen loopback address:port and set every other listener to an
+  # empty list so the server opens nothing on the host.
   listenEnv = {
     AUTHENTIK_LISTEN__HTTP = "${cfg.listenAddress}:${toString cfg.port}";
     AUTHENTIK_LISTEN__HTTPS = "";
@@ -75,6 +76,30 @@ let
     AUTHENTIK_DISABLE_STARTUP_ANALYTICS = "true";
     AUTHENTIK_ERROR_REPORTING__ENABLED = "false";
     AUTHENTIK_STORAGE__FILE__PATH = dataDir;
+  };
+
+  # The Rust worker (`ak worker`, the 2026.5.x Dramatiq/healthcheck worker)
+  # reads the SAME AUTHENTIK_LISTEN__* namespace as Django, but through
+  # config_rs/serde instead of Python. Two differences both break a shared
+  # listenEnv and are the reason the worker is split out here:
+  #
+  #  * config_rs parses listen.http and listen.metrics as comma-separated lists
+  #    of SocketAddr. An empty string becomes [""] and fails to parse with
+  #    "invalid socket address syntax" — the crash-loop this fix removes.
+  #    (HTTPS/LDAP/LDAPS/RADIUS/DEBUG/DEBUG_PY are not fields in the Rust
+  #    ListenConfig, so their empty values are harmless there.)
+  #  * the worker actually binds listen.http and listen.metrics itself (its
+  #    per-process healthcheck and metrics routers on TCP), so it must not share
+  #    the server's ${cfg.port} on the same loopback address.
+  #
+  # Fix: give the worker valid, distinct loopback addresses. 127.0.0.1:0 is an
+  # ephemeral port the kernel assigns at bind time — valid for the config parser
+  # and guaranteed not to collide with the server's port or with each other.
+  # Nothing external needs those TCP endpoints: the worker's health-live/ready
+  # and metrics probes run over a unix socket, not TCP.
+  workerEnv = commonEnv // {
+    AUTHENTIK_LISTEN__HTTP = "${cfg.listenAddress}:0";
+    AUTHENTIK_LISTEN__METRICS = "${cfg.listenAddress}:0";
   };
 
   # agenix secret files, each a single `AUTHENTIK_*=...` line, loaded as extra
@@ -200,7 +225,10 @@ in
       requires = [ "authentik-migrate.service" ];
       after = [ "authentik-migrate.service" "network-online.target" ];
       wants = [ "network-online.target" ];
-      environment = commonEnv;
+      # Worker env, not commonEnv: see workerEnv above — the Rust worker needs
+      # valid, distinct loopback listeners (empty would crash the config parse,
+      # and 9220 would collide with the server).
+      environment = workerEnv;
       serviceConfig = {
         User = cfg.dbUser;
         Group = cfg.dbUser;
