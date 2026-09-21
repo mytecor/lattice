@@ -101,6 +101,18 @@ assert builtins.hasAttr "authentik-worker" config.systemd.services;
 assert builtins.hasAttr "authentik-migrate" config.systemd.services;
 assert config.systemd.services.authentik-server.serviceConfig.User == "authentik";
 assert config.systemd.services.authentik-worker.serviceConfig.User == "authentik";
+# Migration one-shot must NOT invoke the buggy `ak manage migrate` (the
+# wrapper's non-root branch injects a leading `manage`, so Django fails with
+# `Unknown command: 'manage'` and the schema is never created → server/worker
+# cannot start → Caddy 502). ExecStart is our migration runner (the
+# writeShellScript that resolves the private python env and runs
+# `python -m lifecycle.migrate`); it must neither be `ak` itself nor use the
+# `ak ... manage` incantation.
+let migrateExec = config.systemd.services.authentik-migrate.serviceConfig.ExecStart or "";
+in
+assert lib.hasInfix "authentik-migrate" migrateExec;
+assert !(lib.hasInfix "manage" migrateExec);
+assert !(lib.hasInfix "/bin/ak" migrateExec);
 # Secrets are supplied via EnvironmentFile (runtime paths), never inline.
 assert config.systemd.services.authentik-server.serviceConfig.EnvironmentFile or [ ] != null;
 # ForwardAuth wraps the acp-ui browser UI (protected), status is untouched.

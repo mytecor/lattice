@@ -4,6 +4,29 @@ let
   cfg = config.lattice.authentik;
   ak = "${cfg.package}/bin/ak";
 
+  # One-shot migration entrypoint. The `ak` wrapper (run unprivileged as the
+  # `authentik` system user) maps `ak manage migrate` to `python -m manage
+  # manage migrate` — a leading `manage` is already injected by the wrapper's
+  # non-root branch, so Django fails with `Unknown command: 'manage'` and the
+  # schema is never created (server/worker then can't start → Caddy 502).
+  # The correct full-migration entrypoint for this packaging is
+  # `python -m lifecycle.migrate` (system migrations + Django migrate + check).
+  # The python environment carrying `authentik-django` is built privately inside
+  # nixpkgs's authentik derivation and not exposed as a public attribute, so we
+  # read its store path out of the `ak` wrapper's baked PATH rather than
+  # rebuilding it here (robust across nixpkgs rebuilds).
+  migrate = pkgs.writeShellScript "authentik-migrate" ''
+    set -euo pipefail
+    ak="${ak}"
+    python="$(sed -n "s|^PATH='\(/nix/store/[^']*\)/bin'\$PATH.*|\1|p" "$ak" |
+      sed -n '1p')/bin/python"
+    if [[ ! -x "$python" ]]; then
+      echo "authentik-migrate: could not resolve python env from $ak" >&2
+      exit 1
+    fi
+    exec "$python" -m lifecycle.migrate "$@"
+  '';
+
   # Runtime-writable home for the authentik service user (media/storage).
   dataDir = toString cfg.dataDir;
 
@@ -142,7 +165,7 @@ in
         Group = cfg.dbUser;
         WorkingDirectory = dataDir;
         EnvironmentFile = envFiles;
-        ExecStart = "${ak} manage migrate";
+        ExecStart = migrate;
       };
       environment = commonEnv;
     };
