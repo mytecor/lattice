@@ -6,21 +6,43 @@
 # реализует шаг 3 из [f14-02-provisioning.md](../roadmap/f14-sso-authentik/f14-02-provisioning.md):
 # Caddy-директива forward_auth на loopback Authentik (127.0.0.1:9220, uri
 # /outpost.goauthentik.io/auth/caddy) требует наличие ForwardAuth-провайдера +
-# application в Authentik. Без них подзапрос forward_auth не находит приложение и
-# не пропускает к статике SPA.
+# application в Authentik для КАЖДОГО host, на котором acp-ui обслуживается за этим
+# `forward_auth`. Без подходящего провайдера подзапрос не находит приложение и
+# не пропускает к статике SPA — отдаётся 404-страница Authentik.
 #
-# ВАЖНО: subrequest-путь forward-auth — /outpost.goauthentik.io/auth/caddy
-# (обслуживается встроенным outpost'ом Go-сервера и определяет приложение по
-# X-Forwarded-* шапкам/Host), а НЕ устаревший /akprox/auth/, который Django в этой
-# версии больше не маршрутизирует и отвечает 404.
+# ВАЖНО (два независимых факта):
 #
-# Скрипт также довносит системные flow входа/авторизации (default-authentication-flow и
-# default-provider-authorization-explicit-consent), если они отсутствуют — они нужны
-# провайдеру, а на свежеразвёрнутой ноде их может не быть (провижининг f14-02 не выполнялся).
+# 1. subrequest-путь forward-auth — /outpost.goauthentik.io/auth/caddy
+#    (обслуживается встроенным outpost'ом Go-сервера), а НЕ устаревший
+#    /akprox/auth/, который Django в этой версии больше не маршрутизирует и
+#    отвечает 404.
 #
-# Запускать НА НОДЕ от root (там Authentik слушает loopback 127.0.0.1:9220, а agenix-секреты
-# лежат на /run/agenix). Скрипт идемпотентен: каждый шаг сначала ищет объект по slug/name и
-# создаёт, только если отсутствует; повторный запуск безопасен.
+# 2. Встроенный outpost сопоставляет подзапрос приложению СТРОГО по
+#    X-Forwarded-Host/Host против external_host провайдера (mode=forward_single).
+#    Один провайдер = один внешний host. Т.к. acp-ui обслуживается и на LAN
+#    (http://acp-ui.<node>.local), и на mesh (https://acp-ui.<meshDomain>),
+#    провайдер нужен на КАЖДЫЙ host: без отдельного mesh-провайдера подзапрос с
+#    mesh-host не находит приложение, outpost отвечает 404, и Caddy отдаёт эту
+#    404-страницу Authentik в браузер вместо статики SPA
+#    («отсутствие статики, 404 от authentik» на https://acp-ui.<meshDomain>/).
+#
+# Скрипт также довносит системные flow входа/авторизации
+# (default-authentication-flow и default-provider-authorization-explicit-consent),
+# если они отсутствуют — они нужны провайдеру, а на свежеразвёрнутой ноде их
+# может не быть (провижининг f14-02 не выполнялся).
+#
+# Запускать НА НОДЕ от root (там Authentik слушает loopback 127.0.0.1:9220, а agenix-
+# секреты лежат на /run/agenix). Скрипт идемпотентен: каждый шаг сначала ищет объект
+# по slug/name и создаёт, только если отсутствует; повторный запуск безопасен.
+#
+# Настройка hosts через переменные окружения (значения по умолчанию — LAN-only):
+#   APP_SLUG      провайдер/application для LAN-host  (default acp-ui-fa)
+#   APP_HOST      полный URL LAN-host                  (default http://acp-ui.mytecor-homelab.local)
+#   COOKIE_DOMAIN cookie domain для LAN-провайдера      (default mytecor-homelab.local)
+#   MESH_SLUG     провайдер/application для mesh-host   (default acp-ui-fa-mesh)
+#   MESH_HOST     полный URL mesh-host, пусто = mesh не провижинится
+#                 (пример: https://acp-ui.homelab.myt.su)
+#   MESH_COOKIE_DOMAIN cookie domain для mesh-провайдера (пример: homelab.myt.su)
 #
 # Секреты (bootstrap-токен, SECRET_KEY) читаются только в переменные окружения и никогда
 # не печатаются в stdout/лог.
@@ -32,9 +54,10 @@ BLUEPRINTS_DIR=${BLUEPRINTS_DIR:-/nix/store/9appmk5y6f12ddbicpmjgx2wc96cki4z-pyt
 AK_BASE_URL=${AK_BASE_URL:-http://127.0.0.1:9220/api/v3}
 APP_SLUG=${APP_SLUG:-acp-ui-fa}
 APP_HOST=${APP_HOST:-http://acp-ui.mytecor-homelab.local}
-# Host name extracted from APP_HOST (used by the forward-auth probe header).
-APP_HOST_NAME=$(printf '%s' "$APP_HOST" | sed -E 's#^[a-z]+://##; s#[:/].*$##')
 COOKIE_DOMAIN=${COOKIE_DOMAIN:-mytecor-homelab.local}
+MESH_SLUG=${MESH_SLUG:-acp-ui-fa-mesh}
+MESH_HOST=${MESH_HOST:-}
+MESH_COOKIE_DOMAIN=${MESH_COOKIE_DOMAIN:-}
 AUTH_FLOW_SLUG=${AUTH_FLOW_SLUG:-default-authentication-flow}
 AUTHZ_FLOW_SLUG=${AUTHZ_FLOW_SLUG:-default-provider-authorization-explicit-consent}
 INVALIDATION_FLOW_SLUG=${INVALIDATION_FLOW_SLUG:-default-provider-invalidation-flow}
@@ -124,53 +147,76 @@ INVALIDATION_FLOW_PK=$(ak_api "$AK_BASE_URL/flows/instances/?slug=$INVALIDATION_
 echo "  authorization flow: $AUTHZ_FLOW_PK ($AUTHZ_FLOW_SLUG)"
 echo "  invalidation flow: $INVALIDATION_FLOW_PK ($INVALIDATION_FLOW_SLUG)"
 
-echo "[2/4] Проверяю ForwardAuth-провайдера '$APP_SLUG'"
-PROV_PK=$(ak_api "$AK_BASE_URL/providers/proxy/?name=$APP_SLUG" | jq -r '.results[0].pk // empty')
-if [[ -z "$PROV_PK" ]]; then
-  echo "  провайдер отсутствует — создаю (mode=forward_single)"
-  PROV_PK=$(curl -fsS -X POST -H "Authorization: Bearer $AK_TOKEN" -H "Content-Type: application/json" \
-    -d "{
-      \"name\": \"$APP_SLUG\",
-      \"authorization_flow\": \"$AUTH_FLOW_PK\",
-      \"invalidation_flow\": \"$INVALIDATION_FLOW_PK\",
-      \"mode\": \"forward_single\",
-      \"external_host\": \"$APP_HOST\",
-      \"cookie_domain\": \"$COOKIE_DOMAIN\",
-      \"invalidate_sessions_on_logout\": true,
-      \"basic_auth_enabled\": false
-    }" "$AK_BASE_URL/providers/proxy/" | jq -r '.pk')
-  [[ -n "$PROV_PK" ]] || fail "не удалось создать proxy-провайдера"
-fi
-echo "  proxy provider: $PROV_PK ($APP_SLUG)"
+echo "[2/N] Проверяю ForwardAuth для каждого host acp-ui"
+# provision_fa slug host cookie_domain: идемпотентно создаёт ForwardAuth-провайдера
+# (mode=forward_single) + application под конкретный внешний host и проверяет, что
+# subrequest /outpost.goauthentik.io/auth/caddy для этого host отвечает 302/200/401
+# (не 404 — иначе Caddy отдаёт 404-страницу Authentik вместо статики SPA).
+# external_host уникален на провайдера: один провайдер = один host (X-Forwarded-Host
+# сопоставляется строго по external_host).
+provision_fa() {
+  local slug=$1 host=$2 cookie_domain=$3
+  local host_name prov_pk app_pk http_code
+  host_name=$(printf '%s' "$host" | sed -E 's#^[a-z]+://##; s#[:/].*$##')
+  [ -n "$host_name" ] || fail "не удалось извлечь hostname из '$host'"
 
-echo "[3/4] Проверяю application '$APP_SLUG'"
-APP_PK=$(ak_api "$AK_BASE_URL/core/applications/?slug=$APP_SLUG" | jq -r '.results[0].pk // empty')
-if [[ -z "$APP_PK" ]]; then
-  echo "  application отсутствует — создаю с привязкой к провайдеру"
-  APP_PK=$(curl -fsS -X POST -H "Authorization: Bearer $AK_TOKEN" -H "Content-Type: application/json" \
-    -d "{
-      \"name\": \"$APP_SLUG\",
-      \"slug\": \"$APP_SLUG\",
-      \"provider\": $PROV_PK,
-      \"meta_launch_url\": \"$APP_HOST/\"
-    }" "$AK_BASE_URL/core/applications/" | jq -r '.pk')
-  [[ -n "$APP_PK" ]] || fail "не удалось создать application"
-fi
-echo "  application: $APP_PK ($APP_SLUG)"
+  echo "== ForwardAuth host: $host ($slug) =="
+  PROV_PK=$(ak_api "$AK_BASE_URL/providers/proxy/?name=$slug" | jq -r '.results[0].pk // empty')
+  if [[ -z "$PROV_PK" ]]; then
+    echo "  провайдер отсутствует — создаю (mode=forward_single)"
+    PROV_PK=$(curl -fsS -X POST -H "Authorization: Bearer $AK_TOKEN" -H "Content-Type: application/json" \
+      -d "{
+        \"name\": \"$slug\",
+        \"authorization_flow\": \"$AUTH_FLOW_PK\",
+        \"invalidation_flow\": \"$INVALIDATION_FLOW_PK\",
+        \"mode\": \"forward_single\",
+        \"external_host\": \"$host\",
+        \"cookie_domain\": \"$cookie_domain\",
+        \"invalidate_sessions_on_logout\": true,
+        \"basic_auth_enabled\": false
+      }" "$AK_BASE_URL/providers/proxy/" | jq -r '.pk')
+    [[ -n "$PROV_PK" ]] || fail "не удалось создать proxy-провайдера для $host"
+  fi
+  echo "  proxy provider: $PROV_PK ($slug)"
 
-echo "[4/4] Проверяю endpoint /outpost.goauthentik.io/auth/caddy"
-# subrequest forward_auth Caddy на loopback Authentik; неаутентифицированный запрос
-# должен получить 302 на форму входа Authentik (не 404/500). Встроенный outpost
-# Go-сервера определяет приложение по X-Forwarded-Host (+ Host), поэтому проба идёт
-# с этими шапками, без query-параметров.
-HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-  -H "Host: $APP_HOST_NAME" \
-  -H "X-Forwarded-Host: $APP_HOST_NAME" \
-  -H "X-Forwarded-Proto: http" \
-  "http://127.0.0.1:9220/outpost.goauthentik.io/auth/caddy")
-echo "  /outpost.goauthentik.io/auth/caddy -> HTTP $HTTP_CODE"
-if [[ "$HTTP_CODE" != "302" && "$HTTP_CODE" != "200" && "$HTTP_CODE" != "401" ]]; then
-  fail "endpoint /outpost.goauthentik.io/auth/caddy ответил $HTTP_CODE (ожидался 302/200/401) — провайдер не подхватился"
+  APP_PK=$(ak_api "$AK_BASE_URL/core/applications/?slug=$slug" | jq -r '.results[0].pk // empty')
+  if [[ -z "$APP_PK" ]]; then
+    echo "  application отсутствует — создаю с привязкой к провайдеру"
+    APP_PK=$(curl -fsS -X POST -H "Authorization: Bearer $AK_TOKEN" -H "Content-Type: application/json" \
+      -d "{
+        \"name\": \"$slug\",
+        \"slug\": \"$slug\",
+        \"provider\": $PROV_PK,
+        \"meta_launch_url\": \"$host/\"
+      }" "$AK_BASE_URL/core/applications/" | jq -r '.pk')
+    [[ -n "$APP_PK" ]] || fail "не удалось создать application для $host"
+  fi
+  echo "  application: $APP_PK ($slug)"
+
+  # Проверка subrequest forward_auth от Caddy на loopback Authentik; неаутентифицированный
+  # запрос должен получить 302 на форму входа Authentik (не 404/500). Встроенный outpost
+  # Go-сервера определяет приложение по X-Forwarded-Host (+ Host), поэтому проба идёт с
+  # этими шапками, без query-параметров; X-Forwarded-Proto берётся из схемы host.
+  local proto=${host%%://*}
+  http_code=$(curl -s -o /dev/null -w '%{http_code}' \
+    -H "Host: $host_name" \
+    -H "X-Forwarded-Host: $host_name" \
+    -H "X-Forwarded-Proto: $proto" \
+    "http://127.0.0.1:9220/outpost.goauthentik.io/auth/caddy")
+  echo "  /outpost.goauthentik.io/auth/caddy ($host) -> HTTP $http_code"
+  if [[ "$http_code" != "302" && "$http_code" != "200" && "$http_code" != "401" ]]; then
+    fail "endpoint /outpost.goauthentik.io/auth/caddy для $host ответил $http_code (ожидался 302/200/401) — провайдер не подхватился"
+  fi
+}
+
+# LAN-host — всегда.
+provision_fa "$APP_SLUG" "$APP_HOST" "$COOKIE_DOMAIN"
+
+# mesh-host — только если оператор указал MESH_HOST (иначе mesh не провижинится и
+# subrequest с mesh-host не найдёт приложение → 404 Authentik вместо статики SPA).
+if [[ -n "$MESH_HOST" ]]; then
+  [[ -n "$MESH_COOKIE_DOMAIN" ]] || fail "MESH_HOST задан, но MESH_COOKIE_DOMAIN пуст — укажите cookie domain для mesh-провайдера"
+  provision_fa "$MESH_SLUG" "$MESH_HOST" "$MESH_COOKIE_DOMAIN"
 fi
 
-echo "Готово. ForwardAuth для acp-ui провижинен: провайдер '$APP_SLUG' + application."
+echo "Готово. ForwardAuth для acp-ui провижинен на hosts: '$APP_HOST'${MESH_HOST:+", '$MESH_HOST'"}."

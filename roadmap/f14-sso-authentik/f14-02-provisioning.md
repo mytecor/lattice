@@ -103,16 +103,43 @@ ak-api -X POST "$AK_BASE/core/applications/" \
 
 ## 3. ForwardAuth endpoint для acp-ui (статический web-клиент ACP)
 
-Caddy-директива в `profiles/app-services/config.nix` для сайта `acp-ui` использует
-`forward_auth` на loopback Authentik `http://127.0.0.1:9220` с `uri` по умолчанию
-`/outpost.goauthentik.io/auth/caddy` (или `entry.uri` из `lattice.authentik.forwardAuth`). Authentik должен иметь
-ForwardAuth-провайдера + application. Идемпотентно:
+Caddy-директива в `profiles/app-services/config.nix` для сайта `acp-ui` использует `forward_auth`
+на loopback Authentik `http://127.0.0.1:9220` с `uri` по умолчанию
+`/outpost.goauthentik.io/auth/caddy` (или `entry.uri` из `lattice.authentik.forwardAuth`). Authentik
+должен иметь ForwardAuth-провайдера + application **на каждый host**, на котором acp-ui
+обслуживается за этим `forward_auth` (LAN и mesh).
+
+> **Почему провайдер на каждый host.** Встроенный outpost сопоставляет подзапрос приложению
+> СТРОГО по `X-Forwarded-Host`/`Host` против `external_host` провайдера (`mode=forward_single`):
+> один провайдер = один внешний host. acp-ui обслуживается и на LAN
+> (`http://acp-ui.<node>.local`), и на mesh (`https://acp-ui.<meshDomain>`). Без отдельного
+> mesh-провайдера подзапрос с mesh-host не находит приложение, outpost отвечает **404**, и Caddy
+> отдаёт эту 404-страницу Authentik в браузер вместо статики SPA — приём «отсутствие статики,
+> 404 от authentik» на `https://acp-ui.<meshDomain>/`.
+
+Рекомендуемый путь — идемпотентный скрипт
+[`scripts/provision-authentik-acp-ui.sh`](../../scripts/provision-authentik-acp-ui.sh): на каждый
+host создаёт провайдера + application (slug по умолчанию `acp-ui-fa` для LAN, `acp-ui-fa-mesh` для
+mesh) и проверяет, что subrequest `/outpost.goauthentik.io/auth/caddy` для этого host отвечает
+302/200/401 (не 404). Запускать на ноде от root; mesh-провайдер включается переменной `MESH_HOST`:
+
+```sh
+# LAN + mesh (mesh — внешний yggdrasil-доступ):
+MESH_HOST=https://acp-ui.homelab.myt.su \
+MESH_COOKIE_DOMAIN=homelab.myt.su \
+  ./scripts/provision-authentik-acp-ui.sh
+
+# или только LAN (mesh не провижинится):
+./scripts/provision-authentik-acp-ui.sh
+```
+
+Эквивалент вручную — на каждый host свой провайдер (ниже LAN-пример):
 
 ```sh
 # flow, который перехватывает неаутентифицированный запрос (шаг 6 в f14-01):
 FA_FLOW=$(ak-api "$AK_BASE/flows/instances/?slug=default-authentication-flow" | jq -r '.results[0].pk')
 
-# провайдер-cproxy (forward auth), slug/имя "acp-ui-fa":
+# провайдер-cproxy (forward auth), slug/имя "acp-ui-fa" (LAN-host):
 ak-api -X POST "$AK_BASE/providers/proxy/" \
   -H 'Content-Type: application/json' \
   -d "{
@@ -124,10 +151,14 @@ ak-api -X POST "$AK_BASE/providers/proxy/" \
     \"invalidate_sessions_on_logout\": true,
     \"basic_auth_enabled\": false
   }"
+
+# для mesh — второй провайдер "acp-ui-fa-mesh" с external_host https://acp-ui.homelab.myt.su
+# и cookie_domain homelab.myt.su (свой на каждый host).
 ```
 
-Затем application `acp-ui-fa` с этим провайдером (аналогично шагу 2). После этого `forward_auth`
-Caddy будет возвращать 302 на логин Authentik для неаутентифицированных браузерных запросов.
+Затем application-объекты (по одному на провайдера, slug/имя совпадают с провайдером, аналогично
+шагу 2). После этого `forward_auth` Caddy будет возвращать 302 на логин Authentik для
+неаутентифицированных браузерных запросов на каждом из hosts.
 
 > Примечание. `lattice.authentik.forwardAuth[].uri` по умолчанию
 > `/outpost.goauthentik.io/auth/caddy` — подзапрос, который обслуживает встроенный outpost
@@ -135,6 +166,7 @@ Caddy будет возвращать 302 на логин Authentik для не�
 > для неаутентифицированных запросов). Устаревший `/akprox/auth/` в этой версии (2026.5.6)
 > Django больше не маршрутизирует и отвечает 404, поэтому как дефолт он не годен. Если оператор
 > запускает собственный outpost на отдельном пути, укажите его в опции `uri` (легальная настройка).
+> Тот же механизм «один провайдер на host» не меняется от выбора `uri`.
 
 ## 4. Проверка
 

@@ -58,7 +58,11 @@ admin-пароль из agenix, у статических сайтов защи�
       `/outpost.goauthentik.io/auth/caddy`, чтобы не трогать backend. Применение к статике
       (`acp-ui`, `status`) — по решению оператора; проверка,
       что `acp-ui` за ActuallyAuthenticate защищает браузерный UI, не ломая WebSocket-контракт
-      с backend (формы соединения f8-06 не меняются).
+      с backend (формы соединения f8-06 не меняются). ForwardAuth-провайдер создаётся **на
+      каждый host** (LAN и mesh): outpost сопоставляет приложение строго по
+      `X-Forwarded-Host`/`Host` против `external_host` (один провайдер = один host) — без
+      mesh-провайдера mesh-сайт отдаёт 404-страницу Authentik вместо статики (см.
+      [f14-02](./f14-02-provisioning.md#3-forwardauth-endpoint-для-acp-ui-статический-web-клиент-acp)).
 - [ ] 7. **Нативный OIDC: Grafana** — в [`modules/grafana`](../../modules/grafana/README.md)
       секция `auth.generic_oauth` (client_id/client_secret/`auth_url`/`token_url`/`api_url`,
       scopes `openid profile email`), client-секрет — agenix. Вход через Authentik, admin-роль

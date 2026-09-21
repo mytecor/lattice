@@ -13,7 +13,11 @@
 #   - the systemd units run as the non-root `authentik` user (the `ak` wrapper
 #     then skips its container-root branch);
 #   - backend port stays out of the firewall: Caddy reaches Authentik over
-#     loopback without a rule.
+#     loopback without a rule;
+#   - the LAN and mesh acp-ui sites both ForwardAuth-wrap with the standard
+#     /outpost.goauthentik.io/auth/caddy endpoint and do NOT pin the subrequest
+#     host to LAN (so a per-host mesh provider in Authentik can match — otherwise
+#     the mesh site returns an Authentik 404 page instead of the static SPA).
 
 let
   inherit (nixpkgs) lib;
@@ -156,6 +160,22 @@ assert lib.hasInfix
   config.services.caddy.virtualHosts."http://acp-ui.${hostName}.local".extraConfig;
 assert !(lib.hasInfix "/akprox/"
   config.services.caddy.virtualHosts."http://acp-ui.${hostName}.local".extraConfig);
+# f14 fix (mesh 404): the mesh acp-ui site must ALSO be ForwardAuth-wrapped with
+# the same standard endpoint. Authentik's outpost matches the app by
+# X-Forwarded-Host/Host against the provider's external_host (one provider per
+# host); the mesh site presents its own host, so a per-host mesh provider in
+# Authentik (provision-authentik-acp-ui.sh MESH_HOST) is what makes the mesh
+# host match instead of 404. The wrapper must be present on the mesh site too.
+assert lib.hasInfix
+  "forward_auth"
+  config.services.caddy.virtualHosts."https://acp-ui.homelab.myt.su".extraConfig;
+assert lib.hasInfix
+  "/outpost.goauthentik.io/auth/caddy"
+  config.services.caddy.virtualHosts."https://acp-ui.homelab.myt.su".extraConfig;
+# …and it must not pin the subrequest host to the LAN host (else the mesh
+# provider could never match).
+assert !(lib.hasInfix "X-Forwarded-Host"
+  config.services.caddy.virtualHosts."https://acp-ui.homelab.myt.su".extraConfig);
 # Grafana native OIDC config is present when oauth is enabled (F14 step 7).
 assert grafanaSettings."auth.generic_oauth".enabled or false;
 assert grafanaSettings."auth.generic_oauth".client_id or "" == "grafana";

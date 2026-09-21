@@ -87,6 +87,16 @@ assert builtins.elem 80 config.networking.firewall.allowedTCPPorts;
 # без него регрессирует «SSL не работает» на https://acp-ui.homelab.myt.su.
 assert builtins.hasAttr "https://acp-ui.homelab.myt.su" meshConfig.services.caddy.virtualHosts;
 assert meshUi.extraConfig == meshUiLan.extraConfig;
+# f14 fix (mesh 404): the mesh site's extraConfig must NOT pin/rewrite
+# X-Forwarded-Host/Host to the LAN host. Authentik's embedded outpost matches the
+# app strictly by X-Forwarded-Host/Host against the provider's external_host (one
+# provider per host), so a per-host mesh provider
+# (provision-authentik-acp-ui.sh MESH_HOST) can only match if the mesh site sends
+# its own host. A rewrite to the LAN host would never match the mesh provider and
+# would 404 the same way. (This pure app-services test has SSO off — forward_auth
+# is absent here; the forward_auth-on-mesh contract is covered in tests/authentik.nix.)
+assert !(lib.hasInfix "X-Forwarded-Host" meshUi.extraConfig);
+assert !(lib.hasInfix "header_up Host" meshUi.extraConfig);
 assert builtins.hasAttr "http://acp-ui.node-a.local" meshConfig.services.caddy.virtualHosts;
 # status тоже остаётся на mesh (не регрессия соседнего сайта).
 assert builtins.hasAttr "https://status.homelab.myt.su" meshConfig.services.caddy.virtualHosts;
