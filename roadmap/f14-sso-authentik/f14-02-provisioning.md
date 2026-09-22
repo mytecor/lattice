@@ -82,6 +82,18 @@ Blueprint OAuth2 provider (`client_type=confidential`, `client_id=grafana`), app
 > Провиджеры должен разрешать redirect_uri на каждый host, через который оператор ходит
 > в Grafana (LAN `.local` и mesh `.homelab.myt.su`), иначе Authorize-запрос отклоняется.
 
+> **Один секрет — два потребителя с разным чтением (новый .age должен быть без перевода
+> строки).** Один и тот же `clientSecretFile` читается двумя путями: Grafana разворачивает
+> `${__file:<path>}` в **точные байты файла** (включая завершающий `\n`), а Blueprint-тег
+> Authentik `!File <path>` **обрезает** завершающий пробел/перевод строки. Если в `.age`-секрете
+> после 64-hex-значения client secret остался перевод строки, Grafana при обмене кода на токен
+> шлёт `secret + \n`, Authentik сравнивает с сохранённым `secret` без `\n` и отвечает на
+> `/application/o/token/` ошибкой `invalid_client` — браузер получает «Failed to get token from
+> provider» (в журнале Grafana: `[auth.oauth.token.exchange] failed to exchange code to token:
+> oauth2: "invalid_client"`). Соседние секреты (`grafana-admin-password`, `grafana-secret-key`)
+> в репозитории — ровно N байт без `\n`; `grafana-oauth-client-secret` должен быть таким же.
+> При редактировании секрета через `agenix -e` не оставляйте финальный перевод строки.
+
 Эквивалент вручную — создать провайдера и application (ниже пример):
 
 ```sh
