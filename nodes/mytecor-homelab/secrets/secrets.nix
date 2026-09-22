@@ -33,4 +33,8 @@ in
   # через публичный DNS, т.к. AAAA-записи указывают на yggdrasil-адрес, недостижимый
   # для HTTP-01/TLS-ALPN публичных CA). Создаётся оператором (см. README).
   "caddy-cloudflare-token.age".publicKeys = [ admin node ];
+  # f18-08: Jev API keys (опционально). Оператор создаёт .age-файлы при необходимости;
+  # пока файла нет, сервисы работают в inspector-режиме (задачи модели требуют ключей).
+  "jev-typesafe-api-key.age".publicKeys = [ admin node ];
+  "jev-text-model-api-key.age".publicKeys = [ admin node ];
 }

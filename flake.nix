@@ -105,6 +105,15 @@
       flake = false;
     };
 
+    module-foxbridge-camoufox = {
+      url = "path:./modules/services/foxbridge-camoufox";
+      flake = false;
+    };
+    module-jev-ultrafast = {
+      url = "path:./modules/services/jev-ultrafast";
+      flake = false;
+    };
+
     profiles = {
       url = "path:./profiles";
       flake = false;
@@ -139,6 +148,8 @@
     module-observability-loki,
     module-observability-alloy,
     module-grafana,
+    module-foxbridge-camoufox,
+    module-jev-ultrafast,
     profiles,
     rns-rs,
     ...
@@ -190,6 +201,10 @@
           };
           git-cache-proxy = final.callPackage ./packages/git-cache-proxy/package.nix { };
           verdaccio = final.callPackage ./packages/verdaccio/package.nix { };
+          # F18: browser runtime + agent stack.
+          foxbridge = final.callPackage ./packages/foxbridge/package.nix { };
+          camoufox = final.callPackage ./packages/camoufox/package.nix { };
+          jev-ultrafast = final.callPackage ./packages/jev-ultrafast/package.nix { };
           # F10: r1s execution backend (client + r1sd allocator); needs go_1_27 = 1.27.1 (go.mod).
           r1s = final.callPackage ./packages/r1s/package.nix { go = final.go_1_27; };
 
@@ -242,7 +257,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) acp-normalizer acp-web git-cache-proxy hydra-acp llm-gateway pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile r1s rns-server rnsh verdaccio;
+          inherit (pkgs.lattice) acp-normalizer acp-web git-cache-proxy hydra-acp llm-gateway pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
         });
@@ -279,6 +294,8 @@
         observability-alloy.imports = [ "${module-observability-alloy}" ];
         grafana.imports = [ "${module-grafana}" ];
         authentik.imports = [ "${module-authentik}" ];
+        foxbridge-camoufox.imports = [ "${module-foxbridge-camoufox}" ];
+        jev-ultrafast.imports = [ "${module-jev-ultrafast}" ];
 
         default.imports = [
           self.nixosModules.ephemeral-root
@@ -295,6 +312,8 @@
           self.nixosModules.observability-alloy
           self.nixosModules.grafana
           self.nixosModules.authentik
+          self.nixosModules.foxbridge-camoufox
+          self.nixosModules.jev-ultrafast
         ];
       };
 
@@ -313,6 +332,7 @@
           "${profiles}/rns-network/config.nix"
           "${profiles}/rnsh/config.nix"
           "${profiles}/sso/config.nix"
+          "${profiles}/browser-agent-stack/config.nix"
         ];
       };
     };
