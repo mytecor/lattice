@@ -189,8 +189,10 @@ assert lib.hasInfix
 assert !(lib.hasInfix "X-Forwarded-Host"
   config.services.caddy.virtualHosts."https://acp-ui.homelab.myt.su".extraConfig);
 # Provider/application/outpost state is a native Authentik Blueprint generated
-# by NixOS. It is applied after migrations and before server/worker/Caddy, then
+# by NixOS. It is applied after migrations and before server/worker, then
 # remains in Authentik's discovery directory for periodic reconciliation.
+# Caddy is deliberately independent: a failed provisioning oneshot must not
+# take every virtual host on the shared ingress offline.
 assert builtins.hasAttr "authentik-applications-blueprint" config.systemd.services;
 let
   blueprintUnit = config.systemd.services.authentik-applications-blueprint;
@@ -200,17 +202,17 @@ in
 assert builtins.elem "authentik-migrate.service" (blueprintUnit.requires or [ ]);
 assert builtins.elem "authentik-server.service" (blueprintUnit.before or [ ]);
 assert builtins.elem "authentik-worker.service" (blueprintUnit.before or [ ]);
-assert builtins.elem "caddy.service" (blueprintUnit.before or [ ]);
+assert !(builtins.elem "caddy.service" (blueprintUnit.before or [ ]));
 assert lib.length blueprintExec == 3;
 assert lib.all (lib.hasInfix "/bin/ak apply_blueprint") (lib.take 3 blueprintExec);
 assert lib.any (lib.hasInfix "flow-default-provider-authorization-explicit-consent.yaml") blueprintExec;
 assert lib.any (lib.hasInfix "flow-default-provider-invalidation.yaml") blueprintExec;
 assert lib.any (lib.hasInfix "/lattice/applications.yaml") blueprintExec;
-# The cache-invalidation step is DECOUPLED from the blueprint provisioning unit
-# that Caddy Requires=: it runs after the blueprint as its own oneshot unit and
-# must never be required by / ordered-before the ingress (2026-09-22 incident —
-# a failed cache step inside the blueprint unit kept Caddy down and took every
-# *.local service offline). The cache drop itself is cosmetic: without it a
+# The cache-invalidation step is DECOUPLED from the blueprint provisioning unit:
+# it runs after the blueprint as its own oneshot unit and must never be required
+# by / ordered-before the ingress (2026-09-22 incident — a failed cache step
+# inside the blueprint unit kept Caddy down and took every *.local service
+# offline). The cache drop itself is cosmetic: without it a
 # meta_hide flip (hiding the mesh transport app) stays invisible on the
 # Dashboard for up to 24h, because Authentik clears the cache only when an
 # Application is *created*, while the blueprint's `state: present` updates
@@ -231,8 +233,10 @@ assert lib.hasInfix "-m manage shell" invalidateSource;
 assert builtins.elem "multi-user.target" (invalidateUnit.wantedBy or [ ]);
 assert builtins.elem "authentik-applications-blueprint.service" (invalidateUnit.after or [ ]);
 assert !(builtins.elem "caddy.service" (invalidateUnit.before or [ ]));
-assert builtins.elem "authentik-applications-blueprint.service"
-  (config.systemd.services.caddy.requires or [ ]);
+assert !(builtins.elem "authentik-applications-blueprint.service"
+  (config.systemd.services.caddy.requires or [ ]));
+assert !(builtins.elem "authentik-applications-blueprint.service"
+  (config.systemd.services.caddy.after or [ ]));
 assert !(builtins.elem "authentik-invalidate-apps-cache.service"
   (config.systemd.services.caddy.requires or [ ]));
 assert lib.hasSuffix "/lattice/applications.yaml" blueprintPath;
@@ -241,6 +245,10 @@ assert config.systemd.services.authentik-worker.environment.AUTHENTIK_BLUEPRINTS
 assert grafanaSettings."auth.generic_oauth".enabled or false;
 assert grafanaSettings."auth.generic_oauth".client_id or "" == "grafana";
 assert grafanaSettings."auth.generic_oauth".auth_style or "" == "InHeader";
+assert lib.hasPrefix "$__file{" (grafanaSettings."auth.generic_oauth".client_secret or "");
+assert lib.hasSuffix "}" (grafanaSettings."auth.generic_oauth".client_secret or "");
+assert grafanaSettings."auth.generic_oauth".role_attribute_path or ""
+  == "contains(groups[*], 'authentik Admins') && 'Admin' || 'Viewer'";
 # F14/F4-05 (mesh): Grafana is closed behind Authentik via native OIDC and is
 # exposed on the public mesh. The mesh site must exist (grafana NOT meshExcluded)
 # and root_url must be the mesh-canonical external https URL (it drives the OIDC
@@ -310,6 +318,10 @@ pkgs.runCommand "authentik-evaluation" {
   grep -F 'model: authentik_providers_oauth2.oauth2provider' "$blueprintPath"
   grep -F 'client_id: "grafana"' "$blueprintPath"
   grep -F 'client_secret: !File "/run/agenix/grafana-oauth-client-secret"' "$blueprintPath"
+  grep -F 'name: System - OAuth2 Provider - Scopes' "$blueprintPath"
+  grep -F '[managed, goauthentik.io/providers/oauth2/scope-openid]' "$blueprintPath"
+  grep -F '[managed, goauthentik.io/providers/oauth2/scope-profile]' "$blueprintPath"
+  grep -F '[managed, goauthentik.io/providers/oauth2/scope-email]' "$blueprintPath"
   grep -F 'url: "http://grafana.${hostName}.local/login/generic_oauth"' "$blueprintPath"
   grep -F 'url: "https://grafana.homelab.myt.su/login/generic_oauth"' "$blueprintPath"
 

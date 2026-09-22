@@ -45,7 +45,7 @@ in
     };
 
     # File provider backed by an agenix secret. Grafana reads the password at
-    # startup through the `${__file:/path}` provider so it never lands in the
+    # startup through the `$__file{/path}` provider so it never lands in the
     # Nix store (the nixpkgs module warns about plaintext otherwise).
     adminPasswordFile = mkOption {
       type = types.nullOr types.path;

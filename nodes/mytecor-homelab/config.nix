@@ -123,11 +123,13 @@ in
       # F12: Grafana admin password via agenix (file provider, never in store).
       grafana-admin-password = {
         file = ./secrets/grafana-admin-password.age;
+        owner = "grafana";
         mode = "0400";
       };
       # F12: Grafana secret_key (NixOS 26.05 requires explicit value).
       grafana-secret-key = {
         file = ./secrets/grafana-secret-key.age;
+        owner = "grafana";
         mode = "0400";
       };
       # F14: Grafana OAuth2 client secret for SSO login via Authentik (OIDC).

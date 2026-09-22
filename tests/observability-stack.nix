@@ -73,8 +73,10 @@ assert builtins.any (ds: ds.type == "loki" && ds.uid == "loki") grafanaDatasourc
 assert builtins.all (ds: (ds.access or "proxy") == "proxy") grafanaDatasources;
 
 # --- Grafana secrets come from file providers, never the store ---
-assert lib.hasInfix "__file:" cfg.services.grafana.settings.security.admin_password;
-assert lib.hasInfix "__file:" cfg.services.grafana.settings.security.secret_key;
+assert lib.hasPrefix "$__file{" cfg.services.grafana.settings.security.admin_password;
+assert lib.hasSuffix "}" cfg.services.grafana.settings.security.admin_password;
+assert lib.hasPrefix "$__file{" cfg.services.grafana.settings.security.secret_key;
+assert lib.hasSuffix "}" cfg.services.grafana.settings.security.secret_key;
 
 # --- Sandbox: every unit hardened ---
 assert prometheusSvc.serviceConfig.NoNewPrivileges or false;

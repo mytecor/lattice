@@ -11,9 +11,9 @@ admin-пароль — из agenix-секрета через file provider (не
 ## Безопасность
 
 - `http_addr = 127.0.0.1` (loopback), не публичный.
-- `admin_password = "${__file:/run/agenix/grafana-admin-password}"` — file provider;
+- `admin_password = "$__file{/run/agenix/grafana-admin-password}"` — file provider;
   модуль assertion требует `adminPasswordFile`, refusing безопасного дефолта.
-- `secret_key = "${__file:/run/agenix/grafana-secret-key}"` — NixOS 26.05 убрал дефолт; ключ из
+- `secret_key = "$__file{/run/agenix/grafana-secret-key}"` — NixOS 26.05 убрал дефолт; ключ из
   agenix-секрета (`openssl rand -hex 32`), также через file provider.
 - `disable_gravatar`, `reporting_enabled=false`, `allow_sign_up=false`.
 - Datasources `access=proxy`: пользователи не видят адреса хранилищ; credentials

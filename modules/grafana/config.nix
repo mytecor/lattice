@@ -95,13 +95,13 @@ in
           };
           security = {
             admin_user = cfg.adminUser;
-            # File provider: Grafana expands ${__file:<path>} to the contents at
-            # startup. The value never appears in the Nix store (nixpkgs grafana
-            # module warns otherwise).
-            admin_password = "\${__file:${toString cfg.adminPasswordFile}}";
+            # File provider: Grafana expands $__file{<path>} to the trimmed file
+            # contents at startup. The value never appears in the Nix store
+            # (nixpkgs grafana module warns otherwise).
+            admin_password = "$__file{${toString cfg.adminPasswordFile}}";
             # NixOS 26.05 requires an explicit secret_key (no default); supplied
             # the same way, never plaintext in the store.
-            secret_key = "\${__file:${toString cfg.secretKeyFile}}";
+            secret_key = "$__file{${toString cfg.secretKeyFile}}";
             # F12: anonymous/gravatar disabled; no analytics reporting.
             disable_gravatar = true;
           };
@@ -115,20 +115,21 @@ in
         }
         // lib.optionalAttrs oauthEnabled {
           # F14: native OIDC sign-in through the central Authentik — the single
-          # entry point. client_secret read via the file provider (${__file:...})
+          # entry point. client_secret read via the file provider ($__file{...})
           # from an agenix path, never in the store. The admin role is mapped
           # from the Authentik operator group via role_attribute_path.
           "auth.generic_oauth" = {
             name = cfg.oauth.name;
             enabled = true;
             client_id = cfg.oauth.clientId;
-            client_secret = "\${__file:${toString cfg.oauth.clientSecretFile}}";
+            client_secret = "$__file{${toString cfg.oauth.clientSecretFile}}";
             auth_url = cfg.oauth.authUrl;
             token_url = cfg.oauth.tokenUrl;
             api_url = cfg.oauth.apiUrl;
             auth_style = cfg.oauth.authStyle;
             scopes = lib.concatStringsSep " " cfg.oauth.scopes;
-            role_attribute_path = "contains(groups[*], '${cfg.oauth.adminGroup}')";
+            role_attribute_path =
+              "contains(groups[*], '${cfg.oauth.adminGroup}') && 'Admin' || 'Viewer'";
             role_attribute_strict = true;
             # Authentik signs the ID token; exchange with PKCE.
             use_pkce = true;

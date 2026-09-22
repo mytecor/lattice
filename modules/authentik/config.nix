@@ -251,6 +251,10 @@ print(f"authentik-invalidate-apps-cache: cleared {len(keys)} application cache e
         client_secret: !File ${yamlString (toString app.clientSecretFile)}
         authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-explicit-consent]]
         invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+        property_mappings:
+          - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+          - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+          - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
         redirect_uris:
     ${redirectUriEntries app}
         grant_types:
@@ -289,6 +293,11 @@ print(f"authentik-invalidate-apps-cache: cleared {len(keys)} application cache e
         attrs:
           identifiers:
             name: Default - Provider invalidation flow
+          required: true
+      - model: authentik_blueprints.metaapplyblueprint
+        attrs:
+          identifiers:
+            name: System - OAuth2 Provider - Scopes
           required: true
 
     ${indent "  " (lib.concatMapStringsSep "\n" providerEntry forwardAuthHosts)}
@@ -473,7 +482,7 @@ in
     };
 
     # Apply the native Authentik Blueprint transactionally after migrations and
-    # before server/worker/Caddy. The worker then discovers the same file in
+    # before server/worker. The worker then discovers the same file in
     # AUTHENTIK_BLUEPRINTS_DIR and keeps applying it on Authentik's normal
     # reconciliation schedule.
     systemd.services.authentik-applications-blueprint = lib.mkIf blueprintEnabled {
@@ -481,7 +490,7 @@ in
       wantedBy = [ "multi-user.target" ];
       requires = [ "authentik-migrate.service" ];
       after = [ "authentik-migrate.service" ];
-      before = [ "authentik-server.service" "authentik-worker.service" "caddy.service" ];
+      before = [ "authentik-server.service" "authentik-worker.service" ];
       environment = commonEnv // {
         # Non-secret path exposed for evaluation/build-time contract tests.
         LATTICE_AUTHENTIK_APPLICATIONS_BLUEPRINT = applicationsBlueprintPath;
@@ -532,15 +541,6 @@ in
         EnvironmentFile = envFiles;
         ExecStart = invalidateAppsCache;
       };
-    };
-
-    # The single external ingress must start only after the blueprint
-    # provisioning (migrations + flow/OIDC/forward-auth applications) has
-    # succeeded. Keep this list minimal and critical-only: a non-essential step
-    # pasted into that unit blocks the whole web front when it fails.
-    systemd.services.caddy = lib.mkIf blueprintEnabled {
-      requires = [ "authentik-applications-blueprint.service" ];
-      after = [ "authentik-applications-blueprint.service" ];
     };
 
     # Authentik's loopback port is intentionally NOT added to the firewall: the

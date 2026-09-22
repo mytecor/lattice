@@ -75,24 +75,26 @@ Blueprint OAuth2 provider (`client_type=confidential`, `client_id=grafana`), app
 (`slug=grafana`) и точные redirect URI `/login/generic_oauth` для LAN и mesh. Адреса выводятся
 универсально из `service`, hostname ноды и gateway `meshDomain`/`meshExclude`. Client secret
 остаётся в agenix runtime-файле и читается самим Authentik через Blueprint-тег `!File`; значение
-не попадает в Nix store. Blueprint применяется до запуска Authentik и Caddy, ручного шага нет.
+не попадает в Nix store. Blueprint применяется после migrations и до запуска Authentik
+server/worker; Caddy от provisioning unit не зависит, поэтому ошибка reconcile не роняет общий
+ingress и остальные virtual hosts. Ручного шага нет.
+
+Provider получает штатные Authentik scope mappings `openid`, `profile` и `email`. Mapping
+`profile` добавляет claim `groups`, по которому Grafana назначает `Admin` участникам группы
+`authentik Admins`, а остальным пользователям — `Viewer`. Без этих mappings Authentik выдаёт
+access token без разрешённых scopes, `/userinfo/` отвечает `403`, а строгий role mapping Grafana
+отклоняет вход.
 
 > **Почему redirect_uri на каждый host.** Grafana формирует callback как
 > `<root_url>/login/generic_oauth`, где `root_url` — внешний URL (`lattice.grafana.domain`).
 > Провиджеры должен разрешать redirect_uri на каждый host, через который оператор ходит
 > в Grafana (LAN `.local` и mesh `.homelab.myt.su`), иначе Authorize-запрос отклоняется.
 
-> **Один секрет — два потребителя с разным чтением (новый .age должен быть без перевода
-> строки).** Один и тот же `clientSecretFile` читается двумя путями: Grafana разворачивает
-> `${__file:<path>}` в **точные байты файла** (включая завершающий `\n`), а Blueprint-тег
-> Authentik `!File <path>` **обрезает** завершающий пробел/перевод строки. Если в `.age`-секрете
-> после 64-hex-значения client secret остался перевод строки, Grafana при обмене кода на токен
-> шлёт `secret + \n`, Authentik сравнивает с сохранённым `secret` без `\n` и отвечает на
-> `/application/o/token/` ошибкой `invalid_client` — браузер получает «Failed to get token from
-> provider» (в журнале Grafana: `[auth.oauth.token.exchange] failed to exchange code to token:
-> oauth2: "invalid_client"`). Соседние секреты (`grafana-admin-password`, `grafana-secret-key`)
-> в репозитории — ровно N байт без `\n`; `grafana-oauth-client-secret` должен быть таким же.
-> При редактировании секрета через `agenix -e` не оставляйте финальный перевод строки.
+> **Один секрет — два file provider.** Grafana читает `clientSecretFile` через штатный
+> `$__file{<path>}` и обрезает пробелы по краям; Authentik Blueprint читает тот же файл через
+> `!File <path>`. Синтаксис `${__file:<path>}` неверен: Grafana воспринимает его как обращение
+> к environment variable, а затем отправляет не тот client secret, из-за чего token endpoint
+> отвечает `invalid_client` и браузер показывает «Failed to get token from provider».
 
 Эквивалент вручную — создать провайдера и application (ниже пример):
 
