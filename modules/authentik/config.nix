@@ -54,13 +54,13 @@ let
       echo "authentik-invalidate-apps-cache: could not resolve python env from $ak" >&2
       exit 1
     fi
-    CATALOGUE_KEYS_CODE='''
+    CATALOGUE_KEYS_CODE=''''
 from django.core.cache import cache
 from authentik.core.api.applications import user_app_cache_key
 keys = cache.keys(user_app_cache_key("*"))
 cache.delete_many(keys)
 print(f"authentik-invalidate-apps-cache: cleared {len(keys)} application cache entries")
-'''
+''''
     exec "$python" -m manage shell -c "$CATALOGUE_KEYS_CODE"
   '';
   invalidateAppsCache = pkgs.writeShellScript "authentik-invalidate-apps-cache" invalidateAppsCacheScript;
