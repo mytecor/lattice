@@ -167,9 +167,9 @@ assert !(lib.hasInfix "/akprox/"
 # f14 fix (mesh 404): the mesh acp-ui site must ALSO be ForwardAuth-wrapped with
 # the same standard endpoint. Authentik's outpost matches the app by
 # X-Forwarded-Host/Host against the provider's external_host (one provider per
-# host); the mesh site presents its own host, so a per-host mesh provider in
-# Authentik (provision-authentik-acp-ui.sh MESH_HOST) is what makes the mesh
-# host match instead of 404. The wrapper must be present on the mesh site too.
+# host); the mesh site presents its own host, so the generated Blueprint's
+# per-host mesh provider is what makes the mesh host match instead of 404. The
+# wrapper must be present on the mesh site too.
 assert lib.hasInfix
   "forward_auth"
   config.services.caddy.virtualHosts."https://acp-ui.homelab.myt.su".extraConfig;
@@ -180,6 +180,28 @@ assert lib.hasInfix
 # provider could never match).
 assert !(lib.hasInfix "X-Forwarded-Host"
   config.services.caddy.virtualHosts."https://acp-ui.homelab.myt.su".extraConfig);
+# Provider/application/outpost state is a native Authentik Blueprint generated
+# by NixOS. It is applied after migrations and before server/worker/Caddy, then
+# remains in Authentik's discovery directory for periodic reconciliation.
+assert builtins.hasAttr "authentik-forward-auth-blueprint" config.systemd.services;
+let
+  blueprintUnit = config.systemd.services.authentik-forward-auth-blueprint;
+  blueprintExec = blueprintUnit.serviceConfig.ExecStart or [ ];
+  blueprintPath = blueprintUnit.environment.LATTICE_AUTHENTIK_FORWARD_AUTH_BLUEPRINT or "";
+in
+assert builtins.elem "authentik-migrate.service" (blueprintUnit.requires or [ ]);
+assert builtins.elem "authentik-server.service" (blueprintUnit.before or [ ]);
+assert builtins.elem "authentik-worker.service" (blueprintUnit.before or [ ]);
+assert builtins.elem "caddy.service" (blueprintUnit.before or [ ]);
+assert lib.length blueprintExec == 3;
+assert lib.all (lib.hasInfix "/bin/ak apply_blueprint") blueprintExec;
+assert lib.any (lib.hasInfix "flow-default-provider-authorization-explicit-consent.yaml") blueprintExec;
+assert lib.any (lib.hasInfix "flow-default-provider-invalidation.yaml") blueprintExec;
+assert lib.any (lib.hasInfix "lattice-forward-auth.yaml") blueprintExec;
+assert lib.hasSuffix "lattice-forward-auth.yaml" blueprintPath;
+assert config.systemd.services.authentik-worker.environment.AUTHENTIK_BLUEPRINTS_DIR or "" != "";
+assert builtins.elem "authentik-forward-auth-blueprint.service"
+  (config.systemd.services.caddy.requires or [ ]);
 # Grafana native OIDC config is present when oauth is enabled (F14 step 7).
 assert grafanaSettings."auth.generic_oauth".enabled or false;
 assert grafanaSettings."auth.generic_oauth".client_id or "" == "grafana";
@@ -224,8 +246,13 @@ assert !config.services.nginx.enable;
 assert builtins.elem 80 config.networking.firewall.allowedTCPPorts;
 pkgs.runCommand "authentik-evaluation" {
   nativeBuildInputs = [ pkgs.caddy ];
+  inherit blueprintPath;
 } ''
   mkdir -p "$out"
   cp "${config.services.caddy.configFile}" "$out/caddyfile.in"
+  grep -F 'model: authentik_providers_proxy.proxyprovider' "$blueprintPath"
+  grep -F 'external_host: "http://acp-ui.${hostName}.local"' "$blueprintPath"
+  grep -F 'external_host: "https://acp-ui.homelab.myt.su"' "$blueprintPath"
+  grep -F 'model: authentik_outposts.outpost' "$blueprintPath"
   echo "Authentik SSO contract holds" > "$out/result"
 ''

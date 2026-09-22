@@ -91,7 +91,7 @@ assert meshUi.extraConfig == meshUiLan.extraConfig;
 # X-Forwarded-Host/Host to the LAN host. Authentik's embedded outpost matches the
 # app strictly by X-Forwarded-Host/Host against the provider's external_host (one
 # provider per host), so a per-host mesh provider
-# (provision-authentik-acp-ui.sh MESH_HOST) can only match if the mesh site sends
+# (the generated Authentik Blueprint) can only match if the mesh site sends
 # its own host. A rewrite to the LAN host would never match the mesh provider and
 # would 404 the same way. (This pure app-services test has SSO off — forward_auth
 # is absent here; the forward_auth-on-mesh contract is covered in tests/authentik.nix.)

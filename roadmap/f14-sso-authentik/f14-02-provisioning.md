@@ -147,21 +147,28 @@ Caddy-директива в `profiles/app-services/config.nix` для сайта
 > отдаёт эту 404-страницу Authentik в браузер вместо статики SPA — приём «отсутствие статики,
 > 404 от authentik» на `https://acp-ui.<meshDomain>/`.
 
-Рекомендуемый путь — идемпотентный скрипт
-[`scripts/provision-authentik-acp-ui.sh`](../../scripts/provision-authentik-acp-ui.sh): на каждый
-host создаёт провайдера + application (slug по умолчанию `acp-ui-fa` для LAN, `acp-ui-fa-mesh` для
-mesh) и проверяет, что subrequest `/outpost.goauthentik.io/auth/caddy` для этого host отвечает
-302/200/401 (не 404). Запускать на ноде от root; mesh-провайдер включается переменной `MESH_HOST`:
+Штатный путь полностью автоматизирован модулем: `lattice.authentik.forwardAuth` порождает
+нативный Authentik Blueprint. LAN- и mesh-host выводятся из `networking.hostName` и
+`lattice.tcp-gateway.meshDomain`; Blueprint с `state: present` управляет provider/application и
+полным списком providers embedded proxy-outpost. One-shot unit
+`authentik-forward-auth-blueprint.service` применяет его штатной командой `ak apply_blueprint`
+после миграций и до запуска server/worker/Caddy. Тот же файл включён в
+`AUTHENTIK_BLUEPRINTS_DIR`, поэтому дальше его периодически reconciles сам Authentik. Ручной шаг
+после `nixos-rebuild switch` или перезагрузки не нужен.
 
-```sh
-# LAN + mesh (mesh — внешний yggdrasil-доступ):
-MESH_HOST=https://acp-ui.homelab.myt.su \
-MESH_COOKIE_DOMAIN=homelab.myt.su \
-  ./scripts/provision-authentik-acp-ui.sh
-
-# или только LAN (mesh не провижинится):
-./scripts/provision-authentik-acp-ui.sh
-```
+> **Два подводных камня, из-за которых «мы уже это чинили», а 404 вернулся.**
+> Оба касаются того, что провижининг сам выглядел выполненным, а subrequest по-прежнему 404:
+> 1. **Нечёткий поиск по query-параметрам**: `?name=acp-ui-fa-mesh` субстроково находит
+>    `acp-ui-fa`, а у `/core/applications/?slug=` параметр-фильтр вообще не применяется (приходит
+>    весь список). Идемпотентная проверка «нашёл хоть один — значит существует» молча пропускала
+>    создание mesh-провайдера. Blueprint использует точные `identifiers` модели.
+> 2. **Провайдер не в outpost**: создание провайдера через сырой `POST /api/v3/providers/proxy/`
+>    не добавляет его в outpost (в UI этот шаг делает мастер). Провайдер без outpost'а не
+>    загружается embedded Go-outpost'ом → 404. Blueprint декларативно управляет полем
+>    `providers` объекта `authentik Embedded Outpost`.
+>
+> Симптом обоих — ровно тот «отсутствие статики, 404 от authentik» на
+> `https://acp-ui.<meshDomain>/`, при том что LAN-сайт за тем же `forward_auth` работает.
 
 Эквивалент вручную — на каждый host свой провайдер (ниже LAN-пример):
 

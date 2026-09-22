@@ -16,7 +16,9 @@ Postgres (`django_postgres_cache`), поэтому **Redis не требуетс
   **пароль БД не нужен** и ни один секрет не попадает в Nix store;
 - запускает `authentik-server` (loopback HTTP) и `authentik-worker` как непривилегированный
   пользователь `authentik` (`ak`-wrapper в не-root режиме пропускает docker/root-ветку);
-- выполняет `ak manage migrate` one-shot до старта сервера/воркера;
+- выполняет полный migration runner one-shot до старта сервера/воркера;
+- генерирует нативный Authentik Blueprint для ForwardAuth provider/application LAN и mesh,
+  включает providers во встроенный proxy-outpost и применяет Blueprint до запуска Caddy;
 - по умолчанию отключает все неиспользуемые listener'ы Authentik (HTTPS/LDAP/RADIUS/
   metrics/debug) и поднимает только HTTP на `127.0.0.1:<port>` — ничего не открывается наружу.
 
@@ -77,6 +79,8 @@ Authentik слушает `127.0.0.1:<port>` — не публично. Нару�
   `bootstrapPasswordFile` — agenix secret paths (см. «Секреты»).
 - `dbUser` — OS-пользователь и роль БД (default `authentik`).
 - `dataDir` — `/var/lib/authentik` (персистится через /persist).
+- `forwardAuth` — защищаемые сайты; из списка генерируется автоматически применяемый Authentik
+  Blueprint с provider/application/outpost state.
 - `logLevel` — уровень логов.
 
 ## Использование
@@ -91,8 +95,9 @@ lattice.authentik = {
   bootstrapUserFile = config.age.secrets.authentik-bootstrap-user.path;
   bootstrapEmailFile = config.age.secrets.authentik-bootstrap-email.path;
   bootstrapPasswordFile = config.age.secrets.authentik-bootstrap-password.path;
+  forwardAuth = [ { service = "acp-ui"; } ];
 };
 ```
 
-Дальнейшие доработки (провижининг OIDC/ForwardAuth-провайдеров, Caddy ForwardAuth,
-нативный OIDC для Grafana) — см. `roadmap/f14-sso-authentik/f14-01-deploy-authentik-sso.md`.
+Подробный контракт SSO описан в
+[f14-01](../../roadmap/f14-sso-authentik/f14-01-deploy-authentik-sso.md).

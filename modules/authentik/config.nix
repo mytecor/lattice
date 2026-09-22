@@ -76,6 +76,11 @@ let
     AUTHENTIK_DISABLE_STARTUP_ANALYTICS = "true";
     AUTHENTIK_ERROR_REPORTING__ENABLED = "false";
     AUTHENTIK_STORAGE__FILE__PATH = dataDir;
+  } // lib.optionalAttrs forwardAuthEnabled {
+    # nixpkgs substitutes Authentik's default /blueprints with the private
+    # authentik-django store path.  This combined directory keeps all packaged
+    # blueprints and adds the Nix-generated Lattice blueprint.
+    AUTHENTIK_BLUEPRINTS_DIR = toString blueprintsDir;
   };
 
   # The Rust worker (`ak worker`, the 2026.5.x Dramatiq/healthcheck worker)
@@ -115,6 +120,105 @@ let
   ] ++ lib.optionals (cfg.bootstrapPasswordFile != null) [
     cfg.bootstrapPasswordFile
   ];
+
+  hostName = config.networking.hostName;
+  meshDomain = config.lattice.tcp-gateway.meshDomain;
+  forwardAuthEnabled = cfg.forwardAuth != [ ];
+  forwardAuthHosts = lib.concatMap (entry:
+    let
+      service = entry.service;
+      lanDomain = "${hostName}.local";
+      mkHost = suffix: host: cookieDomain: {
+        slug = "${service}-fa${suffix}";
+        inherit host cookieDomain;
+      };
+    in
+    [ (mkHost "" "http://${service}.${lanDomain}" lanDomain) ]
+    ++ lib.optional (meshDomain != null)
+      (mkHost "-mesh" "https://${service}.${meshDomain}" meshDomain)
+  ) cfg.forwardAuth;
+
+  yamlString = builtins.toJSON;
+  indent = prefix: value:
+    lib.concatMapStringsSep "\n" (line: prefix + line) (lib.splitString "\n" value);
+  providerEntry = host: ''
+    - model: authentik_providers_proxy.proxyprovider
+      id: ${yamlString "${host.slug}-provider"}
+      state: present
+      identifiers:
+        name: ${yamlString host.slug}
+      attrs:
+        mode: forward_single
+        external_host: ${yamlString host.host}
+        cookie_domain: ${yamlString host.cookieDomain}
+        authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-explicit-consent]]
+        invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+        invalidate_sessions_on_logout: true
+        basic_auth_enabled: false
+
+    - model: authentik_core.application
+      state: present
+      identifiers:
+        slug: ${yamlString host.slug}
+      attrs:
+        name: ${yamlString host.slug}
+        provider: !KeyOf ${yamlString "${host.slug}-provider"}
+        meta_launch_url: ${yamlString "${host.host}/"}
+  '';
+
+  outpostProviders = lib.concatMapStringsSep "\n"
+    (host: "        - !KeyOf ${yamlString "${host.slug}-provider"}")
+    forwardAuthHosts;
+
+  forwardAuthBlueprint = builtins.toFile "lattice-forward-auth.yaml" ''
+    version: 1
+    metadata:
+      name: Lattice - ForwardAuth applications
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      # Apply packaged dependencies explicitly: blueprint discovery order is
+      # intentionally unspecified by Authentik.
+      - model: authentik_blueprints.metaapplyblueprint
+        attrs:
+          identifiers:
+            name: Default - Provider authorization flow (explicit consent)
+          required: true
+      - model: authentik_blueprints.metaapplyblueprint
+        attrs:
+          identifiers:
+            name: Default - Provider invalidation flow
+          required: true
+
+    ${indent "  " (lib.concatMapStringsSep "\n" providerEntry forwardAuthHosts)}
+
+      - model: authentik_outposts.outpost
+        state: present
+        identifiers:
+          name: authentik Embedded Outpost
+        attrs:
+          providers:
+    ${outpostProviders}
+  '';
+
+  # Expose the generated file to Authentik's native discovery/reconciliation
+  # while retaining every stock blueprint from the private Python environment
+  # embedded in nixpkgs's `ak` wrapper.
+  blueprintsDir = pkgs.runCommand "authentik-blueprints" { } ''
+    set -euo pipefail
+    ak=${lib.escapeShellArg ak}
+    python_root="$(${pkgs.gnused}/bin/sed -n \
+      "s|^PATH='\(/nix/store/[^']*\)/bin'\$PATH.*|\1|p" "$ak" | \
+      ${pkgs.gnused}/bin/sed -n '1p')"
+    if [[ ! -d "$python_root/blueprints" ]]; then
+      echo "authentik-blueprints: could not resolve packaged blueprints from $ak" >&2
+      exit 1
+    fi
+    mkdir -p "$out"
+    ${pkgs.coreutils}/bin/cp -rs "$python_root/blueprints/." "$out/"
+    mkdir -p "$out/lattice"
+    ln -s ${forwardAuthBlueprint} "$out/lattice/forward-auth.yaml"
+  '';
 in
 {
   config = lib.mkIf cfg.enable {
@@ -198,8 +302,10 @@ in
     systemd.services.authentik-server = {
       description = "Authentik SSO server (loopback)";
       wantedBy = [ "multi-user.target" ];
-      requires = [ "authentik-migrate.service" ];
-      after = [ "authentik-migrate.service" "network-online.target" ];
+      requires = [ "authentik-migrate.service" ]
+        ++ lib.optional forwardAuthEnabled "authentik-forward-auth-blueprint.service";
+      after = [ "authentik-migrate.service" "network-online.target" ]
+        ++ lib.optional forwardAuthEnabled "authentik-forward-auth-blueprint.service";
       wants = [ "network-online.target" ];
       environment = commonEnv;
       serviceConfig = {
@@ -222,8 +328,10 @@ in
     systemd.services.authentik-worker = {
       description = "Authentik worker (background tasks)";
       wantedBy = [ "multi-user.target" ];
-      requires = [ "authentik-migrate.service" ];
-      after = [ "authentik-migrate.service" "network-online.target" ];
+      requires = [ "authentik-migrate.service" ]
+        ++ lib.optional forwardAuthEnabled "authentik-forward-auth-blueprint.service";
+      after = [ "authentik-migrate.service" "network-online.target" ]
+        ++ lib.optional forwardAuthEnabled "authentik-forward-auth-blueprint.service";
       wants = [ "network-online.target" ];
       # Worker env, not commonEnv: see workerEnv above — the Rust worker needs
       # valid, distinct loopback listeners (empty would crash the config parse,
@@ -243,6 +351,43 @@ in
         PrivateTmp = false;
         ReadWritePaths = [ dataDir ];
       };
+    };
+
+    # Apply the native Authentik Blueprint transactionally after migrations and
+    # before server/worker/Caddy. The worker then discovers the same file in
+    # AUTHENTIK_BLUEPRINTS_DIR and keeps applying it on Authentik's normal
+    # reconciliation schedule.
+    systemd.services.authentik-forward-auth-blueprint = lib.mkIf forwardAuthEnabled {
+      description = "Apply Authentik ForwardAuth blueprint";
+      wantedBy = [ "multi-user.target" ];
+      requires = [ "authentik-migrate.service" ];
+      after = [ "authentik-migrate.service" ];
+      before = [ "authentik-server.service" "authentik-worker.service" "caddy.service" ];
+      environment = commonEnv // {
+        # Non-secret path exposed for evaluation/build-time contract tests.
+        LATTICE_AUTHENTIK_FORWARD_AUTH_BLUEPRINT = toString forwardAuthBlueprint;
+      };
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        User = cfg.dbUser;
+        Group = cfg.dbUser;
+        WorkingDirectory = dataDir;
+        EnvironmentFile = envFiles;
+        # Apply dependencies explicitly as well as referencing them through
+        # metaapplyblueprint. This recovers cleanly if a previous broken
+        # deployment never instantiated one of the stock flow blueprints.
+        ExecStart = [
+          "${ak} apply_blueprint ${blueprintsDir}/default/flow-default-provider-authorization-explicit-consent.yaml"
+          "${ak} apply_blueprint ${blueprintsDir}/default/flow-default-provider-invalidation.yaml"
+          "${ak} apply_blueprint ${forwardAuthBlueprint}"
+        ];
+      };
+    };
+
+    systemd.services.caddy = lib.mkIf forwardAuthEnabled {
+      requires = [ "authentik-forward-auth-blueprint.service" ];
+      after = [ "authentik-forward-auth-blueprint.service" ];
     };
 
     # Authentik's loopback port is intentionally NOT added to the firewall: the
