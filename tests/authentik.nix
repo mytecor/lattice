@@ -197,8 +197,8 @@ assert lib.length blueprintExec == 3;
 assert lib.all (lib.hasInfix "/bin/ak apply_blueprint") blueprintExec;
 assert lib.any (lib.hasInfix "flow-default-provider-authorization-explicit-consent.yaml") blueprintExec;
 assert lib.any (lib.hasInfix "flow-default-provider-invalidation.yaml") blueprintExec;
-assert lib.any (lib.hasInfix "lattice-forward-auth.yaml") blueprintExec;
-assert lib.hasSuffix "lattice-forward-auth.yaml" blueprintPath;
+assert lib.any (lib.hasInfix "/lattice/forward-auth.yaml") blueprintExec;
+assert lib.hasSuffix "/lattice/forward-auth.yaml" blueprintPath;
 assert config.systemd.services.authentik-worker.environment.AUTHENTIK_BLUEPRINTS_DIR or "" != "";
 assert builtins.elem "authentik-forward-auth-blueprint.service"
   (config.systemd.services.caddy.requires or [ ]);
@@ -247,9 +247,12 @@ assert builtins.elem 80 config.networking.firewall.allowedTCPPorts;
 pkgs.runCommand "authentik-evaluation" {
   nativeBuildInputs = [ pkgs.caddy ];
   inherit blueprintPath;
+  blueprintsDir = config.systemd.services.authentik-worker.environment.AUTHENTIK_BLUEPRINTS_DIR;
 } ''
   mkdir -p "$out"
   cp "${config.services.caddy.configFile}" "$out/caddyfile.in"
+  test "$(find "$blueprintsDir" -type l -print -quit)" = ""
+  test ! -L "$blueprintPath"
   grep -F 'model: authentik_providers_proxy.proxyprovider' "$blueprintPath"
   grep -F 'external_host: "http://acp-ui.${hostName}.local"' "$blueprintPath"
   grep -F 'external_host: "https://acp-ui.homelab.myt.su"' "$blueprintPath"

@@ -203,7 +203,10 @@ let
 
   # Expose the generated file to Authentik's native discovery/reconciliation
   # while retaining every stock blueprint from the private Python environment
-  # embedded in nixpkgs's `ak` wrapper.
+  # embedded in nixpkgs's `ak` wrapper. Authentik rejects blueprint paths whose
+  # realpath escapes AUTHENTIK_BLUEPRINTS_DIR, so these must be real copies:
+  # symlinkJoin/cp -s makes even packaged blueprints fail as "Invalid blueprint
+  # path" when apply_blueprint resolves the link into another store path.
   blueprintsDir = pkgs.runCommand "authentik-blueprints" { } ''
     set -euo pipefail
     ak=${lib.escapeShellArg ak}
@@ -215,10 +218,12 @@ let
       exit 1
     fi
     mkdir -p "$out"
-    ${pkgs.coreutils}/bin/cp -rs "$python_root/blueprints/." "$out/"
+    ${pkgs.coreutils}/bin/cp -rL "$python_root/blueprints/." "$out/"
     mkdir -p "$out/lattice"
-    ln -s ${forwardAuthBlueprint} "$out/lattice/forward-auth.yaml"
+    ${pkgs.coreutils}/bin/cp ${forwardAuthBlueprint} "$out/lattice/forward-auth.yaml"
   '';
+
+  forwardAuthBlueprintPath = "${blueprintsDir}/lattice/forward-auth.yaml";
 in
 {
   config = lib.mkIf cfg.enable {
@@ -365,7 +370,7 @@ in
       before = [ "authentik-server.service" "authentik-worker.service" "caddy.service" ];
       environment = commonEnv // {
         # Non-secret path exposed for evaluation/build-time contract tests.
-        LATTICE_AUTHENTIK_FORWARD_AUTH_BLUEPRINT = toString forwardAuthBlueprint;
+        LATTICE_AUTHENTIK_FORWARD_AUTH_BLUEPRINT = forwardAuthBlueprintPath;
       };
       serviceConfig = {
         Type = "oneshot";
@@ -380,7 +385,7 @@ in
         ExecStart = [
           "${ak} apply_blueprint ${blueprintsDir}/default/flow-default-provider-authorization-explicit-consent.yaml"
           "${ak} apply_blueprint ${blueprintsDir}/default/flow-default-provider-invalidation.yaml"
-          "${ak} apply_blueprint ${forwardAuthBlueprint}"
+          "${ak} apply_blueprint ${forwardAuthBlueprintPath}"
         ];
       };
     };
