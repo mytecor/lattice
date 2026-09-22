@@ -150,6 +150,22 @@
   [F4](#f4-полезная-нагрузка) (`tcp-gateway`) и зафиксированном результате про одновременный
   STA+AP (снятый `wireless-hotspot`).
 
+### [F18. Браузерный стек для агентов](./roadmap/f18-browser-agent-stack/README.md)
+
+> Отдельный браузерный runtime для агентов: Jev → browser-harness → Foxbridge → Camoufox.
+> Оригинальный `jev-ultrafast` без форка, все Firefox-совместимости в Foxbridge.
+
+- **Статус:** ⏳ запланирована 2026-09-22, ещё не начата; задачи
+  [f18-01..f18-12](./roadmap/f18-browser-agent-stack/README.md#порядок-работ).
+- **Готово, когда:** оригинальный `jev-ultrafast` запускается с `BU_CDP_URL` без локальных
+  изменений, браузером фактически является Camoufox, между ними работает Foxbridge, Jev
+  закрывает минимум одну полноценную web-задачу, fingerprint Camoufox сохраняется, стек
+  стартует декларативно на NixOS через systemd, CDP недоступен извне хоста, есть
+  smoke/integration test полного пути.
+- **Зависит от:** [F4](#f4-полезная-нагрузка) (app services на ноде), [F2](#f2-секреты-и-идентичность)
+  (секреты через agenix), частично от [F8](#f8-интерактивный-pi) и [F10](#f10-disposable-worker)
+  для интерфейса `browser_task` для Pi.
+
 ## Выполненные (в порядке закрытия)
 
 ### [F2. Секреты и идентичность](./roadmap/f2-secrets-identity/README.md)
