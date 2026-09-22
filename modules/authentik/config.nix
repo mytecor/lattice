@@ -175,7 +175,13 @@ print(f"authentik-invalidate-apps-cache: cleared {len(keys)} application cache e
       origins = [ lan ] ++ lib.optional (mesh != null) mesh;
     in
     app // {
-      launchUrl = "${if mesh != null then mesh else lan}/";
+      applicationName = if mesh != null then "${app.name} (LAN)" else app.name;
+      launchUrl = "${lan}/";
+      meshApplication = if mesh != null then {
+        name = "${app.name} (mesh)";
+        slug = "${app.slug}-mesh";
+        launchUrl = "${mesh}/";
+      } else null;
       redirectUris = map (origin: "${origin}${app.callbackPath}") origins;
     }
   ) cfg.oidcApplications;
@@ -184,10 +190,10 @@ print(f"authentik-invalidate-apps-cache: cleared {len(keys)} application cache e
       service = entry.service;
       lanDomain = "${hostName}.local";
       lanHost = "http://${service}.${lanDomain}";
-      # The visible LAN card must open the LAN URL: this is the host the local
-      # user actually uses. The mesh app is a hidden transport application
-      # (meta_hide: true) — it exists only so ForwardAuth has a per-host
-      # provider, and its launch URL never appears on the dashboard.
+      # Each Caddy ingress gets its own explicit Dashboard card. The two proxy
+      # providers are required independently because their external_host and
+      # cookie domain differ; keeping both applications visible also makes the
+      # Dashboard a faithful inventory of the LAN and mesh Caddy sites.
       hasMesh = meshDomain != null && !(lib.elem service config.lattice.tcp-gateway.meshExclude);
       meshHost = if hasMesh then "${meshScheme}://${service}.${meshDomain}" else null;
       mkHost = suffix: host: cookieDomain: applicationName: launchUrl: hidden: {
@@ -195,9 +201,10 @@ print(f"authentik-invalidate-apps-cache: cleared {len(keys)} application cache e
         inherit host cookieDomain applicationName launchUrl hidden;
       };
     in
-    [ (mkHost "" lanHost lanDomain service "${lanHost}/" false) ]
+    [ (mkHost "" lanHost lanDomain
+      (if hasMesh then "${service} (LAN)" else service) "${lanHost}/" false) ]
     ++ lib.optional hasMesh
-      (mkHost "-mesh" meshHost meshDomain "${service}-fa-mesh" "${meshHost}/" true)
+      (mkHost "-mesh" meshHost meshDomain "${service} (mesh)" "${meshHost}/" false)
   ) cfg.forwardAuth;
 
   yamlString = builtins.toJSON;
@@ -270,9 +277,20 @@ print(f"authentik-invalidate-apps-cache: cleared {len(keys)} application cache e
       identifiers:
         slug: ${yamlString app.slug}
       attrs:
-        name: ${yamlString app.name}
+        name: ${yamlString app.applicationName}
         provider: !KeyOf ${yamlString "${app.slug}-oidc-provider"}
         meta_launch_url: ${yamlString app.launchUrl}
+
+    ${lib.optionalString (app.meshApplication != null) ''
+    - model: authentik_core.application
+      state: present
+      identifiers:
+        slug: ${yamlString app.meshApplication.slug}
+      attrs:
+        name: ${yamlString app.meshApplication.name}
+        meta_launch_url: ${yamlString app.meshApplication.launchUrl}
+        meta_hide: false
+    ''}
   '';
 
   applicationsBlueprint = builtins.toFile "lattice-authentik-applications.yaml" ''

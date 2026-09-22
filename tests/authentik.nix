@@ -303,21 +303,20 @@ pkgs.runCommand "authentik-evaluation" {
   grep -F 'external_host: "http://acp-ui.${hostName}.local"' "$blueprintPath"
   grep -F 'external_host: "https://acp-ui.homelab.myt.su"' "$blueprintPath"
   grep -F 'model: authentik_outposts.outpost' "$blueprintPath"
-  grep -A6 'slug: "acp-ui-fa"' "$blueprintPath" | grep -F 'name: "acp-ui"'
+  grep -A6 'slug: "acp-ui-fa"' "$blueprintPath" | grep -F 'name: "acp-ui (LAN)"'
   grep -A6 'slug: "acp-ui-fa"' "$blueprintPath" | grep -F 'meta_hide: false'
-  # The VISIBLE LAN card must launch the LAN URL, not the mesh URL.
-  # (Regression: canonical-launch logic preferred the mesh host, so the card
-  # opened https://acp-ui.homelab.myt.su from the LAN UI.) -F with the closing
-  # quote keeps the "/slug/" from matching the "-mesh" slug.
+  # Application Dashboard mirrors Caddy: explicit visible LAN and mesh cards.
   grep -A5 -F 'slug: "acp-ui-fa"' "$blueprintPath" | grep -F 'meta_launch_url: "http://acp-ui.${hostName}.local/"'
-  if grep -A5 -F 'slug: "acp-ui-fa"' "$blueprintPath" | grep -F 'meta_launch_url: "https://acp-ui.homelab.myt.su/"'; then
-    echo "LAN app must not launch the mesh URL" >&2
-    exit 1
-  fi
-  grep -A6 'slug: "acp-ui-fa-mesh"' "$blueprintPath" | grep -F 'meta_hide: true'
+  grep -A6 'slug: "acp-ui-fa-mesh"' "$blueprintPath" | grep -F 'name: "acp-ui (mesh)"'
+  grep -A6 'slug: "acp-ui-fa-mesh"' "$blueprintPath" | grep -F 'meta_hide: false'
+  grep -A5 -F 'slug: "acp-ui-fa-mesh"' "$blueprintPath" | grep -F 'meta_launch_url: "https://acp-ui.homelab.myt.su/"'
   grep -F 'model: authentik_providers_oauth2.oauth2provider' "$blueprintPath"
   grep -F 'client_id: "grafana"' "$blueprintPath"
   grep -F 'client_secret: !File "/run/agenix/grafana-oauth-client-secret"' "$blueprintPath"
+  grep -A5 -F 'slug: "grafana"' "$blueprintPath" | grep -F 'name: "grafana (LAN)"'
+  grep -A5 -F 'slug: "grafana"' "$blueprintPath" | grep -F 'meta_launch_url: "http://grafana.${hostName}.local/"'
+  grep -A5 -F 'slug: "grafana-mesh"' "$blueprintPath" | grep -F 'name: "grafana (mesh)"'
+  grep -A5 -F 'slug: "grafana-mesh"' "$blueprintPath" | grep -F 'meta_launch_url: "https://grafana.homelab.myt.su/"'
   grep -F 'name: System - OAuth2 Provider - Scopes' "$blueprintPath"
   grep -F '[managed, goauthentik.io/providers/oauth2/scope-openid]' "$blueprintPath"
   grep -F '[managed, goauthentik.io/providers/oauth2/scope-profile]' "$blueprintPath"

@@ -161,11 +161,12 @@ Caddy-директива в `profiles/app-services/config.nix` для сайта
 `AUTHENTIK_BLUEPRINTS_DIR`, поэтому дальше его периодически reconciles сам Authentik. Ручной шаг
 после `nixos-rebuild switch` или перезагрузки не нужен.
 
-LAN и mesh требуют разных proxy providers из-за разных cookie domains, но это не должно создавать
-дубликаты в пользовательском Application Dashboard. Blueprint оставляет видимой одну карточку с
-именем сервиса и launch URL на его **LAN-адрес** (хост, которым действительно пользуется
-локальный пользователь), а дополнительному mesh application задаёт `meta_hide: true`:
-оно остаётся доступным для ForwardAuth, но не показывается пользователю.
+LAN и mesh требуют разных proxy providers из-за разных cookie domains. Application Dashboard
+зеркалит опубликованные Caddy ingress: для каждого доступного в обеих зонах сервиса Blueprint
+создаёт две явно подписанные карточки — `<service> (LAN)` с адресом
+`http://<service>.<node>.local/` и `<service> (mesh)` с адресом
+`https://<service>.<meshDomain>/`. Для OIDC-сервиса основная LAN application остаётся привязана
+к provider, а mesh-карточка является link-only application на второй Caddy virtual host.
 
 > **Третий подводный камень — кеш Dashboard не инвалидируется при update.**
 > `meta_hide` в `state: present`-blueprint обновляет существующий объект (тот же slug), а
