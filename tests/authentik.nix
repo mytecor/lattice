@@ -201,27 +201,42 @@ assert builtins.elem "authentik-migrate.service" (blueprintUnit.requires or [ ])
 assert builtins.elem "authentik-server.service" (blueprintUnit.before or [ ]);
 assert builtins.elem "authentik-worker.service" (blueprintUnit.before or [ ]);
 assert builtins.elem "caddy.service" (blueprintUnit.before or [ ]);
-assert lib.length blueprintExec == 4;
+assert lib.length blueprintExec == 3;
 assert lib.all (lib.hasInfix "/bin/ak apply_blueprint") (lib.take 3 blueprintExec);
 assert lib.any (lib.hasInfix "flow-default-provider-authorization-explicit-consent.yaml") blueprintExec;
 assert lib.any (lib.hasInfix "flow-default-provider-invalidation.yaml") blueprintExec;
 assert lib.any (lib.hasInfix "/lattice/applications.yaml") blueprintExec;
-# After applying the blueprint the unit invalidates the per-user application
-# caches. Without this step a meta_hide flip (hiding the mesh transport app)
-# stays invisible on the Dashboard for up to 24h, because Authentik clears the
-# cache only when an Application is *created*, while the blueprint's
-# `state: present` updates existing objects (same unique slug).
+# The cache-invalidation step is DECOUPLED from the blueprint provisioning unit
+# that Caddy Requires=: it runs after the blueprint as its own oneshot unit and
+# must never be required by / ordered-before the ingress (2026-09-22 incident —
+# a failed cache step inside the blueprint unit kept Caddy down and took every
+# *.local service offline). The cache drop itself is cosmetic: without it a
+# meta_hide flip (hiding the mesh transport app) stays invisible on the
+# Dashboard for up to 24h, because Authentik clears the cache only when an
+# Application is *created*, while the blueprint's `state: present` updates
+# existing objects (same unique slug).
+assert !(builtins.any (e: lib.hasInfix "invalidate" e) blueprintExec);
 let
-  invalidateScript = blueprintUnit.environment.LATTICE_AUTHENTIK_INVALIDATE_APPS_CACHE or "";
-  invalidateSource = blueprintUnit.environment.LATTICE_AUTHENTIK_INVALIDATE_APPS_CACHE_SOURCE or "";
+  invalidateUnit = config.systemd.services.authentik-invalidate-apps-cache;
+  invalidateExec = invalidateUnit.serviceConfig.ExecStart or "";
+  invalidateScript = invalidateUnit.environment.LATTICE_AUTHENTIK_INVALIDATE_APPS_CACHE or "";
+  invalidateSource = invalidateUnit.environment.LATTICE_AUTHENTIK_INVALIDATE_APPS_CACHE_SOURCE or "";
 in
-assert lib.elem invalidateScript (lib.drop 3 blueprintExec);
+assert builtins.hasAttr "authentik-invalidate-apps-cache" config.systemd.services;
+assert lib.elem invalidateScript [ invalidateExec ];
 assert lib.hasInfix "user_app_cache_key" invalidateSource;
 assert lib.hasInfix "-m manage shell" invalidateSource;
-assert lib.hasSuffix "/lattice/applications.yaml" blueprintPath;
-assert config.systemd.services.authentik-worker.environment.AUTHENTIK_BLUEPRINTS_DIR or "" != "";
+# Non-blocking: pulled by multi-user.target (nothing critical Requires it), runs
+# after the blueprint, and is NOT ordered before Caddy.
+assert builtins.elem "multi-user.target" (invalidateUnit.wantedBy or [ ]);
+assert builtins.elem "authentik-applications-blueprint.service" (invalidateUnit.after or [ ]);
+assert !(builtins.elem "caddy.service" (invalidateUnit.before or [ ]));
 assert builtins.elem "authentik-applications-blueprint.service"
   (config.systemd.services.caddy.requires or [ ]);
+assert !(builtins.elem "authentik-invalidate-apps-cache.service"
+  (config.systemd.services.caddy.requires or [ ]));
+assert lib.hasSuffix "/lattice/applications.yaml" blueprintPath;
+assert config.systemd.services.authentik-worker.environment.AUTHENTIK_BLUEPRINTS_DIR or "" != "";
 # Grafana native OIDC config is present when oauth is enabled (F14 step 7).
 assert grafanaSettings."auth.generic_oauth".enabled or false;
 assert grafanaSettings."auth.generic_oauth".client_id or "" == "grafana";
@@ -266,8 +281,10 @@ assert config.services.caddy.enable;
 assert !config.services.nginx.enable;
 assert builtins.elem 80 config.networking.firewall.allowedTCPPorts;
 pkgs.runCommand "authentik-evaluation" {
-  nativeBuildInputs = [ pkgs.caddy ];
+  nativeBuildInputs = [ pkgs.caddy pkgs.bash pkgs.gnused pkgs.coreutils ];
   inherit blueprintPath;
+  inherit invalidateExec;
+  akPath = "${config.lattice.authentik.package}/bin/ak";
   blueprintsDir = config.systemd.services.authentik-worker.environment.AUTHENTIK_BLUEPRINTS_DIR;
 } ''
   mkdir -p "$out"
@@ -295,5 +312,25 @@ pkgs.runCommand "authentik-evaluation" {
   grep -F 'client_secret: !File "/run/agenix/grafana-oauth-client-secret"' "$blueprintPath"
   grep -F 'url: "http://grafana.${hostName}.local/login/generic_oauth"' "$blueprintPath"
   grep -F 'url: "https://grafana.homelab.myt.su/login/generic_oauth"' "$blueprintPath"
+
+  # --- runtime regression: the cache-invalidation script's python-env resolve ---
+  # 2026-09-22: the script extracted the python root with `$PATH` (unescaped) in
+  # the sed expression, so the shell expanded it in place of the wrapper's literal
+  # `$PATH`; nothing matched, python was empty ("/bin/python" does not exist), and
+  # the step exited 1 — killing the blueprint unit, which Caddy Requires=, and
+  # taking the whole ingress down. Eval-time string asserts cannot catch a shell
+  # runtime expansion, so exercise the exact resolve code path here.
+  test -x "$invalidateExec"
+  bash -n "$invalidateExec"
+  # The generated script must reference the very `ak` wrapper we ship, so the
+  # resolve below runs against the real artifact, not a re-implementation.
+  grep -F "ak=\"$akPath\"" "$invalidateExec"
+  python="$(sed -n "s|^PATH='\(/nix/store/[^']*\)/bin'\$PATH.*|\1|p" "$akPath" |
+    sed -n '1p')/bin/python"
+  if [[ ! -x "$python" ]]; then
+    echo "authentik invalidate-apps-cache: python env resolve failed ($python)" >&2
+    exit 1
+  fi
+
   echo "Authentik SSO contract holds" > "$out/result"
 ''

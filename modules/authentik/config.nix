@@ -48,7 +48,7 @@ let
   invalidateAppsCacheScript = ''
     set -euo pipefail
     ak="${ak}"
-    python="$(sed -n "s|^PATH='\(/nix/store/[^']*\)/bin'$PATH.*|\1|p" "$ak" |
+    python="$(sed -n "s|^PATH='\(/nix/store/[^']*\)/bin'\$PATH.*|\1|p" "$ak" |
       sed -n '1p')/bin/python"
     if [[ ! -x "$python" ]]; then
       echo "authentik-invalidate-apps-cache: could not resolve python env from $ak" >&2
@@ -486,8 +486,6 @@ in
         # Non-secret path exposed for evaluation/build-time contract tests.
         LATTICE_AUTHENTIK_APPLICATIONS_BLUEPRINT = applicationsBlueprintPath;
         LATTICE_AUTHENTIK_APPLICATIONS_BLUEPRINT_SOURCE = toString applicationsBlueprint;
-        LATTICE_AUTHENTIK_INVALIDATE_APPS_CACHE = invalidateAppsCache;
-        LATTICE_AUTHENTIK_INVALIDATE_APPS_CACHE_SOURCE = invalidateAppsCacheScript;
       };
       serviceConfig = {
         Type = "oneshot";
@@ -503,16 +501,43 @@ in
           "${ak} apply_blueprint ${blueprintsDir}/default/flow-default-provider-authorization-explicit-consent.yaml"
           "${ak} apply_blueprint ${blueprintsDir}/default/flow-default-provider-invalidation.yaml"
           "${ak} apply_blueprint ${applicationsBlueprintPath}"
-          # After the blueprint runs, drop the per-user application caches so
-          # meta_hide/meta_launch_url changes (e.g. hiding the mesh transport
-          # app) reach the Dashboard immediately instead of after the 24h TTL.
-          # Authentik only invalidates on Application *create*, never on the
-          # `state: present` update path this blueprint uses.
-          invalidateAppsCache
         ];
       };
     };
 
+    # Decoupled cache invalidation. Runs AFTER the blueprint is applied, but is
+    # NOT required by (and NOT Before) the Caddy ingress: the cache drop is
+    # cosmetic (it only shortens the 24h TTL of the Dashboard app list after a
+    # meta_hide/meta_launch_url flip) and must never be able to block Caddy's
+    # start. 2026-09-22 incident: this step lived inside the blueprint unit,
+    # which `caddy.service` Requires=; a runtime failure of the script then kept
+    # Caddy down and took every *.local service offline. As a standalone unit
+    # (`wants`/`after` only) its failure is contained — best effort.
+    systemd.services.authentik-invalidate-apps-cache = lib.mkIf blueprintEnabled {
+      description = "Invalidate Authentik per-user application cache";
+      wantedBy = [ "multi-user.target" ];
+      wants = [ "authentik-applications-blueprint.service" "authentik-server.service" "authentik-worker.service" ];
+      after = [ "authentik-applications-blueprint.service" "authentik-server.service" "authentik-worker.service" ];
+      environment = commonEnv // {
+        # Non-secret path exposed for evaluation/build-time contract tests.
+        LATTICE_AUTHENTIK_INVALIDATE_APPS_CACHE = invalidateAppsCache;
+        LATTICE_AUTHENTIK_INVALIDATE_APPS_CACHE_SOURCE = invalidateAppsCacheScript;
+      };
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        User = cfg.dbUser;
+        Group = cfg.dbUser;
+        WorkingDirectory = dataDir;
+        EnvironmentFile = envFiles;
+        ExecStart = invalidateAppsCache;
+      };
+    };
+
+    # The single external ingress must start only after the blueprint
+    # provisioning (migrations + flow/OIDC/forward-auth applications) has
+    # succeeded. Keep this list minimal and critical-only: a non-essential step
+    # pasted into that unit blocks the whole web front when it fails.
     systemd.services.caddy = lib.mkIf blueprintEnabled {
       requires = [ "authentik-applications-blueprint.service" ];
       after = [ "authentik-applications-blueprint.service" ];
