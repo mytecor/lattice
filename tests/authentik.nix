@@ -189,6 +189,26 @@ assert grafanaSettings."auth.generic_oauth".client_id or "" == "grafana";
 # callback /login/generic_oauth), not the loopback listener.
 assert grafanaSettings.server.root_url or "" == "https://grafana.homelab.myt.su/";
 assert builtins.hasAttr "https://grafana.homelab.myt.su" config.services.caddy.virtualHosts;
+# Grafana itself can advertise only one static (mesh-canonical) OAuth URL. The
+# LAN Caddy site must therefore rewrite the browser-facing authorize redirect,
+# its encoded redirect_uri, and Grafana's absolute return redirects to *.local.
+# The mesh site must remain untouched.
+let
+  grafanaLanConfig =
+    config.services.caddy.virtualHosts."http://grafana.${hostName}.local".extraConfig;
+  grafanaMeshConfig =
+    config.services.caddy.virtualHosts."https://grafana.homelab.myt.su".extraConfig;
+in
+assert lib.hasInfix
+  "header_down Location https://auth[.]homelab[.]myt[.]su http://auth.${hostName}.local"
+  grafanaLanConfig;
+assert lib.hasInfix
+  "https%3A%2F%2Fgrafana[.]homelab[.]myt[.]su http%3A%2F%2Fgrafana.${hostName}.local"
+  grafanaLanConfig;
+assert lib.hasInfix
+  "https://grafana[.]homelab[.]myt[.]su http://grafana.${hostName}.local"
+  grafanaLanConfig;
+assert !(lib.hasInfix "header_down Location" grafanaMeshConfig);
 # OIDC endpoints use the mesh auth host (reachable from LAN and ygg clients);
 # the same backend as LAN auth.<node>.local.
 assert grafanaSettings."auth.generic_oauth".auth_url or "" == "https://auth.homelab.myt.su/application/o/authorize/";

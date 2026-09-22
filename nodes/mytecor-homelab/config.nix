@@ -638,7 +638,9 @@ in
   # F14: public-facing external URL — mesh-canonical. root_url drives the OIDC
   # callback (/login/generic_oauth), so it is the external https host, not the
   # loopback listener (which stays 127.0.0.1:9215 for Caddy); LAN browsers reach
-  # the same server through http://grafana.<node>.local and SSO via https://auth.homelab.myt.su.
+  # the same server through http://grafana.<node>.local; the LAN Caddy vhost
+  # keeps that browser flow on http://auth.<node>.local while mesh requests
+  # continue through https://auth.homelab.myt.su.
   lattice.grafana = {
     adminPasswordFile = config.age.secrets.grafana-admin-password.path;
     secretKeyFile = config.age.secrets.grafana-secret-key.path;
@@ -666,10 +668,9 @@ in
   };
 
   # F14: нативный OIDC-вход Grafana через Authentik. client_secret — agenix-секрет,
-  # не в store. URL-контракты OIDC указывают на mesh-хост auth.homelab.myt.su
-  # (тот же backend, что и LAN auth.<node>.local): вход работает как для mesh-
-  # клиентов (ygg), так и для LAN-клиентов, у которых поднят ygg
-  # (mesh-адрес резолвится через yggdrasil и доступен из обеих сред).
+  # не в store. Backend-контракты OIDC остаются mesh-canonical; LAN Caddy
+  # переписывает только browser-facing redirects на auth.<node>.local, поэтому
+  # локальному клиенту для страницы входа Yggdrasil не нужен.
   # redirect_uris в Authentik зарегистрированы на оба хоста (см.
   # scripts/provision-authentik-grafana.sh).
   lattice.grafana.oauth = {

@@ -44,11 +44,35 @@ let
   gitCacheProxyCfg = config.lattice.git-cache-proxy;
   grafanaEnabled = config.lattice.grafana.enable or false;
   grafanaCfg = config.lattice.grafana;
+  grafanaOauthEnabled = grafanaCfg.oauth.clientSecretFile or null != null;
   # F14: central SSO (Authentik) behind the same Caddy ingress. `auth` is the
   # login site; it must be reachable from both LAN and mesh (the login page is
   # the single entry point), so it is NOT added to meshExclude anywhere.
   authentikEnabled = config.lattice.authentik.enable or false;
   authentikCfg = config.lattice.authentik;
+
+  # Grafana has only one static root_url/auth_url pair. Keep those canonical
+  # for mesh access, but on the LAN vhost translate absolute OAuth redirects
+  # back to the matching LAN hosts. This includes the percent-encoded
+  # redirect_uri inside Authentik's authorize URL and Grafana's post-login
+  # absolute redirects, so the whole browser flow stays on *.local.
+  grafanaLanRedirectRewrites = lib.optionalString
+    (grafanaOauthEnabled && authentikEnabled && meshEnabled) (
+      let
+        meshGrafanaOrigin = "${meshScheme}://grafana.${cfg.meshDomain}";
+        meshAuthOrigin = "${meshScheme}://auth.${cfg.meshDomain}";
+        lanGrafanaOrigin = siteAddress "grafana";
+        lanAuthOrigin = siteAddress "auth";
+        regexOrigin = origin: lib.replaceStrings [ "." ] [ "[.]" ] origin;
+        encodeOrigin = origin:
+          lib.replaceStrings [ ":" "/" ] [ "%3A" "%2F" ] origin;
+      in
+      ''
+        header_down Location ${regexOrigin meshAuthOrigin} ${lanAuthOrigin}
+        header_down Location ${regexOrigin (encodeOrigin meshGrafanaOrigin)} ${encodeOrigin lanGrafanaOrigin}
+        header_down Location ${regexOrigin meshGrafanaOrigin} ${lanGrafanaOrigin}
+      ''
+    );
 
   # Публикует mDNS-алиас на КАЖДОМ реальном LAN-аплинке ноды. Ранее адрес для
   # avahi-publish брался один раз из маршрута по умолчанию (`ip route get
@@ -138,9 +162,24 @@ let
     # binds 127.0.0.1 by design (non-public); this Caddy site is how an
     # operator reaches it from the LAN, `http://grafana.<node>.local/`. The
     # admin login is still gated by the agenix-backed admin password.
-    (mkIf grafanaEnabled (serviceSites "grafana" ''
-      reverse_proxy ${grafanaCfg.listenAddress}:${toString grafanaCfg.port}
-    ''))
+    (mkIf grafanaEnabled (
+      {
+        ${siteAddress "grafana"} = {
+          extraConfig = ''
+            reverse_proxy ${grafanaCfg.listenAddress}:${toString grafanaCfg.port} {
+              ${grafanaLanRedirectRewrites}
+            }
+          '';
+        };
+      }
+      // optionalAttrs (meshEnabled && !(meshExcluded "grafana")) {
+        ${meshAddress "grafana"} = {
+          extraConfig = ''
+            reverse_proxy ${grafanaCfg.listenAddress}:${toString grafanaCfg.port}
+          '';
+        };
+      }
+    ))
 
     # F14: the Authentik login site. Proxied to its loopback listener by the
     # same serviceSites helper, so `auth.<node>.local` (LAN) and
