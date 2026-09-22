@@ -1,0 +1,65 @@
+# f18-07 draft unit — агент Jev (origine browser-use/jev-ultrafast)
+#
+# Черновик systemd-юнита «вне NixOS» (ручная установка на ноду, до f18-08).
+# f18-08 перепишет это в декларативный NixOS-модуль modules/services/jev-ultrafast.nix.
+#
+# Jev подключается к браузеру ТОЛЬКО через BU_CDP_URL=http://127.0.0.1:9222.
+# Сам Jev (browser_harness) не запускает браузер: daemon резолвит BU_CDP_URL через
+# /json/version -> webSocketDebuggerUrl и работает поверх общего Foxbridge-рантайма.
+# Jev policy / agent loop — оригинальные, без локального форка (ключевое требование F18).
+#
+# Jev стартует только после готовности foxbridge-camoufox (Requires + After).
+# Плюс дополнительная страховка: задержка запуска, чтобы Foxbridge успел поднять
+# Camoufox и отдать /json/version (реальный порядок проверяется в verify-скрипте,
+# см. README этого каталога).
+#
+# Секретов в юните нет: TYPESAFE_API_KEY / TEXT_MODEL_API_KEY подаются через
+# EnvironmentFile (на ноду — руками, без вывода в stdout), а не в Nix store.
+
+[Unit]
+Description=Jev ultrafast browser agent (upstream jev-ultrafast), F18
+Documentation=https://github.com/browser-use/jev-ultrafast
+# Jev живой только при живом браузерном рантайме.
+Requires=foxbridge-camoufox.service
+After=foxbridge-camoufox.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/f18-poc/jev-ultrafast
+
+# BU_CDP_URL — единственная связь с браузером (CDP на loopback, см. foxbridge-юнит).
+Environment=BU_CDP_URL=http://127.0.0.1:9222
+Environment=TYPESAFE_DEMO_PORT=8766
+# systemd усекает окружение; явно даём PATH, иначе curl/sleep в ExecStartPre
+# не находятся (на NixOS нет /bin/sleep, /usr/bin/curl — см. foxbridge-юнит).
+Environment=PATH=/root/.nix-profile/bin:/nix/profile/bin:/run/current-system/sw/bin:/usr/bin:/bin
+# Изолированный daemon browser-harness для этого сервиса: не конфликтует со
+# случайно живущим вручную daemon'ом другого BU_NAME/BH_RUNTIME_DIR (см. f18-04).
+Environment=BH_RUNTIME_DIR=/root/.config/browser-harness/f18rt
+
+# Секреты присутствуют на ноде только как EnvironmentFile (не в юните, не в репо).
+# Если файла нет — сервис всё равно поднимается (inspector), но демо-задача
+# без ключей работать не будет.
+EnvironmentFile=-/etc/jev-ultrafast.env
+
+# Upstream entrypoint: jev -> python -m jev_ultrafast.demo:main — loopback-only
+# HTTP inspector на 127.0.0.1:8766 (TYPESAFE_DEMO_PORT). Это long-running сервис;
+# один Agent(url, goal) запускается командой demo API (f18-10 от него наследуется).
+ExecStart=/root/f18-poc/jev-ultrafast/.venv/bin/jev
+
+# Начать работать только когда CDP реально отдаёт /json/version (не «по времени»).
+ExecStartPre=/bin/sh -c '\
+  i=0; \
+  until curl -sf --max-time 2 http://127.0.0.1:9222/json/version >/dev/null 2>&1; do \
+    i=$((i+1)); [ $i -ge 30 ] && { echo "foxbridge not ready after 30s"; exit 1; }; \
+    sleep 1; \
+  done'
+
+# Падение Jev не должно валить браузерный runtime (только сам юнит Jev).
+Restart=on-failure
+RestartSec=3s
+KillMode=mixed
+GuessMainPID=yes
+
+[Install]
+WantedBy=multi-user.target

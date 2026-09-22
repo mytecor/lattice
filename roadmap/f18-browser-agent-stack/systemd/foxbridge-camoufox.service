@@ -1,0 +1,58 @@
+# f18-07 draft unit — browser runtime (Foxbridge + Camoufox)
+#
+# Черновик systemd-юнита «вне NixOS» (ручная установка на ноду, до f18-08).
+# f18-08 перепишет это в декларативный NixOS-модуль modules/services/foxbridge-camoufox.nix.
+#
+# Связь с Jev — строго через BU_CDP_URL=http://127.0.0.1:9222. CDP endpoint
+# слушается только на loopback: 127.0.0.1 зашит в Foxbridge по построению
+# (pkg/cdp/server.go: host = "127.0.0.1"), наружу homelab не публикуется.
+#
+# Важно про окружение. Foxbridge-бинарь собран с загрузчиком glibc из /nix/store;
+# Camoufox — Firefox-сборка, которой не хватает части /nix/store-библиотек.
+# Проверено 2026-09-22: минимального LD_LIBRARY_PATH (glibc+gcc) недостаточно —
+# Juggler pipe обрывался («failed to enable Browser domain»). Рабочий запуск даёт
+# LD_LIBRARY_PATH со всеми /nix/store/*/lib — это собирает launcher-скрипт
+# /root/f18-poc/run-foxbridge-f18.sh (проверен во всех f18-01..f18-06 прогонах).
+# Поэтому ExecStart здесь указывает на launcher-скрипт, а не на бинарь напрямую.
+# Имена store-путей и glob закреплены на время черновика; f18-08 упакует бинарь
+# в NixOS-производное и уберёт хрупкий glob.
+
+[Unit]
+Description=Foxbridge CDP compatibility layer for Camoufox (F18 browser runtime)
+Documentation=file:///root/f18-poc/foxbridge-src3/README.md
+# Long-running browser runtime: живёт независимо от Jev, его не поднимает и не
+# убивает ни один потребитель. Запуск единственный, без Restart-бури при простое.
+
+[Service]
+Type=simple
+WorkingDirectory=/root/f18-poc
+
+# Launcher собирает LD_LIBRARY_PATH из всех /nix/store/*/lib + ставит MOZ_HEADLESS=1
+# и exec'ит: foxbridge-f18v6 --binary <camoufox> --port 9222 --headless.
+# Shebang у launcher'а — #!/usr/bin/env bash, но в NixOS bash живёт в store, а
+# равенства /bin/bash нет (проверено 2026-09-22). Скрипт POSIX-совместим, поэтому
+# зовём его через /bin/sh явно. PATH задаём отдельно: systemd усекает окружение.
+Environment=PATH=/root/.nix-profile/bin:/nix/profile/bin:/run/current-system/sw/bin:/usr/bin:/bin
+
+# Camoufox content-процессы (sandbox forked) под systemd получают SEGV и падают,
+# из-за чего Juggler не отдаёт frameId и Page.navigate падает («no frameId
+# available»). Причина — строгое санбокс-окружение systemd (проверено 2026-09-22:
+# вручную тот же launcher работает, Jev smoke - DONE). Отключаем content-sandbox —
+# headless-антидетект-браузер в homelab, fingerprint проверяется отдельно (f18-05).
+Environment=MOZ_DISABLE_CONTENT_SANDBOX=1
+ExecStart=/bin/sh /root/f18-poc/run-foxbridge-f18.sh
+
+# Только loopback: foxbridge сам слушает 127.0.0.1:9222 (hardcode в server.go),
+# поэтому отдельный приватный network namespace не требуется. Кто хочет жёстче —
+# см. README в этом каталоге, раздел «Изоляция» (PrivateNetwork поверх loopback).
+Restart=on-failure
+RestartSec=3s
+StandardOutput=journal
+StandardError=journal
+# Camoufox рождает дочерние content-процессы, живущие ровно под родителем.
+# KillMode=mixed останавливает всю process group при остановке — zombie не остаётся.
+KillMode=mixed
+GuessMainPID=yes
+
+[Install]
+WantedBy=multi-user.target
