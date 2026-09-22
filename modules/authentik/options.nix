@@ -155,6 +155,56 @@ in
       '';
     };
 
+    oidcApplications = mkOption {
+      type = types.listOf (types.submodule ({ config, ... }: {
+        options = {
+          service = mkOption {
+            type = types.str;
+            description = ''
+              Gateway service name. LAN and mesh origins are derived from this
+              name, the node hostname and `lattice.tcp-gateway.meshDomain`.
+            '';
+          };
+          name = mkOption {
+            type = types.str;
+            default = config.service;
+            description = "Authentik provider and application name.";
+          };
+          slug = mkOption {
+            type = types.str;
+            default = config.service;
+            description = "Authentik application slug.";
+          };
+          clientId = mkOption {
+            type = types.str;
+            description = "OIDC client ID.";
+          };
+          clientSecretFile = mkOption {
+            type = types.path;
+            description = ''
+              Runtime file containing the OIDC client secret. The generated
+              Authentik Blueprint reads it with `!File`; its value never enters
+              the Nix store.
+            '';
+          };
+          callbackPath = mkOption {
+            type = types.str;
+            description = ''
+              Absolute callback path appended to every declared LAN and mesh
+              origin, for example `/login/generic_oauth`.
+            '';
+          };
+        };
+      }));
+      default = [ ];
+      description = ''
+        OIDC providers and applications managed by the native Authentik
+        Blueprint alongside ForwardAuth applications. LAN and eligible mesh
+        origins are derived with the same hostname, scheme and `meshExclude`
+        rules as the Caddy gateway.
+      '';
+    };
+
     # Low-level overrides (rarely needed); kept minimal.
     logLevel = mkOption {
       type = types.str;

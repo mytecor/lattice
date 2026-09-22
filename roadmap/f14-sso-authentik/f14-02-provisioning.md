@@ -70,21 +70,12 @@ Grafana подключается нативно (f14-01, шаг 7): модуль
 OIDC падает на authorize-endpoint ошибкой **«Client ID Error — The client identifier
 (client_id) is missing or invalid»** (в Authentik нет оauth2-провайдера с `client_id=grafana`).
 
-Рекомендуемый путь — идемпотентный скрипт
-[`scripts/provision-authentik-grafana.sh`](../../scripts/provision-authentik-grafana.sh):
-создаёт OAuth2-провайдера (`client_type=confidential`, `client_id=grafana`) + application
-(`slug=grafana`) с redirect_uri `/login/generic_oauth` на каждый внешний хост Grafana
-(LAN всегда, mesh — если задан `MESH_HOST`), после чего проверяет, что `client_id`
-зарегистрирован. Запускать на ноде от root:
-
-```sh
-# LAN + mesh (ygg):
-MESH_HOST=https://grafana.homelab.myt.su \
-  ./scripts/provision-authentik-grafana.sh
-
-# или только LAN:
-./scripts/provision-authentik-grafana.sh
-```
+Штатный путь — `lattice.authentik.oidcApplications`: Nix генерирует в общем Authentik
+Blueprint OAuth2 provider (`client_type=confidential`, `client_id=grafana`), application
+(`slug=grafana`) и точные redirect URI `/login/generic_oauth` для LAN и mesh. Адреса выводятся
+универсально из `service`, hostname ноды и gateway `meshDomain`/`meshExclude`. Client secret
+остаётся в agenix runtime-файле и читается самим Authentik через Blueprint-тег `!File`; значение
+не попадает в Nix store. Blueprint применяется до запуска Authentik и Caddy, ручного шага нет.
 
 > **Почему redirect_uri на каждый host.** Grafana формирует callback как
 > `<root_url>/login/generic_oauth`, где `root_url` — внешний URL (`lattice.grafana.domain`).
@@ -151,7 +142,7 @@ Caddy-директива в `profiles/app-services/config.nix` для сайта
 нативный Authentik Blueprint. LAN- и mesh-host выводятся из `networking.hostName` и
 `lattice.tcp-gateway.meshDomain`; Blueprint с `state: present` управляет provider/application и
 полным списком providers embedded proxy-outpost. One-shot unit
-`authentik-forward-auth-blueprint.service` применяет его штатной командой `ak apply_blueprint`
+`authentik-applications-blueprint.service` применяет его штатной командой `ak apply_blueprint`
 после миграций и до запуска server/worker/Caddy. Тот же файл включён в
 `AUTHENTIK_BLUEPRINTS_DIR`, поэтому дальше его периодически reconciles сам Authentik. Ручной шаг
 после `nixos-rebuild switch` или перезагрузки не нужен.

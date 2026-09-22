@@ -44,24 +44,25 @@ let
   gitCacheProxyCfg = config.lattice.git-cache-proxy;
   grafanaEnabled = config.lattice.grafana.enable or false;
   grafanaCfg = config.lattice.grafana;
-  grafanaOauthEnabled = grafanaCfg.oauth.clientSecretFile or null != null;
   # F14: central SSO (Authentik) behind the same Caddy ingress. `auth` is the
   # login site; it must be reachable from both LAN and mesh (the login page is
   # the single entry point), so it is NOT added to meshExclude anywhere.
   authentikEnabled = config.lattice.authentik.enable or false;
-  authentikCfg = config.lattice.authentik;
+  authentikCfg = config.lattice.authentik or { };
 
-  # Grafana has only one static root_url/auth_url pair. Keep those canonical
-  # for mesh access, but on the LAN vhost translate absolute OAuth redirects
-  # back to the matching LAN hosts. This includes the percent-encoded
-  # redirect_uri inside Authentik's authorize URL and Grafana's post-login
-  # absolute redirects, so the whole browser flow stays on *.local.
-  grafanaLanRedirectRewrites = lib.optionalString
-    (grafanaOauthEnabled && authentikEnabled && meshEnabled) (
+  oidcServiceEnabled = service:
+    lib.any (application: application.service == service) (authentikCfg.oidcApplications or [ ]);
+
+  # A service can advertise only one canonical external OIDC origin. Keep it
+  # mesh-canonical, but on the LAN vhost translate browser-facing redirects to
+  # the matching LAN service/auth hosts. The helper is service-agnostic; each
+  # OIDC-enabled backend includes it in its LAN reverse_proxy block.
+  oidcLanRedirectRewrites = service: lib.optionalString
+    (oidcServiceEnabled service && authentikEnabled && meshEnabled && !(meshExcluded service)) (
       let
-        meshGrafanaOrigin = "${meshScheme}://grafana.${cfg.meshDomain}";
+        meshServiceOrigin = "${meshScheme}://${service}.${cfg.meshDomain}";
         meshAuthOrigin = "${meshScheme}://auth.${cfg.meshDomain}";
-        lanGrafanaOrigin = siteAddress "grafana";
+        lanServiceOrigin = siteAddress service;
         lanAuthOrigin = siteAddress "auth";
         regexOrigin = origin: lib.replaceStrings [ "." ] [ "[.]" ] origin;
         encodeOrigin = origin:
@@ -69,8 +70,8 @@ let
       in
       ''
         header_down Location ${regexOrigin meshAuthOrigin} ${lanAuthOrigin}
-        header_down Location ${regexOrigin (encodeOrigin meshGrafanaOrigin)} ${encodeOrigin lanGrafanaOrigin}
-        header_down Location ${regexOrigin meshGrafanaOrigin} ${lanGrafanaOrigin}
+        header_down Location ${regexOrigin (encodeOrigin meshServiceOrigin)} ${encodeOrigin lanServiceOrigin}
+        header_down Location ${regexOrigin meshServiceOrigin} ${lanServiceOrigin}
       ''
     );
 
@@ -167,7 +168,7 @@ let
         ${siteAddress "grafana"} = {
           extraConfig = ''
             reverse_proxy ${grafanaCfg.listenAddress}:${toString grafanaCfg.port} {
-              ${grafanaLanRedirectRewrites}
+              ${oidcLanRedirectRewrites "grafana"}
             }
           '';
         };

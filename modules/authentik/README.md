@@ -17,8 +17,8 @@ Postgres (`django_postgres_cache`), поэтому **Redis не требуетс
 - запускает `authentik-server` (loopback HTTP) и `authentik-worker` как непривилегированный
   пользователь `authentik` (`ak`-wrapper в не-root режиме пропускает docker/root-ветку);
 - выполняет полный migration runner one-shot до старта сервера/воркера;
-- генерирует нативный Authentik Blueprint для ForwardAuth provider/application LAN и mesh,
-  включает providers во встроенный proxy-outpost и применяет Blueprint до запуска Caddy;
+- генерирует единый нативный Authentik Blueprint для ForwardAuth и OIDC applications, включает
+  proxy providers во встроенный outpost и применяет Blueprint до запуска Caddy;
 - по умолчанию отключает все неиспользуемые listener'ы Authentik (HTTPS/LDAP/RADIUS/
   metrics/debug) и поднимает только HTTP на `127.0.0.1:<port>` — ничего не открывается наружу.
 
@@ -81,6 +81,9 @@ Authentik слушает `127.0.0.1:<port>` — не публично. Нару�
 - `dataDir` — `/var/lib/authentik` (персистится через /persist).
 - `forwardAuth` — защищаемые сайты; из списка генерируется автоматически применяемый Authentik
   Blueprint с provider/application/outpost state.
+- `oidcApplications` — OAuth2/OIDC-сервисы (`service`, `callbackPath`, client ID и runtime-путь
+  к secret); LAN/mesh origins выводятся из общего gateway-контракта, а секрет читается
+  Blueprint-тегом `!File`.
 - `logLevel` — уровень логов.
 
 ## Использование

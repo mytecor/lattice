@@ -76,7 +76,7 @@ let
     AUTHENTIK_DISABLE_STARTUP_ANALYTICS = "true";
     AUTHENTIK_ERROR_REPORTING__ENABLED = "false";
     AUTHENTIK_STORAGE__FILE__PATH = dataDir;
-  } // lib.optionalAttrs forwardAuthEnabled {
+  } // lib.optionalAttrs blueprintEnabled {
     # nixpkgs substitutes Authentik's default /blueprints with the private
     # authentik-django store path.  This combined directory keeps all packaged
     # blueprints and adds the Nix-generated Lattice blueprint.
@@ -123,7 +123,24 @@ let
 
   hostName = config.networking.hostName;
   meshDomain = config.lattice.tcp-gateway.meshDomain;
-  forwardAuthEnabled = cfg.forwardAuth != [ ];
+  blueprintEnabled = cfg.forwardAuth != [ ] || cfg.oidcApplications != [ ];
+  lanOrigin = service: "http://${service}.${hostName}.local";
+  meshScheme = if config.lattice.tcp-gateway.cloudflareToken != null then "https" else "http";
+  meshOrigin = service:
+    if meshDomain == null || lib.elem service config.lattice.tcp-gateway.meshExclude
+    then null
+    else "${meshScheme}://${service}.${meshDomain}";
+  oidcApplications = map (app:
+    let
+      lan = lanOrigin app.service;
+      mesh = meshOrigin app.service;
+      origins = [ lan ] ++ lib.optional (mesh != null) mesh;
+    in
+    app // {
+      launchUrl = "${if mesh != null then mesh else lan}/";
+      redirectUris = map (origin: "${origin}${app.callbackPath}") origins;
+    }
+  ) cfg.oidcApplications;
   forwardAuthHosts = lib.concatMap (entry:
     let
       service = entry.service;
@@ -134,8 +151,8 @@ let
       };
     in
     [ (mkHost "" "http://${service}.${lanDomain}" lanDomain) ]
-    ++ lib.optional (meshDomain != null)
-      (mkHost "-mesh" "https://${service}.${meshDomain}" meshDomain)
+    ++ lib.optional (meshDomain != null && !(lib.elem service config.lattice.tcp-gateway.meshExclude))
+      (mkHost "-mesh" "${meshScheme}://${service}.${meshDomain}" meshDomain)
   ) cfg.forwardAuth;
 
   yamlString = builtins.toJSON;
@@ -170,10 +187,48 @@ let
     (host: "        - !KeyOf ${yamlString "${host.slug}-provider"}")
     forwardAuthHosts;
 
-  forwardAuthBlueprint = builtins.toFile "lattice-forward-auth.yaml" ''
+  redirectUriEntries = app: lib.concatMapStringsSep "\n" (uri:
+    "      - matching_mode: strict\n"
+    + "        url: ${yamlString uri}\n"
+    + "        redirect_uri_type: authorization"
+  ) app.redirectUris;
+
+  oidcEntry = app: ''
+    - model: authentik_providers_oauth2.oauth2provider
+      id: ${yamlString "${app.slug}-oidc-provider"}
+      state: present
+      identifiers:
+        name: ${yamlString app.name}
+      attrs:
+        client_type: confidential
+        client_id: ${yamlString app.clientId}
+        client_secret: !File ${yamlString (toString app.clientSecretFile)}
+        authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-explicit-consent]]
+        invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+        redirect_uris:
+    ${redirectUriEntries app}
+        grant_types:
+          - authorization_code
+          - refresh_token
+        access_code_validity: minutes=1
+        access_token_validity: minutes=5
+        refresh_token_validity: days=30
+        sub_mode: hashed_user_id
+
+    - model: authentik_core.application
+      state: present
+      identifiers:
+        slug: ${yamlString app.slug}
+      attrs:
+        name: ${yamlString app.name}
+        provider: !KeyOf ${yamlString "${app.slug}-oidc-provider"}
+        meta_launch_url: ${yamlString app.launchUrl}
+  '';
+
+  applicationsBlueprint = builtins.toFile "lattice-authentik-applications.yaml" ''
     version: 1
     metadata:
-      name: Lattice - ForwardAuth applications
+      name: Lattice - Authentik applications
       labels:
         blueprints.goauthentik.io/instantiate: "true"
     entries:
@@ -192,6 +247,9 @@ let
 
     ${indent "  " (lib.concatMapStringsSep "\n" providerEntry forwardAuthHosts)}
 
+    ${indent "  " (lib.concatMapStringsSep "\n" oidcEntry oidcApplications)}
+
+    ${lib.optionalString (cfg.forwardAuth != [ ]) ''
       - model: authentik_outposts.outpost
         state: present
         identifiers:
@@ -199,6 +257,7 @@ let
         attrs:
           providers:
     ${outpostProviders}
+    ''}
   '';
 
   # Expose the generated file to Authentik's native discovery/reconciliation
@@ -220,10 +279,10 @@ let
     mkdir -p "$out"
     ${pkgs.coreutils}/bin/cp -rL "$python_root/blueprints/." "$out/"
     mkdir -p "$out/lattice"
-    ${pkgs.coreutils}/bin/cp ${forwardAuthBlueprint} "$out/lattice/forward-auth.yaml"
+    ${pkgs.coreutils}/bin/cp ${applicationsBlueprint} "$out/lattice/applications.yaml"
   '';
 
-  forwardAuthBlueprintPath = "${blueprintsDir}/lattice/forward-auth.yaml";
+  applicationsBlueprintPath = "${blueprintsDir}/lattice/applications.yaml";
 in
 {
   config = lib.mkIf cfg.enable {
@@ -252,6 +311,15 @@ in
           bootstrapPasswordFile must all be set to create the initial operator
           account (AUTHENTIK_BOOTSTRAP_USERNAME/_EMAIL/_PASSWORD).
         '';
+      }
+      {
+        assertion = lib.all (app: lib.hasPrefix "/" app.callbackPath) cfg.oidcApplications;
+        message = "lattice.authentik: every oidcApplications callbackPath must start with `/`.";
+      }
+      {
+        assertion = lib.length (lib.unique (map (app: app.service) cfg.oidcApplications))
+          == lib.length cfg.oidcApplications;
+        message = "lattice.authentik: oidcApplications service names must be unique.";
       }
     ];
 
@@ -308,9 +376,9 @@ in
       description = "Authentik SSO server (loopback)";
       wantedBy = [ "multi-user.target" ];
       requires = [ "authentik-migrate.service" ]
-        ++ lib.optional forwardAuthEnabled "authentik-forward-auth-blueprint.service";
+        ++ lib.optional blueprintEnabled "authentik-applications-blueprint.service";
       after = [ "authentik-migrate.service" "network-online.target" ]
-        ++ lib.optional forwardAuthEnabled "authentik-forward-auth-blueprint.service";
+        ++ lib.optional blueprintEnabled "authentik-applications-blueprint.service";
       wants = [ "network-online.target" ];
       environment = commonEnv;
       serviceConfig = {
@@ -334,9 +402,9 @@ in
       description = "Authentik worker (background tasks)";
       wantedBy = [ "multi-user.target" ];
       requires = [ "authentik-migrate.service" ]
-        ++ lib.optional forwardAuthEnabled "authentik-forward-auth-blueprint.service";
+        ++ lib.optional blueprintEnabled "authentik-applications-blueprint.service";
       after = [ "authentik-migrate.service" "network-online.target" ]
-        ++ lib.optional forwardAuthEnabled "authentik-forward-auth-blueprint.service";
+        ++ lib.optional blueprintEnabled "authentik-applications-blueprint.service";
       wants = [ "network-online.target" ];
       # Worker env, not commonEnv: see workerEnv above — the Rust worker needs
       # valid, distinct loopback listeners (empty would crash the config parse,
@@ -362,15 +430,16 @@ in
     # before server/worker/Caddy. The worker then discovers the same file in
     # AUTHENTIK_BLUEPRINTS_DIR and keeps applying it on Authentik's normal
     # reconciliation schedule.
-    systemd.services.authentik-forward-auth-blueprint = lib.mkIf forwardAuthEnabled {
-      description = "Apply Authentik ForwardAuth blueprint";
+    systemd.services.authentik-applications-blueprint = lib.mkIf blueprintEnabled {
+      description = "Apply Authentik applications blueprint";
       wantedBy = [ "multi-user.target" ];
       requires = [ "authentik-migrate.service" ];
       after = [ "authentik-migrate.service" ];
       before = [ "authentik-server.service" "authentik-worker.service" "caddy.service" ];
       environment = commonEnv // {
         # Non-secret path exposed for evaluation/build-time contract tests.
-        LATTICE_AUTHENTIK_FORWARD_AUTH_BLUEPRINT = forwardAuthBlueprintPath;
+        LATTICE_AUTHENTIK_APPLICATIONS_BLUEPRINT = applicationsBlueprintPath;
+        LATTICE_AUTHENTIK_APPLICATIONS_BLUEPRINT_SOURCE = toString applicationsBlueprint;
       };
       serviceConfig = {
         Type = "oneshot";
@@ -385,14 +454,14 @@ in
         ExecStart = [
           "${ak} apply_blueprint ${blueprintsDir}/default/flow-default-provider-authorization-explicit-consent.yaml"
           "${ak} apply_blueprint ${blueprintsDir}/default/flow-default-provider-invalidation.yaml"
-          "${ak} apply_blueprint ${forwardAuthBlueprintPath}"
+          "${ak} apply_blueprint ${applicationsBlueprintPath}"
         ];
       };
     };
 
-    systemd.services.caddy = lib.mkIf forwardAuthEnabled {
-      requires = [ "authentik-forward-auth-blueprint.service" ];
-      after = [ "authentik-forward-auth-blueprint.service" ];
+    systemd.services.caddy = lib.mkIf blueprintEnabled {
+      requires = [ "authentik-applications-blueprint.service" ];
+      after = [ "authentik-applications-blueprint.service" ];
     };
 
     # Authentik's loopback port is intentionally NOT added to the firewall: the

@@ -133,7 +133,8 @@ in
       # F14: Grafana OAuth2 client secret for SSO login via Authentik (OIDC).
       grafana-oauth-client-secret = {
         file = ./secrets/grafana-oauth-client-secret.age;
-        mode = "0400";
+        group = "authentik-oidc-secrets";
+        mode = "0440";
       };
       # F14: Authentik secrets. Each file is a single `AUTHENTIK_*=...` line,
       # loaded by the authentik systemd units as EnvironmentFile (never in store).
@@ -665,14 +666,22 @@ in
         service = "acp-ui";
       }
     ];
+    oidcApplications = [
+      {
+        service = "grafana";
+        clientId = "grafana";
+        clientSecretFile = config.age.secrets.grafana-oauth-client-secret.path;
+        callbackPath = "/login/generic_oauth";
+      }
+    ];
   };
 
   # F14: нативный OIDC-вход Grafana через Authentik. client_secret — agenix-секрет,
   # не в store. Backend-контракты OIDC остаются mesh-canonical; LAN Caddy
   # переписывает только browser-facing redirects на auth.<node>.local, поэтому
   # локальному клиенту для страницы входа Yggdrasil не нужен.
-  # redirect_uris в Authentik зарегистрированы на оба хоста (см.
-  # scripts/provision-authentik-grafana.sh).
+  # Provider/application и оба redirect URI объявлены выше в
+  # lattice.authentik.oidcApplications и применяются Authentik Blueprint'ом.
   lattice.grafana.oauth = {
     clientId = "grafana";
     clientSecretFile = config.age.secrets.grafana-oauth-client-secret.path;
@@ -709,6 +718,9 @@ in
     };
   };
 
+  users.groups.authentik-oidc-secrets = { };
+  users.users.authentik.extraGroups = [ "authentik-oidc-secrets" ];
+  users.users.grafana.extraGroups = [ "authentik-oidc-secrets" ];
   users.mutableUsers = false;
   users.users.root = {
     openssh.authorizedKeys.keys = [

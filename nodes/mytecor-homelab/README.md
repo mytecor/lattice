@@ -188,7 +188,8 @@ https://status.homelab.myt.su/
 ```
 
 Grafana выведена в mesh 2026-09-21 (`https://grafana.homelab.myt.su`), потому что закрыта
-за Authentik (F14, нативный OIDC — см. `scripts/provision-authentik-grafana.sh`). LLM gateway
+за Authentik (F14, нативный OIDC — см.
+[f14-02](../../roadmap/f14-sso-authentik/f14-02-provisioning.md)). LLM gateway
 в mesh НЕ выводится (`meshExclude`): у него нет публичной TLS/API-key защиты, поэтому он
 остаётся только на LAN-контракте `*.local`. Порт 80 (HTTP) открыт в
 firewall; 443 открыт и mesh-сайты обслуживаются по HTTPS через DNS-01 ACME Cloudflare
