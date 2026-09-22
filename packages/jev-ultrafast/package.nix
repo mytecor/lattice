@@ -28,6 +28,7 @@ let
         url = "https://files.pythonhosted.org/packages/source/w/websockets/websockets-15.0.1.tar.gz";
         sha256 = "sha256-glRN4CB2uvugOM4FXuZBLWjaE6tH8MYMq4JzRt6Cje4=";
       };
+      nativeBuildInputs = [ self.setuptools ];
       doCheck = false;
     };
     ## cdp-use 1.4.5 (not in nixpkgs)
@@ -39,6 +40,7 @@ let
         url = "https://files.pythonhosted.org/packages/source/c/cdp-use/cdp_use-1.4.5.tar.gz";
         sha256 = "sha256-DaOjLfRjNqA/9aIrxrxELNfS8tUKEY/UhW8p039tJqA=";
       };
+      nativeBuildInputs = [ self.hatchling ];
       propagatedBuildInputs = with self; [ httpx typing-extensions websockets ];
       doCheck = false;
     };
@@ -51,6 +53,7 @@ let
         url = "https://files.pythonhosted.org/packages/source/f/fetch-use/fetch_use-0.4.0.tar.gz";
         sha256 = "sha256-lRGYfUkH7G2sUB4h1mlG0QCY9mtdIbwqukGJzYG6GJo=";
       };
+      nativeBuildInputs = [ self.hatchling ];
       propagatedBuildInputs = [ ];
       doCheck = false;
     };
@@ -63,6 +66,16 @@ let
         url = "https://files.pythonhosted.org/packages/source/b/browser-harness/browser_harness-0.1.13.tar.gz";
         sha256 = "sha256-KE3FR6BCwwn+r9mp9KdLKoZRt5Y+o6xssvLWSIn2qPM=";
       };
+      # browser-harness pins setuptools==84.0.0 in build-system.requires, and
+      # the `build` front-end's --no-isolation env check hard-fails against the
+      # nixpkgs-setuptools (83.0.0) already in the sandbox. The pin only pins the
+      # build backend availability, not the produced wheel — relax it to a
+      # bare `setuptools` so the env check passes. NativeBI is setuptools.
+      postPatch = ''
+        substituteInPlace pyproject.toml \
+          --replace-fail 'setuptools==84.0.0' 'setuptools'
+      '';
+      nativeBuildInputs = [ self.setuptools ];
       propagatedBuildInputs = with self; [ cdp-use fetch-use pillow websockets ];
       doCheck = false;
     };

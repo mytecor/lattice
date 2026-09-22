@@ -67,6 +67,7 @@ in
         # the content sandbox — a headless anti-detect browser in the homelab,
         # fingerprint is verified separately (f18-05).
         Environment = [
+          "HOME=/run/foxbridge-camoufox"
           "MOZ_DISABLE_CONTENT_SANDBOX=1"
         ] ++ lib.optionals cfg.camoufox.humanize [
           # f18-06: humanize is delivered to the browser as an env config
