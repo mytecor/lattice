@@ -1,0 +1,28 @@
+--- a/pkg/bridge/page.go	2026-09-22 18:03:45
++++ b/pkg/bridge/page.go	2026-09-22 18:09:32
+@@ -43,6 +43,25 @@
+ 			}
+ 		}
+ 
++		// Jev (browser-use/jev-ultrafast) creates a background about:blank target and
++		// calls Page.navigate immediately after Target.attachToTarget, before any
++		// Juggler frame event has populated SessionInfo.FrameID. Wait briefly for the
++		// frame to appear (same pattern as navigateNewTarget) so we always pass a
++		// concrete frameId to Juggler instead of tripping its required-field error.
++		if jugglerParams["frameId"] == nil || jugglerParams["frameId"] == "" {
++			deadline := time.Now().Add(2 * time.Second)
++			for time.Now().Before(deadline) {
++				if info, ok := b.sessions.Get(msg.SessionID); ok && info.FrameID != "" {
++					jugglerParams["frameId"] = info.FrameID
++					break
++				}
++				time.Sleep(10 * time.Millisecond)
++			}
++		}
++		if jugglerParams["frameId"] == nil || jugglerParams["frameId"] == "" {
++			return nil, &cdp.Error{Code: -32000, Message: "Page.navigate: no frameId available for session; Juggler frame did not appear in time"}
++		}
++
+ 		jp, _ := json.Marshal(jugglerParams)
+ 		log.Printf("[page] navigate: params=%s cdpSession=%s", string(jp), msg.SessionID)
+ 		result, err := b.callJuggler(msg.SessionID, "Page.navigate", jugglerParams)

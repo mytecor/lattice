@@ -1,0 +1,39 @@
+--- a/pkg/bridge/runtime.go	2026-09-22 18:03:45
++++ b/pkg/bridge/runtime.go	2026-09-22 18:09:32
+@@ -109,8 +109,34 @@
+ 		log.Printf("[runtime] calling Juggler Runtime.evaluate with %v", jugglerParams)
+ 		result, err := b.callJuggler(msg.SessionID, "Runtime.evaluate", jugglerParams)
+ 		if err != nil {
+-			log.Printf("[runtime] evaluate error: %v", err)
+-			return nil, &cdp.Error{Code: -32000, Message: err.Error()}
++			// Juggler destroys contexts rapidly during navigation. If we raced a
++			// stale context, re-read the latest one and retry a couple of times
++			// before giving up (Jev does eager post-navigation evaluates).
++			if strings.Contains(err.Error(), "Failed to find execution context") {
++				retried := false
++				for i := 0; i < 3; i++ {
++					latest := b.latestContextForSession(msg.SessionID)
++					if latest == "" || latest == execCtxID {
++						break
++					}
++					jugglerParams["executionContextId"] = latest
++					time.Sleep(20 * time.Millisecond)
++					result, err = b.callJuggler(msg.SessionID, "Runtime.evaluate", jugglerParams)
++					if err == nil {
++						retried = true
++						break
++					}
++				}
++				if retried {
++					log.Printf("[runtime] evaluate recovered on retried context")
++				} else {
++					log.Printf("[runtime] evaluate error: %v", err)
++					return nil, &cdp.Error{Code: -32000, Message: err.Error()}
++				}
++			} else {
++				log.Printf("[runtime] evaluate error: %v", err)
++				return nil, &cdp.Error{Code: -32000, Message: err.Error()}
++			}
+ 		}
+ 
+ 		log.Printf("[runtime] evaluate result: %s", string(result)[:min(len(result), 300)])

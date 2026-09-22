@@ -1,0 +1,16 @@
+--- a/pkg/bridge/emulation.go	2026-09-22 18:03:45
++++ b/pkg/bridge/emulation.go	2026-09-22 18:09:32
+@@ -188,6 +188,13 @@
+ 	case "Emulation.setScrollbarsHidden":
+ 		return json.RawMessage(`{}`), nil
+ 
++	case "Emulation.setFocusEmulationEnabled":
++		// No-op: Firefox (Juggler) has no focus-emulation concept and headless
++		// Camoufox renders regardless of tab focus. Jev calls this to keep its
++		// owned background tab rendering; returning success is the correct
++		// contract. See roadmap/f18-browser-agent-stack/f18-03.
++		return json.RawMessage(`{}`), nil
++
+ 	case "Emulation.setDefaultBackgroundColorOverride":
+ 		return json.RawMessage(`{}`), nil
+ 

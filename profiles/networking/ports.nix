@@ -15,4 +15,7 @@
   alloy = 9216;
   # F14: central SSO (Authentik). Loopback-only; the `auth` Caddy site is the ingress.
   authentik = 9220;
+  # F18: browser agent stack (loopback-only).
+  foxbridge-cdp = 9222;
+  jev-inspector = 8766;
 }

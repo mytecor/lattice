@@ -32,6 +32,14 @@ let
   # Совпадает с lattice.tcp-gateway.meshDomain; используется для внешнего URL Grafana
   # и OIDC-контрактов Authentik (mesh-canonical, см. lattice.grafana ниже).
   meshDomain = "homelab.myt.su";
+  # f18-08: Jev API keys (optional). Модуль управляет agenix-секретами неявно
+  # (nullOr path); здесь нода определяет runtime-path, если .age-файл создан
+  # оператором. Пока файла нет — секреты не подключаются, сервис стартует в
+  # inspector-режиме без задач модели.
+  jevTypesafeApiKeyFile = ./secrets/jev-typesafe-api-key.age;
+  hasJevTypesafeKey = builtins.pathExists jevTypesafeApiKeyFile;
+  jevTextModelApiKeyFile = ./secrets/jev-text-model-api-key.age;
+  hasJevTextModelKey = builtins.pathExists jevTextModelApiKeyFile;
 in
 {
   networking.hostName = "mytecor-homelab";
@@ -168,6 +176,20 @@ in
       # на следующей активации, yggdrasil подхватит новый адрес после перезапуска юнита).
       yggdrasil-keys = {
         file = ./secrets/yggdrasil-keys.age;
+        mode = "0400";
+      };
+    } // lib.optionalAttrs hasJevTypesafeKey {
+      # f18-08: Jev TYPESAFE_API_KEY (optional, agenix). Регистрируется только
+      # когда оператор создал .age-файл; иначе `file`-путь не существует и eval
+      # упал бы. Модуль монтирует ключ через LoadCredential, в store не попадает.
+      jev-typesafe-api-key = {
+        file = jevTypesafeApiKeyFile;
+        mode = "0400";
+      };
+    } // lib.optionalAttrs hasJevTextModelKey {
+      # f18-08: Jev TEXT_MODEL_API_KEY (optional, agenix). Смотри выше.
+      jev-text-model-api-key = {
+        file = jevTextModelApiKeyFile;
         mode = "0400";
       };
     } // lib.optionalAttrs hasCaddyCloudflare {
@@ -320,6 +342,14 @@ in
   # общим реестром портов. Никаких node-specific значений этой ноде не нужно:
   # cache-only, loopback, upstream registry.npmjs.org.
   lattice.verdaccio.enable = true;
+
+  # f18-08: Jev API keys — runtime paths from agenix, wired conditionally (node
+  # convention). Модуль монтирует их через LoadCredential; пока оператор не
+  # создал .age-файл, пути null и сервис работает в inspector-режиме.
+  lattice.jev-ultrafast = {
+    typesafeApiKeyFile = if hasJevTypesafeKey then config.age.secrets.jev-typesafe-api-key.path else null;
+    textModelApiKeyFile = if hasJevTextModelKey then config.age.secrets.jev-text-model-api-key.path else null;
+  };
 
   # LLM Gateway: f7-14 declarative sugar. `models` generates the canonical
   # bounded pipeline for every logical model (filter model → filter provider →

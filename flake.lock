@@ -180,6 +180,18 @@
       },
       "parent": []
     },
+    "module-foxbridge-camoufox": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/services/foxbridge-camoufox",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/services/foxbridge-camoufox",
+        "type": "path"
+      },
+      "parent": []
+    },
     "module-git-cache-proxy": {
       "flake": false,
       "locked": {
@@ -200,6 +212,18 @@
       },
       "original": {
         "path": "./modules/grafana",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "module-jev-ultrafast": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/services/jev-ultrafast",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/services/jev-ultrafast",
         "type": "path"
       },
       "parent": []
@@ -409,8 +433,10 @@
         "impermanence": "impermanence",
         "module-authentik": "module-authentik",
         "module-ephemeral-root": "module-ephemeral-root",
+        "module-foxbridge-camoufox": "module-foxbridge-camoufox",
         "module-git-cache-proxy": "module-git-cache-proxy",
         "module-grafana": "module-grafana",
+        "module-jev-ultrafast": "module-jev-ultrafast",
         "module-llm-gateway": "module-llm-gateway",
         "module-observability-alloy": "module-observability-alloy",
         "module-observability-loki": "module-observability-loki",
