@@ -40,16 +40,18 @@ stdenv.mkDerivation {
   dontConfigure = true;
   dontBuild = true;
   dontStrip = true;
+  # The release zip is FLAT: ELF `camoufox`, libmoz*.so and dependentlibs.list
+  # sit at the archive root next to application.ini — there is no single
+  # top-level dir, so the default unpackPhase errors with "produced multiple
+  # directories". Skip unpack/build entirely and unzip straight into $out/lib,
+  # preserving the flat layout Firefox needs (dependentlibs.list is relative to
+  # the executable's directory).
+  dontUnpack = true;
 
   installPhase = ''
     runHook preInstall
-    mkdir -p "$out/lib/camoufox-$version"
-    # The release zip is FLAT (no single top-level dir): the ELF binary
-    # `camoufox`, every libmoz*.so, and the dependentlibs.list all sit at the
-    # archive root next to application.ini. Firefox resolves its shared
-    # objects relative to the executable's directory (dependentlibs.list), so
-    # everything must land in one dir unchanged.
-    cp -a * "$out/lib/camoufox-$version/"
+    mkdir -p "$out/lib/camoufox-${version}"
+    unzip -qq "$src" -d "$out/lib/camoufox-${version}"
     runHook postInstall
   '';
 
