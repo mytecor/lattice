@@ -82,3 +82,11 @@ peer, общий реестр в flake и исходящие TCP-соедине�
    пустой `CapabilityBoundingSet`, `NoNewPrivileges=true`, `ProtectSystem=full`, `PrivateDevices`).
    Смысл/границы раскрытия — в
    [README модуля](../modules/pi-acp-daemon/README.md#временный-privileged-доступ-stopgap-переработать).
+
+6. **Humanization действий Jev (траектория к клику / паузы)** — Camoufox `humanize=true`
+   применяется только к CDP `Input.dispatchMouseEvent type="mouseMoved"` (`mousemove`), а
+   Jev в action loop шлёт только `mousePressed`/`mouseReleased`/`mouseWheel` (+клавиатура и
+   insertText), поэтому на фактических действиях Jev humanization не срабатывает. Подтверждено
+   в [f18-06](f18-browser-agent-stack/f18-06-humanize.md). Если понадобится человекообразность
+   действий Jev — отдельная задача на границе Foxbridge (добавлять `mousemove` перед кликом /
+   паузы) или собственный HumanCursor в Jev; await f18-11 при реальной web-задаче.
