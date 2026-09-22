@@ -24,10 +24,6 @@ stdenv.mkDerivation {
   };
 
   nativeBuildInputs = [ unzip autoPatchelfHook ];
-  # Firefox uses "relrhack" to manually process relocations from a fixed
-  # offset (nixpkgs firefox-bin sets the same flag); without it the browser
-  # SEGVs in early NSPR init.
-  patchelfFlags = [ "--no-clobber-old-sections" ];
   buildInputs = [
     gtk3
     alsa-lib
