@@ -9,7 +9,7 @@
 # Version pinned to 152.0.4-beta.30 (verified in f18-01..f18-07 smoke runs on
 # mytecor-homelab). The zip sha256 comes from the Camoufox GitHub release
 # assets (repo_cache.json in the working /root/.cache/camoufox).
-{ lib, stdenv, fetchurl, autoPatchelfHook, alsa-lib, curl, dbus-glib, gtk3, libxtst, libva, pciutils, pipewire }:
+{ lib, stdenv, fetchurl, unzip, autoPatchelfHook, alsa-lib, curl, dbus-glib, gtk3, libxtst, libva, pciutils, pipewire }:
 
 let
   version = "152.0.4-beta.30";
@@ -23,7 +23,7 @@ stdenv.mkDerivation {
     sha256 = "sha256-VyDUW4lM4XcFQ94CTG8Q1RSzi+Vg+i3DIms9hYbK9nI=";
   };
 
-  nativeBuildInputs = [ autoPatchelfHook ];
+  nativeBuildInputs = [ unzip autoPatchelfHook ];
   buildInputs = [
     gtk3
     alsa-lib
