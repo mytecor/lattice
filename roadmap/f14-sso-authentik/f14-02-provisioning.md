@@ -149,7 +149,8 @@ Caddy-директива в `profiles/app-services/config.nix` для сайта
 
 LAN и mesh требуют разных proxy providers из-за разных cookie domains, но это не должно создавать
 дубликаты в пользовательском Application Dashboard. Blueprint оставляет видимой одну карточку с
-именем сервиса и canonical launch URL, а дополнительному mesh application задаёт `meta_hide: true`:
+именем сервиса и launch URL на его **LAN-адрес** (хост, которым действительно пользуется
+локальный пользователь), а дополнительному mesh application задаёт `meta_hide: true`:
 оно остаётся доступным для ForwardAuth, но не показывается пользователю.
 
 > **Два подводных камня, из-за которых «мы уже это чинили», а 404 вернулся.**

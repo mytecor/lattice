@@ -146,15 +146,18 @@ let
       service = entry.service;
       lanDomain = "${hostName}.local";
       lanHost = "http://${service}.${lanDomain}";
+      # The visible LAN card must open the LAN URL: this is the host the local
+      # user actually uses. The mesh app is a hidden transport application
+      # (meta_hide: true) — it exists only so ForwardAuth has a per-host
+      # provider, and its launch URL never appears on the dashboard.
       hasMesh = meshDomain != null && !(lib.elem service config.lattice.tcp-gateway.meshExclude);
       meshHost = if hasMesh then "${meshScheme}://${service}.${meshDomain}" else null;
-      canonicalHost = if meshHost != null then meshHost else lanHost;
       mkHost = suffix: host: cookieDomain: applicationName: launchUrl: hidden: {
         slug = "${service}-fa${suffix}";
         inherit host cookieDomain applicationName launchUrl hidden;
       };
     in
-    [ (mkHost "" lanHost lanDomain service "${canonicalHost}/" false) ]
+    [ (mkHost "" lanHost lanDomain service "${lanHost}/" false) ]
     ++ lib.optional hasMesh
       (mkHost "-mesh" meshHost meshDomain "${service}-fa-mesh" "${meshHost}/" true)
   ) cfg.forwardAuth;

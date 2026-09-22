@@ -268,6 +268,15 @@ pkgs.runCommand "authentik-evaluation" {
   grep -F 'model: authentik_outposts.outpost' "$blueprintPath"
   grep -A6 'slug: "acp-ui-fa"' "$blueprintPath" | grep -F 'name: "acp-ui"'
   grep -A6 'slug: "acp-ui-fa"' "$blueprintPath" | grep -F 'meta_hide: false'
+  # The VISIBLE LAN card must launch the LAN URL, not the mesh URL.
+  # (Regression: canonical-launch logic preferred the mesh host, so the card
+  # opened https://acp-ui.homelab.myt.su from the LAN UI.) -F with the closing
+  # quote keeps the "/slug/" from matching the "-mesh" slug.
+  grep -A5 -F 'slug: "acp-ui-fa"' "$blueprintPath" | grep -F 'meta_launch_url: "http://acp-ui.${hostName}.local/"'
+  if grep -A5 -F 'slug: "acp-ui-fa"' "$blueprintPath" | grep -F 'meta_launch_url: "https://acp-ui.homelab.myt.su/"'; then
+    echo "LAN app must not launch the mesh URL" >&2
+    exit 1
+  fi
   grep -A6 'slug: "acp-ui-fa-mesh"' "$blueprintPath" | grep -F 'meta_hide: true'
   grep -F 'model: authentik_providers_oauth2.oauth2provider' "$blueprintPath"
   grep -F 'client_id: "grafana"' "$blueprintPath"
