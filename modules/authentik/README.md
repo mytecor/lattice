@@ -80,7 +80,9 @@ Authentik слушает `127.0.0.1:<port>` — не публично. Нару�
 - `dbUser` — OS-пользователь и роль БД (default `authentik`).
 - `dataDir` — `/var/lib/authentik` (персистится через /persist).
 - `forwardAuth` — защищаемые сайты; из списка генерируется автоматически применяемый Authentik
-  Blueprint с provider/application/outpost state.
+  Blueprint с provider/application/outpost state. Для разных LAN/mesh cookie domains создаются
+  технические application-пары, но на Application Dashboard показывается только одна карточка
+  сервиса; дополнительные transport applications получают `meta_hide = true`.
 - `oidcApplications` — OAuth2/OIDC-сервисы (`service`, `callbackPath`, client ID и runtime-путь
   к secret); LAN/mesh origins выводятся из общего gateway-контракта, а секрет читается
   Blueprint-тегом `!File`.

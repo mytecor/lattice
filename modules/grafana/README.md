@@ -39,6 +39,8 @@ admin-пароль — из agenix-секрета через file provider (не
   (`/login/generic_oauth`), поэтому он обязан быть внешним хостом, а не loopback.
 - `adminUser` / `adminPasswordFile` / `secretKeyFile` — admin username + агентским
   secret paths для пароля и secret_key.
+- `oauth.authStyle` — способ передачи client credentials token endpoint'у; для Authentik
+  используется `InHeader` (HTTP Basic), потому что `InParams` отклоняется как `invalid_client`.
 - `dataDir` — `/var/lib/grafana` (персистится через /persist).
 - `prometheusUrl` / `lokiUrl` — loopback datasource URLs.
 - `dashboardProviders` — расширение provisioning providers.

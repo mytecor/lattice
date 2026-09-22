@@ -147,6 +147,11 @@ Caddy-директива в `profiles/app-services/config.nix` для сайта
 `AUTHENTIK_BLUEPRINTS_DIR`, поэтому дальше его периодически reconciles сам Authentik. Ручной шаг
 после `nixos-rebuild switch` или перезагрузки не нужен.
 
+LAN и mesh требуют разных proxy providers из-за разных cookie domains, но это не должно создавать
+дубликаты в пользовательском Application Dashboard. Blueprint оставляет видимой одну карточку с
+именем сервиса и canonical launch URL, а дополнительному mesh application задаёт `meta_hide: true`:
+оно остаётся доступным для ForwardAuth, но не показывается пользователю.
+
 > **Два подводных камня, из-за которых «мы уже это чинили», а 404 вернулся.**
 > Оба касаются того, что провижининг сам выглядел выполненным, а subrequest по-прежнему 404:
 > 1. **Нечёткий поиск по query-параметрам**: `?name=acp-ui-fa-mesh` субстроково находит

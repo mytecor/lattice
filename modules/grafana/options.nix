@@ -140,6 +140,15 @@ in
             default = null;
             description = "Authentik userinfo endpoint.";
           };
+          authStyle = mkOption {
+            type = types.enum [ "AutoDetect" "InParams" "InHeader" ];
+            default = "InHeader";
+            description = ''
+              How Grafana authenticates to the token endpoint. Authentik's
+              confidential OAuth2 provider expects HTTP Basic credentials, so
+              `InHeader` is the safe default.
+            '';
+          };
           scopes = mkOption {
             type = types.listOf types.str;
             default = [ "openid" "profile" "email" ];

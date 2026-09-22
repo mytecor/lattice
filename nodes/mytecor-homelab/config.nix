@@ -721,6 +721,11 @@ in
   users.groups.authentik-oidc-secrets = { };
   users.users.authentik.extraGroups = [ "authentik-oidc-secrets" ];
   users.users.grafana.extraGroups = [ "authentik-oidc-secrets" ];
+  # Keep the runtime dependency explicit in the unit as well as in the user
+  # database. This makes `nixos-rebuild switch` restart Grafana when secret
+  # access is introduced instead of leaving an already-running process with
+  # its old supplementary-group set (which makes OAuth fail as invalid_client).
+  systemd.services.grafana.serviceConfig.SupplementaryGroups = [ "authentik-oidc-secrets" ];
   users.mutableUsers = false;
   users.users.root = {
     openssh.authorizedKeys.keys = [

@@ -145,14 +145,18 @@ let
     let
       service = entry.service;
       lanDomain = "${hostName}.local";
-      mkHost = suffix: host: cookieDomain: {
+      lanHost = "http://${service}.${lanDomain}";
+      hasMesh = meshDomain != null && !(lib.elem service config.lattice.tcp-gateway.meshExclude);
+      meshHost = if hasMesh then "${meshScheme}://${service}.${meshDomain}" else null;
+      canonicalHost = if meshHost != null then meshHost else lanHost;
+      mkHost = suffix: host: cookieDomain: applicationName: launchUrl: hidden: {
         slug = "${service}-fa${suffix}";
-        inherit host cookieDomain;
+        inherit host cookieDomain applicationName launchUrl hidden;
       };
     in
-    [ (mkHost "" "http://${service}.${lanDomain}" lanDomain) ]
-    ++ lib.optional (meshDomain != null && !(lib.elem service config.lattice.tcp-gateway.meshExclude))
-      (mkHost "-mesh" "${meshScheme}://${service}.${meshDomain}" meshDomain)
+    [ (mkHost "" lanHost lanDomain service "${canonicalHost}/" false) ]
+    ++ lib.optional hasMesh
+      (mkHost "-mesh" meshHost meshDomain "${service}-fa-mesh" "${meshHost}/" true)
   ) cfg.forwardAuth;
 
   yamlString = builtins.toJSON;
@@ -178,9 +182,10 @@ let
       identifiers:
         slug: ${yamlString host.slug}
       attrs:
-        name: ${yamlString host.slug}
+        name: ${yamlString host.applicationName}
         provider: !KeyOf ${yamlString "${host.slug}-provider"}
-        meta_launch_url: ${yamlString "${host.host}/"}
+        meta_launch_url: ${yamlString host.launchUrl}
+        meta_hide: ${if host.hidden then "true" else "false"}
   '';
 
   outpostProviders = lib.concatMapStringsSep "\n"

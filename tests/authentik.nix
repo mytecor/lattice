@@ -213,6 +213,7 @@ assert builtins.elem "authentik-applications-blueprint.service"
 # Grafana native OIDC config is present when oauth is enabled (F14 step 7).
 assert grafanaSettings."auth.generic_oauth".enabled or false;
 assert grafanaSettings."auth.generic_oauth".client_id or "" == "grafana";
+assert grafanaSettings."auth.generic_oauth".auth_style or "" == "InHeader";
 # F14/F4-05 (mesh): Grafana is closed behind Authentik via native OIDC and is
 # exposed on the public mesh. The mesh site must exist (grafana NOT meshExcluded)
 # and root_url must be the mesh-canonical external https URL (it drives the OIDC
@@ -265,6 +266,9 @@ pkgs.runCommand "authentik-evaluation" {
   grep -F 'external_host: "http://acp-ui.${hostName}.local"' "$blueprintPath"
   grep -F 'external_host: "https://acp-ui.homelab.myt.su"' "$blueprintPath"
   grep -F 'model: authentik_outposts.outpost' "$blueprintPath"
+  grep -A6 'slug: "acp-ui-fa"' "$blueprintPath" | grep -F 'name: "acp-ui"'
+  grep -A6 'slug: "acp-ui-fa"' "$blueprintPath" | grep -F 'meta_hide: false'
+  grep -A6 'slug: "acp-ui-fa-mesh"' "$blueprintPath" | grep -F 'meta_hide: true'
   grep -F 'model: authentik_providers_oauth2.oauth2provider' "$blueprintPath"
   grep -F 'client_id: "grafana"' "$blueprintPath"
   grep -F 'client_secret: !File "/run/agenix/grafana-oauth-client-secret"' "$blueprintPath"

@@ -126,6 +126,7 @@ in
             auth_url = cfg.oauth.authUrl;
             token_url = cfg.oauth.tokenUrl;
             api_url = cfg.oauth.apiUrl;
+            auth_style = cfg.oauth.authStyle;
             scopes = lib.concatStringsSep " " cfg.oauth.scopes;
             role_attribute_path = "contains(groups[*], '${cfg.oauth.adminGroup}')";
             role_attribute_strict = true;
