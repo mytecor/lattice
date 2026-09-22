@@ -148,6 +148,12 @@ func continueRuleRetries(route string, idle time.Duration, reshare string, retri
 	return r
 }
 
+func continueRuleWait(route string, idle time.Duration, reshare string, retries int, wait time.Duration) Rule {
+	r := continueRuleRetries(route, idle, reshare, retries).(*ContinueRule)
+	r.Wait = Duration{Duration: wait}
+	return r
+}
+
 func fallbackRule(route, target string) Rule {
 	r := &FallbackRule{}
 	r.setIdentity(route, "fallback")

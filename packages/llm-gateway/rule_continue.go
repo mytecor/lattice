@@ -28,6 +28,12 @@ type ContinueRule struct {
 	// with the partial output reshared. 0 (default) preserves the pre-chain-
 	// retry behavior of surfacing a terminal error once the chain runs out.
 	Retries int `json:"retries,omitempty"`
+	// Wait is the bounded horizon the gateway holds the relayed stream open
+	// while the provider pool recovers from an exhausted takeover, instead of
+	// surfacing the terminal error the client would see (see
+	// ContinueConfig.Wait). 0 (default) enables the wait with the built-in
+	// default horizon continueDefaultWait; a negative value is rejected.
+	Wait Duration `json:"wait,omitempty"`
 }
 
 // apply validates the takeover policy and stores it in the compiled entry
@@ -58,11 +64,19 @@ func (r *ContinueRule) apply(ctx *stageContext) error {
 	if r.Retries > maxContinueChainRetries {
 		return ctx.errf("continue retries exceeds the cap of %d, got %d", maxContinueChainRetries, r.Retries)
 	}
+	wait := r.Wait.Duration
+	if wait < 0 {
+		return ctx.errf("continue wait must be non-negative, got %d", wait)
+	}
+	if wait == 0 {
+		wait = continueDefaultWait
+	}
 	ctx.plan.Continue = ContinueConfig{
 		Enabled: true,
 		Idle:    r.Idle.Duration,
 		Reshare: reshare,
 		Retries: r.Retries,
+		Wait:    wait,
 	}
 	return nil
 }

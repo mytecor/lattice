@@ -451,11 +451,16 @@ let
           default = 0;
           description = "Whole-chain retry budget: how many times an exhausted chain (every provider broke during the request) is re-dispatched from the top with the reshared partial. 0 disables (a terminal error is surfaced once the chain runs out). Bounded by ${toString maxContinueChainRetries} to keep the worst-case per-request work finite.";
         };
+        wait = mkOption {
+          type = types.nullOr (types.strMatching "[0-9]+(ms|s|m|h)");
+          default = null;
+          description = "Bounded horizon the gateway holds the relayed stream open while the provider pool recovers from an exhausted takeover, instead of surfacing a terminal error the client would see. During the wait the gateway sends SSE keep-alives and re-attempts the continuation until a provider recovers, the client disconnects, or the horizon expires (then the terminal error surfaces as a last resort). null/\"0\" keep the wait enabled with the gateway's built-in default horizon; an explicit duration sets the horizon (e.g. \"10m\").";
+        };
         _public = mkOption {
           type = types.attrs;
           internal = true;
           readOnly = true;
-          default = { inherit (config) idle reshare retries; };
+          default = { inherit (config) idle reshare retries; } // lib.optionalAttrs (config.wait != null) { wait = config.wait; };
         };
       };
     };

@@ -159,8 +159,19 @@ func continueConfig(t *testing.T) *compiledConfig {
 }
 
 // continueConfigRetries builds a two-provider streaming entry route that
-// declares the continue policy with the given whole-chain retry budget.
+// declares the continue policy with the given whole-chain retry budget. The
+// continue rule carries a short bounded wait (50ms) so exhaustion tests that
+// hold the stream open and then surface the terminal error do not block on
+// the production default horizon (10m); tests that need a different wait
+// horizon use continueConfigWait explicitly.
 func continueConfigRetries(t *testing.T, retries int) *compiledConfig {
+	t.Helper()
+	return continueConfigRetriesWait(t, retries, 50*time.Millisecond)
+}
+
+// continueConfigRetriesWait is continueConfigRetries with an explicit hold
+// horizon for the continue rule.
+func continueConfigRetriesWait(t *testing.T, retries int, wait time.Duration) *compiledConfig {
 	t.Helper()
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:2] // a, b
@@ -170,7 +181,7 @@ func continueConfigRetries(t *testing.T, retries int) *compiledConfig {
 		mapRule("standard", "native-model"),
 		rankRule("standard"),
 		raceRule("standard", 2),
-		continueRuleRetries("standard", 90*time.Second, "full", retries),
+		continueRuleWait("standard", 90*time.Second, "full", retries, wait),
 	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {

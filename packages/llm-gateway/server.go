@@ -339,7 +339,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 		}
 		idleTimer.Reset(idleTimeout)
 	}
-cur := selected
+	cur := selected
 	observe := func(data []byte) {
 		if summary, ok := extractUsageFull(data); ok {
 			inTokens += summary.Input
@@ -489,6 +489,94 @@ cur := selected
 		}
 		return false
 	}
+
+	// holdForRecovery holds the relayed stream open while the provider pool
+	// recovers from an exhausted takeover, instead of surfacing the terminal
+	// error the client would see. It is the "keep the stream open" tail of a
+	// failed takeover: while the whole pool is down/cooling, the gateway stays
+	// silent-and-open on the same SSE stream, sending periodic keep-alives so
+	// client-side watchdogs (pi's stall watchdog, the idle timeout) do not kill
+	// it, and re-attempts the continuation until a provider recovers, the
+	// client disconnects, or the bounded continue.wait horizon expires. Returns
+	// true when a recovered winner took over the stream (the caller must
+	// continue relaying); false when the wait ended without a winner (the
+	// client disconnected, or the horizon expired and the caller must surface
+	// the terminal error as a last resort).
+	holdForRecovery := func(broken *CallError) bool {
+		if !continueEnabled || executeRequest.Kind != RequestChat {
+			return false
+		}
+		// A held stream must never be crossed over a tool-call boundary: the
+		// dangling tool-call cannot be reshared as prose (see
+		// appendPartialChatHistory), so surface the retryable error instead of
+		// waiting to reproduce it on every recovered provider.
+		if partial.GotToolCalls {
+			return false
+		}
+		wait := continueCfg.Wait
+		if wait <= 0 {
+			return false
+		}
+		horizon := time.NewTimer(wait)
+		defer horizon.Stop()
+		recheck := time.NewTicker(continueRecoveryRecheck)
+		defer recheck.Stop()
+		keepAlive := time.NewTicker(continueRecoveryKeepAlive)
+		defer keepAlive.Stop()
+		logEvent(request.Context(), s.logger, slog.LevelWarn, "llm_stream_held",
+			"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
+			"provider", cur.Provider,
+			"native_model", cur.Model,
+			"status_code", callErrorStatus(broken), "error_type", string(broken.Class),
+			"wait_ms", wait.Milliseconds(),
+			"attempts", cur.Attempts,
+			"duration_ms", time.Since(started).Milliseconds(),
+		)
+		for {
+			select {
+			case <-request.Context().Done():
+				// Client disconnected while we waited: nothing left to surface.
+				return false
+			case <-horizon.C:
+				logEvent(request.Context(), s.logger, slog.LevelWarn, "llm_stream_hold_exhausted",
+					"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
+					"provider", cur.Provider,
+					"wait_ms", wait.Milliseconds(),
+					"duration_ms", time.Since(started).Milliseconds(),
+				)
+				return false
+			case <-keepAlive.C:
+				// SSE comment keep-alive: no payload, no choice semantics, cheap;
+				// re-arms client-side watchdogs, and drains/re-arms the gateway's
+				// own idle timer so a stale watchdog value cannot spuriously
+				// fire the moment the stream hands back to the relay loop.
+				if _, err := io.WriteString(writer, ": ping\n\n"); err != nil {
+					return false
+				}
+				flusher.Flush()
+				rearmIdle()
+			case <-recheck.C:
+				// Re-attempt a continuation. Cooldown gates the just-broken
+				// providers (strict availability), so a provider is re-raced
+				// only once its recovery window expires — this is what waits out
+				// a sustained pool outage without hammering it.
+				next, callErr := s.runner.ContinueStream(request.Context(), logical, executeRequest, partial, nil)
+				if callErr != nil {
+					// Pool still down; keep waiting.
+					continue
+				}
+				from := cur.Provider
+				continued := swapTo(next)
+				// A fresh winner restarts the idle watchdog from now: the timer
+				// base has shifted (the whole hold elapsed on its previous arm),
+				// so re-arm or a subsequent genuine stall would never fire.
+				rearmIdle()
+				s.metrics.ObserveContinue(from, next.Provider, "wait_recovery")
+				logoutContinue("llm_continue", from, next)
+				return continued
+			}
+		}
+	}
 	for _, event := range selected.Buffered {
 		bind(event)
 		observePartial(event.Data)
@@ -521,7 +609,7 @@ cur := selected
 				"duration_ms", time.Since(started).Milliseconds(),
 			)
 			s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, cur.Model, stall)
-			if !sawFinishReason && takeover(stall) {
+			if !sawFinishReason && (takeover(stall) || holdForRecovery(stall)) {
 				continue
 			}
 			s.observeRequest(logical, cur.Provider, cur.Model, "failed", time.Since(started))
@@ -552,7 +640,7 @@ cur := selected
 						"has_usage", hasUsage,
 					)
 					s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, cur.Model, broken)
-					if takeover(broken) {
+					if takeover(broken) || holdForRecovery(broken) {
 						continue
 					}
 					s.observeRequest(logical, cur.Provider, cur.Model, "failed", time.Since(started))
@@ -588,7 +676,7 @@ cur := selected
 						"has_usage", hasUsage,
 					)
 					s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, cur.Model, broken)
-					if takeover(broken) {
+					if takeover(broken) || holdForRecovery(broken) {
 						continue
 					}
 					s.observeRequest(logical, cur.Provider, cur.Model, "failed", time.Since(started))
@@ -636,7 +724,7 @@ cur := selected
 				// scheduler returned at selection, so without this the provider
 				// would stay "healthy" no matter how often it breaks streams.
 				s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, cur.Model, event.Err)
-				if !sawFinishReason && takeover(event.Err) {
+				if !sawFinishReason && (takeover(event.Err) || holdForRecovery(event.Err)) {
 					continue
 				}
 				s.observeRequest(logical, cur.Provider, cur.Model, "failed", time.Since(started))

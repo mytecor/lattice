@@ -232,7 +232,43 @@ type ContinueConfig struct {
 	// maxContinueChainRetries so a misconfigured rule cannot spin the gateway
 	// across dozens of full-pass re-dispatches.
 	Retries int
+	// Wait is the bounded horizon the gateway holds the relayed stream open
+	// while the provider pool recovers from an exhausted takeover, instead of
+	// surfacing a terminal error the client would see. During the wait the
+	// gateway sends periodic SSE keep-alives (so client-side watchdogs do not
+	// kill the silent stream) and re-attempts the continuation until a
+	// provider recovers, the client disconnects, or the horizon expires. At
+	// expiry the terminal error is surfaced as a last resort. A positive
+	// horizon is always derived from the continue rule (see ContinueRule.Wait:
+	// omitted/zero becomes continueDefaultWait), so in practice an active
+	// continue rule never surfaces the terminal error early — the hold is
+	// on. The <= 0 guard in the relay is defensive only.
+	Wait time.Duration
 }
+
+// continueDefaultWait is the horizon for ContinueConfig.Wait when a continue
+// rule is active but no explicit wait is configured. It bounds how long the
+// gateway keeps a held stream open across a total provider-pool outage before
+// it finally surfaces the terminal error.
+const continueDefaultWait = 10 * time.Minute
+
+// continueRecoveryRecheck is how often the gateway re-attempts a
+// continuation while holding a stream open for provider-pool recovery. It is
+// deliberately shorter than the provider cooldown so a provider whose window
+// expires is re-raced promptly, without hammering the pool between
+// re-checks. A var (not a const) so tests can shrink the cadence; only tests
+// write to it.
+var continueRecoveryRecheck = 5 * time.Second
+
+// continueRecoveryKeepAlive is the SSE keep-alive cadence sent while the
+// gateway holds a stream open for provider-pool recovery. It is short enough
+// to keep client-side stream watchdogs (e.g. pi's stall watchdog and the
+// gateway's own idle timeout) from killing the silent stream, and cheap: an
+// SSE comment (": ping") carries no payload and no choice semantics. It
+// overrides the route-wide idle timeout while a stream is held, exactly like
+// the continue Idle threshold does during a normal relay. A var (not a const)
+// so tests can shrink the cadence; only tests write to it.
+var continueRecoveryKeepAlive = 15 * time.Second
 
 // maxContinueChainRetries caps the whole-chain retry budget of a continue
 // rule. A retry is a full re-dispatch of the whole pool with a freshly
