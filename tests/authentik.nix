@@ -201,11 +201,23 @@ assert builtins.elem "authentik-migrate.service" (blueprintUnit.requires or [ ])
 assert builtins.elem "authentik-server.service" (blueprintUnit.before or [ ]);
 assert builtins.elem "authentik-worker.service" (blueprintUnit.before or [ ]);
 assert builtins.elem "caddy.service" (blueprintUnit.before or [ ]);
-assert lib.length blueprintExec == 3;
-assert lib.all (lib.hasInfix "/bin/ak apply_blueprint") blueprintExec;
+assert lib.length blueprintExec == 4;
+assert lib.all (lib.hasInfix "/bin/ak apply_blueprint") (lib.take 3 blueprintExec);
 assert lib.any (lib.hasInfix "flow-default-provider-authorization-explicit-consent.yaml") blueprintExec;
 assert lib.any (lib.hasInfix "flow-default-provider-invalidation.yaml") blueprintExec;
 assert lib.any (lib.hasInfix "/lattice/applications.yaml") blueprintExec;
+# After applying the blueprint the unit invalidates the per-user application
+# caches. Without this step a meta_hide flip (hiding the mesh transport app)
+# stays invisible on the Dashboard for up to 24h, because Authentik clears the
+# cache only when an Application is *created*, while the blueprint's
+# `state: present` updates existing objects (same unique slug).
+let
+  invalidateScript = blueprintUnit.environment.LATTICE_AUTHENTIK_INVALIDATE_APPS_CACHE or "";
+  invalidateSource = blueprintUnit.environment.LATTICE_AUTHENTIK_INVALIDATE_APPS_CACHE_SOURCE or "";
+in
+assert lib.elem invalidateScript (lib.drop 3 blueprintExec);
+assert lib.hasInfix "user_app_cache_key" invalidateSource;
+assert lib.hasInfix "-m manage shell" invalidateSource;
 assert lib.hasSuffix "/lattice/applications.yaml" blueprintPath;
 assert config.systemd.services.authentik-worker.environment.AUTHENTIK_BLUEPRINTS_DIR or "" != "";
 assert builtins.elem "authentik-applications-blueprint.service"

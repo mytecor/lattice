@@ -27,6 +27,44 @@ let
     exec "$python" -m lifecycle.migrate "$@"
   '';
 
+  # Invalidate the per-user application cache after the blueprint applies.
+  #
+  # Why this is needed (not just cosmetics): the Application Dashboard in the
+  # WebUI fetches the app list from /api/v3/core/applications?only_with_launch_url
+  # and the API caches it under `app_access/<user>` with a 24h TTL. Authentik's
+  # own cache invalidation (authentik/core/signals.py::post_save_application)
+  # runs ONLY when an Application is *created*, not when it is updated — and a
+  # Blueprint entry with `state: present` updates an existing object (same
+  # unique slug) instead of creating it. So after a rebuild that flips
+  # meta_hide (e.g. hiding the mesh transport app), the dashboard keeps showing
+  # the stale list for up to a day. We clear exactly the application-cache keys
+  # (prefix goauthentik.io/policies/app_access/, shared with only_with_launch_url)
+  # here, not the whole CacheEntry table (throttling etc. lives in the same
+  # postgres-backed cache and must not be dropped on every apply).
+  #
+  # Runs through the same private python env as `migrate` above: `ak manage`
+  # injects a second leading `manage`, so we bypass the wrapper and exec Django
+  # directly (`python -m manage shell -c ...`), mirroring the migrate entrypoint.
+  invalidateAppsCacheScript = ''
+    set -euo pipefail
+    ak="${ak}"
+    python="$(sed -n "s|^PATH='\(/nix/store/[^']*\)/bin'$PATH.*|\1|p" "$ak" |
+      sed -n '1p')/bin/python"
+    if [[ ! -x "$python" ]]; then
+      echo "authentik-invalidate-apps-cache: could not resolve python env from $ak" >&2
+      exit 1
+    fi
+    CATALOGUE_KEYS_CODE='''
+from django.core.cache import cache
+from authentik.core.api.applications import user_app_cache_key
+keys = cache.keys(user_app_cache_key("*"))
+cache.delete_many(keys)
+print(f"authentik-invalidate-apps-cache: cleared {len(keys)} application cache entries")
+'''
+    exec "$python" -m manage shell -c "$CATALOGUE_KEYS_CODE"
+  '';
+  invalidateAppsCache = pkgs.writeShellScript "authentik-invalidate-apps-cache" invalidateAppsCacheScript;
+
   # Runtime-writable home for the authentik service user (media/storage).
   dataDir = toString cfg.dataDir;
 
@@ -448,6 +486,8 @@ in
         # Non-secret path exposed for evaluation/build-time contract tests.
         LATTICE_AUTHENTIK_APPLICATIONS_BLUEPRINT = applicationsBlueprintPath;
         LATTICE_AUTHENTIK_APPLICATIONS_BLUEPRINT_SOURCE = toString applicationsBlueprint;
+        LATTICE_AUTHENTIK_INVALIDATE_APPS_CACHE = invalidateAppsCache;
+        LATTICE_AUTHENTIK_INVALIDATE_APPS_CACHE_SOURCE = invalidateAppsCacheScript;
       };
       serviceConfig = {
         Type = "oneshot";
@@ -463,6 +503,12 @@ in
           "${ak} apply_blueprint ${blueprintsDir}/default/flow-default-provider-authorization-explicit-consent.yaml"
           "${ak} apply_blueprint ${blueprintsDir}/default/flow-default-provider-invalidation.yaml"
           "${ak} apply_blueprint ${applicationsBlueprintPath}"
+          # After the blueprint runs, drop the per-user application caches so
+          # meta_hide/meta_launch_url changes (e.g. hiding the mesh transport
+          # app) reach the Dashboard immediately instead of after the 24h TTL.
+          # Authentik only invalidates on Application *create*, never on the
+          # `state: present` update path this blueprint uses.
+          invalidateAppsCache
         ];
       };
     };

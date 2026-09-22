@@ -153,6 +153,17 @@ LAN и mesh требуют разных proxy providers из-за разных c
 локальный пользователь), а дополнительному mesh application задаёт `meta_hide: true`:
 оно остаётся доступным для ForwardAuth, но не показывается пользователю.
 
+> **Третий подводный камень — кеш Dashboard не инвалидируется при update.**
+> `meta_hide` в `state: present`-blueprint обновляет существующий объект (тот же slug), а
+> Authentik сбрасывает per-user application куш (`app_access/*`) только когда Application
+> **создаётся** (`authentik/core/signals.py`, `post_save_application`: `if not created: return`).
+> После `nixos-rebuild switch`, переведшего mesh-приложение в `meta_hide=true`, Dashboard ещё
+> сутки показывает старую карточку. Решение — после `apply_blueprint` в том же one-shot unit
+> выполняется `authentik-invalidate-apps-cache`: через приватный python-env резолвится `python`
+> (как в миграциях, минуя `ak manage`, который добавляет лишний `manage`) и точечно чистит
+> ключи `user_app_cache_key("*")` — трогается только список приложений, остальной кеш
+> (throttle и пр.) не затрагивается.
+
 > **Два подводных камня, из-за которых «мы уже это чинили», а 404 вернулся.**
 > Оба касаются того, что провижининг сам выглядел выполненным, а subrequest по-прежнему 404:
 > 1. **Нечёткий поиск по query-параметрам**: `?name=acp-ui-fa-mesh` субстроково находит

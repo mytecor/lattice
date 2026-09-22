@@ -83,6 +83,10 @@ Authentik слушает `127.0.0.1:<port>` — не публично. Нару�
   Blueprint с provider/application/outpost state. Для разных LAN/mesh cookie domains создаются
   технические application-пары, но на Application Dashboard показывается только одна карточка
   сервиса; дополнительные transport applications получают `meta_hide = true`.
+  После применения Blueprint one-shot unit дополнительно инвалидирует per-user application-куши
+  (`app_access/*`). Иначе изменения `meta_hide` не доедут до Dashboard до конца 24-часового TTL:
+  Authentik чистит этот куш только при **создании** Application, а Blueprint-запись с
+  `state: present` обновляет существующий объект (тот же slug), а не создаёт.
 - `oidcApplications` — OAuth2/OIDC-сервисы (`service`, `callbackPath`, client ID и runtime-путь
   к secret); LAN/mesh origins выводятся из общего gateway-контракта, а секрет читается
   Blueprint-тегом `!File`.
