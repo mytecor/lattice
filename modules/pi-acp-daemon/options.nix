@@ -35,6 +35,21 @@ in
       '';
     };
 
+    extraEnv = mkOption {
+      type = types.attrsOf types.str;
+      default = { };
+      description = ''
+        Extra environment variables merged into every spawned Pi agent process
+        (the generated Hydra `agents.pi-acp.env`). Names like `RAD_HOME` set by
+        the Git-side radicle remote helper must reach the spawned session, so
+        define repository/tool-specific bindings here instead of patching the
+        daemon. f15-02: the node sets `RAD_HOME` to its Radicle peer profile
+        (`/persist/var/lib/radicle-peer`) so `git push rad://...` from the
+        workspace uses the node's own peer identity rather than the seed
+        profile; see `pkgs.lattice.rad-peer` and profiles/node-dev.
+      '';
+    };
+
     user = mkOption {
       type = types.str;
       default = "root";

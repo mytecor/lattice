@@ -176,6 +176,22 @@
             runtimeInputs = [ final.coreutils final.git ];
             text = builtins.readFile ./scripts/lattice-workspace-init.sh;
           };
+          # f15-02: `rad` against the node's own Radicle peer profile, strictly
+          # separate from the seed profile (`rad-system`, RAD_HOME=/var/lib/radicle):
+          # the seed key only reads/anchors the repository, it must not be the
+          # identity that pushes. rad-peer sets RAD_HOME to the persistent peer
+          # home and execs rad, so explicit CLI ops from an ACP session (rad auth,
+          # rad push, rad id) act on the node's peer identity. The peer home must
+          # survive reboot (profiles/node-dev impermanence) and is bootstrapped
+          # once by hand on the node (`rad-peer auth` yields the key in place).
+          # Overridable via LATTICE_RADICLE_PEER_HOME so tests and future nodes
+          # are not hard-bound to one path; the git remote helper for rad:// push
+          # reads the same variable from the daemon agent env (see
+          # lattice.pi-acp-daemon.extraEnv.RAD_HOME).
+          rad-peer = final.writeShellScriptBin "rad-peer" ''
+            export RAD_HOME="''${LATTICE_RADICLE_PEER_HOME:-/persist/var/lib/radicle-peer}"
+            exec ${final.lib.getExe' final.radicle-node "rad"} "$@"
+          '';
           # f4-04: writer runtime-статуса узла (generation/commit JSON).
           # replaceVars вшивает полные store-пути команд, чтобы скрипт работал
           # из активационной среды (PATH там не содержит git/jq). Используется
@@ -266,7 +282,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) acp-normalizer acp-web git-cache-proxy hydra-acp llm-gateway pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
+          inherit (pkgs.lattice) acp-normalizer acp-web git-cache-proxy hydra-acp llm-gateway pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
         });

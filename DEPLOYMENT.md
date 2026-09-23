@@ -86,6 +86,11 @@ checkout Lattice на ноде, а не в `/root`. Рабочей копией 
 remote `publish` с двумя push URL (Radicle + GitHub) по рецепту выше и `pull --ff-only` держит
 копию актуальной (грязное дерево не трогает).
 
+Радиальный push URL в workspace **без DID** (`rad://z3AqC…G6L`) — в отличие от рецепта выше, где
+URL для Mac-оператора включает его DID. На ноде подпись берётся от peer-профиля, на который
+указывает `RAD_HOME` (rad-peer, f15-02), поэтому URL не должен привязывать push к операторскому
+DID (закрытого ключа оператора на ноде нет).
+
 **Границы:** workspace — рабочая копия для правок и пуша, а `comin` читает свой bare source
 (`/var/lib/comin/source/repository`); `/var/lib/lattice-workspace` не пересекается ни с ним, ни с
 `/var/lib/radicle/storage`. Инициализатор не создаёт симлинков в `/var/lib/comin` или
@@ -97,6 +102,31 @@ remote `publish` с двумя push URL (Radicle + GitHub) по рецепту �
 # состояние checkout на ноде после init
 systemctl status lattice-workspace-init
 ls /var/lib/lattice-workspace/lattice
+```
+
+### Push-доступы ноды (f15-02)
+
+Публикация из ACP-сессии использует **собственную Radicle peer-identity ноды** и **GitHub
+deploy key**, а не закрытые ключи оператора.
+
+- **Radicle.** `pkgs.lattice.rad-peer` — `rad` против отдельного peer-профиля
+  `RAD_HOME=/persist/var/lib/radicle-peer` (строго отделён от seed-профиля `rad-system`,
+  `/var/lib/radicle`). Тот же `RAD_HOME` задаётся в `lattice.pi-acp-daemon.extraEnv`, поэтому
+  `git push rad://...` подписывается peer-ключом ноды. Каталог персистится (impermanence).
+  Один раз вручную на ноде: `rad-peer auth`; делегирование в RID Lattice — `rad id update` с
+  подписью оператора.
+- **GitHub.** Ручной шаг оператора один раз: создать repo-scoped deploy key (write) для
+  `mytecor/lattice`, закрытый ключ зашифровать в
+  `nodes/mytecor-homelab/secrets/github-lattice-deploy-key.age` (recipients admin+node уже в
+  `secrets.nix`). После этого `lattice-workspace-init` на ноде пишет root ssh-алиас
+  `github-lattice` (IdentityFile = расшифрованный agenix-путь) и переводит GitHub push URL
+  `publish` на `git@github-lattice:mytecor/lattice.git`. Пока ключа нет, GitHub push URL остаётся
+  анонимным https (push отложен; fetch — по-прежнему анонимный через git-cache-proxy, f9-02).
+
+```sh
+# проверка на ноде после провижинга
+rad-peer auth status
+git -C /var/lib/lattice-workspace/lattice remote get-url --all --push publish
 ```
 
 ## Первая реальная нода: `mytecor-homelab`

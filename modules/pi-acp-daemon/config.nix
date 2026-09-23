@@ -33,7 +33,7 @@ let
         PATH = lib.makeBinPath cfg.path
           + ":/run/current-system/sw/bin"
           + ":/run/current-system/sw/sbin";
-      };
+      } // cfg.extraEnv;
     };
     defaultAgent = "pi-acp";
     defaultCwd = (if cfg.defaultCwd == null then userHome else cfg.defaultCwd);

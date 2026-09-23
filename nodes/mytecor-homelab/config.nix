@@ -12,6 +12,18 @@ let
   # "both fields are file paths" contract. Passwords still come from a shared
   # agenix secret (wifi-password.age); only the home SSID uses wifi-ssid.age.
   ssidFile = name: value: "${pkgs.writeText "lattice-ssid-${name}" value}";
+  # f15-02: GitHub deploy key for the node's push to mytecor/lattice (repo-scoped,
+  # write, ssh-ed25519). The operator creates + encrypts it (see
+  # nodes/mytecor-homelab/README.md and roadmap/f15-node-dev-loop/f15-02); the
+  # secret is wired only when the .age file exists, so evaluation does not break
+  # before the key is provisioned (same convention as caddy-cloudflare/jev).
+  githubDeployKeyFile = ./secrets/github-lattice-deploy-key.age;
+  hasGithubDeployKey = builtins.pathExists githubDeployKeyFile;
+  # f15-02: Radicle peer profile of the node, strictly separate from the seed
+  # profile (RAD_HOME=/var/lib/radicle, rad-system). The peer identity lives on
+  # the node itself (generated in place via `rad-peer auth`), survives reboot
+  # through impermanence, and is what `git push rad://...` signs with.
+  radiclePeerHome = "/persist/var/lib/radicle-peer";
   # zai `thinking` control rejected by generic OpenAI-compatible upstreams
   # (hyperfusion/litellm 400). Stripped for every provider so reasoning level
   # choice stays a native-model concern and no provider fails a race over an
@@ -199,6 +211,17 @@ in
         file = caddyCloudflareTokenFile;
         mode = "0400";
       };
+    } // lib.optionalAttrs hasGithubDeployKey {
+      # f15-02: GitHub deploy key (repo-scoped write for mytecor/lattice) for the
+      # workspace `publish` push from the node. Registered only when the operator
+      # created the .age file (see nodes/mytecor-homelab/README.md and
+      # roadmap/f15-node-dev-loop/f15-02); mode 0400, root-only. The private key
+      # never enters the Nix store (agenix decrypts at activation) and root's ssh
+      # alias (profiles/node-dev) points IdentityFile at this path.
+      github-lattice-deploy-key = {
+        file = githubDeployKeyFile;
+        mode = "0400";
+      };
     };
   };
 
@@ -316,8 +339,18 @@ in
   lattice.pi-acp-daemon = {
     # f8-06 fix: the daemon's own systemd PATH has no `sh`, so spawned Pi
     # sessions got `spawn sh ENOENT` from the bash tool. Give every agent the
-    # same bash/git/tools contract as the local runtime.
-    path = [ pkgs.lattice.pi-tool-profile ];
+    # same bash/git/tools contract as the local runtime. f15-02: add rad-peer
+    # (rad against the node's own peer profile) so an agent can inspect its
+    # peer identity and push from the session.
+    path = [ pkgs.lattice.pi-tool-profile pkgs.lattice.rad-peer ];
+    # f15-02: the Git-side radicle remote helper for rad:// push reads RAD_HOME
+    # from the sessions' environment; point it at the node's persistent peer
+    # profile so `git push publish main` signs with the peer identity, never the
+    # seed profile.
+    extraEnv = {
+      RAD_HOME = radiclePeerHome;
+      LATTICE_RADICLE_PEER_HOME = radiclePeerHome;
+    };
     # f15-01: ACP sessions open in the node's Lattice working checkout (see
     # profiles/node-dev), so an agent can edit, commit and push `main` from
     # the node itself.
@@ -789,6 +822,9 @@ in
     { directory = "/var/lib/rnsh"; user = "rnsh"; group = "rnsh"; mode = "0700"; }
     { directory = "/var/lib/radicle"; user = "radicle"; group = "radicle"; mode = "0750"; }
     { directory = "/var/lib/hydra-acp"; user = "root"; group = "root"; mode = "0700"; }
+    # f15-02: Radicle peer profile of the node (rad-peer / RAD_HOME) survives
+    # reboots. The seed profile (/var/lib/radicle) has its own entry above.
+    { directory = radiclePeerHome; user = "root"; group = "root"; mode = "0700"; }
     # F12 observability data survives reboots (impermanence).
     { directory = "/var/lib/prometheus"; user = "prometheus"; group = "prometheus"; mode = "0750"; }
     { directory = "/var/lib/loki"; user = "loki"; group = "loki"; mode = "0750"; }

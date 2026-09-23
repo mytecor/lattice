@@ -34,6 +34,23 @@ Hydra слушает только loopback, хранит session metadata в `St
 lattice.pi-acp-daemon.path = [ pkgs.lattice.pi-tool-profile ];
 ```
 
+## Окружение сессий (extraEnv)
+
+Опция `lattice.pi-acp-daemon.extraEnv` (attrsOf str, по умолчанию `{}`) задаёт дополнительные
+переменные окружения, которые сливаются в `agents.pi-acp.env` каждого спавняемого агента. Нужно
+для переменных, которые должны доходить до сессии и её Git-процессов (remote helpers читают
+окружение), но которые не являются пакетами на PATH.
+
+f15-02: нода задаёт `RAD_HOME` в свой Radicle peer-профиль
+(`/persist/var/lib/radicle-peer`), поэтому `git push rad://...` из workspace подписывается
+peer-идентичностью ноды (а не seed-профилем rad-system):
+
+```nix
+lattice.pi-acp-daemon.extraEnv.RAD_HOME = "/persist/var/lib/radicle-peer";
+```
+
+Проверяется контракт-тестом [`tests/pi-acp-daemon.nix`](../../tests/pi-acp-daemon.nix).
+
 ## Рабочая директория сессий (defaultCwd)
 
 Опция `lattice.pi-acp-daemon.defaultCwd` (nullOr str, по умолчанию `null`) задаёт рабочую

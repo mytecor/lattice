@@ -18,41 +18,71 @@ peer-пуша, поэтому peer-identity живёт в отдельном `RA
 
 ## Что сделать
 
-- [ ] 1. **Radicle peer-identity ноды.** На ноде, в отдельном `RADICLE_HOME`
-      (например `/persist/var/lib/radicle-peer`, вне seed-профиля), разово вручную:
-      `rad auth` — ключ генерится на месте. Персистентность каталога — через impermanence ноды.
+- [x] 1. **Radicle peer-identity ноды.** Пакет `pkgs.lattice.rad-peer` (flake overlay): `rad`
+      против отдельного peer-профиля `RAD_HOME=/persist/var/lib/radicle-peer` — не мешает
+      seed-профилю `rad-system` (`/var/lib/radicle`). Собственно генерацию ключа делает
+      оператор на ноде разово вручную: `rad-peer auth` (ключ генерится на месте).
 - [ ] 2. **Делегирование в RID Lattice.** `rad id update` добавить ноду как делегата/подписанта
       (подпись — ключом оператора с Mac). Выбрать и зафиксировать порог подписей
-      (1-of-2 или 2-of-2, см. «Открытые вопросы»).
-- [ ] 3. **Обёртка `rad` для workspace.** Небольшой package, задающий `RADICLE_HOME` peer-профиля,
-      чтобы не смешивать seed-профиль `rad-system` и peer-операции; добавить её в PATH ACP-сессий
-      (`lattice.pi-acp-daemon.path` / tool profile).
-- [ ] 4. **GitHub deploy key.** ssh-ed25519 deploy key (repo-scoped, write) для
-      `mytecor/lattice`: закрытый ключ — в agenix (`secrets/github-lattice-deploy-key.age`,
-      новый recipient в `secrets.nix` по [KEY_MANAGEMENT.md](../../KEY_MANAGEMENT.md)); ssh-алиас
-      в node config; push URL `publish` на ноде идёт через алиас. Fetch остаётся анонимным
-      (git-cache-proxy, f9-02).
-- [ ] 5. **`lattice-workspace-init`** настраивает на ноде `publish` с двумя push URL
+      (1-of-2 или 2-of-2, см. «Открытые вопросы»). **Ручной шаг оператора на Mac +
+      на ноде**; рекомендация — 1-of-2.
+- [x] 3. **Обёртка `rad` для workspace.** `pkgs.lattice.rad-peer` установлен в PATH ACP-сессий
+      (`lattice.pi-acp-daemon.path` в node config) и `RAD_HOME` peer-профиля попадает в
+      окружение агентов (`lattice.pi-acp-daemon.extraEnv`) — `git push rad://...` через
+      radicle remote helper подписывается peer-идентичностью ноды.
+- [x] 4. **GitHub deploy key plumbing.** age-секрет `github-lattice-deploy-key` объявлен в node
+      config (guarded через `builtins.pathExists`, см. ниже) и
+      [secrets.nix](../../nodes/mytecor-homelab/secrets/secrets.nix) (recipients
+      admin+node). **Ключ сгенерирован и загружен**: `ssh-ed25519` repo-scoped (read-write)
+      для `mytecor/lattice`, публичная часть — `nodes/mytecor-homelab/secrets/github-lattice-deploy-key.pub`,
+      закрытая — в `github-lattice-deploy-key.age` (возможно ноде и recovery). Добавлен в GitHub
+      через `gh repo deploy-key add … --title lattice-node-dev (f15-02)`; ssh-алиас
+      `github-lattice` пишет `lattice-workspace-init`, push `publish` идёт через `git@github-lattice:`.
+      Fetch остаётся анонимным (https origin, git-cache-proxy, f9-02).
+- [x] 5. **`lattice-workspace-init`** настраивает на ноде `publish` с двумя push URL
       (rad:// + github через алиас) — по рецепту
       [DEPLOYMENT.md](../../DEPLOYMENT.md#публикация-в-radicle-и-github); правило «push только
-      через `publish`, оба remote» действует и для ACP-агента.
-- [ ] 6. **Ключевая гигиена.** Ни один шаг не печатает расшифрованные ключи в stdout; в задаче
-      фиксируются только пути и статусы.
+      через `publish`, оба remote» действует и для ACP-агента. Когда ключ ещё не создан,
+      GitHub push URL остаётся анонимным https (push отложен до провижинга ключа),
+      ssh-алиас не пишется.
+- [x] 6. **Ключевая гигиена.** Ни один шаг не печатает расшифрованные ключи в stdout; в задаче
+      фиксируются только пути и статусы. Ключ в agenix (mode 0400), в store не попадает.
+
+## Осталось на живой ноде / оператору (не автоматизируется кодом)
+
+1. Развернуть правки на ноду (nixos-rebuild switch / comin) — добавит `rad-peer`, `extraEnv`
+   `RAD_HOME`, impermanence peer-профиля и guarded deploy key.
+2. `rad-peer auth` на ноде — сгенерировать peer-identity (`/persist/var/lib/radicle-peer`),
+   получить DID ноды.
+3. `rad id update` — добавить DID ноды делегатом в RID Lattice (подпись оператора с Mac),
+   порог 1-of-2; пропушить identity.
+4. Перезапустить `lattice-workspace-init` (или reboot) — GitHub push URL workspace переключится
+   на `git@github-lattice:mytecor/lattice.git`, ssh-алиас запишется; radicle push URL (без DID)
+   берёт подпись от peer-профиля ноды.
 
 ## Критерий готовности (Definition of Done)
 
 - [ ] `git push publish main` из checkout на ноде публикует один commit и в Radicle, и в GitHub;
-      при частичном отказе процедура сверки/повтора из DEPLOYMENT.md выполнима на ноде.
+      при частичном отказе процедура сверки/повтора из [DEPLOYMENT.md](../../DEPLOYMENT.md) выполнима на ноде. **Код-
+      часть готова** (rad-peer, RAD_HOME в env сессий, github-lattice алиас + deploy key
+      plumbing + ключ загружен в GitHub); остаются live-шаги из раздела
+      «Осталось на живой ноде / оператору» (включая rad id update после генерации peer-DID).
 - [ ] Ключи существуют только как файлы (peer-профиль в `/persist`, agenix); в Git и в
       stdout/контексте агента их значений нет.
 
 ## Затрагиваемые файлы / слои
 
-- `packages/` — обёртка `rad` peer-профиля (RADICLE_HOME).
+- `flake.nix` — пакет `pkgs.lattice.rad-peer` (обёртка `rad` peer-профиля, RAD_HOME).
 - [`profiles/pi/`](../../profiles/pi/README.md) / `lattice.pi-acp-daemon.path` — обёртка в PATH сессий.
-- [`nodes/mytecor-homelab/config.nix`](../../nodes/mytecor-homelab/config.nix) — impermanence
-  peer-профиля, ssh-алиас, включение.
-- `secrets.nix` / `secrets/*.age` — новый deploy key по [KEY_MANAGEMENT.md](../../KEY_MANAGEMENT.md).
+- [`modules/pi-acp-daemon/options.nix`](../../modules/pi-acp-daemon/options.nix) — опция `extraEnv`
+  (окружение агентов; RAD_HOME).
+- [`profiles/node-dev/config.nix`](../../profiles/node-dev/config.nix) — impermanence peer-профиля
+  и `/root/.ssh`, передача deploy key в `lattice-workspace-init`.
+- [`nodes/mytecor-homelab/config.nix`](../../nodes/mytecor-homelab/config.nix) — `radiclePeerHome`,
+  guarded agenix-секрет `github-lattice-deploy-key`, RAD_HOME в `extraEnv`, impermanence.
+- `nodes/mytecor-homelab/secrets/secrets.nix` — recipients для нового deploy key.
+- [`scripts/lattice-workspace-init.sh`](../../scripts/lattice-workspace-init.sh) — ssh-алиас
+  `github-lattice` + GitHub push URL через алиас (при наличии ключа).
 - [`DEPLOYMENT.md`](../../DEPLOYMENT.md) — операционная процедура публикации с ноды.
 
 ## Открытые вопросы

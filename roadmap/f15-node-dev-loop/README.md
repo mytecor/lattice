@@ -14,8 +14,13 @@ credential.
 [f15-01](./f15-01-workspace-checkout.md) реализован: сессии открываются в рабочем checkout
 `/var/lib/lattice-workspace/lattice` (`lattice.pi-acp-daemon.defaultCwd`), which создаёт профиль
 [`profiles/node-dev`](../../profiles/node-dev/README.md) через one-shot `lattice-workspace-init`.
-Осталось f15-02 (Radicle peer-identity ноды + GitHub deploy key) и f15-03 (acceptance) — без них
-агент в сессии может править/коммитить, но не публиковать. Рабочая копия, ключи и опция cwd
+[f15-02](./f15-02-publish-access.md) — кодовая часть готова: `pkgs.lattice.rad-peer` (peer-
+identity ноды, RAD_HOME=/persist/var/lib/radicle-peer), `lattice.pi-acp-daemon.extraEnv.RAD_HOME`
+(remote helper rad:// подписывается peer-ключом), guarded agenix-секрет `github-lattice-deploy-key`
++ ssh-алиас `github-lattice` в `lattice-workspace-init` (GitHub push через `git@github-lattice:`),
+impermanence. Остались ручные шаги оператора на живой ноде (rad-peer auth, rad id update,
+создание+шифрование deploy key) и f15-03 (acceptance) — без них агент в сессии может
+править/коммитить, но не публиковать. Рабочая копия, ключи и опция cwd
 закрывают dev-loop; они же переиспользуются контейнерным Pi runtime из
 [f10-04](../f10-disposable-worker/f10-04-pi-rpc-runner.md), поэтому работа не выбрасывается при
 переходе к F10.

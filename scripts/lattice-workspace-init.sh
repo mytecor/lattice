@@ -22,8 +22,23 @@ workspace_dir="$LATTICE_WORKSPACE_DIR"
 checkout="$workspace_dir/lattice"
 branch="${LATTICE_WORKSPACE_BRANCH:-main}"
 origin_remote="${LATTICE_WORKSPACE_ORIGIN_REMOTE:-https://github.com/mytecor/lattice.git}"
-# Push URLs per DEPLOYMENT.md "Публикация в Radicle и GitHub".
-radicle_push_url="${LATTICE_WORKSPACE_RADICLE_PUSH_URL:-rad://z3AqC22BKQ5Gnrkw49N7PGJa91G6L/z6Mkvq7AcVgfLmaecxQEasuErFk6s7fLDj2668WLBFCE9xWV}"
+# Push URL per DEPLOYMENT.md "Публикация в Radicle и GitHub". f15-02: the
+# repository-scoped rad:// URL (no DID) makes git-remote-rad sign with whatever
+# identity RAD_HOME points at — the node's peer profile shoved by rad-peer —
+# rather than hard-bind to the operator's DID (which would require the operator's
+# private key on the node).
+radicle_push_url="${LATTICE_WORKSPACE_RADICLE_PUSH_URL:-rad://z3AqC22BKQ5Gnrkw49N7PGJa91G6L}"
+# f15-02: GitHub deploy key (repo-scoped write) for the workspace push. Until the
+# operator provisions it the GitHub push URL stays the anonymous https fetch URL
+# (push is deferred); once the key file exists we route the push through a
+# `github-lattice` ssh alias (IdentityFile = key) so the node can push without
+# operator credentials on the node.
+github_key_file="${LATTICE_WORKSPACE_GITHUB_KEY_FILE:-}"
+if [ -n "$github_key_file" ] && [ -f "$github_key_file" ]; then
+  github_push_url="${LATTICE_WORKSPACE_GITHUB_PUSH_URL:-git@github-lattice:mytecor/lattice.git}"
+else
+  github_push_url="$origin_remote"
+fi
 git_author_name="${LATTICE_WORKSPACE_AUTHOR_NAME:-Lattice Node Dev}"
 git_author_email="${LATTICE_WORKSPACE_AUTHOR_EMAIL:-node-dev@localhost}"
 
@@ -60,6 +75,36 @@ if ! push_urls=$(git -C "$checkout" remote get-url --all --push publish 2>/dev/n
   git -C "$checkout" remote add publish "$origin_remote"
 fi
 
+# f15-02: when the deploy key is provisioned, write root's ssh alias so
+# `git@github-lattice:...` resolves to github.com using the key. Root owns the
+# workspace (sessions run as root), so the per-root ssh config is what a push
+# from the session actually reads. Idempotent: rewrite the block only when it
+# differs.
+if [ -n "$github_key_file" ] && [ -f "$github_key_file" ]; then
+  ssh_dir="${LATTICE_WORKSPACE_SSH_DIR:-/root/.ssh}"
+  ssh_config="$ssh_dir/config"
+  install -d -m 0700 "$ssh_dir"
+  block=$(cat <<EOF
+Host github-lattice
+  HostName github.com
+  User git
+  IdentityFile $github_key_file
+  IdentitiesOnly yes
+  StrictHostKeyChecking accept-new
+EOF
+  )
+  if [ ! -f "$ssh_config" ] || ! grep -q "Host github-lattice" "$ssh_config" 2>/dev/null; then
+    touch "$ssh_config"
+    {
+      printf '%s\n' "# lattice-workspace-init: GitHub deploy-key alias (f15-02)"
+      printf '%s\n' "$block"
+      printf '\n'
+    } >> "$ssh_config"
+    chmod 0600 "$ssh_config"
+    echo "lattice-workspace-init: wrote $ssh_config (github-lattice alias)"
+  fi
+fi
+
 configure_push_url() {
   local url="$1"
   if ! printf '%s\n' "$push_urls" | grep -Fxq "$url"; then
@@ -67,7 +112,7 @@ configure_push_url() {
   fi
 }
 configure_push_url "$radicle_push_url"
-configure_push_url "$origin_remote"
+configure_push_url "$github_push_url"
 
 # Keep the working copy on the latest main without clobbering a dirty tree.
 # The persistence-managed workspace is a dev copy; if a session left changes,

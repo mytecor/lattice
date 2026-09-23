@@ -11,7 +11,7 @@
 # key) are f15-02, so this phase only builds the checkout and the `publish`
 # remote skeleton.
 
-{ lib, pkgs, ... }:
+{ config, lib, pkgs, ... }:
 
 let
   latticeRepository = (import ../radicle/repositories.nix).lattice;
@@ -35,7 +35,15 @@ in
         LATTICE_WORKSPACE_ORIGIN_REMOTE = "https://github.com/mytecor/lattice.git";
         LATTICE_WORKSPACE_BRANCH = "main";
         LATTICE_WORKSPACE_RADICLE_PUSH_URL =
-          "rad://z3AqC22BKQ5Gnrkw49N7PGJa91G6L/z6Mkvq7AcVgfLmaecxQEasuErFk6s7fLDj2668WLBFCE9xWV";
+          "rad://z3AqC22BKQ5Gnrkw49N7PGJa91G6L";
+        # f15-02: GitHub deploy key for the workspace push. Registered only when
+        # the operator created the .age file (node config guards the secret with
+        # optionalAttrs), so the workspace push falls back to the anonymous https
+        # URL until then.
+        LATTICE_WORKSPACE_GITHUB_KEY_FILE =
+          if builtins.hasAttr "github-lattice-deploy-key" config.age.secrets
+          then config.age.secrets.github-lattice-deploy-key.path
+          else "";
       };
 
       serviceConfig = {
@@ -52,6 +60,14 @@ in
     environment.persistence."/persist".directories = [
       {
         directory = workspaceDir;
+        user = "root";
+        group = "root";
+        mode = "0700";
+      }
+      # f15-02: root's ssh config with the github-lattice deploy-key alias (written
+      # by lattice-workspace-init) must survive reboot; /root itself is ephemeral.
+      {
+        directory = "/root/.ssh";
         user = "root";
         group = "root";
         mode = "0700";

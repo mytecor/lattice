@@ -24,7 +24,15 @@ let
           enable = true;
           # The Pi tool profile must reach the spawned agent's PATH so its bash
           # tool finds `sh` (f8-06: `spawn sh ENOENT` regression guard).
-          path = [ pkgs.lattice.pi-tool-profile ];
+          path = [ pkgs.lattice.pi-tool-profile pkgs.lattice.rad-peer ];
+          # f15-02: extraEnv must be merged verbatim into the generated Hydra
+          # agent env (membership check in jq below); RAD_HOME is how the
+          # radicle git remote helper for rad:// push finds the node's peer
+          # profile.
+          extraEnv = {
+            RAD_HOME = "/persist/var/lib/radicle-peer";
+            LATTICE_RADICLE_PEER_HOME = "/persist/var/lib/radicle-peer";
+          };
           # f15-01: a non-default defaultCwd must flow from the module option
           # into the generated Hydra config (membership check in jq below, so a
           # changed workspace path is a legitimate node change, not a test
@@ -77,6 +85,9 @@ pkgs.runCommand "pi-acp-daemon-evaluation" {
     (.agents["pi-acp"].env.PATH | contains("/run/current-system/sw/bin")) and
     .daemon.scrubEnv == [] and
     .defaultCwd == "/var/lib/lattice-workspace/lattice" and
+    (.agents["pi-acp"].env.RAD_HOME == "/persist/var/lib/radicle-peer") and
+    (.agents["pi-acp"].env.LATTICE_RADICLE_PEER_HOME == "/persist/var/lib/radicle-peer") and
+    (.agents["pi-acp"].env.PATH | contains("rad-peer")) and
     .defaultTransformers == ["fake-normalizer"] and
     .transformers["fake-normalizer"].command == ["/bin/echo", "fake-normalizer"] and
     .transformers["fake-normalizer"].enabled == true

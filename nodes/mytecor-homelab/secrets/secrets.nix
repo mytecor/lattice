@@ -7,6 +7,10 @@ in
   "wifi-password.age".publicKeys = [ admin node ];
   "root-password-hash.age".publicKeys = [ admin node ];
   "radicle-private-key.age".publicKeys = [ admin node ];
+  # f15-02: GitHub deploy key (repo-scoped write for mytecor/lattice) for the
+  # workspace `publish` push from the node. Created by the operator; see
+  # roadmap/f15-node-dev-loop/f15-02.
+  "github-lattice-deploy-key.age".publicKeys = [ admin node ];
   # LLM Gateway provider keys
   "llm-provider-gonka-gg-proxy.age".publicKeys = [ admin node ];
   "llm-provider-gonka-gg-openbroker.age".publicKeys = [ admin node ];
