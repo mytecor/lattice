@@ -66,6 +66,18 @@ in
       description = "TCP port Foxbridge serves the CDP WebSocket endpoint on (loopback).";
     };
 
+    # Persistent home for the browser process. Camoufox writes its profile and
+    # cache under $HOME/.cache/camoufox. Deliberately NOT on /run tmpfs:
+    # f18-08 node validation showed the full systemd hardening crashes
+    # Camoufox when its home is a tmpfs RuntimeDirectory (Juggler Browser.enable
+    # never completes), while a regular /var/lib dir works with identical
+    # hardening. The dir is created by tmpfiles on boot.
+    stateDir = mkOption {
+      type = types.path;
+      default = "/var/lib/foxbridge-camoufox";
+      description = "Persistent home dir for the browser (Camoufox profile/cache).";
+    };
+
     camoufox = {
       headless = mkOption {
         type = types.bool;

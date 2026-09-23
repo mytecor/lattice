@@ -30,6 +30,15 @@ in
       home = "/var/empty";
     };
 
+    # Persistent home for the browser: Camoufox creates its profile/cache
+    # under $HOME/.cache/camoufox. This must be a REAL (non-tmpfs) directory —
+    # f18-08 node validation: HOME on the /run tmpfs (RuntimeDirectory)
+    # crashes under the full systemd hardening (Juggler Browser.enable never
+    # completes), while HOME on /var/lib works with the exact same hardening.
+    systemd.tmpfiles.rules = [
+      "d ${cfg.stateDir} 0700 ${cfg.user} ${cfg.group} - -"
+    ];
+
     systemd.services.foxbridge-camoufox = {
       description = "Foxbridge CDP compatibility layer for Camoufox (F18 browser runtime)";
       documentation = [ "https://github.com/VulpineOS/foxbridge" ];
@@ -43,21 +52,18 @@ in
         Type = "simple";
         User = cfg.user;
         Group = cfg.group;
-        # Disposable profile lives on tmpfs; recreated by tmpfiles on boot.
-        RuntimeDirectory = "foxbridge-camoufox";
-        RuntimeDirectoryMode = "0700";
-        WorkingDirectory = "/run/foxbridge-camoufox";
+        # Persistent home on /var/lib, NOT /run tmpfs (see tmpfiles note).
+        WorkingDirectory = cfg.stateDir;
 
         # f18-08: drop the fragile f18-07 LD_LIBRARY_PATH glob — the Nix
         # camoufox derivation is auto-patched, so the binary self-contains its
         # store deps. ExecStart runs Foxbridge directly.
         #
         # No --profile flag: Camoufox derives its default profile from
-        # $HOME/.cache/camoufox (the RuntimeDirectory tmpfs below), which is
-        # recreated on boot. A custom --profile path on /run is fatal — the
-        # RuntimeDirectory is wiped empty on every unit start, so the profile
-        # path vanishes and the Juggler Browser.enable handshake never
-        # completes (f18-08 node validation: timeout / client closed).
+        # $HOME/.cache/camoufox. A custom --profile path is fatal — f18-08
+        # node validation: pointing it at the /run tmpfs (wiped by
+        # RuntimeDirectory on every start) or anywhere else makes the Juggler
+        # Browser.enable handshake stall (timeout / client closed).
         ExecStart = lib.concatStringsSep " " [
           (lib.getExe cfg.package)
           "--port ${toString cfg.port}"
@@ -69,7 +75,7 @@ in
         # the content sandbox — a headless anti-detect browser in the homelab,
         # fingerprint is verified separately (f18-05).
         Environment = [
-          "HOME=/run/foxbridge-camoufox"
+          "HOME=${cfg.stateDir}"
           "MOZ_DISABLE_CONTENT_SANDBOX=1"
         ] ++ lib.optionals cfg.camoufox.humanize [
           # f18-06: humanize is delivered to the browser as an env config
@@ -99,7 +105,7 @@ in
         ProtectKernelTunables = true;
         ProtectProc = "invisible";
         ProtectSystem = "strict";
-        ReadWritePaths = [ "/run/foxbridge-camoufox" ];
+        ReadWritePaths = [ cfg.stateDir ];
         RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
         RestrictNamespaces = true;
         RestrictRealtime = true;

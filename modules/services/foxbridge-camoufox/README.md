@@ -38,8 +38,11 @@ Jev agent ── BU_CDP_URL ──▶ Foxbridge ── Juggler ──▶ Camoufo
   (f18-06). По умолчанию `true`.
 
 Профиль Camoufox не задаётся через `--profile`: браузер сам создаёт его по
-`$HOME` (`$HOME/.cache/camoufox`), т.е. внутри `RuntimeDirectory`
-`/run/foxbridge-camoufox` на tmpfs — одноразовый и пересоздаётся на каждом старте.
+`$HOME` (`$HOME/.cache/camoufox`). Домашний каталог — персистентный
+`/var/lib/foxbridge-camoufox` (`lattice.foxbridge-camoufox.stateDir`, создаётся
+tmpfiles'ом), а не tmpfs на `/run`: f18-08 валидация показала, что под полным
+systemd-hardening Camoufox падает, когда его HOME лежит на tmpfs
+`RuntimeDirectory`, а на обычной директории работает с той же hardening.
 
 ## Примечания по окружению (f18-07 → f18-08)
 
@@ -57,8 +60,9 @@ Jev agent ── BU_CDP_URL ──▶ Foxbridge ── Juggler ──▶ Camoufo
   декларативного юнита. Оставлены `@system-service` allow-list + `~@privileged`
   и полное capability/namespace/fs-хардение. Аналогичный tradeoff-класс зафиксирован
   в `modules/verdaccio/README.md` для `MemoryDenyWriteExecute` (V8).
-- `--profile` на пути `/run/...` **недопустим**: `RuntimeDirectory` при каждом
-  старте юнита пересоздаётся пустым, каталог профиля исчезает, и Juggler
-  `Browser.enable` не завершается (на ноде: `context deadline exceeded` /
-  `client closed`). Camoufox сам создаёт профиль в `$HOME` (= RuntimeDirectory
-  tmpfs). Это и есть «одноразовый профиль» — на диске ничего не остаётся.
+- `--profile` **неиспользуется**: Камуфокс сам создаёт профиль по `$HOME`.
+  Явный `--profile` на пути `/run/...` фатален — f18-08 на ноде: `RuntimeDirectory`
+  при каждом старте пересоздаётся пустым (путь исчезает), а HOME на tmpfs под
+  полным hardening убивает процесс, Juggler `Browser.enable` не завершается
+  (`context deadline exceeded` / `client closed`). HOME — строго персистентная
+  директория `/var/lib/foxbridge-camoufox` (`stateDir`).
