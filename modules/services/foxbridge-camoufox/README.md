@@ -47,3 +47,11 @@ Jev agent ── BU_CDP_URL ──▶ Foxbridge ── Juggler ──▶ Camoufo
   `autopatchelf`-ится, бинарь самодостаточен.
 - NixOS не имеет `/bin/bash` — модуль вызывает бинари напрямую через
   `lib.getExe`, без shebang-зависимости.
+- Seccomp: в `SystemCallFilter` **нельзя** ставить `~@resources`. Firefox
+  вызывает `setpriority` (syscall 141) на старте; фильтр убивает процесс
+  `SIGSYS/31`, и сервис бесконечно рестартуется (на ноде: `dmesg`
+  `sig=31 syscall=141`, restart counter — десятки тысяч). f18-07 PoC гонял
+  un-sandboxed под root, поэтому это вскрылось только при накатке
+  декларативного юнита. Оставлены `@system-service` allow-list + `~@privileged`
+  и полное capability/namespace/fs-хардение. Аналогичный tradeoff-класс зафиксирован
+  в `modules/verdaccio/README.md` для `MemoryDenyWriteExecute` (V8).

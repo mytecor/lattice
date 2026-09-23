@@ -103,10 +103,17 @@ in
         RestrictRealtime = true;
         RestrictSUIDSGID = true;
         SystemCallArchitectures = "native";
+        # f18-08 validation: ~@resources must NOT reach Firefox. Camoufox
+        # calls setpriority (syscall 141) on startup; the seccomp filter then
+        # kills the process with SIGSYS/31, and foxbridge-camoufox endlessly
+        # crash-cycles (dmesg: sig=31 syscall=141, Restart=on-failure). The
+        # f18-07 manual PoC ran un-sandboxed so this never surfaced. Kept:
+        # @system-service allow-list + ~@privileged + the full capability/
+        # namespaces/fs hardening. Same tradeoff class as verdaccio dropping
+        # MemoryDenyWriteExecute for V8 (see modules/verdaccio/README.md).
         SystemCallFilter = [
           "@system-service"
           "~@privileged"
-          "~@resources"
         ];
       };
     };
