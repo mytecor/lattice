@@ -156,7 +156,11 @@ try {
 
   const reconnected = await connect()
   await initialize(reconnected)
-  const listed = await reconnected.request('session/list', { cwd: hydraHome })
+  // f15-01: session/list must mirror the server-side defaultCwd policy. Listing
+  // with a cwd other than the workspace path (here "/" instead of defaultCwd)
+  // must still return the sessions, exactly like a stateless client (acp-ui)
+  // does after a page refresh.
+  const listed = await reconnected.request('session/list', { cwd: '/' })
   const ids = listed.sessions.map(session => session.sessionId)
   assert.ok(ids.includes(sessionA.sessionId), ids)
   assert.ok(ids.includes(sessionB.sessionId), ids)

@@ -52,7 +52,11 @@ ACP-сессии стартуют в `defaultCwd`, который в
       `resolveResurrectTarget`) — любая сессия открывается в рабочем checkout, каким бы путём
       клиент ни пытался её направить. Клиентский патч acp-ui (default workspace в
       `patch-main-ts.mjs`) при этом не нужен: политика задаётся только сервером, и он был
-      отменён.
+      отменён. Патч **симметричен для чтения**: обработчик `session/list` тоже **безусловно**
+      фильтрует по `fe(e.manager.defaultCwd)`, игнорируя cwd из запроса клиента — иначе
+      лист-фильтр демона (`Td`/`wo` путь-равенство в `manager.list`) скрыл бы все сессии
+      workspace при запросе с чужим путём (например `/`, что acp-ui шлёт после обновления
+      страницы).
 
 ## Критерий готовности (Definition of Done)
 
@@ -60,6 +64,10 @@ ACP-сессии стартуют в `defaultCwd`, который в
       checkout и `/persist`-запись переживают reboot ноды. Сервер безусловно заменяет cwd на
       `defaultCwd` (патч `packages/hydra-acp/package.nix`): какой путь ни прислал бы клиент в
       `session/new` (пустой, `/`, произвольный каталог) — сессия открывается в checkout.
+- [x] `session/list` возвращает эти сессии даже когда клиент запрашивает список с чужим cwd
+      (`/` — как acp-ui после обновления страницы): листинг и создание ведётся по одному
+      `defaultCwd`. Регрессия закреплена в [`tests/acp-ingress-smoke.mjs`](../../tests/acp-ingress-smoke.mjs)
+      и [`tests/hydra-acp-smoke.mjs`](../../tests/hydra-acp-smoke.mjs).
 - [ ] `nix flake check --all-systems --no-build` зелёный, включая новую проверку defaultCwd;
       `/var/lib/comin` и `/var/lib/radicle` не изменили роль (comin source не тронут).
 

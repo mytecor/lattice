@@ -178,7 +178,13 @@ try {
   await close(second)
 
   const reconnected = await connect()
-  const listed = await reconnected.request('session/list', { cwd: hydraHome })
+  // f15-01: session/list must mirror the server-side defaultCwd policy. A
+  // stateless client (acp-ui after a page refresh) lists with a cwd that is
+  // NOT the workspace path (here ""/ "/" instead of defaultCwd), and the
+  // daemon's list filter previously matched session.cwd against the client
+  // cwd — hiding every workspace session. Listing with a foreign cwd must
+  // still return the sessions (they were all created under defaultCwd).
+  const listed = await reconnected.request('session/list', { cwd: '/' })
   const ids = listed.sessions.map(session => session.sessionId)
   assert.ok(ids.includes(sessionA.sessionId), ids)
   assert.ok(ids.includes(sessionB.sessionId), ids)
@@ -224,7 +230,9 @@ try {
   const restartedExited = new Promise(resolve => restarted.once('exit', resolve))
 
   const survivor = await connect()
-  const afterRestart = await survivor.request('session/list', { cwd: hydraHome })
+  // Same f15-01 regression guard after a daemon restart: cold sessions in the
+  // workspace must be visible even when the client lists with a foreign cwd.
+  const afterRestart = await survivor.request('session/list', { cwd: '/' })
   const survivorIds = afterRestart.sessions.map(session => session.sessionId)
   assert.ok(survivorIds.includes(sessionA.sessionId), survivorIds)
   assert.ok(survivorIds.includes(sessionB.sessionId), survivorIds)

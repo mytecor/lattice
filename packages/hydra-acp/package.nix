@@ -33,21 +33,43 @@ buildPnpmCli {
     grep -q 'e.manager.list({cwd:f.cwd,includeNonInteractive:!0})' "$target" \
       || { echo "hydra-acp: session/list includeNonInteractive patch did not apply" >&2; exit 1; }
 
-    # Lattice patch (f15-01): ALWAYS force the daemon defaultCwd in session/new,
-    # ignoring whatever cwd the client sent. The WS schema makes cwd mandatory
-    # (a client may send "", "/", or any absolute path) and upstream uses it
-    # verbatim, so a stateless client (e.g. acp-ui, Ferngeist) decides the
-    # session's working directory — which breaks the node dev-loop: an empty or
-    # root path puts the agent outside the Lattice checkout. Every Lattice ACP
-    # session must operate in the node's working copy, so we unconditionally
-    # replace the client-supplied cwd with fe(this.defaultCwd). `fe` is the
-    # daemon's expandHome (already used by resolveResurrectTarget) and
-    # this.defaultCwd is set in the manager constructor (default "~" -> home,
-    # or the configured /var/lib/lattice-workspace/lattice). Rationale:
-    # roadmap/f15-node-dev-loop/f15-01; behaviour covered by the pi-acp-daemon
-    # module docs. Client-side acp-ui patching is therefore unnecessary.
+    # Lattice patch (f15-01): ALWAYS force the daemon defaultCwd for ACP
+    # sessions, ignoring whatever cwd the client sent. The WS schema makes cwd
+    # mandatory (a client may send "", "/", or any absolute path) and upstream
+    # uses it verbatim, so a stateless client (e.g. acp-ui, Ferngeist) decides
+    # the session's working directory — which breaks the node dev-loop: an empty
+    # or root path puts the agent outside the Lattice checkout. Every Lattice ACP
+    # session must operate in the node's working copy.
+    #
+    # Two sides are patched symmetrically:
+    #  1. session/new (manager.create): unconditionally replace the
+    #     client-supplied cwd with fe(this.defaultCwd), so the session is
+    #     created in the workspace no matter what path the client requests.
+    #  2. session/list (manager.list): unconditionally list sessions under
+    #     fe(e.manager.defaultCwd) instead of the client-supplied cwd. The
+    #     daemon's list filter matches session.cwd against the requested cwd
+    #     (Td/wo path-equality), so a client that lists with a non-workspace
+    #     cwd (e.g. "/" — what acp-ui sends after a page refresh) would hide
+    #     every workspace session even though they were created correctly in
+    #     defaultCwd. Keeping both sides on the same forced cwd makes listing
+    #     match creation, so a reconnecting client sees the sessions it is
+    #     allowed to resume.
+    #
+    # `fe` is the daemon's expandHome (already used by resolveResurrectTarget)
+    # and e.manager.defaultCwd is set in the manager constructor (default "~"
+    # -> home, or the configured /var/lib/lattice-workspace/lattice).
+    # Rationale: roadmap/f15-node-dev-loop/f15-01; behaviour covered by the
+    # pi-acp-daemon module docs. Client-side acp-ui patching is therefore
+    # unnecessary.
     sed -i 's/async create(e){let t=await this.registry.getAgent(e.agentId);/async create(e){e={...e,cwd:fe(this.defaultCwd)};let t=await this.registry.getAgent(e.agentId);/' "$target"
     grep -q 'async create(e){e={...e,cwd:fe(this.defaultCwd)};let t=await this.registry.getAgent(e.agentId);' "$target" \
       || { echo "hydra-acp: session/new always-force defaultCwd patch did not apply" >&2; exit 1; }
+    # Order matters: this runs after the f8-06 sed above, which already turned
+    # `e.manager.list({cwd:f.cwd})` into
+    # `e.manager.list({cwd:f.cwd,includeNonInteractive:!0})`; we only swap the
+    # cwd source, keeping the includeNonInteractive flag intact.
+    sed -i 's/e.manager.list({cwd:f.cwd,includeNonInteractive:!0})/e.manager.list({cwd:fe(e.manager.defaultCwd),includeNonInteractive:!0})/' "$target"
+    grep -q 'e.manager.list({cwd:fe(e.manager.defaultCwd),includeNonInteractive:!0})' "$target" \
+      || { echo "hydra-acp: session/list always-force defaultCwd patch did not apply" >&2; exit 1; }
   '';
 }

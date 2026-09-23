@@ -26,3 +26,20 @@ Upstream `0.1.183` скрывает сессии без единого пром�
 форсирует `includeNonInteractive: !0` на daemon-стороне независимо от клиента. Поведение закреплено
 ассертом в [`tests/acp-ingress-smoke.mjs`](../../tests/acp-ingress-smoke.mjs): never-prompted
 сессия обязана появиться в `session/list`.
+
+## Lattice-патч (f15-01): серверная политика defaultCwd для `session/new` и `session/list`
+
+Upstream `0.1.183` принимает клиентский cwd как есть: `session/new` создаёт сессию ровно в
+присланном клиентом каталоге (схема требует `cwd`), а `session/list` фильтрует список по
+присланному клиентом cwd (путь-равенство `Td`/`wo` в `manager.list`). Для node dev-loop это
+ломалось с двух сторон: stateless-клиент (acp-ui, Ferngeist) увёл бы новую сессию из рабочего
+checkout указанием произвольного пути, а при чтении списка с чужим путём (например `/` после
+обновления страницы) скрыл бы все сессии, хотя они и были созданы под `defaultCwd`.
+
+Патч [`package.nix`](./package.nix) делает политику симметричной на сервере: `manager.create`
+**безусловно** заменяет cwd на `fe(this.defaultCwd)`, а обработчик `session/list` **безусловно**
+листит по `fe(e.manager.defaultCwd)`, игнорируя клиентский путь в обоих случаях. Все ACP-сессии
+работают в единой рабочей копии; клиентские патчи (правки acp-ui) не нужны. Регрессия —
+`session/list` с cwd = `/` обязан вернуть сессии — закреплена в
+[`tests/acp-ingress-smoke.mjs`](../../tests/acp-ingress-smoke.mjs) и
+[`tests/hydra-acp-smoke.mjs`](../../tests/hydra-acp-smoke.mjs).
