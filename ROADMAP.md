@@ -155,8 +155,9 @@
 > Отдельный браузерный runtime для агентов: Jev → browser-harness → Foxbridge → Camoufox.
 > Оригинальный `jev-ultrafast` без форка, все Firefox-совместимости в Foxbridge.
 
-- **Статус:** ⏳ запланирована 2026-09-22, ещё не начата; задачи
-  [f18-01..f18-12](./roadmap/f18-browser-agent-stack/README.md#порядок-работ).
+- **Статус:** 🟢 завершена 2026-09-23 (приёмка [f18-12](./roadmap/f18-browser-agent-stack/f18-12-acceptance.md));
+  11/12 пунктов приняты фактом на живой ноде, п.7 (реальная web-задача Jev) снят с блокировки —
+  homelab LLM-gateway отвечает на chat completions, остаётся один прогон f18-11.
 - **Готово, когда:** оригинальный `jev-ultrafast` запускается с `BU_CDP_URL` без локальных
   изменений, браузером фактически является Camoufox, между ними работает Foxbridge, Jev
   закрывает минимум одну полноценную web-задачу, fingerprint Camoufox сохраняется, стек

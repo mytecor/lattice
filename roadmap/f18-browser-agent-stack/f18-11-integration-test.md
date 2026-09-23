@@ -30,9 +30,12 @@
 - [x] Полный путь на живой ноде после `nixos-rebuild switch` — подтверждён повторным прогоном
       f18-04 smoke (2026-09-23) поверх systemd-стека: open → snapshot → click → fill →
       DOM-изменение → `SUBMITTED:first` → `DONE`; freshness guard (StalePage) тоже подтверждён.
-- [ ] Повторный прогон реальной задачи Jev (Google Flights или пример из examples) — как часть
-      финальной приёмки f18-12 (нужен работоспособный TYPESAFE_API_KEY/textModelApiKeyFile,
-      на ноде пока inspector-режим без ключей).
+- [ ] Полный путь с реальной web-задачей Jev (flights/examples) — **ключевое: 2026-09-23
+      принято решение не секрет, а gateway.** Homelab LLM-gateway на loopback
+      (`127.0.0.1:9208`, `api=openai-completions`, модель `standard` → DeepSeek-V4-Flash-0731,
+      без client-auth) отвечает на `POST /v1/chat/completions` HTTP 200. Jev можно переключить
+      на него через `lattice.jev-ultrafast.textModelBaseUrl = "http://127.0.0.1:9208/v1"` +
+      `textModel = "standard"` — новых секретов не нужно. Прогон — в f18-12 п.7.
 
 ## Критерий готовности (Definition of Done)
 
@@ -41,7 +44,8 @@
 - [x] Полный путь (smoke) подтверждён на живой ноде без ручных шагов после применения
       `main` через comin.
 - [ ] Полный путь с реальной web-задачей Jev (flights/examples) подтверждён на ноде
-      с ключами — висит на наличии API-ключей (см. детали в f18-12).
+      (через LLM-gateway, см. выше) — один прогон после `nixos-rebuild switch` с
+      переключённым textModelBaseUrl.
 
 ## Затрагиваемые файлы / слои
 
