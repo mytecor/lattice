@@ -318,6 +318,10 @@ in
     # sessions got `spawn sh ENOENT` from the bash tool. Give every agent the
     # same bash/git/tools contract as the local runtime.
     path = [ pkgs.lattice.pi-tool-profile ];
+    # f15-01: ACP sessions open in the node's Lattice working checkout (see
+    # profiles/node-dev), so an agent can edit, commit and push `main` from
+    # the node itself.
+    defaultCwd = "/var/lib/lattice-workspace/lattice";
     # TEMPORARY wide-open network/cap access (iw/ip/nl80211, sudo). This must
     # be reverted to the strict sandbox; see modules/pi-acp-daemon README note.
     privileged = true;

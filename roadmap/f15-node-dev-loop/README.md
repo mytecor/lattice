@@ -9,9 +9,16 @@ GitHub (общий remote `publish` по правилу из [DEPLOYMENT.md](../
 (f8-06), но сессии стартуют в `/root` (хардкод `defaultCwd` в
 [`modules/pi-acp-daemon/config.nix`](../../modules/pi-acp-daemon/config.nix)) без рабочего
 checkout и без прав публикации: push в Radicle требует peer-identity ноды, push в GitHub —
-credential. Рабочая копия, ключи и опция cwd закрывают dev-loop; они же переиспользуются
-контейнерным Pi runtime из [f10-04](../f10-disposable-worker/f10-04-pi-rpc-runner.md), поэтому
-работа не выбрасывается при переходе к F10.
+credential.
+
+[f15-01](./f15-01-workspace-checkout.md) реализован: сессии открываются в рабочем checkout
+`/var/lib/lattice-workspace/lattice` (`lattice.pi-acp-daemon.defaultCwd`), which создаёт профиль
+[`profiles/node-dev`](../../profiles/node-dev/README.md) через one-shot `lattice-workspace-init`.
+Осталось f15-02 (Radicle peer-identity ноды + GitHub deploy key) и f15-03 (acceptance) — без них
+агент в сессии может править/коммитить, но не публиковать. Рабочая копия, ключи и опция cwd
+закрывают dev-loop; они же переиспользуются контейнерным Pi runtime из
+[f10-04](../f10-disposable-worker/f10-04-pi-rpc-runner.md), поэтому работа не выбрасывается при
+переходе к F10.
 
 Задачи: [f15-01](./f15-01-workspace-checkout.md),
 [f15-02](./f15-02-publish-access.md), [f15-03](./f15-03-dev-loop-acceptance.md).

@@ -34,6 +34,21 @@ Hydra слушает только loopback, хранит session metadata в `St
 lattice.pi-acp-daemon.path = [ pkgs.lattice.pi-tool-profile ];
 ```
 
+## Рабочая директория сессий (defaultCwd)
+
+Опция `lattice.pi-acp-daemon.defaultCwd` (nullOr str, по умолчанию `null`) задаёт рабочую
+директорию для новых ACP-сессий, которые не передают явный cwd в `session/new`. При `null`
+сессии стартуют в домашней директории пользователя сервиса (`/root` по умолчанию). Укажите её
+на рабочий checkout (например `/var/lib/lattice-workspace/lattice`, f15-01), чтобы агент в
+сессии открывался прямо в рабочей копии репозитория на ноде:
+
+```nix
+lattice.pi-acp-daemon.defaultCwd = "/var/lib/lattice-workspace/lattice";
+```
+
+Значение попадает в сгенерированный Hydra-конфиг (`daemon.defaultCwd`) и проверяется
+контракт-тестом [`tests/pi-acp-daemon.nix`](../../tests/pi-acp-daemon.nix).
+
 ## Временный privileged-доступ (stopgap, переработать!)
 
 Опция `lattice.pi-acp-daemon.privileged` (bool, по умолчанию `false`) — **временная** мера для

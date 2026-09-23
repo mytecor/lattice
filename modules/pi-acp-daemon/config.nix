@@ -36,7 +36,7 @@ let
       };
     };
     defaultAgent = "pi-acp";
-    defaultCwd = userHome;
+    defaultCwd = (if cfg.defaultCwd == null then userHome else cfg.defaultCwd);
     inherit (cfg) transformers defaultTransformers;
   });
 

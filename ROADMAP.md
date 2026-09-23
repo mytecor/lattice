@@ -113,11 +113,11 @@
 > Полный цикл работы над Lattice прямо с ноды через ACP: сессии открываются в рабочем checkout
 > на ноде, публикация `main` — в Radicle и GitHub с самой ноды, deploy — штатным `comin`.
 
-- **Статус:** ⏳ только заведена 2026-09-20 — [f15-01](./roadmap/f15-node-dev-loop/f15-01-workspace-checkout.md)
-  (рабочий checkout на ноде + `lattice.pi-acp-daemon.defaultCwd`),
-  [f15-02](./roadmap/f15-node-dev-loop/f15-02-publish-access.md) (Radicle peer-identity ноды +
-  GitHub deploy key), [f15-03](./roadmap/f15-node-dev-loop/f15-03-dev-loop-acceptance.md)
-  (acceptance полного цикла).
+- **Статус:** 🔶 в работе — f15-01 ([рабочий checkout на ноде](./roadmap/f15-node-dev-loop/f15-01-workspace-checkout.md))
+  реализован и проверен на ноде (опция `lattice.pi-acp-daemon.defaultCwd`, профиль
+  `profiles/node-dev` с one-shot `lattice-workspace-init`, impermanence, контракт-тест
+  `tests/pi-acp-daemon.nix`, документация); f15-02 (Radicle peer-identity ноды + GitHub deploy
+  key) и f15-03 (acceptance полного цикла) — ожидают.
 - **Готово, когда:** из ACP-сессии на ноде коммит доезжает до Radicle и GitHub одним
   `git push publish main` и применяется нодой через comin; состояние переживает reboot.
 - **Зависит от:** [F4](#f4-полезная-нагрузка) (f4-01 выполнен), [F8](#f8-интерактивный-pi)

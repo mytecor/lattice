@@ -149,6 +149,18 @@ in
       '';
     };
 
+    defaultCwd = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = ''
+        Working directory for new Hydra sessions that do not pass an explicit
+        cwd. When null, sessions start in the service user's home directory.
+        Point it at a real workspace checkout (for example
+        `/var/lib/lattice-workspace/lattice`, f15-01) so ACP sessions open
+        directly in the node's working copy of a repository.
+      '';
+    };
+
     privileged = mkOption {
       type = types.bool;
       default = false;

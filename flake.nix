@@ -167,6 +167,15 @@
             runtimeInputs = [ final.coreutils final.git final.jq final.util-linux ];
             text = builtins.readFile ./profiles/gitops/comin-source-sync.sh;
           };
+          # f15-01: idempotent bootstrap of the node's Lattice working checkout
+          # (node dev-loop). Mirrors the daemon contract: a real working copy
+          # (separate from /var/lib/comin source and /var/lib/radicle storage)
+          # where pi-acp-daemon sessions open by default.
+          workspace-init = final.writeShellApplication {
+            name = "lattice-workspace-init";
+            runtimeInputs = [ final.coreutils final.git ];
+            text = builtins.readFile ./scripts/lattice-workspace-init.sh;
+          };
           # f4-04: writer runtime-статуса узла (generation/commit JSON).
           # replaceVars вшивает полные store-пути команд, чтобы скрипт работал
           # из активационной среды (PATH там не содержит git/jq). Используется
@@ -333,6 +342,7 @@
           "${profiles}/rnsh/config.nix"
           "${profiles}/sso/config.nix"
           "${profiles}/browser-agent-stack/config.nix"
+          "${profiles}/node-dev/config.nix"
         ];
       };
     };

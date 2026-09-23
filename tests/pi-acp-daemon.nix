@@ -25,6 +25,11 @@ let
           # The Pi tool profile must reach the spawned agent's PATH so its bash
           # tool finds `sh` (f8-06: `spawn sh ENOENT` regression guard).
           path = [ pkgs.lattice.pi-tool-profile ];
+          # f15-01: a non-default defaultCwd must flow from the module option
+          # into the generated Hydra config (membership check in jq below, so a
+          # changed workspace path is a legitimate node change, not a test
+          # failure).
+          defaultCwd = "/var/lib/lattice-workspace/lattice";
           # Transformers are wired into the generated Hydra config (shape-only
           # check in jq below; the daemon itself is not run by this test).
           transformers.fake-normalizer = {
@@ -71,6 +76,7 @@ pkgs.runCommand "pi-acp-daemon-evaluation" {
     (.agents["pi-acp"].env.PATH | contains("pi-tool-profile")) and
     (.agents["pi-acp"].env.PATH | contains("/run/current-system/sw/bin")) and
     .daemon.scrubEnv == [] and
+    .defaultCwd == "/var/lib/lattice-workspace/lattice" and
     .defaultTransformers == ["fake-normalizer"] and
     .transformers["fake-normalizer"].command == ["/bin/echo", "fake-normalizer"] and
     .transformers["fake-normalizer"].enabled == true

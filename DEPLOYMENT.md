@@ -76,6 +76,29 @@ nixos-rebuild switch --flake .#<node-name> --target-host root@<host> --use-remot
 [KEY_MANAGEMENT.md](./KEY_MANAGEMENT.md). Не запускайте скрипт первоначальной установки ради
 плановой ротации age-ключа.
 
+## Рабочий checkout на ноде (node dev-loop)
+
+[F15](./roadmap/f15-node-dev-loop/README.md): ACP-сессии (pi-acp-daemon) открываются в рабочем
+checkout Lattice на ноде, а не в `/root`. Рабочей копией владеет профиль
+[`profiles/node-dev`](./profiles/node-dev/README.md): one-shot сервис
+`lattice-workspace-init` идемпотентно клонирует `main` из локального Radicle seed storage
+(падение на GitHub, если seed storage пуст) в `/var/lib/lattice-workspace/lattice`, настраивает
+remote `publish` с двумя push URL (Radicle + GitHub) по рецепту выше и `pull --ff-only` держит
+копию актуальной (грязное дерево не трогает).
+
+**Границы:** workspace — рабочая копия для правок и пуша, а `comin` читает свой bare source
+(`/var/lib/comin/source/repository`); `/var/lib/lattice-workspace` не пересекается ни с ним, ни с
+`/var/lib/radicle/storage`. Инициализатор не создаёт симлинков в `/var/lib/comin` или
+`/var/lib/radicle` и не меняет их роль. Путь для `session/new` извне — только workspace
+(`/var/lib/lattice-workspace/lattice`); `lattice.pi-acp-daemon.defaultCwd` задаёт его как дефолт.
+Директория объявлена в `environment.persistence."/persist".directories` и переживает reboot.
+
+```sh
+# состояние checkout на ноде после init
+systemctl status lattice-workspace-init
+ls /var/lib/lattice-workspace/lattice
+```
+
 ## Первая реальная нода: `mytecor-homelab`
 
 Первой разворачивается нода `mytecor-homelab` на Intel N100. До миграции эта физическая машина
