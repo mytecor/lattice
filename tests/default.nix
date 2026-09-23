@@ -78,6 +78,17 @@ in
     piModule = self.nixosModules.pi;
   };
 
+  # f18-11: contract test for the F18 browser agent stack (foxbridge-camoufox +
+  # jev-ultrafast): lifecycle coupling, seccomp (⇺s@resources), persistent
+  # browser home, loopback-only CDP, LoadCredential-only secrets. Catches the
+  # f18-08 crash-loops (SIGSYS setpriority, tmpfs HOME) as eval-time regressions.
+  f18-browser-stack = import ./f18-browser-stack.nix {
+    inherit nixpkgs pkgs;
+    foxbridgeModule = self.nixosModules.foxbridge-camoufox;
+    jevModule = self.nixosModules.jev-ultrafast;
+    browserProfile = "${profiles}/browser-agent-stack/config.nix";
+  };
+
   pi-acp-daemon = import ./pi-acp-daemon.nix {
     inherit nixpkgs pkgs;
     acpModule = self.nixosModules.pi-acp-daemon;
