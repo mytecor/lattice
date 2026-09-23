@@ -23,6 +23,8 @@ let
   # profile (RAD_HOME=/var/lib/radicle, rad-system). The peer identity lives on
   # the node itself (generated in place via `rad-peer auth`), survives reboot
   # through impermanence, and is what `git push rad://...` signs with.
+  # Peer DID of the node (public, generated on the node 2026-09-23):
+  #   did:key:z6MkqUjzpiYfDAcjnj2379bYfEk4DdLtWQkyfk7nECn6HyZx
   radiclePeerHome = "/persist/var/lib/radicle-peer";
   # zai `thinking` control rejected by generic OpenAI-compatible upstreams
   # (hyperfusion/litellm 400). Stripped for every provider so reasoning level

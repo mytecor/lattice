@@ -53,7 +53,9 @@ peer-пуша, поэтому peer-identity живёт в отдельном `RA
 1. Развернуть правки на ноду (nixos-rebuild switch / comin) — добавит `rad-peer`, `extraEnv`
    `RAD_HOME`, impermanence peer-профиля и guarded deploy key.
 2. `rad-peer auth` на ноде — сгенерировать peer-identity (`/persist/var/lib/radicle-peer`),
-   получить DID ноды.
+   получить DID ноды. **Сделано 2026-09-23**: peer-DID ноды
+   `did:key:z6MkqUjzpiYfDAcjnj2379bYfEk4DdLtWQkyfk7nECn6HyZx` (ключ на ноде,
+   в контекст/вывод не выводился).
 3. `rad id update` — добавить DID ноды делегатом в RID Lattice (подпись оператора с Mac),
    порог 1-of-2; пропушить identity.
 4. Перезапустить `lattice-workspace-init` (или reboot) — GitHub push URL workspace переключится

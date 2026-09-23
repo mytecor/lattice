@@ -19,6 +19,12 @@ let
 in
 {
   config = {
+    # f15-02: rad-peer on the system PATH too, so the operator/ad-hoc shell can
+    # run `rad-peer auth status` / bootstrap the peer identity without digging a
+    # store path. Sessions additionally get it through
+    # lattice.pi-acp-daemon.path (node config).
+    environment.systemPackages = [ pkgs.lattice.rad-peer ];
+
     systemd.services.lattice-workspace-init = {
       description = "Bootstrap and refresh the Lattice working checkout";
       wantedBy = [ "multi-user.target" ];
