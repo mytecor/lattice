@@ -22,10 +22,13 @@ peer-пуша, поэтому peer-identity живёт в отдельном `RA
       против отдельного peer-профиля `RAD_HOME=/persist/var/lib/radicle-peer` — не мешает
       seed-профилю `rad-system` (`/var/lib/radicle`). Собственно генерацию ключа делает
       оператор на ноде разово вручную: `rad-peer auth` (ключ генерится на месте).
-- [ ] 2. **Делегирование в RID Lattice.** `rad id update` добавить ноду как делегата/подписанта
+- [x] 2. **Делегирование в RID Lattice.** `rad id update` добавить ноду как делегата/подписанта
       (подпись — ключом оператора с Mac). Выбрать и зафиксировать порог подписей
-      (1-of-2 или 2-of-2, см. «Открытые вопросы»). **Ручной шаг оператора на Mac +
-      на ноде**; рекомендация — 1-of-2.
+      (1-of-2 или 2-of-2, см. «Открытые вопросы»). **Сделано 2026-09-23**: порог
+      1-of-2; revision `d888fa4` (delegates = [mytecor, peer-DID ноды], threshold 1) принят
+      оператором с Mac (`rad id update --delegate … --threshold 1`); canonical storage на Mac
+      указывает на новую ревизию. Распространение до семян/ноды — штатная сетевая синхронизация
+      Radicle (фоновый процесс, см. «Осталось»).
 - [x] 3. **Обёртка `rad` для workspace.** `pkgs.lattice.rad-peer` установлен в PATH ACP-сессий
       (`lattice.pi-acp-daemon.path` в node config) и `RAD_HOME` peer-профиля попадает в
       окружение агентов (`lattice.pi-acp-daemon.extraEnv`) — `git push rad://...` через
@@ -50,25 +53,28 @@ peer-пуша, поэтому peer-identity живёт в отдельном `RA
 
 ## Осталось на живой ноде / оператору (не автоматизируется кодом)
 
-1. Развернуть правки на ноду (nixos-rebuild switch / comin) — добавит `rad-peer`, `extraEnv`
-   `RAD_HOME`, impermanence peer-профиля и guarded deploy key.
-2. `rad-peer auth` на ноде — сгенерировать peer-identity (`/persist/var/lib/radicle-peer`),
-   получить DID ноды. **Сделано 2026-09-23**: peer-DID ноды
-   `did:key:z6MkqUjzpiYfDAcjnj2379bYfEk4DdLtWQkyfk7nECn6HyZx` (ключ на ноде,
-   в контекст/вывод не выводился).
-3. `rad id update` — добавить DID ноды делегатом в RID Lattice (подпись оператора с Mac),
-   порог 1-of-2; пропушить identity.
-4. Перезапустить `lattice-workspace-init` (или reboot) — GitHub push URL workspace переключится
-   на `git@github-lattice:mytecor/lattice.git`, ssh-алиас запишется; radicle push URL (без DID)
-   берёт подпись от peer-профиля ноды.
+Закрыто в этой сессии: правки развёрнуты на ноду (comin, generation на
+`2d18332`), peer-identity сгенерирован на ноде (`did:key:z6MkqUjzpiYfDAcjnj2379bYfEk4DdLtWQkyfk7nECn6HyZx`),
+`rad-peer` в системном PATH, deploy key загружен в GitHub, workspace на ноде видит
+новые push URL. Осталось:
+
+1. **Распространение identity-документа**: дождаться, пока семена Radicle получат
+   revision `d888fa4` (2 delegate'а, threshold 1) — штатный сетевой sync Radicle;
+   обычно за минуты. Проверка на ноде: `refs/rad/id` в
+   `/var/lib/radicle/storage/<rid>` указывает на `d888fa4`.
+2. **E2E acceptance (f15-03)**: из ACP-сессии на ноде doc-правка → commit →
+   `git push publish main` → подтверждается один commit в Radicle и GitHub →
+   comin применяет. До сих пор пуши делались оператором с Mac.
 
 ## Критерий готовности (Definition of Done)
 
 - [ ] `git push publish main` из checkout на ноде публикует один commit и в Radicle, и в GitHub;
       при частичном отказе процедура сверки/повтора из [DEPLOYMENT.md](../../DEPLOYMENT.md) выполнима на ноде. **Код-
       часть готова** (rad-peer, RAD_HOME в env сессий, github-lattice алиас + deploy key
-      plumbing + ключ загружен в GitHub); остаются live-шаги из раздела
-      «Осталось на живой ноде / оператору» (включая rad id update после генерации peer-DID).
+      plumbing + ключ загружен в GitHub + делегирование Radicle (revision d888fa4, 1-of-2)
+      оформлено); остаются live-шаги из раздела
+      «Осталось на живой ноде / оператору» (распространение identity-документа до семян и
+      E2E acceptance f15-03).
 - [ ] Ключи существуют только как файлы (peer-профиль в `/persist`, agenix); в Git и в
       stdout/контексте агента их значений нет.
 
