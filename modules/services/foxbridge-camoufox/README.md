@@ -36,8 +36,10 @@ Jev agent ── BU_CDP_URL ──▶ Foxbridge ── Juggler ──▶ Camoufo
 - `lattice.foxbridge-camoufox.camoufox.humanize` — режим `humanize` (естественные
   траектории курсора и задержки), доставляется как `CAMOU_CONFIG_1='{"humanize":true}'`
   (f18-06). По умолчанию `true`.
-- `lattice.foxbridge-camoufox.camoufox.profileDir` — одноразовый профиль Firefox
-  на tmpfs (по умолчанию `/run/foxbridge-camoufox/profile`).
+
+Профиль Camoufox не задаётся через `--profile`: браузер сам создаёт его по
+`$HOME` (`$HOME/.cache/camoufox`), т.е. внутри `RuntimeDirectory`
+`/run/foxbridge-camoufox` на tmpfs — одноразовый и пересоздаётся на каждом старте.
 
 ## Примечания по окружению (f18-07 → f18-08)
 
@@ -55,3 +57,8 @@ Jev agent ── BU_CDP_URL ──▶ Foxbridge ── Juggler ──▶ Camoufo
   декларативного юнита. Оставлены `@system-service` allow-list + `~@privileged`
   и полное capability/namespace/fs-хардение. Аналогичный tradeoff-класс зафиксирован
   в `modules/verdaccio/README.md` для `MemoryDenyWriteExecute` (V8).
+- `--profile` на пути `/run/...` **недопустим**: `RuntimeDirectory` при каждом
+  старте юнита пересоздаётся пустым, каталог профиля исчезает, и Juggler
+  `Browser.enable` не завершается (на ноде: `context deadline exceeded` /
+  `client closed`). Camoufox сам создаёт профиль в `$HOME` (= RuntimeDirectory
+  tmpfs). Это и есть «одноразовый профиль» — на диске ничего не остаётся.

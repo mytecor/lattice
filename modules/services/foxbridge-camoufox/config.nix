@@ -30,10 +30,6 @@ in
       home = "/var/empty";
     };
 
-    systemd.tmpfiles.rules = [
-      "d ${toString cfg.camoufox.profileDir} 0700 ${cfg.user} ${cfg.group} - -"
-    ];
-
     systemd.services.foxbridge-camoufox = {
       description = "Foxbridge CDP compatibility layer for Camoufox (F18 browser runtime)";
       documentation = [ "https://github.com/VulpineOS/foxbridge" ];
@@ -55,12 +51,18 @@ in
         # f18-08: drop the fragile f18-07 LD_LIBRARY_PATH glob — the Nix
         # camoufox derivation is auto-patched, so the binary self-contains its
         # store deps. ExecStart runs Foxbridge directly.
+        #
+        # No --profile flag: Camoufox derives its default profile from
+        # $HOME/.cache/camoufox (the RuntimeDirectory tmpfs below), which is
+        # recreated on boot. A custom --profile path on /run is fatal — the
+        # RuntimeDirectory is wiped empty on every unit start, so the profile
+        # path vanishes and the Juggler Browser.enable handshake never
+        # completes (f18-08 node validation: timeout / client closed).
         ExecStart = lib.concatStringsSep " " [
           (lib.getExe cfg.package)
           "--port ${toString cfg.port}"
           "--binary ${lib.getExe cfg.camoufoxPackage}"
           "--headless"
-          "--profile ${toString cfg.camoufox.profileDir}"
         ];
         # f18-07: Camoufox content-processes under a strict systemd sandbox
         # SEGV (forkserver coredump → Juggler never delivers frameId). Disable

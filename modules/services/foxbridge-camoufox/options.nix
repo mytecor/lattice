@@ -83,12 +83,6 @@ in
           Verified in f18-06: real cursor path, fingerprint unchanged.
         '';
       };
-
-      profileDir = mkOption {
-        type = types.path;
-        default = "/run/foxbridge-camoufox/profile";
-        description = "Disposable Firefox profile dir passed to Foxbridge via --profile (tmpfs).";
-      };
     };
   };
 }
