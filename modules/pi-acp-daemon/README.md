@@ -54,8 +54,8 @@ lattice.pi-acp-daemon.extraEnv.RAD_HOME = "/persist/var/lib/radicle-peer";
 ## Рабочая директория сессий (defaultCwd)
 
 Опция `lattice.pi-acp-daemon.defaultCwd` (nullOr str, по умолчанию `null`) задаёт рабочую
-директорию для новых ACP-сессий, которые не передают явный cwd в `session/new`. При `null`
-сессии стартуют в домашней директории пользователя сервиса (`/root` по умолчанию). Укажите её
+директорию для новых ACP-сессий. При `null` сессии стартуют в домашней директории
+пользователя сервиса (`/root` по умолчанию). Укажите её
 на рабочий checkout (например `/var/lib/lattice-workspace/lattice`, f15-01), чтобы агент в
 сессии открывался прямо в рабочей копии репозитория на ноде:
 
@@ -65,6 +65,21 @@ lattice.pi-acp-daemon.defaultCwd = "/var/lib/lattice-workspace/lattice";
 
 Значение попадает в сгенерированный Hydra-конфиг (`daemon.defaultCwd`) и проверяется
 контракт-тестом [`tests/pi-acp-daemon.nix`](../../tests/pi-acp-daemon.nix).
+
+**Как это работает.** В WS `session/new` схема требует поле `cwd` (`K.string()`, не
+опциональное), и upstream-демон передаёт его как есть в `manager.create` →
+`resolveWorkspace` → `bootstrapAgent` — то есть спавнит агента ровно в переданном клиентом
+каталоге, не подставляя серверный дефолт. Поэтому для node dev-loop серверного
+`defaultCwd` самого по себе недостаточно: stateless-клиент (acp-ui, Ferngeist) присылает
+свой cwd (пустую строку, `/` или иной путь) и увёл бы сессию из рабочего checkout.
+
+Lattice-патч в [`packages/hydra-acp`](../../packages/hydra-acp/package.nix) решает это на
+сервере: `manager.create` **безусловно** заменяет cwd клиента на `fe(this.defaultCwd)`
+(`expandHome`, та же, что в `resolveResurrectTarget`) — любая сессия открывается в рабочем
+checkout, каким бы путём клиент ни попытался её направить. Явный путь из `session/new`
+клиентом не уважается: на этой ноде всё ACP-сессии работают в единой рабочей копии.
+Клиентским патчам (например, правкам acp-components) здесь места нет — поведение задаётся
+только серверной политикой.
 
 ## Временный privileged-доступ (stopgap, переработать!)
 

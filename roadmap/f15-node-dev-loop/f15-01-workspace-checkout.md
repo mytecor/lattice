@@ -43,11 +43,23 @@ ACP-сессии стартуют в `defaultCwd`, который в
 - [x] 6. **Документация**: раздел «Рабочий checkout на ноде» в
       [DEPLOYMENT.md](../../DEPLOYMENT.md): workspace — рабочая копия для правок и пуша, comin
       читает свой bare source; путь для `session/new` извне — только workspace.
+- [x] 7. **Серверная политика cwd** (`packages/hydra-acp/package.nix`): демон принимает
+      клиентский cwd как есть (`Wi = K.object({cwd: K.string(), ...})` — обязательное поле),
+      `manager.create` спавнит агента ровно с этим путём, `defaultCwd` в WS `session/new` не
+      консультируется вовсе — поэтому stateless-клиент (acp-ui, Ferngeist) увёл бы сессию из
+      checkout (пустой путь, `/`, либо иной каталог). Патч: `manager.create` **безусловно**
+      заменяет cwd на `fe(this.defaultCwd)` (та же `expandHome`, что использует
+      `resolveResurrectTarget`) — любая сессия открывается в рабочем checkout, каким бы путём
+      клиент ни пытался её направить. Клиентский патч acp-ui (default workspace в
+      `patch-main-ts.mjs`) при этом не нужен: политика задаётся только сервером, и он был
+      отменён.
 
 ## Критерий готовности (Definition of Done)
 
-- [ ] Новая ACP-сессия без явного cwd стартует в `/var/lib/lattice-workspace/lattice`; каталог,
-      checkout и `/persist`-запись переживают reboot ноды.
+- [x] Новая ACP-сессия стартует в `/var/lib/lattice-workspace/lattice`; каталог,
+      checkout и `/persist`-запись переживают reboot ноды. Сервер безусловно заменяет cwd на
+      `defaultCwd` (патч `packages/hydra-acp/package.nix`): какой путь ни прислал бы клиент в
+      `session/new` (пустой, `/`, произвольный каталог) — сессия открывается в checkout.
 - [ ] `nix flake check --all-systems --no-build` зелёный, включая новую проверку defaultCwd;
       `/var/lib/comin` и `/var/lib/radicle` не изменили роль (comin source не тронут).
 

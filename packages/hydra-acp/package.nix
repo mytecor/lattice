@@ -32,5 +32,22 @@ buildPnpmCli {
     sed -i 's/e\.manager\.list({cwd:f\.cwd})/e.manager.list({cwd:f.cwd,includeNonInteractive:!0})/' "$target"
     grep -q 'e.manager.list({cwd:f.cwd,includeNonInteractive:!0})' "$target" \
       || { echo "hydra-acp: session/list includeNonInteractive patch did not apply" >&2; exit 1; }
+
+    # Lattice patch (f15-01): ALWAYS force the daemon defaultCwd in session/new,
+    # ignoring whatever cwd the client sent. The WS schema makes cwd mandatory
+    # (a client may send "", "/", or any absolute path) and upstream uses it
+    # verbatim, so a stateless client (e.g. acp-ui, Ferngeist) decides the
+    # session's working directory — which breaks the node dev-loop: an empty or
+    # root path puts the agent outside the Lattice checkout. Every Lattice ACP
+    # session must operate in the node's working copy, so we unconditionally
+    # replace the client-supplied cwd with fe(this.defaultCwd). `fe` is the
+    # daemon's expandHome (already used by resolveResurrectTarget) and
+    # this.defaultCwd is set in the manager constructor (default "~" -> home,
+    # or the configured /var/lib/lattice-workspace/lattice). Rationale:
+    # roadmap/f15-node-dev-loop/f15-01; behaviour covered by the pi-acp-daemon
+    # module docs. Client-side acp-ui patching is therefore unnecessary.
+    sed -i 's/async create(e){let t=await this.registry.getAgent(e.agentId);/async create(e){e={...e,cwd:fe(this.defaultCwd)};let t=await this.registry.getAgent(e.agentId);/' "$target"
+    grep -q 'async create(e){e={...e,cwd:fe(this.defaultCwd)};let t=await this.registry.getAgent(e.agentId);' "$target" \
+      || { echo "hydra-acp: session/new always-force defaultCwd patch did not apply" >&2; exit 1; }
   '';
 }
