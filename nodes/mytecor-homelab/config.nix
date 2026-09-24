@@ -357,6 +357,13 @@ in
     # profiles/node-dev), so an agent can edit, commit and push `main` from
     # the node itself.
     defaultCwd = "/var/lib/lattice-workspace/lattice";
+    # ACP has no pagination: `session/load` / REST history serve only the last
+    # sessionHistoryMaxEntries entries. Long sessions (pi streams one
+    # `agent_message_chunk` per token/reply) easily exceed the daemon default
+    # (10000) and then silently lose every older user/assistant message from
+    # acp-ui. Raise the limit so the whole recorded history stays loadable
+    # instead of being truncated (see modules/pi-acp-daemon options).
+    sessionHistoryMaxEntries = 200000;
     # TEMPORARY wide-open network/cap access (iw/ip/nl80211, sudo). This must
     # be reverted to the strict sandbox; see modules/pi-acp-daemon README note.
     privileged = true;

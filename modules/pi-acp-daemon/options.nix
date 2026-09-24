@@ -91,6 +91,22 @@ in
       '';
     };
 
+    sessionHistoryMaxEntries = mkOption {
+      type = types.ints.unsigned;
+      # Matches the hydra-acp daemon schema default (1e4); the daemon's
+      # in-code fallback for an unset value would otherwise be 1e3. We pass
+      # the value explicitly so the effective limit is deterministic.
+      default = 10000;
+      description = ''
+        Maximum number of history entries hydra-acp serves to a client on
+        `session/load` and REST `/v1/sessions/:id/history`. ACP has no
+        pagination, so entries older than this limit are unreachable through
+        the protocol. Long sessions (an agent streaming many chunks per reply)
+        can exceed the default; raise it to keep old messages loadable. The
+        value is passed to the hydra-acp daemon config as-is.
+      '';
+    };
+
     stateDirectory = mkOption {
       type = types.strMatching "[A-Za-z0-9][A-Za-z0-9_.-]*";
       default = "hydra-acp";

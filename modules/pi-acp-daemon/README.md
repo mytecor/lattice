@@ -125,6 +125,19 @@ Lattice-owned transformer — [`packages/acp-normalizer`](../../packages/acp-nor
 рамках одного логического ассистентского сообщения. Включён на `mytecor-homelab` через
 [`nodes/mytecor-homelab`](../../nodes/mytecor-homelab/README.md).
 
+## Глубина истории сессии (sessionHistoryMaxEntries)
+
+Опция `lattice.pi-acp-daemon.sessionHistoryMaxEntries` (unsigned, по умолчанию `10000`)
+ограничивает, сколько записей истории hydra-acp отдаёт клиенту на `session/load` и REST
+`/v1/sessions/:id/history`. ACP не поддерживает пагинацию: записей старше этого числа клиент
+физически не может догрузить, поэтому для длинных сессий (pi-агент стримит один
+`agent_message_chunk` на токен/фрагмент ответа) старые user/assistant-сообщения молча пропадают
+из acp-ui — история «обрезается».
+
+Значение передаётся в Hydra-конфиг (`daemon.sessionHistoryMaxEntries`) как есть. На
+`mytecor-homelab` поднято до `200000`, чтобы рабочие сессии не теряли историю; выбирайте
+значение, покрывающее самый длинный ожидаемый объём записей сессий.
+
 ## Форма соединения клиента
 
 Единственная проверенная форма клиентского подключения — чистый ACP WebSocket с subprotocol

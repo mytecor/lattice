@@ -8,7 +8,7 @@ let
 
   hydraConfig = pkgs.writeText "hydra-acp-config.json" (builtins.toJSON {
     daemon = {
-      inherit (cfg) host port logLevel sessionIdleTimeoutSeconds;
+      inherit (cfg) host port logLevel sessionIdleTimeoutSeconds sessionHistoryMaxEntries;
       nonInteractiveOrphanTimeoutSeconds = 0;
       scrubEnv = [ ];
     };

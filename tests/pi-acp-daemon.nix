@@ -76,6 +76,7 @@ pkgs.runCommand "pi-acp-daemon-evaluation" {
     .daemon.host == "127.0.0.1" and
     .daemon.port == 55514 and
     .daemon.sessionIdleTimeoutSeconds == 3600 and
+    .daemon.sessionHistoryMaxEntries == 10000 and
     .daemon.nonInteractiveOrphanTimeoutSeconds == 0 and
     .registry.pinned == true and
     .defaultAgent == "pi-acp" and
