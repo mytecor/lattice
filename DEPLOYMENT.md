@@ -86,10 +86,12 @@ checkout Lattice на ноде, а не в `/root`. Рабочей копией 
 remote `publish` с двумя push URL (Radicle + GitHub) по рецепту выше и `pull --ff-only` держит
 копию актуальной (грязное дерево не трогает).
 
-Радиальный push URL в workspace **без DID** (`rad://z3AqC…G6L`) — в отличие от рецепта выше, где
-URL для Mac-оператора включает его DID. На ноде подпись берётся от peer-профиля, на который
-указывает `RAD_HOME` (rad-peer, f15-02), поэтому URL не должен привязывать push к операторскому
-DID (закрытого ключа оператора на ноде нет).
+Радиальный push URL в workspace **с DID ноды** (`rad://z3AqC…G6L/z6MkqUjzpi…`) — в отличие от
+рецепта выше, где URL для Mac-оператора включает DID оператора. На ноде подпись берётся от
+peer-профиля, на который указывает `RAD_HOME` (rad-peer, f15-02), а DID в URL привязывает push к
+этому же идентификатору. Без DID (`rad://z3AqC…G6L`) remote helper падает с «no public key given
+as remote namespace», потому что обычный git-checkout не несёт внутреннего rad-контекста,
+из которого можно вывести namespace атоматически.
 
 **Границы:** workspace — рабочая копия для правок и пуша, а `comin` читает свой bare source
 (`/var/lib/comin/source/repository`); `/var/lib/lattice-workspace` не пересекается ни с ним, ни с

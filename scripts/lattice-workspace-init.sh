@@ -22,12 +22,13 @@ workspace_dir="$LATTICE_WORKSPACE_DIR"
 checkout="$workspace_dir/lattice"
 branch="${LATTICE_WORKSPACE_BRANCH:-main}"
 origin_remote="${LATTICE_WORKSPACE_ORIGIN_REMOTE:-https://github.com/mytecor/lattice.git}"
-# Push URL per DEPLOYMENT.md "Публикация в Radicle и GitHub". f15-02: the
-# repository-scoped rad:// URL (no DID) makes git-remote-rad sign with whatever
-# identity RAD_HOME points at — the node's peer profile shoved by rad-peer —
-# rather than hard-bind to the operator's DID (which would require the operator's
-# private key on the node).
-radicle_push_url="${LATTICE_WORKSPACE_RADICLE_PUSH_URL:-rad://z3AqC22BKQ5Gnrkw49N7PGJa91G6L}"
+# Push URL per DEPLOYMENT.md "Публикация в Radicle и GitHub". f15-02/acceptance:
+# the repository-scoped URL must carry the node's peer DID — without it
+# git-remote-rad aborts with "no public key given as remote namespace" because
+# this plain git checkout has no in-repo rad context to derive the namespace
+# from. The DID binds the push to the node's own peer identity (RAD_HOME), never
+# the seed profile.
+radicle_push_url="${LATTICE_WORKSPACE_RADICLE_PUSH_URL:-rad://z3AqC22BKQ5Gnrkw49N7PGJa91G6L/z6MkqUjzpiYfDAcjnj2379bYfEk4DdLtWQkyfk7nECn6HyZx}"
 # f15-02: GitHub deploy key (repo-scoped write) for the workspace push. Until the
 # operator provisions it the GitHub push URL stays the anonymous https fetch URL
 # (push is deferred); once the key file exists we route the push through a
