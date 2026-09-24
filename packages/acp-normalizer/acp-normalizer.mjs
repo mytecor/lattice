@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// acp-normalizer — hydra-acp transformer.
+// acp-normalizer — hydra-acp transformer (CLI entry).
 //
 // Intercepts response:session/update BEFORE the daemon broadcasts to clients and
 // rewrites the per-token fresh `messageId` on agent_message_chunk /
@@ -10,14 +10,15 @@
 // "strip messageId" transformer could never survive broadcast. Reassigning a
 // stable id does survive, because wp only fills in missing ids.
 //
-// Boundary kinds that start a NEW logical message reset the current id:
-//   prompt_received, tool_call, user_message_chunk, agent_message,
-//   agent_thought (complete), turn_complete
-//
 // Deployed declaratively by `lattice.pi-acp-daemon` (module) as a daemon-spawned
 // transformer; pinning it in `defaultTransformers` applies it to every session
 // without client cooperation. For a quick review it can also be registered at
 // runtime via REST /v1/transformers (in-memory only, gone on daemon restart).
+//
+// The pure normalization logic (the boundary/id-stability rules) lives in
+// normalize.mjs and is unit-tested in normalize.test.mjs.
+
+import { createNormalize } from './normalize.mjs'
 
 const WS_URL = process.env.HYDRA_ACP_WS_URL
 const TOKEN = process.env.HYDRA_ACP_TOKEN
@@ -30,42 +31,8 @@ if (!WS_URL || !TOKEN) {
 
 const log = (...args) => console.error(`[${NAME}]`, ...args)
 
-// Kinds that begin a fresh logical assistant message.
-const BOUNDARY = new Set([
-  'prompt_received',
-  'tool_call',
-  'user_message_chunk',
-  'agent_message',
-  'agent_thought', // complete thought = a new own message; text after it is new too
-  'turn_complete'
-])
-// Streamed pieces of ONE logical assistant reply.
-const CHUNK = new Set(['agent_message_chunk', 'agent_thought_chunk'])
-
-// sessionId -> current logical message id
-const currentId = new Map()
-
-function normalize(envelope) {
-  const update = envelope?.update
-  if (!update || typeof update !== 'object' || Array.isArray(update)) return null
-  const kind = update.sessionUpdate
-  const sid = envelope.sessionId ?? '(none)'
-
-  if (BOUNDARY.has(kind)) {
-    currentId.delete(sid)
-    return null
-  }
-  if (!CHUNK.has(kind)) return null
-
-  const before = update.messageId ?? null
-  let id = currentId.get(sid)
-  if (id === undefined) {
-    id = before ?? crypto.randomUUID()
-    currentId.set(sid, id)
-  }
-  if (before === id) return null
-  return { ...envelope, update: { ...update, messageId: id } }
-}
+// Fresh per-process normalizer state (per-session current id).
+const { normalize } = createNormalize()
 
 function connect(attempt = 0) {
   const ws = new WebSocket(WS_URL, ['acp.v1', `hydra-acp-token.${TOKEN}`])

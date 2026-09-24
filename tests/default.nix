@@ -165,6 +165,23 @@ in
     statusWriter = pkgs.lattice.node-status-write;
   };
 
+  # acp-normalizer regression: the pure id-stability core (normalize.mjs) must
+  # glue the chunks of one assistant reply under a single messageId AND start a
+  # FRESH id for a new logical message even when the live transform stream only
+  # delivers non-classic boundaries between turns (usage_update /
+  # session_info_update — the kinds that reach the transformer between turns,
+  # with no prompt_received / turn_complete). Catches the v0.1.0 cross-turn
+  # messageId-collision that broke history rendering on session/load. Plain
+  # node + assert, no build tool.
+  acp-normalizer =
+    let srcDir = "${self}/packages/acp-normalizer"; in
+    pkgs.runCommand "acp-normalizer-test" {
+      nativeBuildInputs = [ pkgs.nodejs ];
+    } ''
+      node ${srcDir}/normalize.test.mjs
+      touch $out
+    '';
+
   # f1-01: nodes/example must actually carry the base profile into the build.
   # profiles/base (imported for every node via mkNode) pulls in profiles/gitops
   # (services.comin), nix.settings.auto-optimise-store and nix.gc.automatic.
