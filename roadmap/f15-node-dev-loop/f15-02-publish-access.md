@@ -57,21 +57,18 @@ peer-пуша, поэтому peer-identity живёт в отдельном `RA
 на ноде (`did:key:z6MkqUjzpiYfDAcjnj2379bYfEk4DdLtWQkyfk7nECn6HyZx`), `rad-peer`
 в системном PATH, deploy key загружен в GitHub, workspace на ноде видит новые push URL,
 identity-документ `d888fa4` (2 delegate'а, threshold 1) синхронизирован в seed-storage ноды
-(подтверждено: `refs/rad/id` → d888fa4, оба delegates видны). Осталось:
+(подтверждено: `refs/rad/id` → d888fa4, оба delegates видны).
 
-1. **E2E acceptance (f15-03)**: из ACP-сессии на ноде doc-правка → commit →
-   `git push publish main` → подтверждается один commit в Radicle и GitHub →
-   comin применяет. До сих пор пуши делались оператором с Mac.
+**E2E acceptance (f15-03) закрыт 2026-09-24**: doc-правка → commit → `git push publish main`
+выполнены из ACP-сессии на ноде; один и тот же commit появился и в Radicle (seed-storage ноды),
+и в GitHub; comin применил. Рабочее состояние и ключи переживают reboot (f15-03 п.4).
 
 ## Критерий готовности (Definition of Done)
 
-- [ ] `git push publish main` из checkout на ноде публикует один commit и в Radicle, и в GitHub;
-      при частичном отказе процедура сверки/повтора из [DEPLOYMENT.md](../../DEPLOYMENT.md) выполнима на ноде. **Код-
-      часть готова** (rad-peer, RAD_HOME в env сессий, github-lattice алиас + deploy key
-      plumbing + ключ загружен в GitHub + делегирование Radicle (revision d888fa4, 1-of-2)
-      оформлено и синхронизировано в seed-storage ноды); остаётся E2E
-      acceptance (f15-03).
-- [ ] Ключи существуют только как файлы (peer-профиль в `/persist`, agenix); в Git и в
+- [x] `git push publish main` из checkout на ноде публикует один commit и в Radicle, и в GitHub;
+      при частичном отказе процедура сверки/повтора из [DEPLOYMENT.md](../../DEPLOYMENT.md) выполнима на ноде.
+      **Закрыто 2026-09-24** вместе с E2E acceptance (f15-03): push с ноды подтверждён.
+- [x] Ключи существуют только как файлы (peer-профиль в `/persist`, agenix); в Git и в
       stdout/контексте агента их значений нет.
 
 ## Затрагиваемые файлы / слои

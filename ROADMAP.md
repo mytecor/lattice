@@ -108,23 +108,6 @@
 - **Зависит от:** [F4](#f4-полезная-нагрузка), [F2](#f2-секреты-и-идентичность)
 - **Не блокирует:** [F10](#f10-disposable-worker), [F11](#f11-controller).
 
-### [F15. Разработка с ноды (node dev-loop)](./roadmap/f15-node-dev-loop/README.md)
-
-> Полный цикл работы над Lattice прямо с ноды через ACP: сессии открываются в рабочем checkout
-> на ноде, публикация `main` — в Radicle и GitHub с самой ноды, deploy — штатным `comin`.
-
-- **Статус:** 🔶 в работе — f15-01 ([рабочий checkout на ноде](./roadmap/f15-node-dev-loop/f15-01-workspace-checkout.md))
-  реализован и проверен на ноде; кодовая часть f15-02 ([push-доступы](./roadmap/f15-node-dev-loop/f15-02-publish-access.md))
-  готова (rad-peer, RAD_HOME в env сессий, deploy-key plumbing, ssh-алиас `github-lattice`,
-  impermanence; контракт-тест `tests/pi-acp-daemon.nix` расширен на extraEnv). Остаются ручные
-  шаги оператора на живой ноде (rad-peer auth, rad id update, создание+шифрование GitHub
-  deploy key) и f15-03 (acceptance полного цикла).
-- **Готово, когда:** из ACP-сессии на ноде коммит доезжает до Radicle и GitHub одним
-  `git push publish main` и применяется нодой через comin; состояние переживает reboot.
-- **Зависит от:** [F4](#f4-полезная-нагрузка) (f4-01 выполнен), [F8](#f8-интерактивный-pi)
-- **Не блокирует:** [F10](#f10-disposable-worker), [F11](#f11-controller) — workspace/cwd
-  и push-доступы переиспользуются f10-04, но F10 от них не зависит.
-
 ### [F16. Context transformation](./roadmap/f16-context-transformation/README.md)
 
 > Встроенное управление контекстом LLM gateway: compression старых tool outputs,
@@ -242,3 +225,21 @@
   Loki) видны в Grafana; конкретный запрос связывается по `request_id` до переходов в
   retry/fallback/race; димензии низкой cardinality, без публичных сервисов.
 - **Зависит от:** [F7](#f7-llm-gateway)
+
+### [F15. Разработка с ноды (node dev-loop)](./roadmap/f15-node-dev-loop/README.md)
+
+> Полный цикл работы над Lattice прямо с ноды через ACP: сессии открываются в рабочем checkout
+> на ноде, публикация `main` — в Radicle и GitHub с самой ноды, deploy — штатным `comin`.
+
+- **Статус:** ✅ выполнена 2026-09-24 —
+  [f15-01](./roadmap/f15-node-dev-loop/f15-01-workspace-checkout.md) (рабочий checkout на ноде +
+  server-side `defaultCwd`) реализован и проверен;
+  [f15-02](./roadmap/f15-node-dev-loop/f15-02-publish-access.md) (push-доступы: rad-peer,
+  RAD_HOME в env, deploy key + ssh-алиас `github-lattice`, делегирование Radicle revision d888fa4,
+  threshold 1-of-2) закрыта;
+  [f15-03](./roadmap/f15-node-dev-loop/f15-03-dev-loop-acceptance.md) (acceptance) закрыта
+  2026-09-24 — из ACP-сессии на ноде doc-правка → commit → `git push publish main` доехала
+  до Radicle и GitHub, comin применил; нативный `nix flake check --no-build` — `all checks passed!`.
+- **Готово, когда:** из ACP-сессии на ноде коммит доезжает до Radicle и GitHub одним
+  `git push publish main` и применяется нодой через comin; состояние переживает reboot.
+- **Зависит от:** [F4](#f4-полезная-нагрузка) (f4-01 выполнен), [F8](#f8-интерактивный-pi)
