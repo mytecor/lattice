@@ -162,6 +162,18 @@ let
           wait = pick [ "continue" "wait" ] null;
         }
       ]
+      # Repetition (in-gateway loop guard) is an opt-in companion to continue,
+      # declared after it on the entry route. Off by default: an absent action
+      # arms nothing and the relay behaves exactly as before.
+      ++ lib.optionals (pick [ "repetition" "enable" ] false) [
+        {
+          route = entry;
+          action = "repetition";
+          repeats = pick [ "repetition" "repeats" ] null;
+          minLen = pick [ "repetition" "minLen" ] null;
+          maxLen = pick [ "repetition" "maxLen" ] null;
+        }
+      ]
       ++ [
         # Retry subroute: applies only to the listed failures and re-selects
         # unused providers, one target per retry entry.

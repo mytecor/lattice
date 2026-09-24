@@ -151,6 +151,9 @@ type compiledRoute struct {
 	Semaphore SemaphoreConfig
 	// Continue is the in-gateway stream takeover policy (see ContinueConfig).
 	Continue ContinueConfig
+	// Repetition is the in-gateway loop-guard policy (see RepetitionConfig).
+	// Absent (Disabled) means no loop detection, exactly like Continue.
+	Repetition RepetitionConfig
 	// RouteTimeout bounds the entire route graph.
 	RouteTimeout time.Duration
 
@@ -244,6 +247,31 @@ type ContinueConfig struct {
 	// continue rule never surfaces the terminal error early — the hold is
 	// on. The <= 0 guard in the relay is defensive only.
 	Wait time.Duration
+}
+
+// RepetitionConfig is the in-gateway loop-guard policy for a route. When the
+// relayed winner stream's accumulated output begins self-repeating (the same
+// normalized fragment emitted K+ consecutive times with no finish) — the
+// "Tool call. Tool call. …" looping observed on the `standard` model — the
+// gateway stops the stream and re-dispatches through the existing continue
+// path with the accumulated partial output reshared, instead of relaying the
+// loop to the client until it exhausts the provider. Enabled true means the
+// repetition action was declared on the entry route; absent always means
+// detection disabled, exactly like continue.
+type RepetitionConfig struct {
+	Enabled bool
+	// Repeats is K: the number of consecutive identical normalized fragments
+	// that trip the guard. Must be >= 2; a lone repeated word or phrase in
+	// otherwise live speech is never a loop.
+	Repeats int
+	// MinLen is the smallest normalized fragment length considered. Shorter
+	// fragments ("ha", "the", "}") are noise and never trip the guard, so
+	// natural short repeats and barrier-character runs pass through and only
+	// a genuine phrase-level loop fires.
+	MinLen int
+	// MaxLen is the largest normalized fragment length scanned; it bounds the
+	// per-event tail window the detector examines.
+	MaxLen int
 }
 
 // continueDefaultWait is the horizon for ContinueConfig.Wait when a continue

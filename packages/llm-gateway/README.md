@@ -51,6 +51,7 @@ credentials. Метрики считаются в счётчиках и гист
 - `llm_input_tokens_total{model,provider,native_model}` / `llm_output_tokens_total{model,provider,native_model}` — накопленные токены usage.
 - `llm_attempts_total{provider,native_model,error_type}` — upstream попытки по терминальному классу ошибки.
 - `llm_stream_breaks_total{provider,native_model,error_type}` — обрывы winner-стрима после выбора (mid-stream). Обратная связь инкрементит и `llm_attempts_total` (тот же срез provider/native_model/error_type), так что провайдер деградирует так же, как при ошибках до выбора; отдельный счётчик отделяет mid-stream-обрывы от попыток планировщика.
+- `llm_repetition_detected_total{route,provider}` — срабатывания loop-guard (`repetition`): winner-стрим, повторивший K подряд идентичных нормализованных фрагментов, остановлен и передан в continue-путь. Ровно +1 на детекцию (не на фрагмент).
 - `llm_requests_in_flight{provider}` — текущие in-flight ветви.
 - `llm_fallbacks_total{from_provider,to_provider,reason}` — явные fallback-переходы.
 - `llm_balance_selections_total{route,provider}` — выбор провайдера балансировкой.
@@ -94,6 +95,10 @@ curl -s localhost:9209/metrics
   победителя) и `llm_stream_stalled` (стрим молчал дольше `stream_idle_timeout`). Оба — `warn`;
   в полях — provider, error_type, status_code, а у stalled ещё и idle_ms. Оба ведут к записи
   неудачи против провайдера (см. [Обрывы winner-стрима](#обрывы-winner-стрима)).
+- **Loop guard**: `llm_repetition_detected` — сработал `repetition`-порог (K подряд одинаковых
+  нормализованных фрагментов до `finish`); стрим остановлен без ретрансляции сработавшего
+  чанка и передан в continue-путь. `warn`; в полях — route, provider. Корреспондирует с
+  метрикой `llm_repetition_detected_total` и ведёт к `RecordStreamFailure` против провайдера.
 
 По `request_id` в журнале и в Prometheus-графе можно восстановить путь запроса: какие
 `request_completed`/`llm_retry`/`llm_fallback`-строки принадлежат одному запросу и где
@@ -117,6 +122,20 @@ curl -s localhost:9209/metrics
   типизированный timeout-error, а неудача записывается против провайдера как `llm_stream_stalled`.
   Таймер перезапускается каждым событием, поэтому легитимные паузы reasoning-моделей
   остаются в пределах лимита; timeout ограничивает только полностью замолчавший stream.
+- **Loop guard (`repetition`).** Опциональная политика на entry-route, объявляется рядом с
+  `continue` (Nix-sugar: `pipeline.repetition = { enable, repeats, minLen, maxLen };`, по
+  умолчанию выключена — отсутствие правила ничего не меняет). Когда накопленный вывод
+  winner-стрима повторяет один и тот же нормализованный фрагмент `repeats`+ подряд (K ≥ 2,
+  по умолчанию 4; фрагмент длины `[minLen, maxLen]`, по умолчанию `[6, 256]`) до `finish`,
+  gateway останавливает стрим **без ретрансляции сработавшего чанка**, помечает обрыв как
+  `RecordStreamFailure` (провайдер получает cooldown) и re-dispatches через тот же
+  continue-путь с накопленным `partial` (`appendPartialChatHistory`). Детектор нормализует
+  текст (нижний регистр, схлопывание пробелов/пунктуации `. , ! ? ; : " '` в один
+  разделитель) и сбрасывается при переходе к новому winner, чтобы продолжение не было
+  пере-трипнуто хвостом зацикленного накопителя. Стоп цикла фиксируется метрикой
+  `llm_repetition_detected_total{route,provider}` и structured-событием
+  `llm_repetition_detected`. Когда продолжение невозможно (нет unused-провайдера), после
+  bounded-хоризонта `continue.wait` срабатывает терминальный error-contract ниже.
 - **Структурированный SSE error payload.** Терминальная ошибка стрима отдаётся как
   `event: error` с машинно-читаемым телом:
 

@@ -93,3 +93,15 @@ func (r *Runner) continuePolicy(logical string) (ContinueConfig, bool) {
 	}
 	return entry.Continue, entry.Continue.Enabled
 }
+
+// repetitionPolicy reports the compiled in-gateway loop-guard policy (the
+// "repetition" rule) of a logical model's entry route, and whether it is
+// active. Absence means no loop detection: the relay behaves exactly as
+// before, mirroring how an absent continue rule disables takeovers.
+func (r *Runner) repetitionPolicy(logical string) (RepetitionConfig, bool) {
+	entry, ok := r.config.models[logical]
+	if !ok {
+		return RepetitionConfig{}, false
+	}
+	return entry.Repetition, entry.Repetition.Enabled
+}

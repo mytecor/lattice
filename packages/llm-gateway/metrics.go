@@ -56,6 +56,10 @@ type Metrics struct {
 	// fires on a successful chain_retry handoff; this separate family makes
 	// the retries that did not succeed observable too.
 	chainRetriesTotal *counterVec
+	// repetitionTotal counts loop-guard firings (the "repetition" rule), per
+	// entry route and winning provider, incremented exactly once per detected
+	// loop so a bounded loop cannot inflate the series.
+	repetitionTotal *counterVec
 	// streamBreaks counts mid-stream (post-selection) winner stream failures
 	// by provider, native model and error class. These failures escape the
 	// scheduler (the route graph already returned a winner); the
@@ -118,6 +122,7 @@ func newMetrics() *Metrics {
 		fallbackTotal:     newCounterVec([]string{"from_provider", "to_provider", "reason"}),
 		continueTotal:     newCounterVec([]string{"from_provider", "to_provider", "kind"}),
 		chainRetriesTotal: newCounterVec([]string{"status"}),
+		repetitionTotal:   newCounterVec([]string{"route", "provider"}),
 		balanceSelections: newCounterVec([]string{"route", "provider"}),
 		inputTokens:       newCounterVec([]string{"model", "provider", "native_model"}),
 		outputTokens:      newCounterVec([]string{"model", "provider", "native_model"}),
@@ -227,6 +232,16 @@ func (m *Metrics) ObserveChainRetry(status string) {
 	m.chainRetriesTotal.inc(status)
 }
 
+// ObserveRepetition records one loop-guard firing (the "repetition" rule)
+// for the entry route and the winning provider whose stream tripped. The
+// relay increments it exactly once per detected loop, never per repeated
+// fragment, so a long loop counts as one event.
+func (m *Metrics) ObserveRepetition(route, provider string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.repetitionTotal.inc(route, provider)
+}
+
 // ObserveBalanceSelection and ObserveBalanceHealth record the balance action:
 // which provider was chosen for a route and the current health of each
 // provider in the pool.
@@ -284,6 +299,7 @@ func (m *Metrics) WriteExposition(writer io.Writer) error {
 	m.fallbackTotal.write(buffered, "llm_fallbacks_total", "Explicit fallback transitions by source and destination provider.")
 	m.continueTotal.write(buffered, "llm_continues_total", "In-gateway stream continuations (continue rule) by source/destination provider and kind (takeover vs chain_retry).")
 	m.chainRetriesTotal.write(buffered, "llm_chain_retries_total", "Whole-chain retries of an exhausted continue chain by outcome (started, completed, exhausted).")
+	m.repetitionTotal.write(buffered, "llm_repetition_detected_total", "Loop-guard firings (repetition rule) by route and winning provider, exactly once per detected loop.")
 	m.balanceSelections.write(buffered, "llm_balance_selections_total", "Provider chosen by the balance action per route.")
 	m.inputTokens.write(buffered, "llm_input_tokens_total", "Accumulated input tokens by logical model, provider and native model.")
 	m.outputTokens.write(buffered, "llm_output_tokens_total", "Accumulated output tokens by logical model, provider and native model.")

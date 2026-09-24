@@ -61,6 +61,11 @@ let
                   enable = true;
                   after = "2s";
                 };
+                repetition = {
+                  enable = true;
+                  repeats = 5;
+                  minLen = 8;
+                };
               };
             };
           };
@@ -382,6 +387,25 @@ pkgs.runCommand "llm-gateway-sugar-evaluation" { nativeBuildInputs = [ pkgs.jq ]
     # Continue is declared once per entry route, after timeout.
     if [ "$(jq '[.routing_rules[] | select(.action == "continue")] | length' $cfg)" -ne 2 ]; then
       echo "expected exactly one continue action per entry route (standard, smart)" >&2
+      exit 1
+    fi
+
+    # The pipeline-generated loop guard (repetition) is typed and lands on
+    # the entry route that opts in, carrying the explicit K and min_len.
+    # smart enables it (repeats=5, min_len=8); standard does not, so exactly
+    # one repetition action exists.
+    if [ "$(jq '[.routing_rules[] | select(.action == "repetition")] | length' $cfg)" -ne 1 ]; then
+      echo "expected exactly one repetition action (only smart opted in)" >&2
+      exit 1
+    fi
+    if ! jq -e 'any(.routing_rules[]; .route == "smart" and .action == "repetition"
+        and .repeats == 5 and .min_len == 8)' $cfg >/dev/null; then
+      echo "expected a typed repetition action on the smart entry route with repeats=5 min_len=8" >&2
+      exit 1
+    fi
+    # A rule that did not opt in (standard) must not carry the guard.
+    if jq -e 'any(.routing_rules[]; .route == "standard" and .action == "repetition")' $cfg >/dev/null; then
+      echo "repetition must not be generated when not opted in (standard)" >&2
       exit 1
     fi
     touch $out

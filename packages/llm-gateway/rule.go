@@ -46,19 +46,20 @@ func (b *ruleBase) setIdentity(route, action string) {
 // transitions to other named routes), semaphore and timeout (request-wide
 // safety).
 const (
-	ActionFilter    = "filter"
-	ActionMap       = "map"
-	ActionRank      = "rank"
-	ActionLease     = "lease"
-	ActionBalance   = "balance"
-	ActionAffinity  = "affinity"
-	ActionRace      = "race"
-	ActionRetry     = "retry"
-	ActionHedge     = "hedge"
-	ActionSemaphore = "semaphore"
-	ActionTimeout   = "timeout"
-	ActionFallback  = "fallback"
-	ActionContinue  = "continue"
+	ActionFilter     = "filter"
+	ActionMap        = "map"
+	ActionRank       = "rank"
+	ActionLease      = "lease"
+	ActionBalance    = "balance"
+	ActionAffinity   = "affinity"
+	ActionRace       = "race"
+	ActionRetry      = "retry"
+	ActionHedge      = "hedge"
+	ActionSemaphore  = "semaphore"
+	ActionTimeout    = "timeout"
+	ActionFallback   = "fallback"
+	ActionContinue   = "continue"
+	ActionRepetition = "repetition"
 )
 
 // ruleDescriptor declares one routing action: its canonical pipeline position
@@ -74,19 +75,20 @@ type ruleDescriptor struct {
 // compiler: an unknown action fails at the registry boundary before any
 // concrete type is constructed.
 var ruleRegistry = map[string]ruleDescriptor{
-	ActionFilter:    {rank: 1, new: func() Rule { return &FilterRule{} }},
-	ActionMap:       {rank: 2, new: func() Rule { return &MapRule{} }},
-	ActionRank:      {rank: 3, new: func() Rule { return &RankRule{} }},
-	ActionLease:     {rank: 4, new: func() Rule { return &LeaseRule{} }},
-	ActionBalance:   {rank: 5, new: func() Rule { return &BalanceRule{} }},
-	ActionAffinity:  {rank: 6, new: func() Rule { return &AffinityRule{} }},
-	ActionRace:      {rank: 7, new: func() Rule { return &RaceRule{} }},
-	ActionRetry:     {rank: 8, new: func() Rule { return &RetryRule{} }},
-	ActionHedge:     {rank: 9, new: func() Rule { return &HedgeRule{} }},
-	ActionSemaphore: {rank: 10, new: func() Rule { return &SemaphoreRule{} }},
-	ActionTimeout:   {rank: 11, new: func() Rule { return &TimeoutRule{} }},
-	ActionFallback:  {rank: 12, new: func() Rule { return &FallbackRule{} }},
-	ActionContinue:  {rank: 13, new: func() Rule { return &ContinueRule{} }},
+	ActionFilter:     {rank: 1, new: func() Rule { return &FilterRule{} }},
+	ActionMap:        {rank: 2, new: func() Rule { return &MapRule{} }},
+	ActionRank:       {rank: 3, new: func() Rule { return &RankRule{} }},
+	ActionLease:      {rank: 4, new: func() Rule { return &LeaseRule{} }},
+	ActionBalance:    {rank: 5, new: func() Rule { return &BalanceRule{} }},
+	ActionAffinity:   {rank: 6, new: func() Rule { return &AffinityRule{} }},
+	ActionRace:       {rank: 7, new: func() Rule { return &RaceRule{} }},
+	ActionRetry:      {rank: 8, new: func() Rule { return &RetryRule{} }},
+	ActionHedge:      {rank: 9, new: func() Rule { return &HedgeRule{} }},
+	ActionSemaphore:  {rank: 10, new: func() Rule { return &SemaphoreRule{} }},
+	ActionTimeout:    {rank: 11, new: func() Rule { return &TimeoutRule{} }},
+	ActionFallback:   {rank: 12, new: func() Rule { return &FallbackRule{} }},
+	ActionContinue:   {rank: 13, new: func() Rule { return &ContinueRule{} }},
+	ActionRepetition: {rank: 14, new: func() Rule { return &RepetitionRule{} }},
 }
 
 // ruleErrf formats a routing-rule error that always carries the rule index,

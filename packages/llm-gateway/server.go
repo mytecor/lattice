@@ -320,6 +320,16 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	if continueEnabled && continueCfg.Idle > 0 {
 		idleTimeout = continueCfg.Idle
 	}
+	// The optional loop-guard policy (the "repetition" rule): when the
+	// winner's accumulated output begins self-repeating, the gateway stops
+	// the stream and re-dispatches through the continue path. Absent policy
+	// (the default, exactly like continue) arms nothing and the relay behaves
+	// exactly as before.
+	repetitionCfg, repetitionEnabled := s.runner.repetitionPolicy(logical)
+	var repDetector *repetitionDetector
+	if repetitionEnabled {
+		repDetector = newRepetitionDetector(repetitionCfg)
+	}
 	var idleTimer *time.Timer
 	var idleC <-chan time.Time
 	if idleTimeout > 0 {
@@ -375,6 +385,15 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 		cancelCurrent = next.Cancel
 		cur = next
 		sawFinishReason = false
+		// A fresh winner means a fresh stream: reset the loop guard so the
+		// new provider is not immediately re-tripped by the tail of the old
+		// one's accumulated loop. Without this, the first event of the
+		// continuation (even an empty-delta finish chunk) re-trips the guard,
+		// exhausting the chain and surfacing a terminal error instead of
+		// completing the continued stream.
+		if repDetector != nil {
+			repDetector.Reset()
+		}
 		rearmIdle()
 		for _, event := range cur.Buffered {
 			observePartial(event.Data)
@@ -577,11 +596,49 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 			}
 		}
 	}
+	// stopLoop handles a loop-guard firing (the "repetition" rule): the
+	// accumulated output of the winning provider's stream began self-
+	// repeating, so the gateway stops relaying that loop and dispatches
+	// through the existing continue path with the accumulated partial
+	// reshared — the same takeover used by a stall or a missing
+	// finish_reason. The metric fires exactly once per detection; the failure
+	// is fed back so the looping provider cools down. Returns true when a
+	// continuation took over the stream (the caller keeps relaying the new
+	// winner), false when the caller must surface the terminal error and
+	// return.
+	stopLoop := func() bool {
+		s.metrics.ObserveRepetition(s.routeOf(logical), cur.Provider)
+		logEvent(request.Context(), s.logger, slog.LevelWarn, "llm_repetition_detected",
+			"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
+			"provider", cur.Provider,
+			"native_model", cur.Model,
+			"partial_chars", len(partial.Content),
+			"established_ms", time.Since(started).Milliseconds(),
+		)
+		loop := &CallError{Class: ErrorUpstream, Status: http.StatusBadGateway,
+			Cause: errors.New("repetition loop detected in stream")}
+		s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, cur.Model, loop)
+		if takeover(loop) || holdForRecovery(loop) {
+			return true
+		}
+		s.observeRequest(logical, cur.Provider, cur.Model, "failed", time.Since(started))
+		writeStreamError(writer, flusher, loop, requestID, s.runner.streamRetryable(logical, loop))
+		return false
+	}
 	for _, event := range selected.Buffered {
 		bind(event)
 		observePartial(event.Data)
 		observe(event.Data)
 		markFinish(event.Data)
+		// Loop guard across the buffered prelude too: keep the detector primed
+		// so a loop that starts inside the prelude is caught at the first
+		// remaining event (or here, when the prelude already trips it).
+		if executeRequest.Kind == RequestChat && repDetector != nil && repDetector.Detect(streamTextDelta(string(event.Data))) {
+			if stopLoop() {
+				break
+			}
+			return
+		}
 		if !writeStreamEvent(writer, flusher, logical, executeRequest.Kind, event) {
 			return
 		}
@@ -732,13 +789,22 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 				return
 			}
 			rearmIdle()
-			if !writeStreamEvent(writer, flusher, logical, executeRequest.Kind, event) {
-				return
-			}
-			bind(event)
 			observePartial(event.Data)
 			observe(event.Data)
 			markFinish(event.Data)
+			// Loop guard: feed the accumulated output to the optional repetition
+			// detector. On a trip, do NOT relay this chunk — stop the loop here
+			// and re-dispatch through the continue path.
+			if executeRequest.Kind == RequestChat && repDetector != nil && repDetector.Detect(streamTextDelta(string(event.Data))) {
+				if stopLoop() {
+					continue
+				}
+				return
+			}
+			bind(event)
+			if !writeStreamEvent(writer, flusher, logical, executeRequest.Kind, event) {
+				return
+			}
 		}
 	}
 }

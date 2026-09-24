@@ -234,3 +234,20 @@ func TestCooldownUntilMetric(t *testing.T) {
 		t.Errorf("stale cooldown deadline kept after extension:\n%s", body)
 	}
 }
+
+// TestRepetitionMetric pins the loop-guard counter: one series per (route,
+// provider) pair, incremented exactly once per detection regardless of how
+// many repeated fragments the loop contains.
+func TestRepetitionMetric(t *testing.T) {
+	m := newMetrics()
+	m.ObserveRepetition("standard", "a")
+	m.ObserveRepetition("standard", "a")
+	m.ObserveRepetition("standard", "b")
+	body := scrape(t, m)
+	if !strings.Contains(body, `llm_repetition_detected_total{route="standard",provider="a"} 2`) {
+		t.Errorf("missing merged series for provider a:\n%s", body)
+	}
+	if !strings.Contains(body, `llm_repetition_detected_total{route="standard",provider="b"} 1`) {
+		t.Errorf("missing series for provider b:\n%s", body)
+	}
+}

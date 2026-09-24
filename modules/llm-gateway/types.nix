@@ -12,6 +12,11 @@ let
   # maxContinueChainRetries in packages/llm-gateway/config.go.
   maxContinueChainRetries = 10;
 
+  # Upper bound of the repetition rule's K (consecutive identical normalized
+  # fragments that trip the loop guard); mirrors maxRepetitionRepeats in
+  # packages/llm-gateway/rule_repetition.go.
+  maxRepetitionRepeats = 100;
+
   # Supported typed failure classes, shared by all error filters.
   errorClasses = [ "timeout" "connection_error" "429" "404" "invalid_response" "model_not_found" "5xx" ];
 
@@ -464,6 +469,39 @@ let
         };
       };
     };
+    # repetition: in-gateway loop-guard policy on an entry route. When the
+    # relayed winner stream's accumulated output begins self-repeating (the
+    # same normalized fragment emitted `repeats`+ consecutive times with no
+    # finish), the gateway stops the stream and re-dispatches through the
+    # existing continue path with the accumulated partial reshared, instead of
+    # relaying the loop to the client until it exhausts the provider. Opt-in:
+    # an absent rule arms nothing and the relay behaves exactly as before.
+    repetition = { config, ... }: {
+      options = {
+        repeats = mkOption {
+          type = types.nullOr (types.ints.between 2 maxRepetitionRepeats);
+          default = null;
+          description = "K: consecutive identical normalized fragments that trip the guard; null leaves the gateway default (4). Must be >= 2; a lone repeated word or phrase in otherwise live speech is never a loop.";
+        };
+        minLen = mkOption {
+          type = types.nullOr types.ints.positive;
+          default = null;
+          description = "Smallest normalized fragment length considered; null leaves the gateway default (6). Shorter fragments are noise and never trip the guard.";
+        };
+        maxLen = mkOption {
+          type = types.nullOr types.ints.positive;
+          default = null;
+          description = "Largest normalized fragment length scanned; null leaves the gateway default (256). It bounds the per-event tail window the detector examines.";
+        };
+        _public = mkOption {
+          type = types.attrs;
+          internal = true;
+          readOnly = true;
+          description = "Action-owned fields emitted into the public JSON.";
+          default = lib.optionalAttrs (config.repeats != null) { repeats = config.repeats; } // lib.optionalAttrs (config.minLen != null) { min_len = config.minLen; } // lib.optionalAttrs (config.maxLen != null) { max_len = config.maxLen; };
+        };
+      };
+    };
   };
 
   # rewriteRule validates one raw rule (route + action + the action's own
@@ -635,6 +673,36 @@ let
           type = types.nullOr (types.ints.between 0 maxContinueChainRetries);
           default = null;
           description = "Whole-chain retry budget: how many times an exhausted chain is re-dispatched from the top with the reshared partial; null leaves the sugar default (0, disabled — a terminal error is surfaced once the chain runs out). Bounded by ${toString maxContinueChainRetries}.";
+        };
+      };
+      repetition = {
+        enable = mkOption {
+          type = types.nullOr types.bool;
+          default = null;
+          description = ''
+            In-gateway loop guard for the generated entry route: when the
+            relayed winner stream's accumulated output begins self-repeating
+            (the same normalized fragment emitted `repeats`+ consecutive times
+            with no finish), the gateway stops the stream and re-dispatches
+            through the existing continue path with the accumulated partial
+            reshared, instead of relaying the loop to the client. null/false
+            generates no repetition action (detection is off by default).
+          '';
+        };
+        repeats = mkOption {
+          type = types.nullOr (types.ints.between 2 maxRepetitionRepeats);
+          default = null;
+          description = "Consecutive identical normalized fragments that trip the guard; null leaves the sugar default (4). Must be >= 2.";
+        };
+        minLen = mkOption {
+          type = types.nullOr types.ints.positive;
+          default = null;
+          description = "Smallest normalized fragment length considered; null leaves the sugar default (6). Shorter fragments are noise and never trip the guard.";
+        };
+        maxLen = mkOption {
+          type = types.nullOr types.ints.positive;
+          default = null;
+          description = "Largest normalized fragment length scanned; null leaves the sugar default (256). It bounds the per-event tail window the detector examines.";
         };
       };
     };
