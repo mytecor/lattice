@@ -182,6 +182,33 @@ in
       touch $out
     '';
 
+  # acp-normalizer must PACKAGE the normalize.mjs core module next to its CLI
+  # entry. The CLI does `import { createNormalize } from './normalize.mjs'` at
+  # runtime, so a package that installs only acp-normalizer.mjs (the commit
+  # 2385b51 split, before the installPhase was fixed) ships a broken
+  # transformer that exits with ERR_MODULE_NOT_FOUND and silently does nothing
+  # — exactly why the messageId fix never took effect on the node even after
+  # the commit was deployed. The unit test above only runs normalize.test.mjs
+  # straight from the source tree, which does NOT exercise the assembled
+  # package, so it could not catch this. This test builds the real lattice
+  # package and asserts the module ships and the CLI entry actually imports it.
+  acp-normalizer-package =
+    pkgs.runCommand "acp-normalizer-package-test" {
+      nativeBuildInputs = [ pkgs.nodejs ];
+    } ''
+      bin=${pkgs.lattice.acp-normalizer}/bin/acp-normalizer
+      test -x "$bin" || { echo "missing CLI $bin" >&2; exit 1; }
+      test -f ${pkgs.lattice.acp-normalizer}/bin/normalize.mjs \
+        || { echo "normalize.mjs not installed beside CLI" >&2; exit 1; }
+      # The CLI parses ./normalize.mjs at import time (top-level import). A
+      # missing module throws ERR_MODULE_NOT_FOUND immediately on load.
+      NODE_PATH= node --input-type=module -e \
+        "import('${pkgs.lattice.acp-normalizer}/bin/acp-normalizer')" 2>&1 \
+        | grep -qi ERR_MODULE_NOT_FOUND \
+        && { echo "CLI still cannot load normalize.mjs" >&2; exit 1; }
+      touch $out
+    '';
+
   # f1-01: nodes/example must actually carry the base profile into the build.
   # profiles/base (imported for every node via mkNode) pulls in profiles/gitops
   # (services.comin), nix.settings.auto-optimise-store and nix.gc.automatic.

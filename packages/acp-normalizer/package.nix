@@ -21,6 +21,13 @@ stdenv.mkDerivation {
     runHook preInstall
     mkdir -p $out/bin
     install -m 0755 $src/acp-normalizer.mjs $out/bin/acp-normalizer
+    # normalizer core module: the CLI imports { createNormalize } from
+    # './normalize.mjs' at runtime, so it MUST be installed next to the entry.
+    # Omitting it made the deployed transformer exit with ERR_MODULE_NOT_FOUND
+    # (packages/acp-normalizer, commit 2385b51 fix never took effect on the
+    # node — see tests/acp-normalizer-package.nix). Install beside the entry;
+    # the import is relative, so a per-file store path is fine.
+    install -m 0644 $src/normalize.mjs $out/bin/normalize.mjs
     patchShebangs $out/bin/acp-normalizer
     runHook postInstall
   '';
