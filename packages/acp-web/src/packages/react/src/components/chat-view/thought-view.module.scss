@@ -1,0 +1,91 @@
+.acp-thought-view {
+  margin: 4px 0;
+  overflow: hidden;
+  font-size: 11px;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: none;
+    cursor: pointer;
+    border: none;
+    width: 100%;
+    text-align: left;
+    color: var(--acp-color-text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+
+  &__label {
+    font-weight: 600;
+  }
+
+  &__chevron {
+    color: var(--acp-color-text-muted);
+    font-size: 9px;
+    transition: transform var(--acp-duration-fast) var(--acp-ease-spring);
+    flex-shrink: 0;
+
+    &--open {
+      transform: rotate(90deg);
+    }
+  }
+
+  &__spinner {
+    width: 12px;
+    height: 12px;
+    border: 1.5px solid var(--acp-color-border-subtle);
+    border-top-color: var(--acp-color-accent);
+    border-radius: 50%;
+    animation: acp-thought-spin 0.7s linear infinite;
+  }
+
+  &__body {
+    padding: 8px 10px;
+    max-height: 300px;
+    overflow-y: auto;
+    color: var(--acp-color-text-secondary);
+    line-height: 1.5;
+    font-size: 12px;
+
+    p {
+      margin-bottom: 4px;
+      &:last-child {
+        margin-bottom: 0;
+      }
+    }
+
+    pre {
+      font-size: 11px;
+      line-height: 1.45;
+      margin: 4px 0;
+      font-family: var(--acp-font-mono);
+    }
+
+    code {
+      font-family: var(--acp-font-mono);
+      font-size: 0.9em;
+    }
+
+    :not(pre) > code {
+      background: var(--acp-color-bg-tertiary);
+      padding: 1px 4px;
+      border-radius: var(--acp-radius-xs);
+      border: 1px solid var(--acp-color-border-subtle);
+    }
+  }
+
+  &__empty {
+    color: var(--acp-color-text-muted);
+    font-style: italic;
+  }
+}
+
+@keyframes acp-thought-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

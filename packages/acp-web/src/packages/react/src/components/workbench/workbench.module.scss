@@ -1,0 +1,28 @@
+.acp-workbench {
+  display: flex;
+  flex-direction: row;
+  height: 100vh;
+  background: var(--acp-color-bg-primary);
+  color: var(--acp-color-text-primary);
+  font-family: var(--acp-font-sans);
+  overflow: hidden;
+
+  &__sidebar {
+    background: var(--acp-color-bg-secondary);
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    overflow: visible;
+    box-shadow: var(--acp-shadow-sm);
+    height: 100%;
+    z-index: 3;
+  }
+
+  &__main {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+  }
+}

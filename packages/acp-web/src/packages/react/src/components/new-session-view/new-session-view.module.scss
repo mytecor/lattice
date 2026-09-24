@@ -1,0 +1,126 @@
+// =============================================================================
+// NewSessionView — Codex-style landing: centered hero + primary composer
+// The composer itself is the shared <ChatComposer>; this view only owns the
+// landing layout (hero + selectors + width constraint).
+// =============================================================================
+
+.acp-new-session-view {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  padding: 40px 24px;
+  background: var(--acp-color-bg-primary);
+}
+
+// ---------------------------------------------------------------------------
+// Inner column — constrained reading width, vertically centered
+// ---------------------------------------------------------------------------
+.acp-new-session-view__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  max-width: 720px;
+}
+
+// ---------------------------------------------------------------------------
+// Hero — title + subtitle
+// ---------------------------------------------------------------------------
+.acp-new-session-view__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.acp-new-session-view__title {
+  font-family: var(--acp-font-sans);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--acp-color-text-primary);
+}
+
+.acp-new-session-view__subtitle {
+  font-family: var(--acp-font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--acp-color-text-muted);
+}
+
+// ---------------------------------------------------------------------------
+// Selectors — workspace + agent, shown beneath the composer as a config row
+// Tucked closer to the composer than the default inner gap (overrides the
+// 20px column gap with a negative top margin → ~8px effective spacing).
+// ---------------------------------------------------------------------------
+.acp-new-session-view__selectors {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  margin-top: -12px;
+}
+
+.acp-new-session-view__select {
+  max-width: 260px;
+}
+
+// ---------------------------------------------------------------------------
+// Empty state — no workspace / no agent
+// ---------------------------------------------------------------------------
+.acp-new-session-view__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 24px 16px;
+  font-family: var(--acp-font-sans);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--acp-color-text-muted);
+  text-align: center;
+
+  p {
+    margin: 0;
+  }
+}
+
+.acp-new-session-view__add-agent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--acp-color-border-accent);
+  border-radius: var(--acp-radius-sm);
+  background: var(--acp-color-accent);
+  color: var(--acp-color-text-inverse);
+  font-family: var(--acp-font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background var(--acp-duration-fast) var(--acp-ease-out),
+    border-color var(--acp-duration-fast) var(--acp-ease-out);
+
+  &:hover {
+    background: var(--acp-color-accent-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--acp-color-accent);
+    outline-offset: 2px;
+  }
+}

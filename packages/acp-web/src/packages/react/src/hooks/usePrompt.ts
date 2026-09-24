@@ -1,0 +1,33 @@
+import { useCallback, useMemo } from 'react';
+import { useAcpContext } from '../context/AcpContext';
+import { queuePrompt, cancelPrompt, acpStore } from '@acp-components/core';
+import type { SessionId, ContentBlock, PromptResponse } from '@acp-components/core';
+
+export function usePrompt(sessionId: SessionId | null): {
+  send: (contentBlocks: ContentBlock[]) => Promise<PromptResponse | undefined>;
+  cancel: () => Promise<void>;
+} {
+  const { getClient } = useAcpContext();
+
+  const client = useMemo(() => {
+    if (!sessionId) return null;
+    const state = acpStore.getState();
+    for (const [, ws] of state.workspaces) {
+      const meta = ws.sessions.get(sessionId);
+      if (meta) return getClient(meta.agentId);
+    }
+    return null;
+  }, [sessionId, getClient]);
+
+  const send = useCallback(async (contentBlocks: ContentBlock[]) => {
+    if (!sessionId || !client) return;
+    return queuePrompt(client, sessionId, contentBlocks);
+  }, [sessionId, client]);
+
+  const cancel = useCallback(async () => {
+    if (!sessionId || !client) return;
+    return cancelPrompt(client, sessionId);
+  }, [sessionId, client]);
+
+  return { send, cancel };
+}

@@ -1,6 +1,5 @@
 {
   stdenvNoCC,
-  fetchFromGitHub,
   fetchPnpmDeps,
   nodejs,
   pnpm,
@@ -9,19 +8,29 @@
   writableTmpDirAsHomeHook,
   zstd,
 }:
-
-# Lattice web client for ACP (f13-01): the open-source acp-components workbench
-# (package `zvzuola/acp-components`, MIT) built as a static SPA and served in
-# LAN by Caddy. The upstream repo is a pnpm workspace (packages/core,
-# packages/react, examples/demo); the demo (`examples/demo`) is the Vite app
-# that wires everything together and is what we ship.
+# Lattice web client for ACP (f13-01): the acp-components workbench built as a
+# static SPA and served in LAN by Caddy.
 #
-# Unlike `buildPnpmCli` (which wraps a single published npm CLI package), this
-# is a full workspace build: `pnpm install --frozen-lockfile --offline` against
-# the pinned `pnpm-lock.yaml` (via `fetchPnpmDeps`), then `pnpm build`
-# (package-level vite build for core + react) and a final `vite build` of the
-# demo. The derivation's output is the demo's `dist/` — a self-contained static
-# site served by Caddy.
+# The source is VENDORED into ./src at the pinned upstream commit
+# `zvzuola/acp-components` `1708c20274c9f15ee3a072009e5ca9fd3b71a9de` (MIT)
+# — see ./README.md «Источник и внесение изменений». Two Lattice adjustments
+# live in the vendored tree / build:
+#   - `pnpm-workspace.yaml` is overlaid with the relaxed supply-chain copy
+#     (see the file header) — this was already part of the fetchPnpmDeps
+#     source, so the lock/store are unaffected.
+#   - the demo entrypoint `examples/demo/src/main.tsx` keeps the pristine
+#     upstream shape in `./src` (so the hash-verified pnpm FOD store is
+#     byte-identical to the pre-vendor derivation), and the pre-configured
+#     default ACP agent is applied at build time by ./patch-main-ts.mjs in
+#     `postPatch`, exactly as before vendoring.
+#
+# Vendoring (rather than fetchFromGitHub) removes the network/structure
+# dependency on upstream: no fetch hash to refresh, the exact source is
+# auditable in this repository, and building an updated upstream is a
+# deliberate in-repo edit.
+#
+# The repo is a pnpm workspace (packages/core, packages/react, examples/demo);
+# the demo is the Vite app that wires everything together and is what we ship.
 #
 # NB: we deliberately do NOT use `pnpmConfigHook`. In the NixOS sandbox on the
 # target node the hook's SQLite index reconstruction ("rebuilt from a .sql dump
@@ -31,28 +40,15 @@
 # store-dir + `pnpm install --offline`) reproduced explicitly, verified to reuse
 # the whole FOD store with zero network access.
 let
-  gitSrc = fetchFromGitHub {
-    owner = "zvzuola";
-    repo = "acp-components";
-    rev = "1708c20274c9f15ee3a072009e5ca9fd3b71a9de";
-    hash = "sha256-Jn/q4fAUjL+QikWOzj5VQPBD9Ch4r9obV2uDwzYKmt8=";
-  };
-
-  # Overlay our pnpm-workspace.yaml (supply-chain relaxed, see file header)
-  # onto the fetched source *before* fetchPnpmDeps, so the FOD store and the
-  # later `pnpm install --offline` see the same workspace definition. This is
-  # the buildPnpmCli `pnpmWorkspace` trick, done inline because this is a
-  # workspace monorepo rather than a single published package.
-  src = runCommand "acp-web-source" { } ''
-    cp -r ${gitSrc} "$out"
+  src = runCommand "acp-web-src" { } ''
+    cp -r ${./src} "$out"
     chmod -R u+w "$out"
-    cp ${./pnpm-workspace.yaml} "$out/pnpm-workspace.yaml"
   '';
 in
 stdenvNoCC.mkDerivation (finalAttrs: {
   pname = "acp-web";
   upstreamVersion = "0.1.0";
-  version = "${finalAttrs.upstreamVersion}-20260919"; # pinned upstream commit
+  version = "${finalAttrs.upstreamVersion}-20260919"; # pinned vendored commit
 
   inherit src;
 
@@ -71,9 +67,10 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     zstd         # tar --zstd for the store tarball
   ];
 
-  # Step 4 (f13-01): pre-configured default ACP agent (see
-  # ./patch-main-ts.mjs for rationale). Pure source edit of the demo entrypoint,
-  # fails loudly if upstream changes the shape it relies on.
+  # f13-01 step 4 + fix: pre-configured default ACP agent (see ./patch-main-ts.mjs).
+  # The vendored `./src/examples/demo/src/main.tsx` is pristine; the patch is
+  # applied here at build time so the fetchPnpmDeps source above (which must
+  # stay identical to the known-good store) is untouched.
   postPatch = ''
     node ${./patch-main-ts.mjs} examples/demo/src/main.tsx "${finalAttrs.version}"
   '';

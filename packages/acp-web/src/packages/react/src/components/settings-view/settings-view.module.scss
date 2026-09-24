@@ -1,0 +1,41 @@
+// =============================================================================
+// SettingsView — full-page settings surface shell (root + header + title).
+// Per-panel styles live alongside their components:
+//   - AppearancePanel → appearance-panel.module.scss
+//   - AgentsPanel     → agents-panel.module.scss
+// Token-only; matches the SkillView/SessionList visual language.
+// =============================================================================
+
+// ---------------------------------------------------------------------------
+// Root container
+// ---------------------------------------------------------------------------
+.acp-settings-view {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  font-family: var(--acp-font-sans);
+  color: var(--acp-color-text-primary);
+  background: transparent;
+}
+
+// ---------------------------------------------------------------------------
+// Header — title
+// ---------------------------------------------------------------------------
+.acp-settings-view__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 14px 10px;
+}
+
+.acp-settings-view__title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--acp-color-text-muted);
+  user-select: none;
+}

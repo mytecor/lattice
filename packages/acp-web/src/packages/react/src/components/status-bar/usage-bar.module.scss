@@ -1,0 +1,127 @@
+// =============================================================================
+// Usage Bar — Circular Ring Progress
+// =============================================================================
+// Compact ring donut showing token usage percentage with color-coded arc.
+// Precision instrument aesthetic: thin strokes, rounded caps, smooth transitions.
+// Tooltip floats above on hover — zero layout impact.
+// =============================================================================
+
+.acp-usage-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+
+  // ── SVG Ring ──────────────────────────────────────────────────────────
+  &__ring {
+    display: block;
+    flex-shrink: 0;
+    cursor: default;
+  }
+
+  // ── Background track ───────────────────────────────────────────────────
+  &__ringTrack {
+    stroke: var(--acp-color-border-subtle);
+    transition: stroke var(--acp-duration-fast) var(--acp-ease-out);
+
+    .acp-usage-bar:hover & {
+      stroke: var(--acp-color-border);
+    }
+  }
+
+  // ── Progress arc — base ────────────────────────────────────────────────
+  &__ringFill {
+    stroke: var(--acp-color-text-muted);
+    transition:
+      stroke-dashoffset 0.5s var(--acp-ease-out),
+      stroke 0.5s var(--acp-ease-out);
+  }
+
+  // Color-coded states
+  &__ringFillLow {
+    stroke: var(--acp-color-success);
+  }
+
+  &__ringFillMedium {
+    stroke: var(--acp-color-warning);
+  }
+
+  &__ringFillHigh {
+    stroke: var(--acp-color-error);
+    animation: ring-pulse 2s ease-in-out infinite;
+  }
+
+  // ── Tooltip — absolutely positioned above, zero layout footprint ──────
+  &__tooltip {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 50%;
+    transform: translate(-50%, 4px);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--acp-color-border);
+    border-radius: var(--acp-radius-sm);
+    background: var(--acp-color-bg-secondary);
+    box-shadow: var(--acp-shadow-md);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity var(--acp-duration-fast) var(--acp-ease-out),
+      visibility var(--acp-duration-fast) var(--acp-ease-out),
+      transform var(--acp-duration-fast) var(--acp-ease-out);
+  }
+
+  // Reveal tooltip on hover
+  &:hover &__tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, 0);
+  }
+
+  // ── Token text ─────────────────────────────────────────────────────────
+  &__text {
+    font-size: 11px;
+    font-family: var(--acp-font-mono);
+    font-weight: 500;
+    color: var(--acp-color-text-primary);
+    line-height: 1;
+  }
+
+  &__textSep {
+    color: var(--acp-color-text-muted);
+    opacity: 0.65;
+    margin: 0 1px;
+  }
+
+  // ── Cost ───────────────────────────────────────────────────────────────
+  &__cost {
+    font-size: 11px;
+    font-family: var(--acp-font-mono);
+    color: var(--acp-color-text-secondary);
+    line-height: 1;
+
+    &::before {
+      content: '\00B7';
+      margin-right: 6px;
+      color: var(--acp-color-text-muted);
+      opacity: 0.65;
+    }
+  }
+}
+
+// ── Pulse animation for high usage (>80%) ──────────────────────────────────
+// Subtle breathing effect to draw attention when tokens are nearly exhausted
+
+@keyframes ring-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.65;
+  }
+}

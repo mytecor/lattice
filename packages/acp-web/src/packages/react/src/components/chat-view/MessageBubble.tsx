@@ -1,0 +1,224 @@
+import React from 'react';
+import { FileTextOutlined, LinkOutlined, CopyOutlined, CheckOutlined } from '@ant-design/icons';
+import type { Message, MessagePart, SessionId } from '@acp-components/core';
+import type { ContentBlock } from '@acp-components/core';
+import { sessionStore, isUserVisibleContent } from '@acp-components/core';
+import { useCopy } from '../../hooks/useCopy';
+import { useI18n } from '../../i18n';
+import { Markdown } from '../markdown';
+import { ToolCallCard } from './ToolCallCard';
+import { ThoughtView } from './ThoughtView';
+import { PlanView } from './PlanView';
+import styles from './chat-view.module.scss';
+
+// ---------------------------------------------------------------------------
+// Agent text extraction - walks message parts to collect all visible text so
+// the hover copy button can copy the agent reply as plain text.
+// ---------------------------------------------------------------------------
+
+function extractAgentText(messages: Message[]): string {
+  const parts: string[] = [];
+  for (const msg of messages) {
+    for (const part of msg.parts) {
+      if (part.type === 'content') {
+        for (const block of part.content) {
+          if (!isUserVisibleContent(block)) continue;
+          if (block.type === 'text') {
+            parts.push((block as { text: string }).text);
+          }
+        }
+      }
+    }
+  }
+  return parts.join('\n\n');
+}
+
+/** Hover-revealed copy button for agent message bubbles. */
+function AgentCopyButton({ messages }: { messages: Message[] }) {
+  const { copied, copy } = useCopy();
+  const { t } = useI18n();
+  return (
+    <button
+      type="button"
+      className={styles.acpMessageBubbleCopyBtn}
+      onClick={() => void copy(extractAgentText(messages))}
+      aria-label={t('agentMessage.copy')}
+      title={t('agentMessage.copy')}
+    >
+      {copied ? <CheckOutlined /> : <CopyOutlined />}
+    </button>
+  );
+}
+
+export interface MessageBubbleProps {
+  sessionId: SessionId | null;
+  messages: Message[];
+  isStreaming?: boolean;
+  onNavigateFile?: (path: string, line?: number | null) => void;
+}
+
+function renderContent(content: ContentBlock) {
+  if (!isUserVisibleContent(content)) return null;
+  switch (content.type) {
+    case 'text':
+      return <Markdown>{(content as { text: string }).text}</Markdown>;
+    case 'resource': {
+      const res = content as { resource: { uri: string; text?: string; mimeType?: string } };
+      const rawName = res.resource.uri.split('/').pop() || res.resource.uri;
+      const fileName = decodeURIComponent(rawName);
+      return (
+        <div className={styles.acpMessageBubbleResource}>
+          <span><FileTextOutlined /></span>
+          <div>
+            <div className={styles.acpMessageBubbleResourceName}>{fileName}</div>
+          </div>
+        </div>
+      );
+    }
+    case 'resource_link': {
+      const link = content as { uri: string; name: string };
+      return (
+        <div className={styles.acpMessageBubbleResource}>
+          <span><LinkOutlined /></span>
+          <span className={styles.acpMessageBubbleResourceName}>{link.name || link.uri}</span>
+        </div>
+      );
+    }
+    case 'image': {
+      const img = content as { data: string; mimeType: string; uri?: string | null };
+      const src = `data:${img.mimeType};base64,${img.data}`;
+      return (
+        <img
+          className={styles.acpMessageBubbleImage}
+          src={src}
+          alt={img.uri || 'image'}
+        />
+      );
+    }
+    default:
+      return null;
+  }
+}
+
+function renderPart(
+  part: MessagePart,
+  partIndex: number,
+  sessionId: SessionId | null,
+  messageId: string,
+  isStreaming?: boolean,
+  onNavigateFile?: (path: string, line?: number | null) => void,
+) {
+  function setThoughtExpanded(value: boolean) {
+    if (!sessionId) return;
+    sessionStore.getState().setPartExpanded(sessionId, messageId, partIndex, value);
+  }
+
+  switch (part.type) {
+    case 'thought': {
+      const expanded = part.expanded ?? false;
+      return (
+        <ThoughtView
+          key={partIndex}
+          thought={part.thought}
+          isStreaming={!!isStreaming}
+          expanded={expanded}
+          onExpandedChange={setThoughtExpanded}
+        />
+      );
+    }
+    case 'tool_calls':
+      return part.toolCalls.map((tc) => {
+        const tcExpanded = tc.expanded ?? false;
+        function setTcExpanded(value: boolean) {
+          if (!sessionId) return;
+          sessionStore.getState().setToolCallExpanded(sessionId, tc.toolCallId, value);
+        }
+        return (
+          <ToolCallCard
+            key={tc.toolCallId}
+            sessionId={sessionId}
+            toolCall={tc}
+            onNavigate={onNavigateFile}
+            expanded={tcExpanded}
+            onExpandedChange={setTcExpanded}
+          />
+        );
+      });
+    case 'content':
+      return part.content.map((block, j) => (
+        <React.Fragment key={j}>{renderContent(block)}</React.Fragment>
+      ));
+    case 'plan':
+      if (!part.plan.every((e) => e.status === 'completed')) return null;
+      return <PlanView key={partIndex} entries={part.plan} isStreaming={false} />;
+  }
+}
+
+function areMessagesEqual(a: Message[], b: Message[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+interface AgentMessageProps {
+  message: Message;
+  sessionId: SessionId | null;
+  isStreaming: boolean;
+  onNavigateFile?: (path: string, line?: number | null) => void;
+}
+
+const AgentMessage = React.memo(function AgentMessage({
+  message,
+  sessionId,
+  isStreaming,
+  onNavigateFile,
+}: AgentMessageProps) {
+  const { t } = useI18n();
+  const lastPartIndex = message.parts.length - 1;
+  const lastPart = message.parts[lastPartIndex];
+  const thoughtStillStreaming = isStreaming && lastPart?.type === 'thought';
+
+  return (
+    <>
+      {message.parts.map((part, j) => {
+        const isStreamingThought = j === lastPartIndex && thoughtStillStreaming;
+        return renderPart(part, j, sessionId, message.id, isStreamingThought, onNavigateFile);
+      })}
+      {message.stopReason && (
+        <div className={styles.acpMessageBubbleStopReason}>
+          {t(`stopReason.${message.stopReason}`)}
+        </div>
+      )}
+    </>
+  );
+});
+
+export const MessageBubble = React.memo(function MessageBubble({ sessionId, messages, isStreaming = false, onNavigateFile }: MessageBubbleProps) {
+  const lastIdx = messages.length - 1;
+
+  return (
+    <div className={`${styles.acpMessageBubble} ${styles.acpMessageBubbleAgent}`}>
+      <div className={styles.acpMessageBubbleContent}>
+        {messages.map((msg, i) => (
+          <AgentMessage
+            key={msg.id}
+            message={msg}
+            sessionId={sessionId}
+            isStreaming={isStreaming && i === lastIdx}
+            onNavigateFile={onNavigateFile}
+          />
+        ))}
+        {!isStreaming && <AgentCopyButton messages={messages} />}
+      </div>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.sessionId === nextProps.sessionId &&
+    prevProps.isStreaming === nextProps.isStreaming &&
+    prevProps.onNavigateFile === nextProps.onNavigateFile &&
+    areMessagesEqual(prevProps.messages, nextProps.messages)
+  );
+});

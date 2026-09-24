@@ -118,6 +118,31 @@ upstream-формы): `VITE_ACP_ENDPOINT`-override или вывод endpoint и
 `"ACP Endpoint"`, `acp-ui.` и `ws://` — агент попадает в прод-минифицированный JS. Пользовательские
 агенты — через built-in persistence клиента (не трогаем daemon/ingress).
 
+## Источник переведён в vendored-дерево (2026-09-24)
+
+Вместо `fetchFromGitHub` + build-time `postPatch` над fetched-источником, upstream `acp-components`
+теперь **vendored прямо в репозиторий**: каталог
+[`packages/acp-web/src/`](../../packages/acp-web/src) — ровно tracked-срез upstream на том же
+закреплённом коммите `1708c20274c9f15ee3a072009e5ca9fd3b71a9de` (получен `git archive`),
+с единственной правкой — поверх положена Lattice-копия `pnpm-workspace.yaml` (ослабленные
+supply-chain политики pnpm 11). Все остальные файлы байт-в-байт равны upstream.
+
+Изменения в [packages/acp-web/package.nix](../../packages/acp-web/package.nix):
+
+- `src = runCommand` копирует локальный `./src` вместо `fetchFromGitHub`; fetch-hash upstream `Jn/q4…`
+  больше не нужен.
+- `fetchPnpmDeps` **не поменял своего хеша** (`TwS7s8…`): дерево, которое видит fetcher, осталось
+  байт-в-байт тем же (pristine upstream + Lattice workspace; `main.tsx` в нём pristine). Поэтому
+  offline-store и сама сборка ведут себя идентично до-vendor версии.
+- Lattice-правка демо-агента по-прежнему вносится в `postPatch` через
+  [`patch-main-ts.mjs`](../../packages/acp-web/patch-main-ts.mjs) **после** вычисления FOD-стора,
+  чтобы не трогать дерево fetcher-а. Причина сохранена в комментарии к `postPatch`.
+
+Мотивация: убрать сетевую/структурную зависимость сборки от upstream (не нужно обновлять fetch
+hash), исходник аудируется штатным `git diff` и лежит в репозитории; обновление upstream —
+осознанная замена содержимого `src/` новым `git archive`.
+
+
 ## Деплой на ноду выполнен: acp-ui доступен в LAN (2026-09-20)
 
 `main` опубликован в Radicle и GitHub (общий remote `publish`), нода `mytecor-homelab`

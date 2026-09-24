@@ -26,6 +26,14 @@ accept = ["200..=204", "429"]
 host_concurrency = 4
 max_concurrency = 64
 
+# Vendored third-party источник acp-web (`packages/acp-web/src/`) — импортированный
+# срез upstream acp-components, а не Lattice-документация: его README/доки содержат
+# upstream-ссылки (в т.ч. мёртвую https://github.com/anthropics/opencode), которые не
+# относятся к Lattice и не должны пассировать lychee при `lychee .` из корня.
+# Когда upstream чинит свои ссылки, срез обновляется целиком (`git archive`), и эта
+# ссылка уезжает вместе с ним.
+exclude_path = ["packages/acp-web/src/"]
+
 # Быстрые повторные прогоны: кэш ответов (не коммитится, см. .gitignore).
 cache = true
 max_cache_age = "1d"

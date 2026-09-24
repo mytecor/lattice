@@ -1,0 +1,33 @@
+{
+  "name": "acp-components",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @acp-components/demo dev",
+    "dev:server": "pnpm --filter @acp-components/server dev",
+    "dev:server-codex": "cross-env ACP_AGENT=npx ACP_AGENT_ARGS=@agentclientprotocol/codex-acp@latest pnpm --filter @acp-components/server dev",
+    "dev:server-claude": "cross-env ACP_AGENT=npx ACP_AGENT_ARGS=@agentclientprotocol/claude-agent-acp@latest pnpm --filter @acp-components/server dev",
+    "dev:server-bitfun": "cross-env ACP_AGENT=C:\\Users\\zw\\work\\BitFun\\target\\debug\\bitfun-cli.exe ACP_AGENT_ARGS=acp pnpm --filter @acp-components/server dev",
+    "dev:all": "pnpm run dev:server & pnpm run dev",
+    "dev:tauri": "pnpm --filter @acp-components/tauri tauri dev",
+    "build:tauri": "pnpm --filter @acp-components/tauri tauri build",
+    "build": "pnpm --filter @acp-components/core build && pnpm --filter @acp-components/react build",
+    "build:core": "pnpm --filter @acp-components/core build",
+    "build:react": "pnpm --filter @acp-components/react build",
+    "test": "pnpm --filter @acp-components/core test && pnpm --filter @acp-components/react test",
+    "lint": "eslint \"packages/*/src/**/*.{ts,tsx}\"",
+    "publish:core": "pnpm --filter @acp-components/core publish --access public",
+    "publish:react": "pnpm --filter @acp-components/react publish --access public",
+    "publish:all": "pnpm publish:core && pnpm publish:react"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "cross-env": "^10.1.0",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "typescript-eslint": "^8.62.0"
+  }
+}

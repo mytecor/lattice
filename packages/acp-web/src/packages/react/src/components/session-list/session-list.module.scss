@@ -1,0 +1,564 @@
+// =============================================================================
+// Session List — polished sidebar tree
+// =============================================================================
+
+// ---------------------------------------------------------------------------
+// Root container
+// ---------------------------------------------------------------------------
+.acp-session-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+
+  // -------------------------------------------------------------------------
+  // Header bar — title + add-workspace button
+  // -------------------------------------------------------------------------
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 14px 10px;
+    flex-shrink: 0;
+  }
+
+  &__title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--acp-color-text-muted);
+    user-select: none;
+  }
+
+  &__new-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: var(--acp-radius-sm);
+    background: transparent;
+    color: var(--acp-color-text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    transition: background var(--acp-duration-fast) var(--acp-ease-out),
+      color var(--acp-duration-fast) var(--acp-ease-out);
+
+    &:hover {
+      background: var(--acp-color-bg-hover);
+      color: var(--acp-color-text-primary);
+    }
+  }
+
+  &__input {
+    flex: 1;
+    font-size: 12px;
+    padding: 5px 8px;
+    border: 1px solid var(--acp-color-accent);
+    border-radius: var(--acp-radius-sm);
+    background: var(--acp-color-bg-input);
+    color: var(--acp-color-text-primary);
+    outline: none;
+    font-family: var(--acp-font-mono);
+    min-width: 0;
+    margin-left: 4px;
+
+    &::placeholder {
+      color: var(--acp-color-text-muted);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Scrollable items area
+  // -------------------------------------------------------------------------
+  &__items {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 0 6px 8px;
+
+    // Thin, subtle scrollbar
+    &::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: var(--acp-color-border);
+      border-radius: 2px;
+
+      &:hover {
+        background: var(--acp-color-text-muted);
+      }
+    }
+  }
+
+  &__empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    color: var(--acp-color-text-muted);
+    font-size: 12px;
+    text-align: center;
+    line-height: 1.6;
+    gap: 8px;
+    user-select: none;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Session item
+// ---------------------------------------------------------------------------
+.acp-session-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 8px 8px 8px 20px;
+  border-radius: var(--acp-radius-sm);
+  cursor: grab;
+  border: none;
+  background: transparent;
+  color: var(--acp-color-text-primary);
+  text-align: left;
+  width: 100%;
+  font-size: 13px;
+  gap: 8px;
+  transition: background var(--acp-duration-fast) var(--acp-ease-out);
+
+  &:hover {
+    background: var(--acp-color-bg-hover);
+
+    .acp-session-item__fork {
+      opacity: 1;
+    }
+
+    .acp-session-item__delete {
+      opacity: 1;
+    }
+  }
+
+  &:active {
+    background: var(--acp-color-bg-tertiary);
+  }
+
+  // Dimmed source row while its session is being dragged onto the split
+  // view. Reinforces "you are dragging this" alongside the grab cursor.
+  &--dragging {
+    opacity: 0.5;
+    cursor: grabbing;
+  }
+
+  // Active state - accent left border indicator
+  &--active {
+    background: var(--acp-color-bg-selected);
+
+    .acp-session-item__title {
+      color: var(--acp-color-text-primary);
+      font-weight: 600;
+    }
+
+    .acp-session-item__icon {
+      color: var(--acp-color-accent);
+      opacity: 1;
+    }
+  }
+
+  &__icon {
+    flex-shrink: 0;
+    font-size: 13px;
+    width: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--acp-color-text-muted);
+    transition: color var(--acp-duration-fast) var(--acp-ease-out);
+
+    &--running {
+      color: var(--acp-color-success);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    &--needs-action {
+      color: var(--acp-color-warning);
+      opacity: 1;
+      font-weight: bold;
+    }
+  }
+
+  &__spinner {
+    width: 13px;
+    height: 13px;
+    border: 2px solid var(--acp-color-success-muted);
+    border-top-color: var(--acp-color-success);
+    border-radius: 50%;
+    animation: acp-spin 0.8s linear infinite;
+  }
+
+  &__content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__title {
+    font-size: 12.5px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.35;
+    color: var(--acp-color-text-primary);
+  }
+
+  &__meta {
+    font-size: 11px;
+    color: var(--acp-color-text-muted);
+    margin-top: 1px;
+    line-height: 1.3;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  // Agent label shown inline only when the workspace mixes >1 agent
+  &__agent {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__agent-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background var(--acp-duration-normal) var(--acp-ease-out);
+
+    &--connected {
+      background: var(--acp-color-success);
+    }
+
+    &--connecting {
+      background: var(--acp-color-warning);
+    }
+
+    &--disconnected {
+      background: var(--acp-color-text-muted);
+    }
+
+    &--error {
+      background: var(--acp-color-error);
+    }
+  }
+
+  &__time {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__delete {
+    opacity: 0;
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--acp-color-text-muted);
+    cursor: pointer;
+    padding: 3px;
+    border-radius: var(--acp-radius-xs);
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity var(--acp-duration-fast) var(--acp-ease-out),
+      color var(--acp-duration-fast) var(--acp-ease-out),
+      background var(--acp-duration-fast) var(--acp-ease-out);
+
+    &:hover {
+      color: var(--acp-color-error);
+      background: var(--acp-color-error-muted);
+    }
+  }
+
+  &__fork {
+    opacity: 0;
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--acp-color-text-muted);
+    cursor: pointer;
+    padding: 3px;
+    border-radius: var(--acp-radius-xs);
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity var(--acp-duration-fast) var(--acp-ease-out),
+      color var(--acp-duration-fast) var(--acp-ease-out),
+      background var(--acp-duration-fast) var(--acp-ease-out);
+
+    &:hover {
+      color: var(--acp-color-accent);
+      background: var(--acp-color-accent-muted);
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Workspace group
+// ---------------------------------------------------------------------------
+.acp-session-workspace-group {
+  margin-bottom: 2px;
+
+  &+& {
+    margin-top: 2px;
+    padding-top: 2px;
+    border-top: 1px solid var(--acp-color-border-subtle);
+  }
+}
+
+.acp-session-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 8px;
+  cursor: pointer;
+  user-select: none;
+  border-radius: var(--acp-radius-sm);
+  transition: background var(--acp-duration-fast) var(--acp-ease-out);
+
+  &:hover {
+    background: var(--acp-color-bg-hover);
+
+    .acp-session-workspace-header__more,
+    .acp-session-workspace-header__add {
+      opacity: 1;
+    }
+  }
+
+  &:active {
+    background: var(--acp-color-bg-tertiary);
+  }
+
+  &__left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  &__folder {
+    flex-shrink: 0;
+    font-size: 13px;
+    color: var(--acp-color-accent);
+    opacity: 0.7;
+    transition: opacity var(--acp-duration-fast) var(--acp-ease-out);
+
+    // Expanded → open folder icon reads as fully emphasized, reinforcing
+    // the expanded state without the dedicated chevron column.
+    &--open {
+      opacity: 1;
+    }
+  }
+
+  &__name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--acp-color-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: -0.01em;
+  }
+
+  &__more-wrap {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  &__more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: none;
+    border-radius: var(--acp-radius-xs);
+    background: transparent;
+    color: var(--acp-color-text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    opacity: 0;
+    flex-shrink: 0;
+    transition: opacity var(--acp-duration-fast) var(--acp-ease-out),
+      color var(--acp-duration-fast) var(--acp-ease-out),
+      background var(--acp-duration-fast) var(--acp-ease-out);
+
+    &:hover {
+      color: var(--acp-color-text-primary);
+      background: var(--acp-color-bg-tertiary);
+    }
+  }
+}
+
+.acp-session-workspace-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.acp-session-workspace-empty {
+  padding: 8px 12px 8px 20px;
+  font-size: 12px;
+  color: var(--acp-color-text-muted);
+  font-style: italic;
+  user-select: none;
+}
+
+// ---------------------------------------------------------------------------
+// "New session" + button — now lives in the workspace header (single agent →
+// direct create; multiple agents → opens an agent-picker dropdown). Shares
+// the header's hover-reveal behavior with the more-actions button.
+// ---------------------------------------------------------------------------
+.acp-session-workspace-header__add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: var(--acp-radius-xs);
+  background: transparent;
+  color: var(--acp-color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+  flex-shrink: 0;
+  transition: opacity var(--acp-duration-fast) var(--acp-ease-out),
+    color var(--acp-duration-fast) var(--acp-ease-out),
+    background var(--acp-duration-fast) var(--acp-ease-out);
+
+  &:hover {
+    color: var(--acp-color-text-primary);
+    background: var(--acp-color-bg-tertiary);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Load more button
+// ---------------------------------------------------------------------------
+.acp-session-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+
+  &__btn {
+    background: transparent;
+    border: 1px solid var(--acp-color-border-subtle);
+    border-radius: var(--acp-radius-sm);
+    color: var(--acp-color-text-muted);
+    font-size: 11px;
+    padding: 4px 14px;
+    cursor: pointer;
+    transition: background var(--acp-duration-fast) var(--acp-ease-out),
+      color var(--acp-duration-fast) var(--acp-ease-out),
+      border-color var(--acp-duration-fast) var(--acp-ease-out);
+
+    &:hover {
+      background: var(--acp-color-bg-hover);
+      color: var(--acp-color-text-secondary);
+      border-color: var(--acp-color-border);
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Legacy / unused
+// ---------------------------------------------------------------------------
+.acp-agent-info {
+  padding: 10px 14px;
+  border-top: 1px solid var(--acp-color-border-subtle);
+  font-size: 12px;
+  color: var(--acp-color-text-secondary);
+
+  &__name {
+    font-weight: 600;
+    color: var(--acp-color-text-primary);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Keyframes
+// ---------------------------------------------------------------------------
+@keyframes acp-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Drag preview - the clean drag image set in onDragStart. Rendered off-screen
+// (position: fixed; top: -1000px) just long enough for setDragImage to
+// snapshot it, then removed. Styled as a compact title chip so the native
+// ghost (which would include the hover-revealed fork/delete buttons) is
+// never seen.
+// ---------------------------------------------------------------------------
+.acp-session-drag-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 5px 10px;
+  border-radius: var(--acp-radius-md);
+  background: var(--acp-color-bg-secondary);
+  color: var(--acp-color-text-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: var(--acp-font-sans);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid var(--acp-color-border-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  user-select: none;
+  pointer-events: none;
+}
