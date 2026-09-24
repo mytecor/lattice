@@ -42,6 +42,15 @@ _нет_.
 nix build .#packages.x86_64-linux.r1s
 ```
 
+### Обновление пина (2026-09-24)
+
+Источник обновлён на последний коммит `main` `92ee1022…` (`0.1.0-unstable-2026-09-23`):
+F13 local API-сервис через Unix-сокет, F14–F17 tunnelling/leases/node capabilities (все флаги
+`r1sd` аддитивны и по умолчанию выключены), тесты стабильности данных-плоскости. Интерфейс
+`r1sd` (`--rns-config`/`--identity`/containerd-флаги) не изменился — совместим с планируемым
+модулем `lattice.worker-runtime` (f10-02). `go.mod` по-прежнему требует `go 1.27.1` — основной пиn
+nixpkgs не трогался. SRI-хеш исходников и vendorHash пересчитаны для нового rev.
+
 Пакет входит в `nix flake check` (eval всех outputs). Полная сборка для `x86_64-linux` выполняется
 в GitHub Actions; локально — на x86_64-linux билдере или ноде. `doCheck = true` прогоняет
 `go test ./...` r1s в sandbox.

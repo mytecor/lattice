@@ -9,16 +9,16 @@
 # go_1_27 = 1.27.1 from the main nixpkgs pin.
 (buildGoModule.override { inherit go; }) rec {
   pname = "r1s";
-  version = "0.1.0-unstable-2026-09-16";
+  version = "0.1.0-unstable-2026-09-23";
 
   src = fetchFromGitHub {
     owner = "mytecor";
     repo = "r1s";
-    rev = "b40a279f983336ee948edab98f18b1d0b18c5e40";
-    hash = "sha256-7FEbSx8QyQlyW56dLipsNVXYuecZk40F2ecQRYe4m7k=";
+    rev = "92ee1022e2b61d885da4ed27cce3eac483ac94a6";
+    hash = "sha256-SWtU+gz3StypcpnBlBsdl5WVe10MsU2En/rZp9BCXXI=";
   };
 
-  vendorHash = "sha256-KNoJZa8BEN/j0sTaJgFnmEVdI361I8Za2qCy6U/wc+M=";
+  vendorHash = "sha256-lwsRn5JlCguU9mIgtQF+4O+xeKmiYzX+TIW48X9HuUg=";
 
   # Both binaries are produced by `go build ./cmd/r1s ./cmd/r1sd`.
   subPackages = [ "cmd/r1s" "cmd/r1sd" ];
