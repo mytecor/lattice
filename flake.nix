@@ -65,6 +65,11 @@
       flake = false;
     };
 
+    module-worker-runtime = {
+      url = "path:./modules/worker-runtime";
+      flake = false;
+    };
+
     module-wireless = {
       url = "path:./modules/wireless";
       flake = false;
@@ -140,6 +145,7 @@
     module-llm-gateway,
     module-pi,
     module-pi-acp-daemon,
+    module-worker-runtime,
     module-wireless,
     module-git-cache-proxy,
     module-verdaccio,
@@ -311,6 +317,7 @@
         llm-gateway.imports = [ "${module-llm-gateway}" ];
         pi.imports = [ "${module-pi}" ];
         pi-acp-daemon.imports = [ "${module-pi-acp-daemon}" ];
+        worker-runtime.imports = [ "${module-worker-runtime}" ];
         wireless.imports = [ "${module-wireless}" ];
         git-cache-proxy.imports = [ "${module-git-cache-proxy}" ];
         verdaccio.imports = [ "${module-verdaccio}" ];
@@ -329,6 +336,7 @@
           self.nixosModules.llm-gateway
           self.nixosModules.pi
           self.nixosModules.pi-acp-daemon
+          self.nixosModules.worker-runtime
           self.nixosModules.wireless
           self.nixosModules.git-cache-proxy
           self.nixosModules.verdaccio

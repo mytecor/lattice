@@ -51,6 +51,30 @@ F13 local API-сервис через Unix-сокет, F14–F17 tunnelling/leas
 модулем `lattice.worker-runtime` (f10-02). `go.mod` по-прежнему требует `go 1.27.1` — основной пиn
 nixpkgs не трогался. SRI-хеш исходников и vendorHash пересчитаны для нового rev.
 
+> Этот промежуточный пин был заменён ниже на v0.4.0 (F22) — ломающий, см. следующий раздел.
+
+### Обновление пина (2026-09-26): v0.4.0 / F22 cutover
+
+Источник обновлён на `main` `739f26ee…` — tag `v0.4.0` (`0.4.0-unstable-2026-09-26`). Это
+**ломающий** анонс, а не аддитивный: цикл F22 (shared-instance RNS + run-oriented client) убирает
+`--rns-config` у `r1s`/`r1sd`, кластер теперь передаётся **позиционно** по ID, членство кластера
+живёт как per-user credential в `~/.config/r1s/clusters/<id>` (`r1s cluster init|join|list`), и оба
+бинарника замыкаются, если не запущен общий RNS shared instance. Обратной совместимости со старым
+CLI намеренно нет.
+
+Изменения пина:
+
+- `version -> 0.4.0-unstable-2026-09-26`, rev -> `739f26ee3a901040fd5ad5b49f65220337f492da`.
+- SRI source hash пересчитан: `sha256-7tAg4+GiqiHFxWTTBCw2mymIrc9ulHA/roPmtKX2+WU=`
+  (получен `nix-prefetch-url --unpack`, переведён в SRI через `nix hash convert`).
+- `vendorHash` **не изменился**: `go.mod`/`go.sum` между пинами идентичны, поэтому `go mod vendor`
+  даёт идентичное дерево (подтверждено ручным воспроизведением `go mod vendor` в чистой копии
+  нового rev: рекурсивный NAR-хеш vendor-каталога совпал с прежним `sha256-lwsRn5J…`).
+- `go.mod` по-прежнему требует `go 1.27.1` (Reticulum-Go v1.2.0) — основной пин nixpkgs не трогался.
+
+Модуль `lattice.worker-runtime` переписан под F22-контракт (см. f10-02): без `--rns-config`,
+зависимость от общего shared RNS instance на ноде, `cluster join`/позиционный селектор.
+
 Пакет входит в `nix flake check` (eval всех outputs). Полная сборка для `x86_64-linux` выполняется
 в GitHub Actions; локально — на x86_64-linux билдере или ноде. `doCheck = true` прогоняет
 `go test ./...` r1s в sandbox.

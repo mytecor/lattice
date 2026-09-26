@@ -290,6 +290,39 @@ comin status
 Полный журнал результатов и ещё открытый drill при недоступном GitHub зафиксированы в
 [`f4-01`](../../roadmap/f4-payload/f4-01-radicle-seed-comin.md).
 
+## Disposable worker (worker-runtime, f10-02)
+
+Модуль [`lattice.worker-runtime`](../../modules/worker-runtime/README.md) поднимает
+`r1sd`-allocator (F10 execution backend) как foreground systemd-сервис от выделенного
+пользователя `r1s`, поверх локального `containerd`, с собственным Reticulum-Go стеком
+(uplinks из общего реестра [`reticulum.nix`](../../profiles/networking/reticulum.nix)).
+Сервис включается декларативно только после того, как оператор создаст join-токен кластера:
+
+```sh
+umask 077
+# 1. Оператор создаёт кластер r1s на любой своей машине и получает join-токен:
+#    r1sd cluster init   # → Join token: r1s1:<secret>
+# 2. Из каталога nodes/mytecor-homelab/secrets/ шифрует токен, не печатая его в консоль:
+#    echo 'r1s1:<secret>' | nix run nixpkgs#age -- --encrypt \
+#      -r age1dyxfyhf8s5lj9k0pzkkjjte0dcg4yecwglh88kmv2udau0q33v0ssa4pd8 \
+#      -R ~/.ssh/mytecor-homelab.pub \
+#      -o r1s-cluster-token.age
+```
+
+Расшифрованный agenix-секрет обязан быть readable пользователем `r1s` (в `config.nix` заданы
+`owner`/`group` = `r1s`, mode `0400`). Пока `.age`-файла нет, модуль на ноде выключен
+(соглашение `pathExists`); как только он появится и развернётся через `comin`, поднимутся
+`containerd` и `worker-runtime`. Smoke:
+
+```sh
+systemctl is-active containerd worker-runtime
+journalctl -u worker-runtime -n 50 --no-pager   # r1sd ready identity=… destination=…
+```
+
+Identity allocator'а (`/var/lib/worker-runtime/identity`) генерируется при первом старте и
+переживает reboot через `/persist`. Полный контракт и оставшаяся smoke-валидация — в
+[`f10-02`](../../roadmap/f10-disposable-worker/f10-02-deploy-r1sd.md).
+
 ## Root password
 
 Пароль root опционально задаётся через зашифрованный `root-password-hash.age`. В secret хранится

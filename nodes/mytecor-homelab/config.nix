@@ -19,6 +19,13 @@ let
   # before the key is provisioned (same convention as caddy-cloudflare/jev).
   githubDeployKeyFile = ./secrets/github-lattice-deploy-key.age;
   hasGithubDeployKey = builtins.pathExists githubDeployKeyFile;
+  # f10-02: r1s cluster join token (r1s1:<...>) for the r1sd allocator. Created
+  # + encrypted by the operator (see nodes/mytecor-homelab/README.md); the
+  # worker-runtime service is wired only when the .age file exists, so
+  # evaluation does not break before the token is provisioned. The decrypted
+  # secret must be readable by the r1s service user.
+  r1sClusterTokenFile = ./secrets/r1s-cluster-token.age;
+  hasR1sClusterToken = builtins.pathExists r1sClusterTokenFile;
   # f15-02: Radicle peer profile of the node, strictly separate from the seed
   # profile (RAD_HOME=/var/lib/radicle, rad-system). The peer identity lives on
   # the node itself (generated in place via `rad-peer auth`), survives reboot
@@ -224,6 +231,17 @@ in
         file = githubDeployKeyFile;
         mode = "0400";
       };
+    } // lib.optionalAttrs hasR1sClusterToken {
+      # f10-02: r1s cluster join token for the r1sd allocator. Decrypted agenix
+      # secret is chowned to the r1s service user so `worker-runtime` preStart can
+      # read it at runtime (never the store/argv/journal). The module's own
+      # assertion requires it when enabled.
+      r1s-cluster-token = {
+        file = r1sClusterTokenFile;
+        mode = "0400";
+        owner = "r1s";
+        group = "r1s";
+      };
     };
   };
 
@@ -380,6 +398,17 @@ in
   # origin is ever added, its per-repo credential goes with an explicit
   # allowRepos entry per KEY_MANAGEMENT.md.
   lattice.git-cache-proxy.allowRepos = [ "mytecor/lattice" ];
+
+  # f10-02: r1sd allocator (F10 disposable-worker execution backend). Enabled
+  # only once the operator created the cluster join token (r1s-cluster-token.age).
+  # RNS control plane: F22 r1sd attaches as a client to the node's shared RNS
+  # instance (rns-server, share_instance = Yes; no private Reticulum stack, no
+  # --rns-config), OCI via the local containerd socket (group r1s, not exposed).
+  # See modules/worker-runtime/README.md.
+  lattice.worker-runtime = lib.mkIf hasR1sClusterToken {
+    enable = true;
+    clusterTokenFile = config.age.secrets.r1s-cluster-token.path;
+  };
 
   # f9-03: Verdaccio npm caching proxy. Порт и остальные runtime-значения приходят
   # из cache-plane профиля (latticePorts.verdaccio = 9212 в ports.nix, host
@@ -831,6 +860,8 @@ in
     { directory = "/var/lib/rnsh"; user = "rnsh"; group = "rnsh"; mode = "0700"; }
     { directory = "/var/lib/radicle"; user = "radicle"; group = "radicle"; mode = "0750"; }
     { directory = "/var/lib/hydra-acp"; user = "root"; group = "root"; mode = "0700"; }
+    # f10-02: r1sd allocator identity/state survive reboots (impermanence).
+    { directory = "/var/lib/worker-runtime"; user = "r1s"; group = "r1s"; mode = "0700"; }
     # f15-02: Radicle peer profile of the node (rad-peer / RAD_HOME) survives
     # reboots. The seed profile (/var/lib/radicle) has its own entry above.
     { directory = radiclePeerHome; user = "root"; group = "root"; mode = "0700"; }

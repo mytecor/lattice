@@ -95,6 +95,11 @@ in
     gatewayProfile = "${profiles}/tcp-gateway/config.nix";
   };
 
+  worker-runtime = import ./worker-runtime.nix {
+    inherit nixpkgs pkgs;
+    workerRuntimeModule = self.nixosModules.worker-runtime;
+  };
+
   # f4-05: тcp-gateway mesh-ингресс поверх LAN-контракта (meshDomain / cloudflare).
   tcp-gateway-mesh = import ./tcp-gateway-mesh.nix {
     inherit nixpkgs pkgs;
