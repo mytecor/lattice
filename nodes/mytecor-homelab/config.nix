@@ -861,7 +861,12 @@ in
     { directory = "/var/lib/radicle"; user = "radicle"; group = "radicle"; mode = "0750"; }
     { directory = "/var/lib/hydra-acp"; user = "root"; group = "root"; mode = "0700"; }
     # f10-02: r1sd allocator identity/state survive reboots (impermanence).
-    { directory = "/var/lib/worker-runtime"; user = "r1s"; group = "r1s"; mode = "0700"; }
+    # No user/group here: the r1s user is brand-new and does not exist in the
+    # running generation during activation, so a persist entry that chowns to
+    # it (user = "r1s") aborts the switch ('createPersistentStorageDirs'
+    # chown fails on a not-yet-created user). Ownership is established by the
+    # worker-runtime service's StateDirectory at first start instead.
+    { directory = "/var/lib/worker-runtime"; mode = "0700"; }
     # f15-02: Radicle peer profile of the node (rad-peer / RAD_HOME) survives
     # reboots. The seed profile (/var/lib/radicle) has its own entry above.
     { directory = radiclePeerHome; user = "root"; group = "root"; mode = "0700"; }

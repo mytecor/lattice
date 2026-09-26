@@ -294,8 +294,9 @@ comin status
 
 Модуль [`lattice.worker-runtime`](../../modules/worker-runtime/README.md) поднимает
 `r1sd`-allocator (F10 execution backend) как foreground systemd-сервис от выделенного
-пользователя `r1s`, поверх локального `containerd`, с собственным Reticulum-Go стеком
-(uplinks из общего реестра [`reticulum.nix`](../../profiles/networking/reticulum.nix)).
+пользователя `r1s`, поверх локального `containerd`, с F22-контрактом: без частного
+Reticulum-стека, `r1sd` подключается как клиент к общему RNS shared instance на ноде
+(см. `modules/worker-runtime/README.md`).
 Сервис включается декларативно только после того, как оператор создаст join-токен кластера:
 
 ```sh
