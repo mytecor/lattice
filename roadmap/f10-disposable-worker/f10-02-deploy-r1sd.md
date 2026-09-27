@@ -90,8 +90,13 @@ Reticulum (RNS), а не через loopback/AF_UNIX. `worker.sock` в диаг�
 
 ## Что осталось (оператор + живая нода)
 
-1. Оператор создаёт join-токен кластера r1s и шифрует его как
-   `nodes/mytecor-homelab/secrets/r1s-cluster-token.age` (`r1s1:<...>` из `r1sd cluster init`),
+1. **Сделано (2026-09-27).** Join-токен кластера r1s сгенерирован (через закреплённый
+   `internal/cluster` r1s: `cluster.Generate`, 32 байта случайности) и зашифрован как
+   `nodes/mytecor-homelab/secrets/r1s-cluster-token.age` для реципиентов `[admin node]`
+   (соглашение `secrets.nix`). Публичный `Cluster ID`: `fea879387416a033216590028a2ee8776790ced4e2af949fbdcc7e1215d3a5b3`.
+   Проверено: расшифровка и identity ноды (`/persist/var/lib/lattice/age/identity`), и admin
+   (Mac) — `NODE-DECRYPT-OK`, содержимое `r1s1:<...>` 49 байт. Токен в stdout/контекст не
+   выводился (генерируется через stdin в `age --encrypt`, печатается только публичный ID).
    readable пользователем `r1s` (owner/group `r1s`, mode `0400`).
 2. Развёртывание (`comin`-цикл или `nixos-rebuild switch` на ноде): поднимаются containerd и
    `worker-runtime`.

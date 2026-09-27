@@ -11,6 +11,11 @@ in
   # workspace `publish` push from the node. Created by the operator; see
   # roadmap/f15-node-dev-loop/f15-02.
   "github-lattice-deploy-key.age".publicKeys = [ admin node ];
+  # f10-02: r1s cluster join token (r1s1:<...>) for the r1sd allocator, created
+  # by the operator 2026-09-27. Public cluster id: fea879387416a033216590028a2ee8776790ced4e2af949fbdcc7e1215d3a5b3
+  # (see roadmap/f10-disposable-worker/f10-02-deploy-r1sd.md). Module consumes it
+  # once in `worker-runtime` preStart; readable by the r1s service user (0400).
+  "r1s-cluster-token.age".publicKeys = [ admin node ];
   # LLM Gateway provider keys
   "llm-provider-gonka-gg-proxy.age".publicKeys = [ admin node ];
   "llm-provider-gonka-gg-openbroker.age".publicKeys = [ admin node ];
