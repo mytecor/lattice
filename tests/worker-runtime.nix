@@ -52,7 +52,9 @@ assert lib.elem "rns-server.service" unit.wants;
 # does not expand command substitutions inside ExecStart argv (it treats
 # '$(cat' as an env-var reference and fails). The r1sd flags + runtime
 # cluster-id resolution live in a shell wrapper (r1sd-worker) instead.
-assert lib.hasSuffix "bin/r1sd-worker" execStart;
+# writeShellScript emits the script at $out (no bin/ subdir), so ExecStart is
+# the wrapper derivation path itself, ending in '-r1sd-worker'.
+assert lib.hasSuffix "-r1sd-worker" execStart;
 # F22 cluster credentials resolve via os.UserHomeDir() to
 # $HOME/.config/r1s/clusters/<id>; the unit must export HOME pointing at the
 # persistent StateDirectory (systemd system users otherwise default to

@@ -186,7 +186,11 @@ in
         # ExecStart argv): the wrapper reads the cluster-id resolved by preStart
         # and execs r1sd with the allocator flags. Never inline a command
         # substitution directly into ExecStart.
-        ExecStart = lib.getExe' r1sdWrapper "r1sd-worker";
+        #
+        # writeShellScript outputs the script itself at $out (a single file,
+        # no bin/ subdir), so ExecStart is the wrapper derivation directly —
+        # appending '/bin/r1sd-worker' would 203/EXEC.
+        ExecStart = r1sdWrapper;
         Restart = "on-failure";
         RestartSec = 5;
         UMask = "0077";
