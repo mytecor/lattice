@@ -48,30 +48,16 @@ assert lib.elem "rns-server.service" unit.after;
 assert lib.elem "network-online.target" unit.after;
 assert lib.elem "containerd.service" unit.wants;
 assert lib.elem "rns-server.service" unit.wants;
-# r1sd runs from the pinned lattice package.
-assert lib.hasPrefix (lib.getExe' pkgs.lattice.r1s "r1sd") execStart;
+# ExecStart must NOT be a raw r1sd invocation with inline $(cat …) — systemd
+# does not expand command substitutions inside ExecStart argv (it treats
+# '$(cat' as an env-var reference and fails). The r1sd flags + runtime
+# cluster-id resolution live in a shell wrapper (r1sd-worker) instead.
+assert lib.hasSuffix "bin/r1sd-worker" execStart;
 # F22 cluster credentials resolve via os.UserHomeDir() to
 # $HOME/.config/r1s/clusters/<id>; the unit must export HOME pointing at the
 # persistent StateDirectory (systemd system users otherwise default to
 # /var/empty, which is read-only and non-persistent).
 assert builtins.elem "HOME=/var/lib/worker-runtime" unit.serviceConfig.Environment;
-# F22 exec shape: allocator flags then a positional cluster selector (resolved
-# by preStart into the state file). No --rns-config, no --cluster flag.
-assert lib.hasInfix "--identity" execStart;
-assert lib.hasInfix "${cfg.stateDirectory}" execStart;
-assert lib.hasInfix "--capacity default=1" execStart;
-assert lib.hasInfix "--containerd-address /run/containerd/containerd.sock" execStart;
-assert lib.hasInfix "--containerd-namespace r1s" execStart;
-assert lib.hasInfix "--announce-interval 5m" execStart;
-assert lib.hasInfix "--containerd-snapshotter overlayfs" execStart;
-assert lib.hasInfix "--node" execStart;
-assert lib.hasInfix "region" execStart;
-# Cluster is positional: the command tail is r1sd ... <cluster-id>. The ID is
-# read at runtime from the state file (never baked into ExecStart); preStart is
-# responsible for joining and resolving it.
-assert lib.hasInfix "\$(cat /var/lib/worker-runtime/cluster-id)" execStart;
-assert !lib.hasInfix "--rns-config" execStart;
-assert !lib.hasInfix "--cluster" execStart;
 # containerd is enabled and its gRPC socket is opened to the r1s group only.
 assert config.virtualisation.containerd.enable;
 assert containerdSettings.grpc.gid == cfg.gid;
@@ -91,22 +77,47 @@ assert !(lib.elem "AF_NETLINK" unit.serviceConfig.RestrictAddressFamilies);
 assert builtins.isString unit.preStart;
 assert lib.hasInfix "cluster join" unit.preStart;
 assert lib.hasInfix "cluster-id" unit.preStart;
+# The r1sd argv lives inside the wrapper script (writeShellScript), not in
+# the unit's ExecStart. We inspect the wrapper text here for the F22 flag
+# shape and the no-secret/no-baked-cluster-id guarantees so the unit stays
+# declarative even though the flags moved out of ExecStart.
 pkgs.runCommand "worker-runtime-evaluation" { } ''
-  # ExecStart must carry the identity path (auto-generated default) and the
-  # full command line, but never the join token value.
-  ${pkgs.coreutils}/bin/grep -q -- '--identity /var/lib/worker-runtime/identity' \
-    <<< "${execStart}"
-  if grep -q 'placeholder-not-a-real-token' <<< "${execStart}"; then
-    echo "join token leaked into ExecStart" >&2
-    exit 1
+  WRAPPER=${lib.escapeShellArg execStart}
+  test -f "$WRAPPER" || { echo "wrapper missing: $WRAPPER" >&2; exit 1; }
+  # Wrapper body (the r1sd argv that systemd cannot inline-expand) must run
+  # the pinned r1sd with the F22 flag shape — no --rns-config and no --cluster
+  # (shared-instance contract; cluster id is a positional runtime selector).
+  grep -q -- '${lib.getExe' pkgs.lattice.r1s "r1sd"}' "$WRAPPER" \
+    || { echo 'pinned r1sd not execed in wrapper' >&2; exit 1; }
+  grep -q -- '--identity' "$WRAPPER" || { echo 'no --identity' >&2; exit 1; }
+  grep -q -- '${cfg.stateDirectory}' "$WRAPPER" \
+    || { echo 'no stateDirectory' >&2; exit 1; }
+  grep -q -- '--capacity default=1' "$WRAPPER" || { echo 'no --capacity' >&2; exit 1; }
+  grep -q -- '--containerd-address /run/containerd/containerd.sock' "$WRAPPER" \
+    || { echo 'no --containerd-address' >&2; exit 1; }
+  grep -q -- '--containerd-namespace r1s' "$WRAPPER" \
+    || { echo 'no --containerd-namespace' >&2; exit 1; }
+  grep -q -- '--announce-interval 5m' "$WRAPPER" \
+    || { echo 'no --announce-interval' >&2; exit 1; }
+  grep -q -- '--containerd-snapshotter overlayfs' "$WRAPPER" \
+    || { echo 'no --containerd-snapshotter' >&2; exit 1; }
+  grep -q -- '--node' "$WRAPPER" || { echo 'no --node' >&2; exit 1; }
+  grep -q -- 'region' "$WRAPPER" || { echo 'no region' >&2; exit 1; }
+  # Cluster id is read at runtime from the state file, never baked in.
+  grep -q -- '$(cat /var/lib/worker-runtime/cluster-id)' "$WRAPPER" \
+    || { echo 'wrapper does not read cluster-id at runtime' >&2; exit 1; }
+  if grep -q -- '--rns-config' "$WRAPPER"; then
+    echo '--rns-config leaked into wrapper' >&2; exit 1
   fi
-
-  # A resolved cluster ID must not be baked into the unit (it is only known at
-  # runtime after preStart joins); ExecStart reads it positionally from the
-  # state file.
-  if grep -q 'r1s[0-9a-f]\{16\}' <<< "${execStart}"; then
-    echo "baked cluster identifier leaked into ExecStart" >&2
-    exit 1
+  if grep -q -- '--cluster' "$WRAPPER"; then
+    echo '--cluster flag leaked into wrapper' >&2; exit 1
+  fi
+  # No join token and no resolved cluster id may be baked in.
+  if grep -q 'placeholder-not-a-real-token' "$WRAPPER"; then
+    echo 'join token leaked into wrapper' >&2; exit 1
+  fi
+  if grep -q 'r1s[0-9a-f]\{16\}' "$WRAPPER"; then
+    echo 'baked cluster identifier leaked into wrapper' >&2; exit 1
   fi
   touch $out
 ''

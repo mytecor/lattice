@@ -27,6 +27,22 @@ let
   # ExecStart wrapper reads it positionally. Absence triggers a fresh join.
   clusterStateFile = "${homeDir}/cluster-id";
 
+  # r1sd wrapper: systemd ExecStart does NOT run through a shell, so an inline
+  # '$(cat …/cluster-id)' in ExecStart would be passed as a literal (and worse,
+  # systemd treats '$(cat' as an env-var reference and refuses to start). The
+  # cluster id is only known at runtime (after preStart joins), so we resolve it
+  # in a real shell wrapper that reads the state file and execs r1sd.
+  r1sdWrapper = pkgs.writeShellScript "r1sd-worker" ''
+    set -eu
+    if [ ! -r ${lib.escapeShellArg clusterStateFile} ]; then
+      echo "lattice.worker-runtime: cluster-id state file missing" >&2
+      echo "  (${lib.escapeShellArg clusterStateFile})" >&2
+      echo "  preStart (r1sd cluster join) must run before the daemon." >&2
+      exit 1
+    fi
+    exec ${lib.getExe' cfg.package "r1sd"} ${lib.escapeShellArgs r1sdArgs} "$(cat ${lib.escapeShellArg clusterStateFile})"
+  '';
+
   # F22 cutover: r1s/r1sd attach as clients to an already-running shared RNS
   # instance (the node's rns-server with share_instance = Yes) and never build
   # a private Reticulum stack. There is no --rns-config anymore. Cluster
@@ -166,7 +182,11 @@ in
         # $HOME/.config/r1s/clusters/<id>, and the allocator's default state /
         # log paths land beside the identity file under the same directory.
         Environment = [ "HOME=${homeDir}" ];
-        ExecStart = "${lib.getExe' cfg.package "r1sd"} ${lib.concatStringsSep " " r1sdArgs} $(cat ${homeDir}/cluster-id)";
+        # ExecStart is a shell wrapper (systemd does not expand $(...) inside
+        # ExecStart argv): the wrapper reads the cluster-id resolved by preStart
+        # and execs r1sd with the allocator flags. Never inline a command
+        # substitution directly into ExecStart.
+        ExecStart = lib.getExe' r1sdWrapper "r1sd-worker";
         Restart = "on-failure";
         RestartSec = 5;
         UMask = "0077";
