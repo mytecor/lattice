@@ -29,8 +29,9 @@ http(s)://<service>.<meshDomain>/
 yggdrasil-адрес ноды. `null` (значение по умолчанию) — mesh закрыт, профиль остаётся LAN-only.
 
 - `meshExclude` — список сервисов, которые на mesh-адресе НЕ выпускаются (остаются только
-  на `*.local`). Используется для сервисов без публичной TLS/API-key защиты (например
-  `grafana`, `llm-gateway`).
+  на `*.local`). Механизм для сервисов, которые по политике конкретной ноды нельзя
+  открывать извне (например без публичной TLS/API-key защиты). Что именно исключено,
+  решает нода (`nodes/mytecor-homelab` сейчас не исключает ничего).
 - `cloudflareToken` — путь к файлу (agenix-decrypted runtime), содержащему
   `CLOUDFLARE_API_TOKEN=...`. Когда задан и файл существует, Caddy собирается с плагином
   `caddy-dns/cloudflare`, глобально добавляется `acme_dns cloudflare` (DNS-01), mesh-сайты
@@ -38,14 +39,16 @@ yggdrasil-адрес ноды. `null` (значение по умолчанию)
   на plain HTTP через тот же порт 80.
 
 Сервисы с mesh-сайтами на `mytecor-homelab` (см. `nodes/mytecor-homelab/README.md`):
-`acp`, `git-cache-proxy`, `radicle`, `status`.
+`acp`, `acp-ui`, `git-cache-proxy`, `grafana`, `llm-gateway` (с 2026-09-28), `radicle`, `status`.
 
 Сейчас профиль автоматически добавляет reverse-proxy routes для `radicle-httpd`, HTTP control
 plane `rns-server`, включённого LLM gateway, loopback-only Git cache proxy (F9) и Grafana
 frontend (F12). Для LLM gateway создаётся Caddy-site
-`http://llm-gateway.<node>.local/`; отдельный systemd service публикует этот hostname как mDNS
-address alias через Avahi. Backend gateway продолжает слушать только loopback, его порт не
-открывается в firewall. Прикладной node-status route, обслуживаемый самим Caddy, добавляет
+`http://llm-gateway.<node>.local/` (и, при заданном `meshDomain` и без исключения в
+`meshExclude`, mesh-сайт `https://llm-gateway.<meshDomain>/`); отдельный systemd service
+публикует этот hostname как mDNS address alias через Avahi. Backend gateway продолжает слушать
+только loopback, его порт не открывается в firewall. Прикладной node-status route,
+обслуживаемый самим Caddy, добавляет
 [`profiles/app-services`](../app-services/README.md). Grafana (F12 observability) проксируется
 с `http://grafana.<node>.local/` на loopback `127.0.0.1:9215` и публикует свой hostname в mDNS
 тем же паттерном; порт 9215 в firewall не открывается.

@@ -183,6 +183,7 @@ https://acp.homelab.myt.su/          — ACP (Pi)
 https://acp-ui.homelab.myt.su/       — web-клиент ACP (f13-01, с 2026-09-20)
 https://git-cache-proxy.homelab.myt.su/
 https://grafana.homelab.myt.su/      — Grafana (с 2026-09-21, за Authentik/SSO)
+https://llm-gateway.homelab.myt.su/  — OpenAI-совместимый llm-gateway (с 2026-09-28, см. ниже)
 https://radicle.homelab.myt.su/
 https://status.homelab.myt.su/
 ```
@@ -190,8 +191,10 @@ https://status.homelab.myt.su/
 Grafana выведена в mesh 2026-09-21 (`https://grafana.homelab.myt.su`), потому что закрыта
 за Authentik (F14, нативный OIDC — см.
 [f14-02](../../roadmap/f14-sso-authentik/f14-02-provisioning.md)). LLM gateway
-в mesh НЕ выводится (`meshExclude`): у него нет публичной TLS/API-key защиты, поэтому он
-остаётся только на LAN-контракте `*.local`. Порт 80 (HTTP) открыт в
+выведен в mesh 2026-09-28 (`https://llm-gateway.homelab.myt.su`): у него по-прежнему нет
+client-auth (`clientCredentialFile` не задан — gateway принимает любой Bearer), поэтому
+mesh-доступ рассчитан только на доверенных участников yggdrasil-сети (mesh — не публичный
+интернет). Порт 80 (HTTP) открыт в
 firewall; 443 открыт и mesh-сайты обслуживаются по HTTPS через DNS-01 ACME Cloudflare
 (токен `caddy-cloudflare-token.age` подключён, проверено 2026-09-18).
 

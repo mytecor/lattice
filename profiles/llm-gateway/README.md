@@ -36,3 +36,10 @@ http://llm-gateway.<node>.local/v1
 
 Например: `http://llm-gateway.mytecor-homelab.local/v1`. Caddy проксирует запросы на loopback
 listener; порт `9208` напрямую в LAN не открывается.
+
+### Доступ через yggdrasil-mesh
+
+Если на ноде задан `lattice.tcp-gateway.meshDomain` и `llm-gateway` не в `meshExclude`,
+тот же backend дополнительно обслуживается на `https://llm-gateway.<meshDomain>/`
+(на `mytecor-homelab` — `https://llm-gateway.homelab.myt.su`, с 2026-09-28). Gateway
+выведен в mesh без client-auth — такой доступ виден только участникам yggdrasil-сети.

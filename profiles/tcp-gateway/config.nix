@@ -14,8 +14,9 @@ let
   # (DNS-01, acme_dns), mesh-сайты обслуживаются по HTTPS с автоматическим
   # сертификатом; без токена mesh остаётся на plain HTTP через тот же :80.
   # Сервисы из meshExclude mesh-адрес НЕ получают — только LAN.
-  # (Grafana выпущена на mesh, т.к. закрыта за Authentik SSO; llm-gateway без
-  # публичной TLS/API-key защиты остаётся непубличным.)
+  # (Grafana выпущена на mesh, т.к. закрыта за Authentik SSO; на mytecor-homelab
+  # llm-gateway тоже открыт на mesh с 2026-09-28 — без client-auth, mesh-доступ
+  # рассчитан на доверенную yggdrasil-сеть.)
   meshEnabled = cfg.meshDomain != null;
   enableCloudflare = cfg.cloudflareToken != null;
   meshScheme = if enableCloudflare then "https" else "http";
@@ -213,9 +214,9 @@ in
 
     # f4-05: сервисы, которые на mesh-адресе НЕ выпускаются (остаются только
     # на LAN-контракте *.local). Оператор задаёт сетевое имя сервиса (то же,
-    # что и в hostname: "llm-gateway", ...). Нужно для сервисов,
-    # которые по политике нельзя открывать извне (llm-gateway — нет
-    # TLS/API-key защиты).
+    # что и в hostname: "llm-gateway", ...). Механизм для сервисов,
+    # которые по политике конкретной ноды нельзя открывать извне (например
+    # без TLS/API-key защиты). Что именно исключено — решает нода, не сам профиль.
     meshExclude = mkOption {
       type = types.listOf types.str;
       default = [ ];

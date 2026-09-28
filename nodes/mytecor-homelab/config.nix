@@ -90,11 +90,13 @@ in
   # f4-05: внешний (mesh) ingress поверх LAN-контракта. Caddy обслуживает сервисы
   # по Host заголовку и для *.homelab.myt.su параллельно *.local. domain null → mesh закрыт.
   # Grafana выпускается на mesh (https://grafana.homelab.myt.su) — доступ через ygg
-  # закрыт Authentik SSO (F14, нативный OIDC). llm-gateway остаётся только на
-  # LAN-контракте *.local (нет публичной TLS/API-key защиты — извне недоступен).
+  # закрыт Authentik SSO (F14, нативный OIDC). llm-gateway (с 2026-09-28) тоже открыт
+  # на mesh (https://llm-gateway.homelab.myt.su): client-auth не включён, поэтому такой
+  # доступ рассчитан только на доверенных участников yggdrasil-сети (mesh — не публичный
+  # интернет). meshExclude не задан — ни один сервис не исключён из mesh; если сервису
+  # нужно остаться только на LAN-контракте *.local, добавить его сюда.
   lattice.tcp-gateway = {
     meshDomain = "homelab.myt.su";
-    meshExclude = [ "llm-gateway" ];
     # Cloudflare DNS-01: включается автоматически, как только оператор создаст секрет.
     cloudflareToken = lib.mkIf hasCaddyCloudflare config.age.secrets.caddy-cloudflare-token.path;
   };

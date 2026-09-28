@@ -148,9 +148,11 @@ Backend-порты не открываются в firewall и не являют�
 Опционально (`lattice.tcp-gateway.meshDomain` профиля `tcp-gateway`) тот же набор
 сервисов обслуживается параллельно на адресе `http(s)://<service>.<meshDomain>/` для
 доступа из Yggdrasil-сети. DNS `*.meshDomain` ведёт на yggdrasil-адрес ноды
-(`200::/7`), достижимый через публичные peers. Сервисы из `meshExclude` (например
-`llm-gateway`) не получают mesh-адрес: у них нет публичной TLS/API-key защиты. Grafana
-выпущена на mesh, потому что закрыта за Authentik (F14, нативный OIDC).
+(`200::/7`), достижимый через публичные peers. Сервисы из `meshExclude` mesh-адрес
+не получают (остаются только на `*.local`) — механизм для сервисов, которые по политике
+конкретной ноды нельзя открывать извне. На `mytecor-homelab` на mesh выпущены в том числе
+Grafana (защищена за Authentik, F14 — нативный OIDC) и `llm-gateway` (без client-auth,
+доступ виден только доверенным участникам yggdrasil-сети).
 Mesh-схема `http` по умолчанию; с Cloudflare-токеном — `https` (DNS-01 ACME).
 
 Первый прикладной payload — JSON endpoint `status.<node>.local` из
