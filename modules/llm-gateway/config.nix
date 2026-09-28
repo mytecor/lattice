@@ -173,7 +173,11 @@ in
           dir=${lib.escapeShellArg envDir}
           out="$dir/keys.env"
           : > "$out"
-          creds=${lib.escapeShellArgs (map (credential: credential.env) envCredentials)}
+          # Build the credential-name list as ONE quoted string: `creds=A B C`
+          # (or its quoted equivalent) would make bash treat `B` as a command to
+          # run, so the whole value must live inside double quotes. Names are
+          # validated to [A-Za-z0-9_], so the unquoted loop split below is safe.
+          creds="${lib.concatStringsSep " " (map (credential: credential.env) envCredentials)}"
           if [ -n "$creds" ]; then
             for cred in $creds; do
               value=$(tr -d '\r\n' < "$CREDENTIALS_DIRECTORY/$cred")

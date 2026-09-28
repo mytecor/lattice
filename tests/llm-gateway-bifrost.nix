@@ -99,7 +99,22 @@ assert lib.hasInfix "--config /run/llm-gateway/config.json serve" service.servic
 assert !service.serviceConfig.MemoryDenyWriteExecute;
 assert service.serviceConfig.NoNewPrivileges;
 assert service.serviceConfig.ProtectSystem == "strict";
-pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ pkgs.jq ]; } ''
+pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ pkgs.jq pkgs.bash ]; } ''
+  # Regression: the env-materializer's credentials list must be a single quoted
+  # assignment (`creds="a b c"`), not `creds=a b c` — bash reads the latter as
+  # `creds=a` followed by running `b` as a command, failing the unit with exit
+  # 127 so llm-gateway never starts and Caddy serves 502 for the service. The
+  # generated script must both carry the quoted form and be valid bash.
+  env_script=${envUnit.serviceConfig.ExecStart}
+  if ! grep -Eq '^\s*creds="[^"]+"\s*$' "$env_script"; then
+    echo "llm-gateway-env: creds assignment is not a single quoted string; " >&2
+    echo "unit would fail with 'command not found' and llm-gateway stays down" >&2
+    exit 1
+  fi
+  if ! ${pkgs.bash}/bin/bash -n "$env_script"; then
+    echo "llm-gateway-env: generated script is not valid bash" >&2
+    exit 1
+  fi
   grep -q '"catalog_refresh_interval":"10m"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"stream_idle_timeout":"5m"' ${config.lattice.llm-gateway.publicConfigFile}
   grep -q '"log_level":"silent"' ${config.lattice.llm-gateway.publicConfigFile}
