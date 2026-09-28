@@ -191,8 +191,8 @@ https://status.homelab.myt.su/
 Grafana выведена в mesh 2026-09-21 (`https://grafana.homelab.myt.su`), потому что закрыта
 за Authentik (F14, нативный OIDC — см.
 [f14-02](../../roadmap/f14-sso-authentik/f14-02-provisioning.md)). LLM gateway
-выведен в mesh 2026-09-28 (`https://llm-gateway.homelab.myt.su`): у него по-прежнему нет
-client-auth (`clientKeys` пуст — gateway принимает любой Bearer), поэтому
+выведен в mesh 2026-09-28 (`https://llm-gateway.homelab.myt.su`): client-auth настраивается
+`clientKeys` (node-pi — Pi на ноде, mac — операторский Mac) и включается при пересборке ноды.
 mesh-доступ рассчитан только на доверенных участников yggdrasil-сети (mesh — не публичный
 интернет). Порт 80 (HTTP) открыт в
 firewall; 443 открыт и mesh-сайты обслуживаются по HTTPS через DNS-01 ACME Cloudflare

@@ -24,6 +24,12 @@ in
   "llm-provider-dahl-2.age".publicKeys = [ admin node ];
   "llm-provider-hyperfusion.age".publicKeys = [ admin node ];
   "llm-provider-gonkarouter.age".publicKeys = [ admin node ];
+  # LLM Gateway client keys (clientKeys): по одному на потребителя. node-pi — Pi
+  # на ноде; mac — операторский Mac (mDNS + mesh). Значения созданы оператором
+  # (openssl rand, без перевода строки), так что `!cat`-ссылка в Pi и env-путь
+  # дают один и тот же точный Bearer.
+  "llm-gateway-client-node-pi.age".publicKeys = [ admin node ];
+  "llm-gateway-client-mac.age".publicKeys = [ admin node ];
   "grafana-admin-password.age".publicKeys = [ admin node ];
   "grafana-secret-key.age".publicKeys = [ admin node ];
   # F14: Authentik SSO secrets (each .age is a single AUTHENTIK_*=... line).

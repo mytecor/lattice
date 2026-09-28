@@ -46,4 +46,5 @@ listener; порт `9208` напрямую в LAN не открывается.
 Если на ноде задан `lattice.tcp-gateway.meshDomain` и `llm-gateway` не в `meshExclude`,
 тот же backend дополнительно обслуживается на `https://llm-gateway.<meshDomain>/`
 (на `mytecor-homelab` — `https://llm-gateway.homelab.myt.su`, с 2026-09-28). Gateway
-выведен в mesh без client-auth — такой доступ виден только участникам yggdrasil-сети.
+выведен в mesh с client-auth: `clientKeys` задают per-consumer ключи (включение — при
+пересборке ноды), доступ только для доверенных участников yggdrasil-сети.

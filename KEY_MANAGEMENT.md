@@ -55,19 +55,18 @@ agenix -e llm-gateway-client-key.age -i "$llm_recovery_key"
 agenix -e llm-provider-primary-key.age -i "$llm_recovery_key"
 ```
 
-Каждый файл содержит ровно один key с допустимым завершающим переводом строки. В конфигурации
-ноды объявите secrets с автоматическим перезапуском gateway:
+Каждый файл содержит ровно один key. Новые client-файлы создаются оператором без завершающего
+перевода строки (чтобы `!cat`-ссылка в Pi давала точный Bearer); файлы с переводом строки тоже
+допустимы — env-unit обрезает `\r\n`. В конфигурации ноды объявите secrets:
 
 ```nix
 age.secrets.llm-gateway-client-key = {
   file = ./secrets/llm-gateway-client-key.age;
   mode = "0400";
-  restartUnits = [ "llm-gateway.service" ];
 };
 age.secrets.llm-provider-primary-key = {
   file = ./secrets/llm-provider-primary-key.age;
   mode = "0400";
-  restartUnits = [ "llm-gateway.service" ];
 };
 
 lattice.llm-gateway = {
@@ -103,9 +102,10 @@ endpoint и отсутствие provider IDs в `/v1/models`. Runtime config с
 
 Для плановой ротации provider key сначала выпустите новое значение у provider, замените содержимое
 соответствующего `.age`, примените конфигурацию и проверьте запрос через gateway, затем отзовите
-старое значение. Перезапуск gateway (`restartUnits = [ "llm-gateway.service" ]`) пересобирает
-`/run/llm-gateway-env/keys.env` через `llm-gateway-env.service` (PartOf), поэтому новое значение
-подхватывается автоматически. URL, logical models, client keys и конфигурация Pi при этом не
+старое значение. Пинованный agenix не поддерживает `restartUnits`: при применении конфигурации
+gateway перезапускается, когда меняются его unit'ы (новый `.age` меняет env-юнит/`EnvironmentFile`);
+при ротации только значения выполните вручную `systemctl restart llm-gateway` — env-юнит
+пересоберётся через PartOf и новое значение подхватится. URL, logical models, client keys и конфигурация Pi при этом не
 меняются. Если provider поддерживает одновременные keys, безопаснее выполнить ротацию через
 отдельное короткое окно: добавить второй provider instance с новым secret в тот же logical route,
 проверить его, затем удалить старый instance и отозвать старый key.

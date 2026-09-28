@@ -91,10 +91,11 @@ in
   # по Host заголовку и для *.homelab.myt.su параллельно *.local. domain null → mesh закрыт.
   # Grafana выпускается на mesh (https://grafana.homelab.myt.su) — доступ через ygg
   # закрыт Authentik SSO (F14, нативный OIDC). llm-gateway (с 2026-09-28) тоже открыт
-  # на mesh (https://llm-gateway.homelab.myt.su): client-auth не включён, поэтому такой
-  # доступ рассчитан только на доверенных участников yggdrasil-сети (mesh — не публичный
-  # интернет). meshExclude не задан — ни один сервис не исключён из mesh; если сервису
-  # нужно остаться только на LAN-контракте *.local, добавить его сюда.
+  # на mesh (https://llm-gateway.homelab.myt.su): client-auth настраивается через
+  # clientKeys (node-pi, mac) и включается при следующей пересборке ноды; до этого
+  # доступ как раньше — только для доверенных участников yggdrasil-сети (mesh — не
+  # публичный интернет). meshExclude не задан — ни один сервис не исключён из mesh;
+  # если сервису нужно остаться только на LAN-контракте *.local, добавить его сюда.
   lattice.tcp-gateway = {
     meshDomain = "homelab.myt.su";
     # Cloudflare DNS-01: включается автоматически, как только оператор создаст секрет.
@@ -149,6 +150,20 @@ in
       };
       llm-provider-gonkarouter = {
         file = ./secrets/llm-provider-gonkarouter.age;
+        mode = "0400";
+      };
+      # LLM Gateway client keys (clientKeys): по одному на потребителя.
+      # node-pi — Pi на самой ноде (loopback); mac — операторский Mac (mDNS
+      # llm-gateway + mesh llm-gateway-mesh). Значения созданы оператором и
+      # зашифрованы для [admin node]. При смене значения gateway перезапускается
+      # пересборкой (изменяются unit) либо вручную: systemctl restart llm-gateway
+      # (env unit пересоберётся через PartOf).
+      llm-gateway-client-node-pi = {
+        file = ./secrets/llm-gateway-client-node-pi.age;
+        mode = "0400";
+      };
+      llm-gateway-client-mac = {
+        file = ./secrets/llm-gateway-client-mac.age;
         mode = "0400";
       };
       # F12: Grafana admin password via agenix (file provider, never in store).
@@ -293,12 +308,11 @@ in
     models.llm-gateway = {
       baseUrl = "http://127.0.0.1:9208/v1";
       api = "openai-completions";
-      # Несекретный placeholder: gateway работает без client auth (clientKeys
-      # пуст — keyless loopback) и игнорирует Bearer, но Pi считает провайдера
-      # пригодным только при непустом
-      # apiKey — иначе список доступных моделей пуст и ACP session/new завершается
-      # authRequired. Это не credential; реальные ключи остаются в agenix-секретах gateway.
-      apiKey = "lattice-loopback-gateway";
+      # Реальный client-ключ node-pi подаётся runtime-ссылкой (Pi value
+      # resolution `!cmd`): значение читается из agenix-секрета при старте Pi,
+      # в Nix store не попадает. Файл .age создан без завершающего перевода
+      # строки, поэтому Bearer совпадает с gateway точно.
+      apiKey = "!cat /run/agenix/llm-gateway-client-node-pi";
       discoverModels = false;
       models = [
         { id = "standard"; }
@@ -454,6 +468,19 @@ in
   # call to one provider (the unused provider policy restricts retry/hedge/
   # fallback; smart overrides to 6/4 with race count 0 (see below).
   lattice.llm-gateway = {
+    # Именованные клиентские ключи: каждый потребитель — свой id, метрики
+    # запросов/токенов атрибутируются по id. node-pi — Pi на самой ноде;
+    # mac — Pi на операторском Mac (mDNS llm-gateway и mesh llm-gateway-mesh).
+    clientKeys = [
+      {
+        id = "node-pi";
+        secretFile = config.age.secrets.llm-gateway-client-node-pi.path;
+      }
+      {
+        id = "mac";
+        secretFile = config.age.secrets.llm-gateway-client-mac.path;
+      }
+    ];
     # Debug logs contain routing metadata and sanitized upstream errors, never prompts or keys.
     logLevel = "debug";
     # Mid-stream 5xx breaks (hyperfusion, 2026-09-16 regression) feed the
