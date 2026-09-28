@@ -426,29 +426,26 @@ in
     textModelApiKeyFile = if hasJevTextModelKey then config.age.secrets.jev-text-model-api-key.path else null;
   };
 
-  # LLM Gateway: f7-14 declarative sugar. `models` generates the canonical
-  # bounded pipeline for every logical model (filter model → filter provider →
-  # map → rank → balance → affinity → race → retry → semaphore → timeout plus
-  # the <model>.retry subroute); `pipeline` holds the deployment defaults and
-  # per-model `pipeline` overrides specialize one model. The provider universe
-  # (all enabled providers) is resolved from the provider registry, so a new
-  # provider starts carrying traffic without touching the rules. Providers whose
+  # LLM Gateway: fully flat routing. `routingRules` is the single source of
+  # truth — every entry route, transition subroute (<model>.retry / .hedge)
+  # and fallback net is written explicitly below; there is no generated
+  # pipeline (the `models`/`pipeline` sugar was removed). Providers whose
   # catalog does not serve a native ID fail exact validation locally
   # (model_not_found, no upstream call) and are skipped.
   #
-  # Balance is p2c (power of two choices, f7-14): two random healthy candidates
-  # are drawn and the one with fewer in-flight branches wins, so load spreads
+  # Balance is p2c (power of two choices): two random healthy candidates are
+  # drawn and the one with fewer in-flight branches wins, so load spreads
   # under concurrency without latency feedback. f7-13 showed that
   # latency-weighted selection (adaptive) and priority-derived weights both
   # re-concentrate on the fastest provider; p2c's in-flight signal is the
   # missing distribution mechanism. round_robin/adaptive/weighted remain
-  # available as pipeline.balance.strategy overrides. Hedge is enabled at
-  # 20s (see the pipeline block below) as a selection-phase safety net, with
-  # the f7-13 caveat kept in mind: an aggressive `hedge after 3s` re-concentrates
-  # completions (~2/3 on the fastest provider) even with a distributed primary
-  # choice — 20s is deliberately outside the healthy-response head of the
-  # distribution, so healthy requests never trigger it and only a genuinely
-  # mute upstream pays the second call.
+  # available as the balance action's strategy. Hedge is enabled at 20s as a
+  # selection-phase safety net, with the f7-13 caveat kept in mind: an
+  # aggressive `hedge after 3s` re-concentrates completions (~2/3 on the
+  # fastest provider) even with a distributed primary choice — 20s is
+  # deliberately outside the healthy-response head of the distribution, so
+  # healthy requests never trigger it and only a genuinely mute upstream pays
+  # the second call.
   # One request never creates more than five upstream calls (race 1 + hedge 1
   # + two retries + fallback), more than three concurrent ones, or a repeated
   # call to one provider (the unused provider policy restricts retry/hedge/
@@ -516,121 +513,28 @@ in
         stripParams = stripReasoningParams;
       };
     };
-    # Pipeline defaults equal the built-in ones (providers = all enabled,
-    # balance p2c with equal weights, race 1, retry 2 exponential, hedge
-    # enabled 20s, semaphore 4/3/1, timeout 60s, affinity 24h) plus the
-    # in-gateway stream takeover (`continue`) enabled for EVERY model: any
-    # winner that relays content and then stalls (silence > idle) or closes
-    # without finish_reason is continued on another provider with the partial
-    # output reshared, instead of surfacing "Stream ended without
-    # finish_reason" to the client
-    # (observed across smart/standard/stupid, not only GLM reasoning). The
-    # broken provider still enters cooldown/health. Per-model overrides remain
-    # possible through models.<name>.pipeline.continue.
-    pipeline = {
-      continue = {
-        enable = true;
-        # idle lowered from the inherited 90s to 30s (2026-09-18): the GLM
-        # smart route kept burning ~5min in dead upstream streams that relayed
-        # keep-alives but never delivered content (empty_completion /
-        # missing_finish_reason at ~300s, see session 01a0b3c1). The idle
-        # takeover only reacts to real upstream silence (any event re-arms it),
-        # so 30s is a safe lower bound — a healthy stream emits a delta or a
-        # keep-alive well within 30s, and a truly dead one gets re-dispatched
-        # three times faster. The global streamIdleTimeout (still 5m) is
-        # shadowed by this value while continue is enabled, so leave it alone.
-        idle = "30s";
-        reshare = "full";
-        # Chain retry budget: when every provider in the pool has already broken
-        # during the request (takeover finds no eligible target left), the
-        # gateway re-dispatches the WHOLE chain from the top with the accumulated
-        # partial output reshared, instead of surfacing a terminal 504 and
-        # breaking the client stream. Default is 0 (surface terminal error);
-        # without it a fully-exhausted pool left the turn on "504 Gateway
-        # Timeout" for the pi client to retry externally. 2 gives a dead pool
-        # two fresh passes (cooldown gates the just-broken providers, so the
-        # retry re-races the survivors). Bounded by maxContinueChainRetries (10).
-        retries = 2;
-      };
-      # Selection-phase hedge (opt-in): a primary race winner that produces no
-      # meaningful token within `after` starts the <model>.hedge subroute in
-      # parallel (race count 1 more provider, rank priority), so a mute/hung
-      # upstream no longer consumes the whole 60s route deadline alone — the
-      # observed 30/32 selection 504s on `standard` were exactly this: race 1
-      # on a concurrency-capped DeepSeek channel (429) sitting silent until the
-      # global deadline, retry/fallback having no room. 20s < 60s leaves the
-      # hedge winner time to deliver its first token. The hedge subroute's
-      # unused policy means it only launches providers not already raced by
-      # the entry route, so the pool for retry/fallback survives; on `smart`
-      # (raceCount=0) the whole pool is already used, so the hedge finds an
-      # empty unused set and launches nothing (harmless).
-      hedge = {
-        enable = true;
-        after = "20s";
-      };
-    };
-    models = {
-      stupid.native = "MiniMaxAI/MiniMax-M2.7";
-      standard.native = "deepseek-ai/DeepSeek-V4-Flash-0731";
-      # smart (GLM-5.3-Flash): GLM carriers can hang for a long time while
-      # reasoning without sending a meaningful token, and the default pace
-      # (race count 1) once consumed the entire 60s route deadline on one hung
-      # provider — the deadline is global, so retry/fallback got no room and
-      # the request returned 504. The override restores the f7-13 topology:
-      # race count 0 races the whole provider universe in parallel (carriers
-      # without the exact GLM native pre-fail locally and are skipped), and
-      # maxInFlight 4 launches all carriers concurrently. The 20s hedge stays
-      # inert here: race count 0 already launches the whole pool at t=0, so by
-      # the time the hedge fires every carrier is `used` and the unused filter
-      # parses to an empty batch — harmless, and the pool for retry/fallback
-      # survives.
-      #
-      smart = {
-        native = "zai-org/GLM-5.3-Flash";
-        nativeByProvider = { hyperfusion = "gonka/zai-org/GLM-5.3-Flash"; };
-        # The historical 4096-token completion cap on dahl/gonkarouter is
-        # absorbed by the continue rule (idle 30s + wait 10m): a winner that
-        # truncates at 4096 and goes silent is continued on another provider
-        # with the partial output reshared. All carriers serve the exact GLM
-        # native (live /models check), so keep the full universe in the smart
-        # pool.
-        pipeline = {
-          providers = [
-            "gonka-proxy"
-            "gonka-openbroker"
-            "gonka-api"
-            "dahl"
-            "dahl-2"
-            "hyperfusion"
-            "gonkarouter"
-          ];
-          raceCount = 0;
-          semaphore = {
-            maxCalls = 6;
-            maxInFlight = 4;
-          };
-        };
-      };
-    };
-    # Escape hatch: raw rules appended after the generated pipelines. Only
-    # fallbacks live here (the sugar owns everything else).
-    #
-    # Every fallback carries the SAME failure-class set
-    # (fallbackErrorClasses): the full retryable universe, including both a
-    # live upstream 404 ("404") and the catalog pre-dispatch rejection
-    # ("model_not_found"). The standard route once omitted "404" (2026-09-20,
-    # session 01a0bd52): gonka-proxy dropped DeepSeek-V4-Flash-0731 from its
-    # serving pool while still advertising it in /models, the upstream returned
-    # a live HTTP 404 (class "404", not "model_not_found"), neither retry nor
-    # fallback matched, and the terminal 404 was surfaced verbatim to the
-    # client. The generated <model>.retry subroutes (sugar) now share the same
-    # classes, so a carrier that 404s is re-raced against unused providers and
-    # the failing (provider, native) pair is cooldown-gated.
+    # Fully flat routing table: no generated pipelines. Every rule — entry
+    # route, transition subroutes, fallback nets — is written by hand below.
+    # Each toggle that the removed `models`/`pipeline` sugar used to express
+    # is now an explicit typed action on the owning route:
+    #   * in-gateway stream takeover `continue` (idle 30s, reshare full,
+    #     whole-chain retries 2) lands on every entry route explicitly;
+    #   * selection-phase `hedge` (after 20s, unused providers) is its own
+    #     hedge subroute per model;
+    #   * semaphore/timeout/retry/affinity are spelled out per route.
     routingRules =
       let
-        # The one error set every fallback transition accepts. Mirrors
-        # allRetryableClasses() plus the catalog model_not_found.
-        fallbackErrorClasses = [
+        # The one error set every transition subroute accepts. Mirrors
+        # allRetryableClasses() plus the catalog model_not_found. Every
+        # retry/fallback entry below carries the SAME set, including both a
+        # live upstream 404 ("404") and the catalog pre-dispatch rejection
+        # ("model_not_found"). The standard route once omitted "404"
+        # (2026-09-20, session 01a0bd52): gonka-proxy dropped
+        # DeepSeek-V4-Flash-0731 from its serving pool while still advertising
+        # it in /models, the upstream returned a live HTTP 404 (class "404",
+        # not "model_not_found"), neither retry nor fallback matched, and the
+        # terminal 404 was surfaced verbatim to the client.
+        transitionErrorClasses = [
           "404"
           "model_not_found"
           "429"
@@ -648,15 +552,145 @@ in
           "hyperfusion"
           "gonkarouter"
         ];
-        # Smart fallback covers the whole universe too: continue absorbs the
-        # historical 4096-cap carriers, so nothing is excluded here.
-        smartExcluded = [];
+        # The 4096-token completion cap on dahl/gonkarouter is absorbed by the
+        # continue rule (idle 30s + retries 2): a winner that truncates at
+        # 4096 and goes silent is continued on another provider with the
+        # partial output reshared. All carriers serve the exact GLM native
+        # (live /models check), so keep the full universe in the smart pool.
+        smartPlainProviders = [
+          "gonka-proxy"
+          "gonka-openbroker"
+          "gonka-api"
+          "dahl"
+          "dahl-2"
+          "gonkarouter"
+        ];
+        smartAliasProviders = [ "hyperfusion" ];
+        # Entry-route filter that narrows applicability to one logical model.
+        entryModel = model: {
+          route = model;
+          action = "filter";
+          where = { model = { eq = model; }; };
+        };
+        # Provider selection → native map, the two rules that pair a provider
+        # group with its native model. `unused` restricts the subroute pool to
+        # providers not yet used by the current request graph (retry/hedge
+        # re-race the untouched carriers).
+        mapGroup = route: unused: providers: native: [
+          {
+            route = route;
+            action = "filter";
+            where = { provider = { "in" = providers; } // lib.optionalAttrs unused { unused = true; }; };
+          }
+          { route = route; action = "map"; native = native; }
+        ];
+        # Canonical pipeline for one logical model. `pairs` is the ordered
+        # list of (providers, native) filter→map groups: candidates from all
+        # groups are collected before rank/race, so every native group must
+        # precede the pipeline actions. `raceCount` and `semaphore` carry the
+        # per-model overrides (smart races the whole pool and runs an
+        # aggressive semaphore; the others keep 1 and 4/3/1).
+        pipelineFor = model: raceCount: semaphore: pairs:
+          [ (entryModel model) ]
+          ++ lib.concatMap (p: mapGroup model false p.providers p.native) pairs
+          ++ [
+            { route = model; action = "rank"; strategy = "priority"; }
+            {
+              route = model;
+              action = "balance";
+              strategy = "p2c";
+              weights = { };
+              window = "5m";
+              errorBudget = 0.2;
+            }
+            {
+              route = model;
+              action = "affinity";
+              sources = [ "responses.conversation" "responses.previous_response_id" ];
+              ttl = "24h";
+              onMissing = "ignore";
+              onProviderFailure = "fail-closed";
+            }
+            { route = model; action = "race"; count = raceCount; }
+            {
+              route = model;
+              action = "retry";
+              target = "${model}.retry";
+              attempts = 2;
+              backoffType = "exponential";
+              backoffInitial = "200ms";
+              backoffMax = "1s";
+            }
+            {
+              route = model;
+              action = "hedge";
+              after = "20s";
+              target = "${model}.hedge";
+            }
+            {
+              route = model;
+              action = "semaphore";
+              maxCalls = semaphore.maxCalls;
+              maxInFlight = semaphore.maxInFlight;
+              maxCallsPerProvider = semaphore.maxCallsPerProvider;
+            }
+            { route = model; action = "timeout"; duration = "60s"; }
+            {
+              route = model;
+              action = "continue";
+              idle = "30s";
+              reshare = "full";
+              retries = 2;
+            }
+          ]
+          # <model>.retry: applies only to the listed failures and re-selects
+          # unused providers, one per retry entry.
+          ++ [
+            {
+              route = "${model}.retry";
+              action = "filter";
+              where = { error = { "in" = transitionErrorClasses; }; };
+            }
+          ]
+          ++ lib.concatMap (p: mapGroup "${model}.retry" true p.providers p.native) pairs
+          ++ [
+            { route = "${model}.retry"; action = "rank"; strategy = "priority"; }
+            { route = "${model}.retry"; action = "race"; count = 1; }
+          ]
+          # <model>.hedge: raced on the selection-phase hedge after 20s,
+          # re-selecting providers not already used by the entry route.
+          ++ lib.concatMap (p: mapGroup "${model}.hedge" true p.providers p.native) pairs
+          ++ [
+            { route = "${model}.hedge"; action = "rank"; strategy = "priority"; }
+            { route = "${model}.hedge"; action = "race"; count = 1; }
+          ];
+        defaultSemaphore = { maxCalls = 4; maxInFlight = 3; maxCallsPerProvider = 1; };
+        smartSemaphore = { maxCalls = 6; maxInFlight = 4; maxCallsPerProvider = 1; };
       in
-      [
-        # standard: Hyperfusion's second catalog alias. Narrow on purpose — the
-        # entry+retry chain (now 404-aware via the sugar) already re-races all
-        # plain-deepseek carriers, so this net only gives Hyperfusion its
-        # gonka/-prefixed native for the model_not_found/404 case.
+      # --- stupid (MiniMax-M2.7): every provider serves the plain native ---
+      pipelineFor "stupid" 1 defaultSemaphore [
+        { providers = allProviders; native = "MiniMaxAI/MiniMax-M2.7"; }
+      ]
+      ++
+      # --- standard (DeepSeek-V4-Flash): every provider serves the plain
+      # native (no per-provider alias on the entry route); hyperfusion's
+      # gonka/-prefixed DeepSeek alias is only on the standard.fallback net
+      # below ---
+      pipelineFor "standard" 1 defaultSemaphore [
+        { providers = allProviders; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
+      ]
+      ++
+      # --- smart (GLM-5.3-Flash): races the whole pool (0) with an aggressive
+      # semaphore; hyperfusion maps its gonka/-prefixed native ---
+      pipelineFor "smart" 0 smartSemaphore [
+        { providers = smartPlainProviders; native = "zai-org/GLM-5.3-Flash"; }
+        { providers = smartAliasProviders; native = "gonka/zai-org/GLM-5.3-Flash"; }
+      ]
+      ++ [
+        # --- standard: Hyperfusion's second catalog alias. Narrow on purpose — the
+        # entry+retry chain re-races all plain-deepseek carriers, so this net
+        # only gives Hyperfusion its gonka/-prefixed native for the
+        # model_not_found/404 case.
         {
           route = "standard";
           action = "fallback";
@@ -665,7 +699,7 @@ in
         {
           route = "standard.fallback";
           action = "filter";
-          where = { error = { "in" = fallbackErrorClasses; }; };
+          where = { error = { "in" = transitionErrorClasses; }; };
         }
         {
           route = "standard.fallback";
@@ -681,7 +715,7 @@ in
         { route = "standard.fallback"; action = "race"; count = 1; }
       ]
       ++ [
-        # stupid: universe-wide safety net (all providers serve the plain
+        # --- stupid: universe-wide safety net (all providers serve the plain
         # MiniMax native, no capability exclusion needed), mirrored from smart
         # so every model has a uniform generic fallback.
         {
@@ -692,7 +726,7 @@ in
         {
           route = "stupid.fallback";
           action = "filter";
-          where = { error = { "in" = fallbackErrorClasses; }; };
+          where = { error = { "in" = transitionErrorClasses; }; };
         }
         {
           route = "stupid.fallback";
@@ -708,12 +742,12 @@ in
         { route = "stupid.fallback"; action = "race"; count = 0; }
       ]
       ++ [
-        # smart (GLM): generic universe-wide safety net (unused, race 0) for
-        # the 404/model_not_found and all-down cases — carriers without the
+        # --- smart (GLM): generic universe-wide safety net (unused, race 0)
+        # for the 404/model_not_found and all-down cases — carriers without the
         # exact GLM native pre-fail locally and the valid ones re-race in
         # parallel. Hyperfusion maps its gonka/-prefixed GLM native on the
-        # entry route (nativeByProvider), so here it pre-fails locally and is
-        # skipped; the gonka carriers serve the plain native.
+        # entry route, so here it pre-fails locally and is skipped; the gonka
+        # carriers serve the plain native.
         {
           route = "smart";
           action = "fallback";
@@ -722,12 +756,12 @@ in
         {
           route = "smart.fallback";
           action = "filter";
-          where = { error = { "in" = fallbackErrorClasses; }; };
+          where = { error = { "in" = transitionErrorClasses; }; };
         }
         {
           route = "smart.fallback";
           action = "filter";
-          where = { provider = { "in" = allProviders; notIn = smartExcluded; unused = true; }; };
+          where = { provider = { "in" = allProviders; unused = true; }; };
         }
         {
           route = "smart.fallback";

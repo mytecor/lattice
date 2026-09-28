@@ -32,7 +32,7 @@
 - [profiles/llm-gateway/README.md](./../../profiles/llm-gateway/README.md)
 - [packages/llm-gateway/config.go](./../../packages/llm-gateway/config.go)
 - [tests/llm-gateway-bifrost.nix](./../../tests/llm-gateway-bifrost.nix)
-- [tests/llm-gateway-sugar.nix](./../../tests/llm-gateway-sugar.nix)
+- [tests/llm-gateway-flat.nix](./../../tests/llm-gateway-flat.nix)
 
 Новые Go-компоненты и тесты размещать рядом с gateway; указанные точки интеграции
 не требуют реализации всей задачи в одном файле.

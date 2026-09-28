@@ -9,12 +9,13 @@ Go proxy поверх Bifrost Go API; Lattice владеет HTTP/API contract, 
 
 **Статус:** выполнена 2026-09-14 (включая f7-09..f7-13); follow-up
 [f7-14](./f7-14-declarative-models-p2c.md) (декларативные модели + p2c-балансировка без
-ручных весов, hedge opt-in) реализован 2026-09-16. Follow-up
+ручных весов, hedge opt-in — сахар `models`/`pipeline` реализован, затем отменён
+2026-09-28, конфиг снова плоский) реализован 2026-09-16. Follow-up
 [f7-15](./f7-15-api-keys-access-rule.md) (api keys как routing-действие `access`: per-route
 ключи и per-key models list) заведён 2026-09-18, ещё не начат.
 Follow-up [f7-16](./f7-16-detect-repetition-loop.md) (детекция повторных/зацикленных ответов
 модели: стоп + перезапрос с историей через continue) реализован (opt-in routing-правило
-`repetition`, Nix-sugar `pipeline.repetition`, Go/Nix-тесты).
+`repetition`, Go/Nix-тесты).
 
 Зависит от [F1](../f1-one-node/README.md) и [F2](../f2-secrets-identity/README.md). Соответствует
 [вехе 7](../../ROADMAP.md#f7-llm-gateway).

@@ -58,7 +58,7 @@ in
     gatewayProfile = "${profiles}/llm-gateway/config.nix";
   };
 
-  llm-gateway-sugar = import ./llm-gateway-sugar.nix {
+  llm-gateway-flat = import ./llm-gateway-flat.nix {
     inherit nixpkgs pkgs;
     gatewayModule = self.nixosModules.llm-gateway;
   };

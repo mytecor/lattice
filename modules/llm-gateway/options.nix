@@ -4,7 +4,7 @@ let
   inherit (lib) mkOption types;
 
   shared = import ./types.nix { inherit lib; };
-  inherit (shared) routingRuleType pipelineSubmodule;
+  inherit (shared) routingRuleType;
 in
 {
   options.lattice.llm-gateway = {
@@ -214,71 +214,14 @@ in
       }));
     };
 
-    pipeline = mkOption {
-      default = { };
-      description = ''
-        Deployment-level defaults for the generated per-model routing
-        pipelines (f7-14). Every field is optional; a field left unset
-        resolves to the built-in default (providers = all enabled, balance
-        strategy p2c with equal weights, race count 1, retry attempts 2 with
-        exponential backoff, no hedge, semaphore 4/3/1, timeout 60s, affinity
-        TTL 24h). Per-model overrides live in
-        [models](#opt-lattice.llm-gateway.models)._pipeline.
-      '';
-      type = types.submodule pipelineSubmodule;
-    };
-
-    models = mkOption {
-      default = { };
-      description = ''
-        Logical models served by generated routing pipelines (f7-14). Each
-        entry generates the canonical bounded pipeline for one logical model:
-        entry filter (where.model) → provider filter → map (native) → rank →
-        balance (p2c by default) → affinity → race → retry (+ optional opt-in
-        hedge) → semaphore → timeout, plus the `<model>.retry` and — when
-        hedge is enabled — `<model>.hedge` named subroutes. The generated
-        rules land in the same flat routing_rules array as
-        [routingRules](#opt-lattice.llm-gateway.routingRules) (escape hatch
-        for anything the sugar cannot express, e.g. native-alias fallbacks).
-      '';
-      type = types.attrsOf (types.submodule ({ name, ... }: {
-        options = {
-          native = mkOption {
-            type = types.nonEmptyStr;
-            description = "Provider-native model id mapped for this logical model.";
-          };
-          nativeByProvider = mkOption {
-            type = types.attrsOf types.nonEmptyStr;
-            default = { };
-            description = ''
-              Per-provider native model overrides for this logical model. A
-              provider listed here is mapped to the given native ID instead of
-              `native`; the sugar emits one filter (provider in group) + map
-              pair per distinct native, so different providers of one logical
-              model can reach it through different native IDs (f7-10) without
-              a fallback. Keys must be enabled provider IDs present in the
-              model's effective provider list.
-            '';
-          };
-          pipeline = mkOption {
-            default = { };
-            description = ''
-              Per-model pipeline overrides merged over the deployment-level
-              [pipeline](#opt-lattice.llm-gateway.pipeline) defaults.
-            '';
-            type = types.submodule pipelineSubmodule;
-          };
-        };
-      }));
-    };
-
     routingRules = mkOption {
       default = [ ];
       description = ''
         Flat ordered routing table for logical models. Every rule belongs to a
         named route (the route scope; dots such as "standard.retry" are a
         naming convention only). The physical config stays a flat array: there
-        is no nested routes/plans structure.
+        is no nested routes/plans structure; this is the single source of
+        routing truth (no generated pipelines).
 
         Per route, the typical order is
         filter (model / provider / error / attempt) → map (native mapping) →
@@ -292,12 +235,6 @@ in
         field owned by another action fails during Nix evaluation. The gateway
         binary independently re-validates the generated JSON at startup, so
         JSON produced outside Nix receives the same strict per-action checks.
-
-        Rules generated from [models](#opt-lattice.llm-gateway.models) are
-        prepended to this list; raw rules may extend a generated entry route
-        (typically a `fallback` action pointing at a raw subroute), but a raw
-        rule must never re-filter an entry model — that would create a second
-        entry route for the same logical model.
       '';
       type = types.listOf routingRuleType;
     };

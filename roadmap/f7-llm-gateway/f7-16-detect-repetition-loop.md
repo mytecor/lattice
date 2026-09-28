@@ -12,8 +12,8 @@ takeover-механизму [router_stream.go](../../packages/llm-gateway/router
 JSON) проверен фактической generate-оценкой модуля — на модели с `repetition.enable = true`
 эмитируется `{"action":"repetition","min_len":8,"repeats":5,"route":"smart"}` (null-поля
 опущены), на не-opt-in модели действия нет ровно как раньше. Полный чек
-`checks.x86_64-linux.llm-gateway-sugar` собирается на Linux-билдере (здесь `aarch64-darwin`
-собрать нельзя), поэтому он выполняется в CI/на ноде.
+`checks.x86_64-linux.llm-gateway-flat` (ранее `llm-gateway-sugar`) собирается на Linux-билдере
+(здесь `aarch64-darwin` собрать нельзя), поэтому он выполняется в CI/на ноде.
 
 ## Решение (зафиксировано при реализации)
 
@@ -105,10 +105,11 @@ llm-gateway. Это совпадает с архитектурой F7: routing a
 - [x] **Метрики/события.** `llm_repetition_detected_total{route,provider}` (ровно +1 на
       детекцию) и structured event `llm_repetition_detected` по контрактам [F12](../f12-observability/README.md).
       Без sensitive/high-cardinality labels.
-- [x] **Пример подключения и документ.** `pipeline.repetition = { enable, repeats, minLen, maxLen };`
-      в Nix-sugar и README; по умолчанию детекция выключена. Nix-контракт в
-      [tests/llm-gateway-sugar.nix](../../tests/llm-gateway-sugar.nix) (opt-in, явные поля,
-      `enable`/null-поля опущены из JSON).
+- [x] **Пример подключения и документ.** Объявляется явным правилом
+      `action = "repetition"` на entry-route (Nix-sugar `pipeline.repetition` удалён
+      2026-09-28 вместе с `models`/`pipeline` — конфиг плоский); по умолчанию детекция
+      выключена. Плоский контракт в [tests/llm-gateway-flat.nix](../../tests/llm-gateway-flat.nix)
+      (linear-routing контракт, opt-in, явные поля).
 
 ## Критерий готовности (Definition of Done)
 
@@ -119,8 +120,9 @@ llm-gateway. Это совпадает с архитектурой F7: routing a
 - [x] Go-тесты покрывают: детектор (unit, синтетические стримы + естественный неповторяющийся
       текст), правило (валидация, apply в политику, декод через registry), integration
       (повтор → stop + continue; рецидив ограничен; метрика ровно один раз; не armed by default;
-      терминальная ошибка без continuation). Nix-контракт sugar (opt-in, явные поля, clean JSON)
-      в [tests/llm-gateway-sugar.nix](../../tests/llm-gateway-sugar.nix).
+      терминальная ошибка без continuation). Плоский Nix-контракт (явные правила,
+      no sugar) в [tests/llm-gateway-flat.nix](../../tests/llm-gateway-flat.nix)
+      (файл был `tests/llm-gateway-sugar.nix` до удаления сахара 2026-09-28).
 
 ## Затрагиваемые файлы / слои
 

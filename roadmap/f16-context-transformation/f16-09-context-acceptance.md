@@ -30,7 +30,7 @@
 - [packages/llm-gateway/package.nix](./../../packages/llm-gateway/package.nix)
 - [tests/README.md](./../../tests/README.md)
 - [tests/llm-gateway-bifrost.nix](./../../tests/llm-gateway-bifrost.nix)
-- [tests/llm-gateway-sugar.nix](./../../tests/llm-gateway-sugar.nix)
+- [tests/llm-gateway-flat.nix](./../../tests/llm-gateway-flat.nix)
 - [nodes/mytecor-homelab/config.nix](./../../nodes/mytecor-homelab/config.nix)
 
 Новые Go-компоненты и тесты размещать рядом с gateway; указанные точки интеграции

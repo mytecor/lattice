@@ -215,9 +215,8 @@ fresh-pass снова весь оборвался, запрос завершае
 Требования и ограничения:
 
 - Действие объявляется **только на entry-route** (там, где есть `filter where.model`):
-  политика релея привязана к логической модели. В sugar включается на
-  deployment-уровне через `pipeline.continue.enable` и генерится для **каждой**
-  модели (per-model override через `models.<name>.pipeline.continue`).
+  политика релея привязана к логической модели и пишется явным правилом на этой route
+  (сгенерированного `pipeline.continue` больше нет — конфиг плоский).
 - `idle` должен быть ≥ 5s (иначе takeover перехватывал бы честно медленные ответы),
   по умолчанию — `90s`.
 - `reshare` поддерживает только `"full"`: весь полученный partial-вывод добавляется в
@@ -310,81 +309,6 @@ after 3s` на том же маршруте остаётся latency-механ�
 Health state живёт в памяти процесса (per-provider, глобально по логическим моделям), питается в
 тех же точках scheduler, где сохраняются cooldown и lease, и переживает только процесс gateway
 (не перезагрузку). Это не source of truth и не credential storage.
-
-## Декларативные модели и pipeline (f7-14)
-
-Опции `models` и `pipeline` генерируют канонический ограниченный pipeline на каждую логическую
-модель прямо в routing_rules — тот же плоский JSON, что и рукописные правила, через тот же
-typed rule evaluator. Это заменяет ~230 строк ручных правил на ~30 строк описания намерения;
-`routingRules` остаётся escape hatch (fallback'и, native-alias'ы и всё, что сахар не выражает).
-
-```nix
-lattice.llm-gateway = {
-  providers = { /* ... реестр транспортов ... */ };
-
-  # Deployment-дефолты pipeline (каждое поле опционально):
-  pipeline = {
-    providers = null;          # null = все включённые провайдеры
-    balance.strategy = "p2c";  # power of two choices по in-flight
-    retry.attempts = 2;
-    # hedge.enable = true;     # hedge — opt-in, по умолчанию выключен
-    # semaphore = { maxCalls = 4; maxInFlight = 3; maxCallsPerProvider = 1; };
-    # timeout.duration = "60s"; affinityTtl = "24h"; raceCount = 1;
-  };
-
-  models = {
-    standard.native = "deepseek-ai/DeepSeek-V4-Flash-0731";
-    smart = {
-      native = "zai-org/GLM-5.3-Flash";
-      # Per-provider native override: hyperfusion serves the model under its
-      # own prefixed catalog alias, mapped directly in the entry pipeline
-      # (not via fallback); other carriers get `native`.
-      nativeByProvider = { hyperfusion = "gonka/zai-org/GLM-5.3-Flash"; };
-      pipeline = {            # per-model override поверх deployment-дефолтов
-        raceCount = 0;        # гонять весь пул параллельно (GLM-носители)
-        semaphore.maxCalls = 6;
-      };
-    };
-  };
-
-  # Escape hatch: raw-правила дописываются после сгенерированных. Расширять
-  # сгенерированный entry route можно (обычно `fallback`), но re-filter уже
-  # объявленной модели запрещён ассертом модуля.
-  routingRules = [ { route = "standard"; action = "fallback"; target = "standard.fallback"; } ];
-};
-```
-
-Каждая запись `models` генерирует для одного логического модели канонический pipeline:
-
-```text
-filter (where.model) → filter provider → map → rank → balance → affinity → race
-→ retry (+ opt-in hedge) → semaphore → timeout, плюс <model>.retry (и <model>.hedge,
-когда hedge включён) как именованные подроуты с фильтром unused-провайдеров.
-```
-
-`models.<name>.nativeByProvider` разбивает пул по distinct native ID: для каждого
-group генерируется своя пара `filter provider (in group) → map native`, так что
-разные провайдеры одной модели достигают её через разные native IDs в одном stage
-(без fallback). Без `nativeByProvider` это одна пара над всем пулом — прежний вывод.
-
-Дефолты pipeline: провайдеры — все включённые (выводятся из реестра, список `id`);
-`balance.strategy = "p2c"` с равными весами; `race count = 1`; retry 2 попытки (exponential,
-200ms→1s); hedge выключен (opt-in); semaphore 4/3/1; timeout 60s; affinity TTL 24h. Опция
-`pipeline` задаёт deployment-дефолты, `models.<name>.pipeline` — переопределения на одну
-модель; итоговый выбор: модель → deployment → встроенный дефолт.
-
-Гарантии на уровне Nix evaluation:
-
-- пул провайдеров синхронизирован с реестром автоматически (добавили провайдера — он
-  начинает обслуживать модели без правки правил);
-- сгенерированные правила проходят ту же per-action типизацию, что и ручные (неизвестное
-  поле, чужое поле, неизвестная стратегия — throw на eval);
-- модель из `models` нельзя повторно отфильтровать в `routingRules` (второй entry route на
-  ту же логическую модель) — fail fast;
-- raw-правила не могут объявляться на именах сгенерированных подроутов
-  (`<model>.retry` / `<model>.hedge`) — эти routes принадлежат сахару; расширять сам entry
-  route можно (типовой случай — `fallback`);
-- имя модели должно быть без точек: точки — конвенция именования подроутов.
 
 ## Reasoning-контроль на апстримах (strip_params / set_params)
 
