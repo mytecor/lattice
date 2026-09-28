@@ -380,7 +380,7 @@ func TestEventsNeverContainSecrets(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = cfg.Providers[:1]
 	cfg.Providers[0].APIKey = secret
-	cfg.ClientAPIKey = secret
+	cfg.ClientAPIKeys = []ClientKey{{ID: "primary", Key: secret}}
 	cfg.RoutingRules = []Rule{
 		filterModel("standard", "standard"),
 		filterProvider("standard", "a"),

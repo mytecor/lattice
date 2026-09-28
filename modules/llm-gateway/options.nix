@@ -5,6 +5,15 @@ let
 
   shared = import ./types.nix { inherit lib; };
   inherit (shared) routingRuleType;
+
+  # Deterministic env-var name for a credentials holder: the non-secret ID is
+  # uppercased and separators folded to underscores, so a provider id
+  # `gonka-proxy` maps to `LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY` and a client
+  # key id `pi-desktop` to `LATTICE_CLIENT_PI_DESKTOP_KEY`. The generated
+  # EnvironmentFile and the runtime config reference this same name, so the
+  # two stay in sync by construction.
+  envVarName = prefix: id:
+    prefix + lib.toUpper (lib.replaceStrings [ "-" "." ] [ "_" "_" ] id) + "_KEY";
 in
 {
   options.lattice.llm-gateway = {
@@ -63,12 +72,32 @@ in
       description = "Metrics listen port (Prometheus text exposition). Must not equal the API port.";
     };
 
-    clientCredentialFile = mkOption {
-      type = types.nullOr types.str;
-      default = null;
+    clientKeys = mkOption {
+      default = [ ];
+      type = types.listOf (types.submodule ({ config, ... }: {
+        options = {
+          id = mkOption {
+            type = types.strMatching "[A-Za-z0-9][A-Za-z0-9_.-]*";
+            description = "Non-secret client key identifier: authenticates the bearer and labels the per-key metrics (api_key dimension). Never the key material.";
+          };
+          secretFile = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            description = "Runtime path to this client key secret, normally an agenix secret. The module bakes it into the gateway EnvironmentFile under the env name below; the file itself is never read during Nix evaluation and never lands in the store.";
+          };
+          env = mkOption {
+            type = types.nullOr (types.strMatching "[A-Za-z_][A-Za-z0-9_]*");
+            default = envVarName "LATTICE_CLIENT_" config.id;
+            description = "Environment variable name that carries this client key. The gateway runtime config references it as env.<name>; the module writes the secret into the EnvironmentFile under exactly this name.";
+          };
+        };
+      }));
       description = ''
-        Runtime path to the gateway client key, normally an agenix secret. The file is loaded
-        with systemd LoadCredential and is never read during Nix evaluation.
+        Named client keys accepted by the gateway. Each request is attributed
+        to the matching key's id in the request/usage metrics, so different
+        consumers can carry their own key and their usage is split per key.
+        An empty list (default) disables client authentication entirely
+        (keyless loopback mode).
       '';
     };
 
@@ -101,7 +130,7 @@ in
     providers = mkOption {
       default = { };
       description = "Bifrost-backed provider instances for the Lattice-owned proxy.";
-      type = types.attrsOf (types.submodule ({ name, ... }: {
+      type = types.attrsOf (types.submodule ({ name, config, ... }: {
         options = {
           enable = mkOption {
             type = types.bool;
@@ -135,17 +164,21 @@ in
               unset. Other adapters require an explicit URL for discovery.
             '';
           };
-          apiKeyFile = mkOption {
+          apiKeySecretFile = mkOption {
             type = types.nullOr types.str;
             default = null;
-            description = "Runtime path to the provider API key loaded with systemd credentials.";
+            description = "Runtime path to this provider's API key secret, normally an agenix secret. The module bakes it into the gateway EnvironmentFile under the env name below; the file itself is never read during Nix evaluation and never lands in the store.";
           };
-          modelsApiKeyFile = mkOption {
-            type = types.nullOr types.str;
-            default = null;
+          apiKeyEnv = mkOption {
+            type = types.nullOr (types.strMatching "[A-Za-z_][A-Za-z0-9_]*");
+            default = envVarName "LATTICE_LLM_PROVIDER_" config.id;
             description = ''
-              Optional separate credential for an explicit modelsUrl. An inferred
-              same-provider catalog uses apiKeyFile.
+              Environment variable name that carries this provider's API key.
+              The runtime config references it as env.<name> (the gateway
+              resolves it from the process environment, never from a file),
+              and the module writes the secret into the EnvironmentFile under
+              exactly this name. One common key covers inference and model
+              catalog discovery: there is no separate models key.
             '';
           };
           priority = mkOption {

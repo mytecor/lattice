@@ -293,8 +293,9 @@ in
     models.llm-gateway = {
       baseUrl = "http://127.0.0.1:9208/v1";
       api = "openai-completions";
-      # Несекретный placeholder: gateway работает без client auth (clientCredentialFile не
-      # задан) и игнорирует Bearer, но Pi считает провайдера пригодным только при непустом
+      # Несекретный placeholder: gateway работает без client auth (clientKeys
+      # пуст — keyless loopback) и игнорирует Bearer, но Pi считает провайдера
+      # пригодным только при непустом
       # apiKey — иначе список доступных моделей пуст и ACP session/new завершается
       # authRequired. Это не credential; реальные ключи остаются в agenix-секретах gateway.
       apiKey = "lattice-loopback-gateway";
@@ -465,7 +466,8 @@ in
       gonka-proxy = {
         id = "gonka-proxy";
         inferenceUrl = "https://api.proxy.gonka.gg/v1";
-        apiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
+        apiKeySecretFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
+        apiKeyEnv = "LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY";
         priority = 50;
         stripParams = stripReasoningParams;
         setParams = forceReasoningOff;
@@ -473,7 +475,8 @@ in
       gonka-openbroker = {
         id = "gonka-openbroker";
         inferenceUrl = "https://api.openbroker.gonka.gg/v1";
-        apiKeyFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
+        apiKeySecretFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
+        apiKeyEnv = "LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY";
         priority = 40;
         stripParams = stripReasoningParams;
         setParams = forceReasoningOff;
@@ -481,7 +484,8 @@ in
       gonka-api = {
         id = "gonka-api";
         inferenceUrl = "https://hskyauefqcgbvgvxkluj.supabase.co/functions/v1/gonka";
-        apiKeyFile = config.age.secrets.llm-provider-gonka-api.path;
+        apiKeySecretFile = config.age.secrets.llm-provider-gonka-api.path;
+        apiKeyEnv = "LATTICE_LLM_PROVIDER_GONKA_API_KEY";
         priority = 30;
         stripParams = stripReasoningParams;
         setParams = forceReasoningOff;
@@ -489,28 +493,32 @@ in
       dahl = {
         id = "dahl";
         inferenceUrl = "https://inference.dahl.global/v1";
-        apiKeyFile = config.age.secrets.llm-provider-dahl.path;
+        apiKeySecretFile = config.age.secrets.llm-provider-dahl.path;
+        apiKeyEnv = "LATTICE_LLM_PROVIDER_DAHL_KEY";
         priority = 20;
         stripParams = stripReasoningParams;
       };
       dahl-2 = {
         id = "dahl-2";
         inferenceUrl = "https://inference.dahl.global/v1";
-        apiKeyFile = config.age.secrets.llm-provider-dahl-2.path;
+        apiKeySecretFile = config.age.secrets.llm-provider-dahl-2.path;
+        apiKeyEnv = "LATTICE_LLM_PROVIDER_DAHL_2_KEY";
         priority = 20;
         stripParams = stripReasoningParams;
       };
       hyperfusion = {
         id = "hyperfusion";
         inferenceUrl = "https://api.hyperfusion.io/v1";
-        apiKeyFile = config.age.secrets.llm-provider-hyperfusion.path;
+        apiKeySecretFile = config.age.secrets.llm-provider-hyperfusion.path;
+        apiKeyEnv = "LATTICE_LLM_PROVIDER_HYPERFUSION_KEY";
         priority = 100;
         stripParams = stripReasoningParams;
       };
       gonkarouter = {
         id = "gonkarouter";
         inferenceUrl = "https://api.gonkarouter.io/v1";
-        apiKeyFile = config.age.secrets.llm-provider-gonkarouter.path;
+        apiKeySecretFile = config.age.secrets.llm-provider-gonkarouter.path;
+        apiKeyEnv = "LATTICE_LLM_PROVIDER_GONKAROUTER_KEY";
         priority = 10;
         stripParams = stripReasoningParams;
       };

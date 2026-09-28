@@ -10,32 +10,53 @@ credentials, priority, timeout, cooldown); выбор provider находитс�
 model — в action `map`, который привязывает текущую selection к одному native ID. Отдельного
 списка `models` и access groups нет: logical model registry выводится runtime из entry route
 filters. По умолчанию discovery URL выводится как `${inferenceUrl}/models`; `modelsUrl`
-позволяет задать независимый источник. Client key, provider inference key и отдельный catalog
-key поступают только через `LoadCredential`.
+позволяет задать независимый источник.
 
-Модуль записывает secret-free JSON template в Nix store. `ExecStartPre` копирует его в закрытый
-runtime directory и подставляет credentials через `jq`; итоговый `/run/llm-gateway/config.json`
-имеет mode `0600` и исчезает при перезагрузке. Secret options — runtime path strings, не Nix paths.
+Ключи передаются **только как environment-переменные** (в конфиге указываются имена
+переменных, секреты в рантайм-конфиг не попадают). agenix остаётся хранилищем в покое:
+модуль раскладывает каждый секрет в `0600` EnvironmentFile под `/run/llm-gateway-env`
+через отдельный oneshot unit, а gateway service читает его через `EnvironmentFile` и
+резолвит `env.<NAME>` из своего окружения. У провайдера один общий ключ на inference и
+каталог (отдельного models-ключа нет); клиентских ключей может быть несколько, и
+request/token метрики атрибутируются по не-секретному id каждого ключа.
+
+Модуль записывает secret-free JSON template в Nix store. `preStart` копирует его в закрытый
+runtime directory; итоговый `/run/llm-gateway/config.json` имеет mode `0600` и исчезает при
+перезагрузке. Секретные значения не попадают ни в store, ни в конфиг — только в
+`/run/llm-gateway-env/keys.env` (mode `0600`, владелец — пользователь gateway).
+Secret options — runtime path strings, не Nix paths.
 
 ```nix
 {
   lattice.llm-gateway = {
     enable = true;
     logLevel = "info";
-    clientCredentialFile = config.age.secrets.llm-gateway-client-key.path;
+    # Именованные client-ключи: каждый потребитель — свой id, метрики разбиваются по id.
+    # Пустой список (default) — keyless loopback. env — имя переменной (default выводится
+    # из id); secretFile — путь к agenix-секрету, из которого модуль строит EnvironmentFile.
+    clientKeys = [
+      {
+        id = "pi-desktop";
+        secretFile = config.age.secrets.llm-gateway-pi-desktop-key.path;
+      }
+    ];
 
     providers = {
       proxy = {
         id = "gonka-proxy";
         inferenceUrl = "https://proxy.gonka.gg/v1";
-        apiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
+        apiKeySecretFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
+        apiKeyEnv = "LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY";
       };
       openbroker = {
         id = "gonka-openbroker";
         inferenceUrl = "https://api.openbroker.gonka.gg/v1";
         modelsUrl = "https://proxy.gonka.gg/v1/models";
-        apiKeyFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
-        modelsApiKeyFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
+        # Один общий ключ на inference и discovery моделей: отдельного
+        # models-ключа нет. apiKeyEnv задаёт имя env-переменной (default —
+        # LATTICE_LLM_PROVIDER_<ID>_KEY).
+        apiKeySecretFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
+        apiKeyEnv = "LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY";
       };
     };
 
@@ -370,15 +391,17 @@ reasoning-модели могут легитимно паузить в сере�
 ## Metrics
 
 Gateway exports numeric metrics in Prometheus text exposition format on a dedicated
-`metricsHost:metricsPort` listener (default `127.0.0.1:9209`, loopback, no `client_api_key`):
+`metricsHost:metricsPort` listener (default `127.0.0.1:9209`, loopback, no `client_api_keys`):
 
 ```sh
 curl -s localhost:9209/metrics
 ```
 
-Metrics are counters/histograms/gauges with low-cardinality labels only (`route`, `provider`,
-`model`, `status`, `error_type` and the like). High-cardinality identifiers (`request_id`,
-session, user, api key, client IP, prompt hash) never become labels, and the endpoint does not
-require the client key (it is non-public loopback by design). Set `metricsHost`/`metricsPort`
+Metrics are counters/histograms/gauges with low-cardinality labels only (`api_key`, `route`,
+`provider`, `model`, `status`, `error_type` and the like). The `api_key` dimension is always
+the **non-secret client-key ID** configured in `clientKeys` (empty in keyless mode), never the
+key material. High-cardinality identifiers (`request_id`, session, user, client IP, prompt
+hash) never become labels, and the endpoint does not require a client key (it is non-public
+loopback by design). Set `metricsHost`/`metricsPort`
 explicitly only when a Prometheus scraper runs outside the loopback network namespace; the port
 must differ from `port`.

@@ -14,9 +14,8 @@
 | SSH host key | `services.openssh.hostKeys`, у homelab — `/persist/etc/ssh/` | Ключ сервера и проверенные записи `known_hosts` клиентов |
 | Reticulum/rnsh identity | Файл сервиса; `lattice.rnsh.identity` и `lattice.rnsh.allowed` | Идентичность сервиса, destinations и списки доверия его клиентов/серверов |
 | Radicle key | `age.secrets.radicle-private-key`, `services.radicle.publicKey` | Пара ключей и доверие к соответствующим DID/NID |
-| LLM gateway client key | `age.secrets.llm-gateway-client-key` | Авторизация клиентов на gateway; не является provider credential |
+| LLM gateway client keys | `lattice.llm-gateway.clientKeys` (каждый — свой `age.secrets.<name>` для `secretFile`) | Авторизация клиентов на gateway; метрики запросов/токенов разбиваются по id ключа; не является provider credential |
 | LLM provider API key | Отдельный `age.secrets.llm-provider-<name>-key` для каждого upstream | Доступ gateway к provider; клиентам не выдаётся |
-| LLM model catalog key | `providers.<name>.modelsApiKeyFile`, если discovery требует отдельную авторизацию | Доступ только к `modelsUrl`; inference key на другой host не переиспользуется неявно |
 
 Смена age-ключа не меняет значения секретов и не отзывает доступ по SSH или rnsh. У age нет
 центрального списка отзыва: исключение получателя действует только на заново зашифрованные файлы.
@@ -25,6 +24,16 @@
 которые он позволял получить. Удаление шифротекстов или переписывание Git не возвращает секретность.
 
 ## LLM gateway credentials
+
+Ключи доставляются до gateway **как environment-переменные**: в runtime-конфиге указываются
+только имена переменных (`env.<NAME>`), а значения раскладывает отдельный oneshot unit
+`llm-gateway-env.service` из agenix-секретов в `/run/llm-gateway-env/keys.env` (mode `0600`,
+владелец — пользователь gateway). Gateway service читает файл через `EnvironmentFile` и резолвит
+`env.<NAME>` из своего окружения. В `/run/llm-gateway/config.json` и в Nix store секреты не
+попадают никогда — только имена. У провайдера один общий ключ на inference и каталог моделей;
+отдельного models-ключа нет (раньше `modelsApiKeyFile` убран). Клиентских ключей может быть
+несколько (`lattice.llm-gateway.clientKeys`), каждый со своим не-секретным id: по нему метрики
+запросов и токенов атрибутируются per-key.
 
 Для каждого credential создаётся отдельный `.age`-файл; цельный runtime config не шифруется и не
 редактируется вручную. Сначала добавьте правила в `nodes/<name>/secrets/secrets.nix`, используя
@@ -44,7 +53,6 @@ test -f "$llm_recovery_key"
 cd nodes/mytecor-homelab/secrets
 agenix -e llm-gateway-client-key.age -i "$llm_recovery_key"
 agenix -e llm-provider-primary-key.age -i "$llm_recovery_key"
-agenix -e llm-provider-primary-models-key.age -i "$llm_recovery_key"
 ```
 
 Каждый файл содержит ровно один key с допустимым завершающим переводом строки. В конфигурации
@@ -61,45 +69,53 @@ age.secrets.llm-provider-primary-key = {
   mode = "0400";
   restartUnits = [ "llm-gateway.service" ];
 };
-age.secrets.llm-provider-primary-models-key = {
-  file = ./secrets/llm-provider-primary-models-key.age;
-  mode = "0400";
-  restartUnits = [ "llm-gateway.service" ];
-};
 
 lattice.llm-gateway = {
   runtime = "bifrost";
   package = pkgs.lattice.llm-gateway;
-  clientCredentialFile = config.age.secrets.llm-gateway-client-key.path;
+  # Каждый клиентский ключ — не-секретный id, свой secretFile и (по умолчанию
+  # выводимое из id) env-имя. Пустой список = keyless loopback.
+  clientKeys = [
+    {
+      id = "primary";
+      secretFile = config.age.secrets.llm-gateway-client-key.path;
+      # env = "LATTICE_CLIENT_PRIMARY_KEY"; // default выводится из id
+    }
+  ];
   providers.primary = {
     inferenceUrl = "https://inference.example.invalid";
     modelsUrl = "https://catalog.example.invalid/v1/models";
-    apiKeyFile = config.age.secrets.llm-provider-primary-key.path;
-    modelsApiKeyFile = config.age.secrets.llm-provider-primary-models-key.path;
+    # Один общий ключ на inference и каталог: apiKeySecretFile — agenix-путь,
+    # apiKeyEnv — имя env-переменной (default LATTICE_LLM_PROVIDER_<ID>_KEY).
+    apiKeySecretFile = config.age.secrets.llm-provider-primary-key.path;
+    apiKeyEnv = "LATTICE_LLM_PROVIDER_PRIMARY_KEY";
   };
 };
 ```
 
 Профиль `profiles/llm-gateway` добавляется в imports ноды только в том же проверенном изменении,
-где объявлены client credential, хотя бы один provider, logical mappings/rules и все secret-файлы. До публикации
-соберите `nixosConfigurations.<node>`; после применения проверьте unit, loopback endpoint и
-отсутствие provider IDs в `/v1/models`. Runtime config создаётся с mode `0600` в
-`/run/llm-gateway` и содержит раскрытые credentials, поэтому каталог доступен только
-`llm-gateway` и исчезает после остановки/перезагрузки; публичный шаблон в Nix store секретов не
-содержит.
+где объявлены client keys, хотя бы один provider, logical mappings/rules и все secret-файлы. До
+публикации соберите `nixosConfigurations.<node>`; после применения проверьте unit, loopback
+endpoint и отсутствие provider IDs в `/v1/models`. Runtime config создаётся с mode `0600` в
+`/run/llm-gateway` и содержит только env-имена, раскрытые credentials лежат исключительно в
+`/run/llm-gateway-env/keys.env` (mode `0600`, владелец — пользователь `llm-gateway`); оба файла
+исчезают после остановки/перезагрузки, а публичный шаблон в Nix store секретов не содержит.
 
 Для плановой ротации provider key сначала выпустите новое значение у provider, замените содержимое
 соответствующего `.age`, примените конфигурацию и проверьте запрос через gateway, затем отзовите
-старое значение. URL, logical models, client key и конфигурация Pi при этом не меняются. Если
-provider поддерживает одновременные keys, безопаснее выполнить ротацию через отдельное короткое
-окно: добавить второй provider instance с новым secret в тот же logical route, проверить его,
-затем удалить старый instance и отозвать старый key.
+старое значение. Перезапуск gateway (`restartUnits = [ "llm-gateway.service" ]`) пересобирает
+`/run/llm-gateway-env/keys.env` через `llm-gateway-env.service` (PartOf), поэтому новое значение
+подхватывается автоматически. URL, logical models, client keys и конфигурация Pi при этом не
+меняются. Если provider поддерживает одновременные keys, безопаснее выполнить ротацию через
+отдельное короткое окно: добавить второй provider instance с новым secret в тот же logical route,
+проверить его, затем удалить старый instance и отозвать старый key.
 
-Client key имеет другую границу: закреплённый runtime принимает одно значение, поэтому его ротация
-требует согласованного обновления авторизованных клиентов и краткого окна переключения. Не
-маскируйте provider key под client key ради «бесшовности». При компрометации сначала ограничьте
-сетевой доступ к loopback/управляемому ingress, замените key и завершите активные клиентские
-процессы; provider credentials меняйте отдельно только если они также могли утечь.
+Client key живёт за своим не-секретным id в `clientKeys`: ротация одного ключа меняет только его
+`.age`-файл и строку в EnvironmentFile, остальные ключи не затрагиваются. Авторизованные в этот id
+клиенты переключаются на новое значение в кратком окне; метрики продолжают агрегироваться по тому
+же id. Не маскируйте provider key под client key ради «бесшовности». При компрометации сначала
+ограничьте сетевой доступ к loopback/управляемому ingress, замените key и завершите активные
+клиентские процессы; provider credentials меняйте отдельно только если они также могли утечь.
 
 Account-backed OAuth upstreams пока не подключены к декларативному Lattice proxy, даже если
 Bifrost поддерживает соответствующий provider flow в других режимах. Не помещайте OAuth record или

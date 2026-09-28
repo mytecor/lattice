@@ -35,10 +35,10 @@ func hashableFamily(body string) map[string]bool {
 
 func TestExpositionRendersFamilies(t *testing.T) {
 	m := newMetrics()
-	m.ObserveRequest("standard", "standard", "a", "native-model", "success", 250*time.Millisecond)
+	m.ObserveRequest("standard", "standard", "a", "native-model", "success", "", 250*time.Millisecond)
 	m.ObserveAttempt("a", "native-model", "timeout")
 	m.ObserveTTFT("standard", "a", "native-model", 120*time.Millisecond)
-	m.ObserveTokens("standard", "a", "native-model", 100, 50)
+	m.ObserveTokens("standard", "a", "native-model", "", 100, 50)
 	m.IncrInFlight("a")
 	m.ObserveBalanceSelection("standard", "a")
 	m.ObserveBalanceHealth("a", 0.8)
@@ -75,19 +75,29 @@ func TestExpositionRendersFamilies(t *testing.T) {
 
 func TestExpositionNoHighCardinalityLabels(t *testing.T) {
 	m := newMetrics()
-	m.ObserveRequest("standard", "standard", "a", "native-model", "success", time.Second)
+	m.ObserveRequest("standard", "standard", "a", "native-model", "success", "primary", time.Second)
 	m.ObserveAttempt("a", "native-model", "")
 	// Simulate the worst case the registry will ever see: a label value is
 	// drawn only from the fixed label dimensions.
 	body := scrape(t, m)
 
-	// High-cardinality identifiers must never appear as label names.
+	// High-cardinality identifiers must never appear as label names. api_key
+	// IS a label now, but bounded to the configured non-secret client-key IDs
+	// (checked below), never key material.
 	for _, forbidden := range []string{
-		"request_id", "session_id", "user_id", "api_key", "client_ip", "prompt",
+		"request_id", "session_id", "user_id", "client_ip", "prompt",
 	} {
 		if strings.Contains(body, forbidden) {
 			t.Errorf("exposition leaks high-cardinality label %q", forbidden)
 		}
+	}
+	// The api_key dimension carries only the non-secret client-key ID, and the
+	// key material itself never reaches a label value.
+	if !strings.Contains(body, `api_key="primary"`) {
+		t.Errorf("exposition missing client-key id label value:\n%s", body)
+	}
+	if strings.Contains(body, "sk-") {
+		t.Errorf("exposition leaks secret-looking material as a label value")
 	}
 	// Label values are fixed-dimension enums, never values that grow with
 	// traffic volume; nothing here should be a UUID or numeric id.
@@ -99,26 +109,26 @@ func TestExpositionNoHighCardinalityLabels(t *testing.T) {
 func TestHistogramBucketsAndSum(t *testing.T) {
 	m := newMetrics()
 	for _, value := range []float64{0.2, 0.4, 2.0, 10.0} {
-		m.ObserveRequest("standard", "standard", "a", "native-model", "success", time.Duration(value*float64(time.Second)))
+		m.ObserveRequest("standard", "standard", "a", "native-model", "success", "", time.Duration(value*float64(time.Second)))
 	}
 	body := scrape(t, m)
 
 	// The cumulative semantics: a 2.0s observation lands in the 2.5 bucket but
 	// not the 1.0 bucket.
-	if !strings.Contains(body, `llm_request_duration_seconds_bucket{route="standard",model="standard",provider="a",native_model="native-model",le="1"} 2`) {
+	if !strings.Contains(body, `llm_request_duration_seconds_bucket{api_key="",route="standard",model="standard",provider="a",native_model="native-model",le="1"} 2`) {
 		t.Errorf("expected cumulative histogram bucket le=1 to count 2, got:\n%s", body)
 	}
-	if !strings.Contains(body, `llm_request_duration_seconds_bucket{route="standard",model="standard",provider="a",native_model="native-model",le="2.5"} 3`) {
+	if !strings.Contains(body, `llm_request_duration_seconds_bucket{api_key="",route="standard",model="standard",provider="a",native_model="native-model",le="2.5"} 3`) {
 		t.Errorf("expected cumulative histogram bucket le=2.5 to count 3, got:\n%s", body)
 	}
-	if !strings.Contains(body, "llm_request_duration_seconds_count{route=\"standard\",model=\"standard\",provider=\"a\",native_model=\"native-model\"} 4") {
+	if !strings.Contains(body, "llm_request_duration_seconds_count{api_key=\"\",route=\"standard\",model=\"standard\",provider=\"a\",native_model=\"native-model\"} 4") {
 		t.Errorf("expected count 4")
 	}
 	if !strings.Contains(body, `le="+Inf"`) {
 		t.Errorf("missing +Inf bucket")
 	}
 	// sum ≈ 0.2+0.4+2+10 = 12.6s
-	if !strings.Contains(body, "llm_request_duration_seconds_sum{route=\"standard\",model=\"standard\",provider=\"a\",native_model=\"native-model\"} 12.6") {
+	if !strings.Contains(body, "llm_request_duration_seconds_sum{api_key=\"\",route=\"standard\",model=\"standard\",provider=\"a\",native_model=\"native-model\"} 12.6") {
 		t.Errorf("expected sum 12.6, got:\n%s", body)
 	}
 }
@@ -150,15 +160,15 @@ func TestInFlightAcrossConcurrentBranches(t *testing.T) {
 
 func TestCounterSingleLinePerLabelSet(t *testing.T) {
 	m := newMetrics()
-	m.ObserveRequest("standard", "standard", "a", "native-model", "success", time.Second)
-	m.ObserveRequest("standard", "standard", "a", "native-model", "success", time.Second)
-	m.ObserveRequest("standard", "standard", "b", "native-model", "success", time.Second)
+	m.ObserveRequest("standard", "standard", "a", "native-model", "success", "", time.Second)
+	m.ObserveRequest("standard", "standard", "a", "native-model", "success", "", time.Second)
+	m.ObserveRequest("standard", "standard", "b", "native-model", "success", "", time.Second)
 	body := scrape(t, m)
 
-	if !strings.Contains(body, `llm_requests_total{route="standard",model="standard",provider="a",native_model="native-model",status="success"} 2`) {
+	if !strings.Contains(body, `llm_requests_total{api_key="",route="standard",model="standard",provider="a",native_model="native-model",status="success"} 2`) {
 		t.Errorf("expected merged counter for provider a, got:\n%s", body)
 	}
-	if !strings.Contains(body, `llm_requests_total{route="standard",model="standard",provider="b",native_model="native-model",status="success"} 1`) {
+	if !strings.Contains(body, `llm_requests_total{api_key="",route="standard",model="standard",provider="b",native_model="native-model",status="success"} 1`) {
 		t.Errorf("expected counter for provider b, got:\n%s", body)
 	}
 }

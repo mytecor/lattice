@@ -26,7 +26,7 @@ func TestServerAuthModelsAndLogicalRewrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	compiled.raw.ClientAPIKey = "client-secret"
+	compiled.clientKeys = map[string]string{"primary": "client-secret"}
 	var captured Target
 	executor := &fakeExecutor{
 		do: func(_ context.Context, target Target, _ ExecuteRequest) ([]byte, *CallError) {
@@ -170,7 +170,7 @@ func TestServerStreamsWinnerWithLogicalModel(t *testing.T) {
 
 func TestManualRefreshDoesNotExposeProviderNamespace(t *testing.T) {
 	compiled := raceOnlyConfig(t)
-	compiled.raw.ClientAPIKey = "client-secret"
+	compiled.clientKeys = map[string]string{"primary": "client-secret"}
 	compiled.catalogSources = map[string][]catalogSource{
 		"internal-provider-id": {{URL: "://invalid"}},
 	}

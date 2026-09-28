@@ -19,13 +19,16 @@ import (
 var version = "0.1.0"
 
 // Metrics is the gateway's numeric observability surface. It is deliberately
-// label-restricted (low cardinality only: route, model, provider, native_model,
-// status and error_type are the only dimensions) and rendered on demand in the
-// Prometheus text exposition format. request_id, session_id, api_key,
-// client_ip or any prompt material never become labels. "model" is always the
-// logical gateway model (1:1 with the of a request), "native_model" the
-// provider's real model ID: both are bounded by the catalog (provider × native
-// model, ~a dozen live pairs), so cardinality stays low.
+// label-restricted (low cardinality only: api_key, route, model, provider,
+// native_model, status and error_type are the only dimensions) and rendered
+// on demand in the Prometheus text exposition format. request_id, session_id,
+// client_ip or any prompt material never become labels. api_key is always the
+// non-secret client-key ID the request was authenticated with (empty when
+// client auth is disabled), never the key material itself; "model" is always
+// the logical gateway model (1:1 with the of a request), "native_model" the
+// provider's real model ID: both are bounded by the catalog (provider ×
+// native model, ~a dozen live pairs), and api_key by the configured client
+// keys, so cardinality stays low.
 //
 // The registry is a hand-rolled minimal implementation on the standard
 // library: the repository carries no vendor metrics dependency, and the
@@ -34,8 +37,9 @@ var version = "0.1.0"
 type Metrics struct {
 	mu sync.RWMutex
 
-	// requestsTotal counts completed client requests by route, model (logical),
-	// winning provider, native model and final status.
+	// requestsTotal counts completed client requests by client key, route, model
+	// (logical), winning provider, native model and final status. The api_key
+	// dimension is the non-secret client-key ID (empty in keyless mode).
 	requestsTotal *counterVec
 	// attemptTotal counts upstream branch attempts by provider, native model and
 	// terminal error class (the empty error_type labels a successful attempt,
@@ -72,12 +76,14 @@ type Metrics struct {
 	// observable without reading scheduler internals.
 	balanceSelections *counterVec
 	// inputTokens / outputTokens accumulate usage from responses and streams,
-	// keyed by logical model, provider and native model (zero when a provider
-	// omits usage).
+	// keyed by client key, logical model, provider and native model (zero when
+	// a provider omits usage).
 	inputTokens  *counterVec
 	outputTokens *counterVec
 	// requestDuration / ttft are cumulative histograms with stable buckets so
-	// p50/p95 series share the same le edges across restarts.
+	// p50/p95 series share the same le edges across restarts. requestDuration
+	// carries the client-key dimension, ttft does not (it measures provider
+	// selection latency, not client attribution).
 	requestDuration *histogramVec
 	ttft            *histogramVec
 	// requestsInFlight is a provider-scoped gauge; it is bumped when a branch
@@ -116,7 +122,7 @@ var (
 
 func newMetrics() *Metrics {
 	return &Metrics{
-		requestsTotal:     newCounterVec([]string{"route", "model", "provider", "native_model", "status"}),
+		requestsTotal:     newCounterVec([]string{"api_key", "route", "model", "provider", "native_model", "status"}),
 		attemptTotal:      newCounterVec([]string{"provider", "native_model", "error_type"}),
 		streamBreaks:      newCounterVec([]string{"provider", "native_model", "error_type"}),
 		fallbackTotal:     newCounterVec([]string{"from_provider", "to_provider", "reason"}),
@@ -124,9 +130,9 @@ func newMetrics() *Metrics {
 		chainRetriesTotal: newCounterVec([]string{"status"}),
 		repetitionTotal:   newCounterVec([]string{"route", "provider"}),
 		balanceSelections: newCounterVec([]string{"route", "provider"}),
-		inputTokens:       newCounterVec([]string{"model", "provider", "native_model"}),
-		outputTokens:      newCounterVec([]string{"model", "provider", "native_model"}),
-		requestDuration:   newHistogramVec([]string{"route", "model", "provider", "native_model"}, requestDurationBucketsSec),
+		inputTokens:       newCounterVec([]string{"api_key", "model", "provider", "native_model"}),
+		outputTokens:      newCounterVec([]string{"api_key", "model", "provider", "native_model"}),
+		requestDuration:   newHistogramVec([]string{"api_key", "route", "model", "provider", "native_model"}, requestDurationBucketsSec),
 		ttft:              newHistogramVec([]string{"model", "provider", "native_model"}, ttftBucketsSec),
 		requestsInFlight:  newGaugeVec([]string{"provider"}),
 		balanceHealth:     newGaugeVec([]string{"provider"}),
@@ -139,12 +145,13 @@ func newMetrics() *Metrics {
 // The duration spans the whole request, the provider is the winner and status
 // is "success" or "failed". model is the logical gateway model; native is the
 // winner's provider model ID (empty when no branch ever succeeded, e.g. a
-// pre-dispatch rejection).
-func (m *Metrics) ObserveRequest(route, model, provider, native, status string, duration time.Duration) {
+// pre-dispatch rejection). apiKey is the non-secret client-key ID the request
+// was authenticated with (empty in keyless mode).
+func (m *Metrics) ObserveRequest(route, model, provider, native, status, apiKey string, duration time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.requestsTotal.inc(route, model, provider, native, status)
-	m.requestDuration.observe([]string{route, model, provider, native}, duration.Seconds())
+	m.requestsTotal.inc(apiKey, route, model, provider, native, status)
+	m.requestDuration.observe([]string{apiKey, route, model, provider, native}, duration.Seconds())
 }
 
 // ObserveAttempt records one completed upstream branch. errorType is the
@@ -171,14 +178,16 @@ func (m *Metrics) ObserveTTFT(model, provider, native string, duration time.Dura
 // usage contribute zero; the caller decides whether zero means "no tokens" or
 // "unknown" (the structured events mark unknown usage explicitly, metrics do
 // not carry an unknown carrier dimension). native is the provider model ID.
-func (m *Metrics) ObserveTokens(model, provider, native string, input, output int64) {
+// apiKey is the non-secret client-key ID of the authenticated request (empty
+// in keyless mode).
+func (m *Metrics) ObserveTokens(model, provider, native, apiKey string, input, output int64) {
 	if input == 0 && output == 0 {
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.inputTokens.add(input, model, provider, native)
-	m.outputTokens.add(output, model, provider, native)
+	m.inputTokens.add(input, apiKey, model, provider, native)
+	m.outputTokens.add(output, apiKey, model, provider, native)
 }
 
 // IncrInFlight and DecrInFlight drive the in-flight gauge; they are kept
@@ -293,7 +302,7 @@ func (m *Metrics) WriteExposition(writer io.Writer) error {
 	emit(fmt.Sprintf("llm_gateway_build_info{version=%q,service=%q} 1", version, metricService))
 	emitRuntimeMetrics(buffered, m.startTime)
 
-	m.requestsTotal.write(buffered, "llm_requests_total", "Completed client requests by route, logical model, winning provider, native model and status.")
+	m.requestsTotal.write(buffered, "llm_requests_total", "Completed client requests by client key id, route, logical model, winning provider, native model and status.")
 	m.attemptTotal.write(buffered, "llm_attempts_total", "Upstream branch attempts by provider, native model and terminal error type.")
 	m.streamBreaks.write(buffered, "llm_stream_breaks_total", "Mid-stream (post-selection) winner stream failures by provider, native model and error type.")
 	m.fallbackTotal.write(buffered, "llm_fallbacks_total", "Explicit fallback transitions by source and destination provider.")
@@ -301,12 +310,12 @@ func (m *Metrics) WriteExposition(writer io.Writer) error {
 	m.chainRetriesTotal.write(buffered, "llm_chain_retries_total", "Whole-chain retries of an exhausted continue chain by outcome (started, completed, exhausted).")
 	m.repetitionTotal.write(buffered, "llm_repetition_detected_total", "Loop-guard firings (repetition rule) by route and winning provider, exactly once per detected loop.")
 	m.balanceSelections.write(buffered, "llm_balance_selections_total", "Provider chosen by the balance action per route.")
-	m.inputTokens.write(buffered, "llm_input_tokens_total", "Accumulated input tokens by logical model, provider and native model.")
-	m.outputTokens.write(buffered, "llm_output_tokens_total", "Accumulated output tokens by logical model, provider and native model.")
+	m.inputTokens.write(buffered, "llm_input_tokens_total", "Accumulated input tokens by client key id, logical model, provider and native model.")
+	m.outputTokens.write(buffered, "llm_output_tokens_total", "Accumulated output tokens by client key id, logical model, provider and native model.")
 	m.requestsInFlight.write(buffered, "llm_requests_in_flight", "Current in-flight upstream branches by provider.")
 	m.balanceHealth.write(buffered, "llm_balance_health", "Latest balance health score per provider (0 unhealthy … 1 healthy).")
 	m.cooldownUntil.write(buffered, "llm_cooldown_until_seconds", "Unix seconds until a cooling provider native-model pair re-enters the candidate pool.")
-	m.requestDuration.write(buffered, "llm_request_duration_seconds", "Request duration histogram by route, logical model, provider and native model.")
+	m.requestDuration.write(buffered, "llm_request_duration_seconds", "Request duration histogram by client key id, route, logical model, provider and native model.")
 	m.ttft.write(buffered, "llm_ttft_seconds", "Time to first meaningful event histogram by logical model, provider and native model.")
 
 	return buffered.Flush()

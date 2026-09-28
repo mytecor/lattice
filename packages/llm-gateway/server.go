@@ -70,16 +70,21 @@ func (m *metricsOnly) serve(writer http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		if s.config.raw.ClientAPIKey == "" {
+		if len(s.config.clientKeys) == 0 {
 			next(writer, request)
 			return
 		}
 		provided := strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer ")
-		if len(provided) != len(s.config.raw.ClientAPIKey) || subtle.ConstantTimeCompare([]byte(provided), []byte(s.config.raw.ClientAPIKey)) != 1 {
-			writeAPIError(writer, http.StatusUnauthorized, "invalid_api_key")
-			return
+		for id, expected := range s.config.clientKeys {
+			if len(provided) == len(expected) && subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1 {
+				// Pin the non-secret client key ID into the request context so
+				// the request- and usage-level metrics attribute this request to
+				// the key it was authenticated with.
+				next(writer, request.WithContext(withClientKey(request.Context(), id)))
+				return
+			}
 		}
-		next(writer, request)
+		writeAPIError(writer, http.StatusUnauthorized, "invalid_api_key")
 	}
 }
 
@@ -111,9 +116,10 @@ func (s *Server) metricsHandler(writer http.ResponseWriter, _ *http.Request) {
 // observeRequest records the request-level observation: counter, histogram and
 // token accumulation share one call so the request lifecycle is recorded once
 // at exactly one terminal point. The empty provider and native convey that no
-// branch ever succeeded (for example a pre-dispatch rejection).
-func (s *Server) observeRequest(logical, provider, native, status string, duration time.Duration) {
-	s.metrics.ObserveRequest(s.routeOf(logical), logical, provider, native, status, duration)
+// branch ever succeeded (for example a pre-dispatch rejection). The client key
+// id comes from the authenticated request context (empty in keyless mode).
+func (s *Server) observeRequest(request *http.Request, logical, provider, native, status string, duration time.Duration) {
+	s.metrics.ObserveRequest(s.routeOf(logical), logical, provider, native, status, clientKeyFrom(request.Context()), duration)
 }
 
 // observeTokens accumulates usage from a non-stream response body and returns
@@ -121,12 +127,12 @@ func (s *Server) observeRequest(logical, provider, native, status string, durati
 // Providers that omit usage contribute nothing. The hasUsage flag tells whether
 // the provider reported usage at all (zero tokens with hasUsage=false mean
 // "unknown", not "zero"). provider and native identify the winning branch.
-func (s *Server) observeTokens(logical, provider, native string, response []byte) (input, output, cached int64, hasUsage bool) {
+func (s *Server) observeTokens(request *http.Request, logical, provider, native string, response []byte) (input, output, cached int64, hasUsage bool) {
 	summary, ok := extractUsageFull(response)
 	if !ok {
 		return 0, 0, 0, false
 	}
-	s.metrics.ObserveTokens(logical, provider, native, summary.Input, summary.Output)
+	s.metrics.ObserveTokens(logical, provider, native, clientKeyFrom(request.Context()), summary.Input, summary.Output)
 	return summary.Input, summary.Output, summary.CachedTokens, true
 }
 
@@ -206,7 +212,7 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 			"error_type", string(callErr.Class),
 			"duration_ms", time.Since(started).Milliseconds(),
 		)
-		s.observeRequest(metadata.Model, "", "", "failed", time.Since(started))
+		s.observeRequest(request, metadata.Model, "", "", "failed", time.Since(started))
 		writeCallError(writer, callErr)
 		return
 	}
@@ -217,7 +223,7 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 		s.bindResponsesAffinity(metadata.Model, result.Provider, response, "")
 	}
 	provider := result.Provider
-	input, output, cached, hasUsage := s.observeTokens(metadata.Model, result.Provider, result.Model, response)
+	input, output, cached, hasUsage := s.observeTokens(request, metadata.Model, result.Provider, result.Model, response)
 	response, err = sanitizeJSON(response, metadata.Model)
 	if err != nil {
 		logEvent(request.Context(), s.logger, slog.LevelError, "request_failed",
@@ -228,7 +234,7 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 			"error_type", string(ErrorInvalid),
 			"duration_ms", time.Since(started).Milliseconds(),
 		)
-		s.observeRequest(metadata.Model, provider, result.Model, "failed", time.Since(started))
+		s.observeRequest(request, metadata.Model, provider, result.Model, "failed", time.Since(started))
 		writeAPIError(writer, http.StatusBadGateway, "invalid_upstream_response")
 		return
 	}
@@ -252,7 +258,7 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 		"has_usage", hasUsage,
 		"attempts", result.Attempts,
 	)
-	s.observeRequest(metadata.Model, provider, result.Model, "success", time.Since(started))
+	s.observeRequest(request, metadata.Model, provider, result.Model, "success", time.Since(started))
 }
 
 func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logical string, executeRequest ExecuteRequest, started time.Time) {
@@ -350,13 +356,14 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 		idleTimer.Reset(idleTimeout)
 	}
 	cur := selected
+	clientKey := clientKeyFrom(request.Context())
 	observe := func(data []byte) {
 		if summary, ok := extractUsageFull(data); ok {
 			inTokens += summary.Input
 			outTokens += summary.Output
 			cachedTokens += summary.CachedTokens
 			hasUsage = true
-			s.metrics.ObserveTokens(logical, cur.Provider, cur.Model, summary.Input, summary.Output)
+			s.metrics.ObserveTokens(logical, cur.Provider, cur.Model, clientKey, summary.Input, summary.Output)
 		}
 	}
 	// The partial output accumulator feeds the "continue" rule: every relayed
@@ -621,7 +628,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 		if takeover(loop) || holdForRecovery(loop) {
 			return true
 		}
-		s.observeRequest(logical, cur.Provider, cur.Model, "failed", time.Since(started))
+		s.observeRequest(request, logical, cur.Provider, cur.Model, "failed", time.Since(started))
 		writeStreamError(writer, flusher, loop, requestID, s.runner.streamRetryable(logical, loop))
 		return false
 	}
@@ -653,7 +660,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 				"attempts", cur.Attempts,
 				"duration_ms", time.Since(started).Milliseconds(),
 			)
-			s.observeRequest(logical, cur.Provider, cur.Model, "cancelled", time.Since(started))
+			s.observeRequest(request, logical, cur.Provider, cur.Model, "cancelled", time.Since(started))
 			return
 		case <-idleC:
 			stall := &CallError{Class: ErrorTimeout, Status: 504, Cause: fmt.Errorf("no stream events for %s", idleTimeout)}
@@ -669,7 +676,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 			if !sawFinishReason && (takeover(stall) || holdForRecovery(stall)) {
 				continue
 			}
-			s.observeRequest(logical, cur.Provider, cur.Model, "failed", time.Since(started))
+			s.observeRequest(request, logical, cur.Provider, cur.Model, "failed", time.Since(started))
 			writeStreamError(writer, flusher, stall, requestID, s.runner.streamRetryable(logical, stall))
 			return
 		case event, open := <-cur.Remaining:
@@ -700,7 +707,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					if takeover(broken) || holdForRecovery(broken) {
 						continue
 					}
-					s.observeRequest(logical, cur.Provider, cur.Model, "failed", time.Since(started))
+					s.observeRequest(request, logical, cur.Provider, cur.Model, "failed", time.Since(started))
 					writeStreamError(writer, flusher, broken, requestID, s.runner.streamRetryable(logical, broken))
 					return
 				}
@@ -736,7 +743,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					if takeover(broken) || holdForRecovery(broken) {
 						continue
 					}
-					s.observeRequest(logical, cur.Provider, cur.Model, "failed", time.Since(started))
+					s.observeRequest(request, logical, cur.Provider, cur.Model, "failed", time.Since(started))
 					writeStreamError(writer, flusher, broken, requestID, s.runner.streamRetryable(logical, broken))
 					return
 				}
@@ -761,7 +768,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					"has_usage", hasUsage,
 					"attempts", cur.Attempts,
 				)
-				s.observeRequest(logical, cur.Provider, cur.Model, "success", time.Since(started))
+				s.observeRequest(request, logical, cur.Provider, cur.Model, "success", time.Since(started))
 				return
 			}
 			if event.Err != nil {
@@ -784,7 +791,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 				if !sawFinishReason && (takeover(event.Err) || holdForRecovery(event.Err)) {
 					continue
 				}
-				s.observeRequest(logical, cur.Provider, cur.Model, "failed", time.Since(started))
+				s.observeRequest(request, logical, cur.Provider, cur.Model, "failed", time.Since(started))
 				writeStreamError(writer, flusher, event.Err, requestID, s.runner.streamRetryable(logical, event.Err))
 				return
 			}

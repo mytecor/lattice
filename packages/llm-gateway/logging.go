@@ -19,6 +19,7 @@ const (
 	requestIDKey logContextKey = iota
 	routeStageKey
 	routeAttemptKey
+	clientKeyKey
 )
 
 func newGatewayLogger(level string) *slog.Logger {
@@ -66,6 +67,20 @@ func withRequestID(ctx context.Context, requestID string) context.Context {
 func requestIDFrom(ctx context.Context) string {
 	if requestID, ok := ctx.Value(requestIDKey).(string); ok {
 		return requestID
+	}
+	return ""
+}
+
+func withClientKey(ctx context.Context, clientKey string) context.Context {
+	return context.WithValue(ctx, clientKeyKey, clientKey)
+}
+
+// clientKeyFrom returns the non-secret client-key ID the request was
+// authenticated with (empty when client auth is disabled or the request is
+// not authenticated). It never carries key material.
+func clientKeyFrom(ctx context.Context) string {
+	if id, ok := ctx.Value(clientKeyKey).(string); ok {
+		return id
 	}
 	return ""
 }

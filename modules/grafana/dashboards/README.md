@@ -77,10 +77,10 @@ Fleet (rev. 2026-09-16, полная переработка):
 
 | Метрика | Что показывает |
 | --- | --- |
-| `llm_requests_total{route,model,provider,native_model,status}` | завершённые client-запросы (status = success/failed); `model` — логический, `native_model` — реальный id у провайдера |
-| `llm_request_duration_seconds_bucket{route,model,provider,native_model}` | гистограмма длительности (p50/p95/p99) |
+| `llm_requests_total{api_key,route,model,provider,native_model,status}` | завершённые client-запросы (status = success/failed); `api_key` — не-секретный id клиентского ключа (пусто в keyless), `model` — логический, `native_model` — реальный id у провайдера |
+| `llm_request_duration_seconds_bucket{api_key,route,model,provider,native_model}` | гистограмма длительности (p50/p95/p99) |
 | `llm_ttft_seconds_bucket{model,provider,native_model}` | гистограмма TTFT (p50/p95/p99) |
-| `llm_input_tokens_total` / `llm_output_tokens_total{model,provider,native_model}` | накопленные токены |
+| `llm_input_tokens_total` / `llm_output_tokens_total{api_key,model,provider,native_model}` | накопленные токены (по клиентскому ключу) |
 | `llm_attempts_total{provider,native_model,error_type}` | попытки веток по провайдеру/модели и классу ошибки (errors фильтрует `error_type=~".+"`) |
 | `llm_fallbacks_total{from_provider,to_provider,reason}` | явные fallback-переходы |
 | `llm_balance_health{provider}` | скользящее здоровье пула [0..1] (окно ошибок против бюджета; 0 ≠ cooldown) |
@@ -105,7 +105,12 @@ Fleet (rev. 2026-09-16, полная переработка):
 
 Все дашборды фильтруются по `environment` (постоянный label scrape job,
 см. `modules/observability-prometheus`), `route`, `provider`, `native_model`,
-`status`. `native_model` — реальный id модели у провайдера; логическая `model`
+`status`. В `llm-gateway` и `gateway-providers` добавлена переменная `api_key`
+(`label_values(llm_requests_total, api_key)`): не-секретный id клиентского
+ключа. `llm-gateway` содержит строку «По клиентскому ключу» — RPS и
+потребление токенов, сгруппированные `by (api_key)` (в keyless-режиме это
+одна серия с пустым `api_key`). `native_model` — реальный id модели у
+провайдера; логическая `model`
 остаётся в метриках, но дашборды не фильтруются по ней (она одинакова у всех
 провайдеров и скрывала, кто ответил). `request_id` — единственная текстовая
 переменная, для Loki-запросов только; никогда не label (F12 низкая cardinality).

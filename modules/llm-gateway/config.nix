@@ -12,8 +12,11 @@ let
     base_provider = provider.baseProvider;
     inference_url = provider.inferenceUrl;
     models_url = provider.modelsUrl;
-    api_key = null;
-    models_api_key = null;
+    # All credentials are passed as environment variables: the config only
+    # names the env var, the gateway resolves it at startup from its process
+    # environment (env.<name>) and never from a file. A provider without a
+    # configured key emits null and is treated as keyless.
+    api_key = if provider.apiKeySecretFile != null then "env.${provider.apiKeyEnv}" else null;
     cooldown = provider.cooldown;
     request_timeout = provider.requestTimeout;
     bifrost_max_retries = provider.bifrostMaxRetries;
@@ -50,7 +53,9 @@ let
     metrics_host = cfg.metricsHost;
     metrics_port = cfg.metricsPort;
     log_level = cfg.logLevel;
-    client_api_key = null;
+    # Named client keys; the runtime config carries only the non-secret key id
+    # and the env-var reference, never the key material.
+    client_api_keys = map (client: { id = client.id; api_key = "env.${client.env}"; }) cfg.clientKeys;
     catalog_refresh_interval = cfg.catalogRefreshInterval;
     stream_idle_timeout = cfg.streamIdleTimeout;
     affinity_file = if (cfg.affinityFile != null) then cfg.affinityFile else "${dataDir}/affinity.json";
@@ -61,67 +66,23 @@ let
   publicConfigFile = pkgs.writeText "llm-gateway-public-config.json" (builtins.toJSON publicConfig);
   runtimeConfigFile = "${dataDir}/config.json";
 
-  sanitizeName = name: lib.replaceStrings [ "." "_" ] [ "-" "-" ] name;
+  # Every credential — per-provider API keys and per-client keys alike — reaches
+  # the gateway process as an environment variable, never as a file read by the
+  # gateway itself. agenix stays the at-rest store: the module loads each secret
+  # into a dedicated oneshot unit with systemd LoadCredential, writes one
+  # `NAME='value'` line per credential (NAME = the config-declared env var) into
+  # a 0600 EnvironmentFile, chowns it to the unprivileged gateway user, and the
+  # gateway service reads it via EnvironmentFile at process spawn. The runtime
+  # config and the EnvironmentFile reference the same env names by construction,
+  # so they can never drift.
+  envCredentials =
+    lib.mapAttrsToList
+      (name: provider: { env = provider.apiKeyEnv; file = provider.apiKeySecretFile; })
+      (lib.filterAttrs (_: provider: provider.apiKeySecretFile != null) activeProviders)
+    ++ map (client: { env = client.env; file = client.secretFile; }) cfg.clientKeys;
 
-  providerCredentials = lib.concatLists (lib.mapAttrsToList
-    (name: provider:
-      lib.optional (provider.apiKeyFile != null) {
-        file = provider.apiKeyFile;
-        name = "provider-${sanitizeName name}-api-key";
-        targetId = provider.id;
-        field = "api_key";
-      }
-      ++ lib.optional (provider.modelsApiKeyFile != null) {
-        file = provider.modelsApiKeyFile;
-        name = "provider-${sanitizeName name}-models-api-key";
-        targetId = provider.id;
-        field = "models_api_key";
-      })
-    activeProviders);
-
-  runtimeCredentials = providerCredentials;
-  loadCredentials =
-    lib.optional (cfg.clientCredentialFile != null) "client-key:${cfg.clientCredentialFile}"
-    ++ map (credential: "${credential.name}:${credential.file}") runtimeCredentials;
-
-  appendCredential = credential: ''
-    next="$tmp.next"
-    ${pkgs.jq}/bin/jq \
-      --arg id ${lib.escapeShellArg credential.targetId} \
-      --arg field ${lib.escapeShellArg credential.field} \
-      --rawfile raw "$CREDENTIALS_DIRECTORY/${credential.name}" '
-        ($raw | sub("[\\r\\n]+$"; "")) as $secret
-        | if ($secret == "" or ($secret | test("[\\r\\n]")))
-          then error("invalid provider credential") else . end
-        | .providers |= map(if .id == $id then .[$field] = $secret else . end)
-      ' "$tmp" > "$next"
-    mv "$next" "$tmp"
-  '';
-
-  runtimeConfigBuilder = ''
-    set -eu
-    umask 077
-    install -d -m 0700 ${lib.escapeShellArg dataDir}
-    tmp=$(mktemp ${lib.escapeShellArg "${runtimeConfigFile}.XXXXXX"})
-    trap 'rm -f "$tmp" "$tmp.next"' EXIT
-
-    ${if cfg.clientCredentialFile != null then ''
-      ${pkgs.jq}/bin/jq \
-        --arg field "client_api_key" \
-        --rawfile raw "$CREDENTIALS_DIRECTORY/client-key" '
-          ($raw | sub("[\\r\\n]+$"; "")) as $secret
-          | if ($secret == "" or ($secret | test("[\\r\\n]")))
-            then error("invalid client credential") else . end
-          | .[$field] = $secret
-        ' ${publicConfigFile} > "$tmp"
-    '' else ''
-      cp ${publicConfigFile} "$tmp"
-    ''}
-
-    ${lib.concatMapStringsSep "\n" appendCredential runtimeCredentials}
-    chmod 0600 "$tmp"
-    mv "$tmp" ${lib.escapeShellArg runtimeConfigFile}
-  '';
+  envDir = "/run/llm-gateway-env";
+  envFile = "${envDir}/keys.env";
 
   providerIds = map (provider: provider.id) (builtins.attrValues activeProviders);
   # Only filter provider actions carry a provider list; the other discriminated
@@ -170,9 +131,13 @@ in
       # time.
       {
         assertion = lib.all
-          (provider: provider.modelsApiKeyFile == null || provider.modelsUrl != null)
+          (provider: provider.apiKeySecretFile == null || provider.apiKeyEnv != null)
           (builtins.attrValues activeProviders);
-        message = "llm-gateway: modelsApiKeyFile requires modelsUrl.";
+        message = "llm-gateway: apiKeySecretFile requires a non-null apiKeyEnv.";
+      }
+      {
+        assertion = builtins.length cfg.clientKeys == builtins.length (lib.unique (map (client: client.id) cfg.clientKeys));
+        message = "llm-gateway: client key ids must be unique.";
       }
     ];
 
@@ -183,12 +148,58 @@ in
       home = "/var/empty";
     };
 
+    # Materializes the API keys as an environment file. Runs as root so it can
+    # receive the LoadCredential secret files; the resulting EnvironmentFile is
+    # owned by the unprivileged gateway user. Restarting/rotating the gateway
+    # (the documented `restartUnits = [ "llm-gateway.service" ]`) re-runs this
+    # unit first via PartOf, so the env file is always rebuilt before the
+    # gateway spawns.
+    systemd.services.llm-gateway-env = {
+      description = "Materialize llm-gateway API keys as environment variables";
+      before = [ "llm-gateway.service" ];
+      requiredBy = [ "llm-gateway.service" ];
+      partOf = [ "llm-gateway.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RuntimeDirectory = "llm-gateway-env";
+        RuntimeDirectoryMode = "0700";
+        UMask = "0077";
+        # Credential name == the config-declared env var name, so the env file
+        # lines and the runtime config reference the same names by construction.
+        LoadCredential = map (credential: "${credential.env}:${credential.file}") envCredentials;
+        ExecStart = pkgs.writeShellScript "llm-gateway-env" ''
+          set -eu
+          umask 077
+          dir=${lib.escapeShellArg envDir}
+          out="$dir/keys.env"
+          : > "$out"
+          creds=${lib.escapeShellArgs (map (credential: credential.env) envCredentials)}
+          if [ -n "$creds" ]; then
+            for cred in $creds; do
+              value=$(tr -d '\r\n' < "$CREDENTIALS_DIRECTORY/$cred")
+              printf "%s='%s'\n" "$cred" "$value" >> "$out"
+            done
+          fi
+          chmod 0600 "$out"
+          chown ${cfg.user}:${cfg.group} "$dir" "$out"
+        '';
+      };
+    };
+
     systemd.services.llm-gateway = {
       description = "Lattice OpenAI-compatible LLM gateway";
       wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
+      after = [ "network-online.target" "llm-gateway-env.service" ];
       wants = [ "network-online.target" ];
-      preStart = runtimeConfigBuilder;
+      preStart = ''
+        set -eu
+        umask 077
+        tmp=$(mktemp ${lib.escapeShellArg "${runtimeConfigFile}.XXXXXX"})
+        trap 'rm -f "$tmp"' EXIT
+        cp ${lib.escapeShellArg publicConfigFile} "$tmp"
+        chmod 0600 "$tmp"
+        mv "$tmp" ${lib.escapeShellArg runtimeConfigFile}
+      '';
       serviceConfig = {
         User = cfg.user;
         Group = cfg.group;
@@ -196,7 +207,7 @@ in
         RuntimeDirectoryMode = "0700";
         RuntimeDirectoryPreserve = "restart";
         WorkingDirectory = dataDir;
-        LoadCredential = loadCredentials;
+        EnvironmentFile = envFile;
         ExecStart = "${lib.getExe cfg.package} --config ${runtimeConfigFile} serve";
         Restart = "on-failure";
         RestartSec = 5;

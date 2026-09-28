@@ -1818,6 +1818,228 @@
       "title": "События запроса (Loki)",
       "type": "logs",
       "description": "Введите request_id в переменную сверху (или кликните request_id в любом логе — откроется дашборд расследования). Пустая переменная — панель пуста, это защита от вывода всего потока."
+    },
+    {
+      "collapsed": false,
+      "datasource": {
+        "type": "grafana",
+        "uid": "-- Grafana --"
+      },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 58
+      },
+      "id": 126,
+      "panels": [],
+      "title": "По клиентскому ключу",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "reqps",
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": null
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 59
+      },
+      "id": 127,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "width": 0
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "exemplar": false,
+          "expr": "sum by (api_key) (rate(llm_requests_total{environment=\"$environment\",route=~\"$route\",provider=~\"$provider\",api_key=~\"$api_key\"}[$__rate_interval]))",
+          "instant": false,
+          "legendFormat": "{{api_key}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Запросов в секунду по клиентскому ключу",
+      "type": "timeseries",
+      "description": "Частота завершённых клиентских запросов по api_key (не-секретному id клиентского ключа; пусто — keyless). Метрика llm_requests_total{api_key}."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "tok/s",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": null
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 59
+      },
+      "id": 128,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "width": 0
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "exemplar": false,
+          "expr": "sum by (api_key) (rate(llm_input_tokens_total{environment=\"$environment\",provider=~\"$provider\",api_key=~\"$api_key\"}[$__rate_interval]))",
+          "instant": false,
+          "legendFormat": "вход · {{api_key}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "exemplar": false,
+          "expr": "sum by (api_key) (rate(llm_output_tokens_total{environment=\"$environment\",provider=~\"$provider\",api_key=~\"$api_key\"}[$__rate_interval]))",
+          "instant": false,
+          "legendFormat": "выход · {{api_key}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Токены в секунду по клиентскому ключу",
+      "type": "timeseries",
+      "description": "Потребление токенов по api_key: вход (llm_input_tokens_total) и выход (llm_output_tokens_total). Пустой api_key — keyless-режим."
     }
   ],
   "refresh": "30s",
@@ -1979,6 +2201,30 @@
         "skipUrlSync": false,
         "sort": 0,
         "type": "textbox"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(llm_requests_total, api_key)",
+        "hide": 0,
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "api_key",
+        "multi": true,
+        "name": "api_key",
+        "options": [],
+        "query": {
+          "query": "label_values(llm_requests_total, api_key)",
+          "refId": "stdlib-llm-gateway-APIKEY"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
       }
     ]
   },

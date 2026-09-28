@@ -19,7 +19,8 @@ let
             proxy = {
               id = "gonka-proxy";
               inferenceUrl = "https://proxy.gonka.invalid/v1";
-              apiKeyFile = "/run/agenix/llm-provider-proxy";
+              apiKeySecretFile = "/run/agenix/llm-provider-proxy";
+              apiKeyEnv = "LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY";
               priority = 20;
               stripParams = [ "thinking" "reasoning_effort" ];
               setParams = {
@@ -29,7 +30,8 @@ let
             openbroker = {
               id = "gonka-openbroker";
               inferenceUrl = "https://openbroker.gonka.invalid/v1";
-              apiKeyFile = "/run/agenix/llm-provider-openbroker";
+              apiKeySecretFile = "/run/agenix/llm-provider-openbroker";
+              apiKeyEnv = "LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY";
               priority = 10;
             };
           };

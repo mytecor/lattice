@@ -11,20 +11,26 @@ let
         nixpkgs.pkgs = pkgs;
         system.stateVersion = "26.05";
         lattice.llm-gateway = {
-          clientCredentialFile = "/run/agenix/llm-gateway-client-key";
+          clientKeys = [
+            {
+              id = "primary";
+              secretFile = "/run/agenix/llm-gateway-client-key";
+            }
+          ];
           providers = {
             proxy = {
               id = "gonka-proxy";
               inferenceUrl = "https://proxy.gonka.invalid/v1";
-              apiKeyFile = "/run/agenix/llm-provider-proxy";
+              apiKeySecretFile = "/run/agenix/llm-provider-proxy";
+              apiKeyEnv = "LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY";
               priority = 20;
             };
             openbroker = {
               id = "gonka-openbroker";
               inferenceUrl = "https://openbroker.gonka.invalid/v1";
               modelsUrl = "https://proxy.gonka.invalid/v1/models";
-              apiKeyFile = "/run/agenix/llm-provider-openbroker";
-              modelsApiKeyFile = "/run/agenix/llm-provider-proxy";
+              apiKeySecretFile = "/run/agenix/llm-provider-openbroker";
+              apiKeyEnv = "LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY";
               priority = 10;
             };
           };
@@ -64,15 +70,31 @@ let
   }).config;
 
   service = config.systemd.services.llm-gateway;
-  credentials = service.serviceConfig.LoadCredential;
+  envUnit = config.systemd.services.llm-gateway-env;
+  envCredentials = envUnit.serviceConfig.LoadCredential;
 in
 assert config.lattice.llm-gateway.package == pkgs.lattice.llm-gateway;
-assert builtins.elem "client-key:/run/agenix/llm-gateway-client-key" credentials;
-assert builtins.elem "provider-proxy-api-key:/run/agenix/llm-provider-proxy" credentials;
-assert builtins.elem "provider-openbroker-models-api-key:/run/agenix/llm-provider-proxy" credentials;
-assert builtins.elem "provider-openbroker-api-key:/run/agenix/llm-provider-openbroker" credentials;
-assert lib.hasInfix ".providers |= map" service.preStart;
-assert lib.hasInfix ".[$field] = $secret" service.preStart;
+# The gateway itself receives secrets only as environment variables: it has no
+# LoadCredential and reads the EnvironmentFile produced by the env unit.
+assert (service.serviceConfig.LoadCredential or [ ]) == [ ];
+# EnvironmentFile may stay a raw string before systemd unit generation
+# (NixOS coerces it to a list later), so accept either shape.
+assert
+  (if builtins.isString (service.serviceConfig.EnvironmentFile or "") then
+    service.serviceConfig.EnvironmentFile == "/run/llm-gateway-env/keys.env"
+  else
+    builtins.elem "/run/llm-gateway-env/keys.env" (service.serviceConfig.EnvironmentFile or [ ]));
+assert builtins.elem "llm-gateway-env.service" service.after;
+# The env unit loads every declared secret under its config-declared env name.
+assert builtins.elem "LATTICE_CLIENT_PRIMARY_KEY:/run/agenix/llm-gateway-client-key" envCredentials;
+assert builtins.elem "LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY:/run/agenix/llm-provider-proxy" envCredentials;
+assert builtins.elem "LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY:/run/agenix/llm-provider-openbroker" envCredentials;
+assert builtins.elem "llm-gateway.service" envUnit.requiredBy;
+assert builtins.elem "llm-gateway.service" envUnit.partOf;
+assert builtins.elem "llm-gateway.service" envUnit.before;
+# preStart no longer assembles secrets with jq: it only copies the now-public
+# (env-name-only) config template into the runtime directory.
+assert !(lib.hasInfix ".providers |= map" service.preStart);
 assert lib.hasInfix "--config /run/llm-gateway/config.json serve" service.serviceConfig.ExecStart;
 assert !service.serviceConfig.MemoryDenyWriteExecute;
 assert service.serviceConfig.NoNewPrivileges;
@@ -114,6 +136,25 @@ pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ 
   fi
   grep -q '"affinity_file":"/run/llm-gateway/affinity.json"' ${config.lattice.llm-gateway.publicConfigFile}
 
+  # Provider credentials are env-var references, one common key per provider
+  # (no separate models key), and the client keys carry only non-secret ids.
+  if ! jq -e 'any(.providers[]; .id == "gonka-proxy" and .api_key == "env.LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY")' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+    echo "gonka-proxy env api_key reference missing" >&2
+    exit 1
+  fi
+  if ! jq -e 'any(.providers[]; .id == "gonka-openbroker" and .api_key == "env.LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY")' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+    echo "gonka-openbroker env api_key reference missing" >&2
+    exit 1
+  fi
+  if ! jq -e '.client_api_keys == [ { "id": "primary", "api_key": "env.LATTICE_CLIENT_PRIMARY_KEY" } ]' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+    echo "client_api_keys env references missing" >&2
+    exit 1
+  fi
+  if jq -e 'any(.providers[]; .models_api_key != null)' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+    echo "models_api_key must not exist (one common key per provider)" >&2
+    exit 1
+  fi
+
   # Every filter provider action must carry explicit provider ids and every
   # map action exactly a native id (no provider list: provider selection lives
   # exclusively in the filter). No access_groups remain anywhere.
@@ -139,6 +180,8 @@ pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ 
     exit 1
   fi
 
+  # No credential paths, secret values or secret env values land in the public
+  # config: only env-var NAMES do.
   if grep -q 'llm-gateway-client-key\|llm-provider-proxy\|llm-provider-openbroker' ${config.lattice.llm-gateway.publicConfigFile}; then
     echo "public Bifrost proxy config contains a credential path" >&2
     exit 1

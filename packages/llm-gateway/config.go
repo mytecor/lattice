@@ -44,12 +44,17 @@ func (d *Duration) UnmarshalJSON(data []byte) error {
 }
 
 type Config struct {
-	Host                   string       `json:"host"`
-	Port                   int          `json:"port"`
-	MetricsHost            string       `json:"metrics_host,omitempty"`
-	MetricsPort            int          `json:"metrics_port,omitempty"`
-	LogLevel               string       `json:"log_level"`
-	ClientAPIKey           string       `json:"client_api_key"`
+	Host        string `json:"host"`
+	Port        int    `json:"port"`
+	MetricsHost string `json:"metrics_host,omitempty"`
+	MetricsPort int    `json:"metrics_port,omitempty"`
+	LogLevel    string `json:"log_level"`
+	// ClientAPIKeys is the set of named client credentials the gateway
+	// accepts. Each request is attributed to the matching key's ID (a
+	// non-secret label) in the request/usage metrics; an empty list disables
+	// client authentication entirely (keyless loopback mode). Key values are
+	// literal secrets or "env.VARNAME" references resolved at load time.
+	ClientAPIKeys          []ClientKey  `json:"client_api_keys"`
 	CatalogRefreshInterval Duration     `json:"catalog_refresh_interval"`
 	StreamIdleTimeout      Duration     `json:"stream_idle_timeout"`
 	AffinityFile           string       `json:"affinity_file,omitempty"`
@@ -57,13 +62,25 @@ type Config struct {
 	RoutingRules           RoutingRules `json:"routing_rules"`
 }
 
+// ClientKey is one named client credential. ID is the non-secret identity
+// used as the metrics api_key dimension and to attribute requests (never the
+// key material itself); Key is the bearer secret, either literal or an
+// "env.VARNAME" reference resolved at load time.
+type ClientKey struct {
+	ID  string `json:"id"`
+	Key string `json:"key"`
+}
+
 type Provider struct {
-	ID                  string            `json:"id"`
-	BaseProvider        string            `json:"base_provider"`
-	InferenceURL        string            `json:"inference_url"`
-	ModelsURL           string            `json:"models_url,omitempty"`
+	ID           string `json:"id"`
+	BaseProvider string `json:"base_provider"`
+	InferenceURL string `json:"inference_url"`
+	ModelsURL    string `json:"models_url,omitempty"`
+	// APIKey is the provider's single credential, used for inference and for
+	// any model-catalog discovery (explicit or inferred). There is no separate
+	// models key: one common key covers the whole provider. Value is a secret
+	// literal or an "env.VARNAME" reference resolved at load time.
 	APIKey              string            `json:"api_key,omitempty"`
-	ModelsAPIKey        string            `json:"models_api_key,omitempty"`
 	Priority            int               `json:"priority,omitempty"`
 	Cooldown            Duration          `json:"cooldown,omitempty"`
 	RequestTimeout      Duration          `json:"request_timeout,omitempty"`
@@ -107,6 +124,9 @@ type compiledConfig struct {
 	models         map[string]*compiledRoute // logical model → entry route
 	logicalIDs     []string
 	catalogSources map[string][]catalogSource
+	// clientKeys maps a client key ID (non-secret metrics label) to its
+	// resolved bearer secret. Empty means client authentication is disabled.
+	clientKeys map[string]string
 }
 
 type catalogSource struct {
@@ -364,20 +384,19 @@ func loadConfig(path string) (Config, error) {
 }
 
 func resolveConfigSecrets(cfg *Config) error {
-	var err error
-	cfg.ClientAPIKey, err = resolveSecret(cfg.ClientAPIKey)
-	if err != nil {
-		return fmt.Errorf("client_api_key: %w", err)
+	for i := range cfg.ClientAPIKeys {
+		key, err := resolveSecret(cfg.ClientAPIKeys[i].Key)
+		if err != nil {
+			return fmt.Errorf("client_api_keys[%d] (%s): %w", i, cfg.ClientAPIKeys[i].ID, err)
+		}
+		cfg.ClientAPIKeys[i].Key = key
 	}
 	for i := range cfg.Providers {
-		cfg.Providers[i].APIKey, err = resolveSecret(cfg.Providers[i].APIKey)
+		key, err := resolveSecret(cfg.Providers[i].APIKey)
 		if err != nil {
 			return fmt.Errorf("provider %q api_key: %w", cfg.Providers[i].ID, err)
 		}
-		cfg.Providers[i].ModelsAPIKey, err = resolveSecret(cfg.Providers[i].ModelsAPIKey)
-		if err != nil {
-			return fmt.Errorf("provider %q models_api_key: %w", cfg.Providers[i].ID, err)
-		}
+		cfg.Providers[i].APIKey = key
 	}
 	return nil
 }
@@ -448,6 +467,20 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 		logger:         newGatewayLogger(cfg.LogLevel),
 		providers:      make(map[string]Provider, len(cfg.Providers)),
 		catalogSources: make(map[string][]catalogSource),
+		clientKeys:     make(map[string]string, len(cfg.ClientAPIKeys)),
+	}
+	for _, clientKey := range cfg.ClientAPIKeys {
+		id := strings.TrimSpace(clientKey.ID)
+		if id == "" {
+			return nil, errors.New("every client key requires a non-empty id")
+		}
+		if _, duplicate := compiled.clientKeys[id]; duplicate {
+			return nil, fmt.Errorf("duplicate client key id %q", id)
+		}
+		if clientKey.Key == "" {
+			return nil, fmt.Errorf("client key %q must not be empty", id)
+		}
+		compiled.clientKeys[id] = clientKey.Key
 	}
 	for _, provider := range cfg.Providers {
 		provider.ID = strings.TrimSpace(provider.ID)
@@ -486,7 +519,7 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 		if provider.ModelsURL != "" {
 			compiled.catalogSources[provider.ID] = appendCatalogSource(
 				compiled.catalogSources[provider.ID],
-				catalogSource{URL: provider.ModelsURL, APIKey: provider.ModelsAPIKey, Explicit: true},
+				catalogSource{URL: provider.ModelsURL, APIKey: provider.APIKey, Explicit: true},
 			)
 		} else if provider.BaseProvider == "openai" {
 			// inference_url is the complete OpenAI-compatible base path. Appending

@@ -883,6 +883,30 @@
      "type": "prometheus",
      "uid": "prometheus"
     },
+    "definition": "label_values(llm_requests_total, api_key)",
+    "hide": 0,
+    "includeAll": true,
+    "allValue": ".*",
+    "label": "api_key",
+    "multi": true,
+    "name": "api_key",
+    "options": [],
+    "query": {
+     "query": "label_values(llm_requests_total, api_key)",
+     "refId": "K"
+    },
+    "refresh": 1,
+    "regex": "",
+    "skipUrlSync": false,
+    "sort": 1,
+    "type": "query"
+   },
+   {
+    "current": {},
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
     "definition": "label_values(llm_requests_total, environment)",
     "hide": 0,
     "includeAll": true,

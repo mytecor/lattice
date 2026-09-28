@@ -13,16 +13,19 @@
 | Endpoint | Назначение |
 | --- | --- |
 | `GET /healthz` | Минимальный health check без раскрытия topology |
-| `GET /metrics` | Prometheus text exposition (числовые метрики; loopback-листенер `metrics_host:metrics_port`, по умолчанию `127.0.0.1:9209`, без `client_api_key`) |
+| `GET /metrics` | Prometheus text exposition (числовые метрики; loopback-листенер `metrics_host:metrics_port`, по умолчанию `127.0.0.1:9209`, без `client_api_keys`) |
 | `GET /v1/models` | Только logical models, выведенные из скомпилированных routing plans |
 | `POST /v1/chat/completions` | OpenAI Chat Completions, streaming и non-streaming |
 | `POST /v1/responses` | OpenAI Responses API, streaming и non-streaming |
 | `POST /admin/models/refresh` | Немедленное обновление provider-scoped model catalogs |
 
-Если `client_api_key` непустой, все `/v1/*` и `/admin/*` endpoints требуют:
+Если `client_api_keys` непуст (список именованных ключей `{ "id": ..., "key": ... }`), все
+`/v1/*` и `/admin/*` endpoints требуют Bearer одного из ключей. Каждый запрос атрибутируется к
+не-секретному `id` ключа в метриках запросов и токенов (`api_key` dimension). Пустой список —
+keyless loopback.
 
 ```text
-Authorization: Bearer <client_api_key>
+Authorization: Bearer <клиентский ключ>
 ```
 
 `/healthz` намеренно возвращает только `{"status":"ok"}`. `GET /metrics` не требует ключа и
@@ -32,12 +35,12 @@ Authorization: Bearer <client_api_key>
 
 Gateway экспортирует числовые метрики в Prometheus text exposition format (version 0.0.4) на
 выделенном loopback-листенере `metrics_host:metrics_port` (по умолчанию `127.0.0.1:9209`).
-Эндпоинт сознательно не публичен, не требует `client_api_key` и не раскрывает provider
+Эндпоинт сознательно не публичен, не требует `client_api_keys` и не раскрывает provider
 credentials. Метрики считаются в счётчиках и гистограммах на лету, а не из логов.
 
-Димензии только низкой cardinality: `service`, `route`, `provider`, `native_model`,
+Димензии только низкой cardinality: `service`, `api_key`, `route`, `provider`, `native_model`,
 `model` (логическая), `status`, `error_type`, `from_provider`, `to_provider`,
-`reason`. `native_model` — реальный id модели у провайдера (`claude-sonnet-4`,
+`reason`. `api_key` — не-секретный id клиентского ключа (пусто в keyless); `native_model` — реальный id модели у провайдера (`claude-sonnet-4`,
 `gpt-4o` …), `model` — логическое имя из маппинга gateway (`standard`, `fast` …);
 оба низкой cardinality (конечное множество маппинга). Высок-cardinality
 идентификаторы (`request_id`, session, user, api_key, client_ip, prompt hash)
@@ -328,9 +331,9 @@ provider-b.models_url    → отсутствует; выводится как h
 `https://api.proxy.gonka.gg/v1` даст `/v1/chat/completions`.
 
 Для provider с `base_provider: openai`, если `models_url` не задан, gateway добавляет к той же
-полной базе только `/models`. Неявный каталог использует provider `api_key`; явно заданный
-`models_url` использует только отдельный `models_api_key`. Для остальных Bifrost adapters
-discovery требует явного `models_url`.
+полной базе только `/models`. Неявный каталог и явно заданный `models_url` используют один и тот же
+provider `api_key`: отдельного `models_api_key` нет — у провайдера один общий ключ. Для остальных
+Bifrost adapters discovery требует явного `models_url`.
 
 Каждый executable target валидируется по точному совпадению native ID с каталогом конкретного
 provider перед dispatch:
@@ -354,7 +357,10 @@ snapshot.
 ## Пример конфигурации: Gonka
 
 Standalone binary поддерживает literal secrets и ссылки `env.VARIABLE_NAME`. NixOS module вместо
-этого собирает приватный `/run/llm-gateway/config.json` через systemd `LoadCredential`. Ни имена
+этого передаёт ключи **только как environment-переменные**: в runtime config указываются имена
+(`env.<NAME>`), а значения раскладывает `llm-gateway-env.service` из agenix-секретов в
+`/run/llm-gateway-env/keys.env` (mode `0600`), который gateway service читает через
+`EnvironmentFile`. Ни имена
 `gonka-*`, ни модели `stupid`/`standard` не являются требованиями package — это только пример
 конкретного deployment.
 
@@ -362,7 +368,9 @@ Standalone binary поддерживает literal secrets и ссылки `env.
 {
   "host": "127.0.0.1",
   "port": 9208,
-  "client_api_key": "env.LLM_GATEWAY_CLIENT_KEY",
+  "client_api_keys": [
+    { "id": "pi-desktop", "key": "env.LLM_GATEWAY_CLIENT_KEY" }
+  ],
   "catalog_refresh_interval": "10m",
   "providers": [
     {
@@ -380,7 +388,6 @@ Standalone binary поддерживает literal secrets и ссылки `env.
       "inference_url": "https://api.openbroker.gonka.gg/v1",
       "models_url": "https://proxy.gonka.gg/v1/models",
       "api_key": "env.OPENBROKER_GONKA_GG_API_KEY",
-      "models_api_key": "env.PROXY_GONKA_GG_API_KEY",
       "priority": 10,
       "cooldown": "15s",
       "request_timeout": "60s"
@@ -542,7 +549,7 @@ nix flake check --no-build
 - Provider-facing raw OpenAI body получает native model только после проверки logical model.
 - `/v1/models` публикует только logical IDs, выведенные из скомпилированных plans; native IDs и
   provider metadata не попадают в client responses и безопасные ошибки.
-- `GET /metrics` не требует `client_api_key` и обслуживается отдельным loopback-листенером
+- `GET /metrics` не требует `client_api_keys` и обслуживается отдельным loopback-листенером
   (`metrics_host:metrics_port`); он намеренно не публичен и не раскрывает provider credentials.
 
 Полный план и незавершённые шаги cutover находятся в

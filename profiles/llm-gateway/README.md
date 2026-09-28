@@ -12,16 +12,20 @@ Go proxy поверх Bifrost Core.
 Профиль оставляет `runtime`/`package` умолчаниям модуля (`pkgs.lattice.llm-gateway`); нода задаёт
 providers, logical models (через `models`) и плоские `routingRules`. `inferenceUrl` — это полный путь
 до OpenAI-совместимой точки входа (включая версионный сегмент). Если `modelsUrl` не задан, gateway
-получает каталог из `${inferenceUrl}/models`; явные `modelsUrl` и `modelsApiKeyFile` позволяют
-направить discovery на независимый endpoint.
+получает каталог из `${inferenceUrl}/models`; явный `modelsUrl` позволяет направить discovery на
+независимый endpoint (один общий ключ провайдера покрывает и inference, и каталог — отдельного
+models-ключа нет).
 Полный пример находится в
 [`modules/llm-gateway/README.md`](../../modules/llm-gateway/README.md).
 
-Secrets подаются через agenix/systemd credentials:
+Secrets подаются через agenix → EnvironmentFile: ключи достигают процесса **только как
+environment-переменные**, в конфиге провайдеров указываются **имена переменных**
+(`apiKeyEnv`), а client-ключи задаются списком `clientKeys` (каждый — не-секретный id,
+`secretFile` и env-имя). Метрики запросов/токенов разбиваются по id клиентского ключа.
 
-- `clientCredentialFile` — единый client key Pi/workers;
-- `providers.<name>.apiKeyFile` — inference credential;
-- `providers.<name>.modelsApiKeyFile` — отдельный discovery credential, если нужен.
+- `clientKeys` — именованные client-ключи Pi/workers (пустой список = keyless);
+- `providers.<name>.apiKeySecretFile` — agenix-путь к ключу провайдера;
+- `providers.<name>.apiKeyEnv` — имя env-переменной (default `LATTICE_LLM_PROVIDER_<ID>_KEY`).
 
 См. [KEY_MANAGEMENT.md](../../KEY_MANAGEMENT.md) для bootstrap/rotation workflow.
 

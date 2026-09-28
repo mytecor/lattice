@@ -440,7 +440,7 @@ func TestCompileConfigDerivesCatalogURLFromInferenceBase(t *testing.T) {
 func TestCompileConfigPreservesExplicitCatalogURLAndCredential(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers[0].ModelsURL = "https://catalog.invalid/custom/models"
-	cfg.Providers[0].ModelsAPIKey = "catalog-key"
+	cfg.Providers[0].APIKey = "provider-key"
 	compiled, err := compileConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -449,7 +449,9 @@ func TestCompileConfigPreservesExplicitCatalogURLAndCredential(t *testing.T) {
 	if len(sources) != 1 {
 		t.Fatalf("unexpected explicit catalogs: %#v", sources)
 	}
-	if !sources[0].Explicit || sources[0].URL != cfg.Providers[0].ModelsURL || sources[0].APIKey != "catalog-key" {
+	// The provider's single API key covers discovery too: there is no separate
+	// models key, the common key is used for inference and catalog alike.
+	if !sources[0].Explicit || sources[0].URL != cfg.Providers[0].ModelsURL || sources[0].APIKey != "provider-key" {
 		t.Fatalf("explicit catalog configuration was not preserved: %#v", sources)
 	}
 }
