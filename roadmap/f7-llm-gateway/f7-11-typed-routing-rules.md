@@ -71,15 +71,15 @@ package. Ожидаемая форма — отдельные `rule_map.go`, `ru
 
 ### Nix contract
 
-Nix `routingRules` также должен быть discriminated, а не одним submodule со всеми defaults.
-Использовать action-specific submodules/checked union либо эквивалентную строгую типизацию,
-которая позволяет задать только поля выбранного action. Generated JSON должен содержать только
-поля конкретного rule без неявных defaults от других actions.
+Изначально Nix `routingRules` был реализован как отдельный discriminated union. После упрощения
+конфигурационной границы 2026-09-29 эта дублирующая схема удалена: NixOS module передаёт
+`settings.routing_rules` напрямую в JSON, а strict action discrimination выполняет тот же Go
+decoder, который обслуживает standalone config. Во время Nix build модуль запускает gateway
+`check`, поэтому ошибки всё ещё обнаруживаются до deployment без второй реализации схемы.
 
 Например, `RetryRule` не имеет `providers`, `native`, lease TTL или semaphore limits; `MapRule` не
-имеет retry backoff; `RaceRule` не содержит mapping. Ошибка должна возникать при Nix evaluation,
-если это возможно выразить надёжно, и обязательно дублироваться безопасной runtime validation для
-JSON, созданного вне Nix.
+имеет retry backoff; `RaceRule` не содержит mapping. Неизвестное или чужое поле отклоняется Go
+decoder одинаково для Nix-generated и внешнего JSON.
 
 ### Поведенческая совместимость
 
@@ -105,15 +105,15 @@ Legacy compatibility сохраняется только в той мере, в 
   конкретных rules.
 - [x] Заменить большой `compilePlans` switch небольшим compiler/builder contract с typed dispatch.
 - [x] Сохранить индекс rule и logical model в ошибках decode, validation и compilation.
-- [x] Разделить Nix `routingRules` на action-specific types и генерировать только принадлежащие
-  action поля.
+- [x] Удалить дублирующую Nix action-схему; передавать native JSON settings и валидировать их
+  gateway-командой `check` во время build.
 - [x] Удалить общий struct и мёртвые compatibility fields после миграции всех callers/tests.
-- [x] Обновить developer documentation, описав добавление нового action одним типом, Nix schema,
-  файлом реализации и тестом.
+- [x] Обновить developer documentation: новый action требует Go type/registry entry,
+  implementation file и tests, но не отдельную Nix schema.
 
 ## Критерий готовности (Definition of Done)
 
-- [x] В Go и Nix отсутствует единый rule type, содержащий объединение полей всех actions.
+- [x] В Go отсутствует единый rule type с объединением полей actions; Nix не реализует rule types.
 - [x] Каждому action соответствует отдельный тип и отдельный implementation file.
 - [x] Добавление тестового нового action не требует изменения общего `RoutingRule` и большого
   compiler switch; меняется только discriminator registry/decoder и новый action-файл.
@@ -154,21 +154,16 @@ _нет_. Выбор между закрытым interface и tagged wrapper о�
   bookkeeping (`advance`: открытие fallback stage первым `map` после `race`, канонический
   порядок по rank из registry, разрешённые action внутри fallback stage) и финальную проверку
   per-model (race snapshot, dangling fallback map). Добавление action = запись в `ruleRegistry` +
-  файл `rule_<action>.go` + Nix-подмодуль + тест; общего union-struct и центрального switch нет
+  файл `rule_<action>.go` + тест; общего union-struct и центрального switch нет
   (`TestRuleRegistryIsTheOnlyExtensionPoint`).
-- **Nix discriminated union.** `types.oneOf` из закреплённого nixpkgs не диспатчит submodule по
-  discriminator (unknown-field throw внутри альтернативы не ловится), поэтому
-  `lattice.llm-gateway.routingRules` реализован как checked union: значением типа `routingRule`
-  является результат `lib.evalModules` над action-specific submodule, который задаёт только
-  поля выбранного action (с требуемыми полями и типами). Unknown action/field/foreign field и
-  missing required ловятся на Nix evaluation; `_public`-проекция генерирует в public JSON ровно
-  поля конкретного action. Mytecor-homelab assertions проходят evaluation без изменения
-  описания правил. (`llm-gateway-service` — QEMU-посев, убран вместе с остальными VM-тестами.)
+- **Прозрачная Nix boundary.** Исторический checked union через `lib.evalModules` и `_public`
+  удалён 2026-09-29. `lattice.llm-gateway.settings` записывается как JSON без преобразования;
+  `llm-gateway check` запускает strict Go decoder и compiler во время Nix build.
 
 ### Валидация
 
 - `gofmt`, `go vet`, `go test ./...`, `go test -race ./...` в `packages/llm-gateway` — зелёные;
-- генерированный из typed Nix union конфиг mytecor-homelab проходит
-  `TestValidateExternalGeneratedConfig` end-to-end (strict decoder + compile);
+- прямой `settings`-конфиг mytecor-homelab проходит `llm-gateway check` end-to-end
+  (strict decoder + compile) без runtime secrets;
 - проверки Nix: `.drvPath` для `mytecor-homelab` и `example` евали̂руются,
   регрессионные assertions по routing rules проходят.

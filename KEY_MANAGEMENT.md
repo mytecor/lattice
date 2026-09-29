@@ -14,7 +14,7 @@
 | SSH host key | `services.openssh.hostKeys`, у homelab — `/persist/etc/ssh/` | Ключ сервера и проверенные записи `known_hosts` клиентов |
 | Reticulum/rnsh identity | Файл сервиса; `lattice.rnsh.identity` и `lattice.rnsh.allowed` | Идентичность сервиса, destinations и списки доверия его клиентов/серверов |
 | Radicle key | `age.secrets.radicle-private-key`, `services.radicle.publicKey` | Пара ключей и доверие к соответствующим DID/NID |
-| LLM gateway client keys | `lattice.llm-gateway.clientKeys` (каждый — свой `age.secrets.<name>` для `secretFile`) | Авторизация клиентов на gateway; метрики запросов/токенов разбиваются по id ключа; не является provider credential |
+| LLM gateway client keys | `lattice.llm-gateway.settings.client_api_keys` + соответствующие runtime paths в `credentials` | Авторизация клиентов на gateway; метрики запросов/токенов разбиваются по id ключа; не является provider credential |
 | LLM provider API key | Отдельный `age.secrets.llm-provider-<name>-key` для каждого upstream | Доступ gateway к provider; клиентам не выдаётся |
 
 Смена age-ключа не меняет значения секретов и не отзывает доступ по SSH или rnsh. У age нет
@@ -32,7 +32,7 @@
 `env.<NAME>` из своего окружения. В `/run/llm-gateway/config.json` и в Nix store секреты не
 попадают никогда — только имена. У провайдера один общий ключ на inference и каталог моделей;
 отдельного models-ключа нет (раньше `modelsApiKeyFile` убран). Клиентских ключей может быть
-несколько (`lattice.llm-gateway.clientKeys`), каждый со своим не-секретным id: по нему метрики
+несколько (`lattice.llm-gateway.settings.client_api_keys`), каждый со своим не-секретным id: по нему метрики
 запросов и токенов атрибутируются per-key.
 
 Для каждого credential создаётся отдельный `.age`-файл; цельный runtime config не шифруется и не
@@ -70,24 +70,23 @@ age.secrets.llm-provider-primary-key = {
 };
 
 lattice.llm-gateway = {
-  runtime = "bifrost";
   package = pkgs.lattice.llm-gateway;
-  # Каждый клиентский ключ — не-секретный id, свой secretFile и (по умолчанию
-  # выводимое из id) env-имя. Пустой список = keyless loopback.
-  clientKeys = [
-    {
+  credentials = {
+    LATTICE_CLIENT_PRIMARY_KEY = config.age.secrets.llm-gateway-client-key.path;
+    LATTICE_LLM_PROVIDER_PRIMARY_KEY = config.age.secrets.llm-provider-primary-key.path;
+  };
+  settings = {
+    client_api_keys = [{
       id = "primary";
-      secretFile = config.age.secrets.llm-gateway-client-key.path;
-      # env = "LATTICE_CLIENT_PRIMARY_KEY"; // default выводится из id
-    }
-  ];
-  providers.primary = {
-    inferenceUrl = "https://inference.example.invalid";
-    modelsUrl = "https://catalog.example.invalid/v1/models";
-    # Один общий ключ на inference и каталог: apiKeySecretFile — agenix-путь,
-    # apiKeyEnv — имя env-переменной (default LATTICE_LLM_PROVIDER_<ID>_KEY).
-    apiKeySecretFile = config.age.secrets.llm-provider-primary-key.path;
-    apiKeyEnv = "LATTICE_LLM_PROVIDER_PRIMARY_KEY";
+      key = "env.LATTICE_CLIENT_PRIMARY_KEY";
+    }];
+    providers = [{
+      id = "primary";
+      base_provider = "openai";
+      inference_url = "https://inference.example.invalid";
+      models_url = "https://catalog.example.invalid/v1/models";
+      api_key = "env.LATTICE_LLM_PROVIDER_PRIMARY_KEY";
+    }];
   };
 };
 ```
@@ -110,7 +109,7 @@ gateway перезапускается, когда меняются его unit'
 отдельное короткое окно: добавить второй provider instance с новым secret в тот же logical route,
 проверить его, затем удалить старый instance и отозвать старый key.
 
-Client key живёт за своим не-секретным id в `clientKeys`: ротация одного ключа меняет только его
+Client key живёт за своим не-секретным id в `settings.client_api_keys`: ротация одного ключа меняет только его
 `.age`-файл и строку в EnvironmentFile, остальные ключи не затрагиваются. Авторизованные в этот id
 клиенты переключаются на новое значение в кратком окне; метрики продолжают агрегироваться по тому
 же id. Не маскируйте provider key под client key ради «бесшовности». При компрометации сначала

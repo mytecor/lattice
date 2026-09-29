@@ -6,7 +6,7 @@ NixOS-обёртка над upstream `services.prometheus` для Lattice (F12 o
 
 Pull-коллектор числовых метрик gateway. Единственный scrape-job по умолчанию —
 `llm-gateway` на loopback `/metrics` (по умолчанию `127.0.0.1:9209`, задаётся из
-`lattice.llm-gateway.metricsPort`), с константным лейблом `service="llm-gateway"`.
+`lattice.llm-gateway.settings.metrics_port`), с константным лейблом `service="llm-gateway"`.
 Ретенция 15 дней, scrape interval 15s; всё слушает `127.0.0.1` — не публично.
 
 ## Песочница

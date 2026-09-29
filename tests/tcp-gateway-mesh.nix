@@ -40,8 +40,8 @@ let
           lattice.tcp-gateway.meshExclude = meshExclude;
           # Enable the LLM gateway route (it is one of the proxiedServices).
           lattice.llm-gateway.enable = true;
-          lattice.llm-gateway.host = "127.0.0.1";
-          lattice.llm-gateway.port = 9208;
+          lattice.llm-gateway.settings.host = "127.0.0.1";
+          lattice.llm-gateway.settings.port = 9208;
           # The test only validates the generated Caddy config, never runs it:
           # silence the per-vhost access-log write (same fix as grafana-ingress).
           services.caddy.virtualHosts."http://llm-gateway.${hostName}.local".logFormat =

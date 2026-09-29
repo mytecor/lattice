@@ -2,7 +2,7 @@
 
 let
   cfg = config.lattice.observability-prometheus;
-  gatewayMetricsPort = config.lattice.llm-gateway.metricsPort or 9209;
+  gatewayMetricsPort = config.lattice.llm-gateway.settings.metrics_port or 9209;
   gatewayEnable = config.lattice.llm-gateway.enable or false;
 in
 {
@@ -12,8 +12,8 @@ in
         assertion = !gatewayEnable || gatewayMetricsPort != null;
         message = ''
           lattice.observability-prometheus: the llm-gateway module must expose
-          a metricsPort to scrape (the default is 127.0.0.1:9209). Disable
-          Prometheus or set lattice.llm-gateway.metricsPort.
+          a settings.metrics_port to scrape (the default is 127.0.0.1:9209).
+          Disable Prometheus or set lattice.llm-gateway.settings.metrics_port.
         '';
       }
     ];

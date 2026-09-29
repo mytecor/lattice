@@ -26,7 +26,6 @@
 ## Затрагиваемые файлы / слои
 
 - [modules/llm-gateway/options.nix](./../../modules/llm-gateway/options.nix)
-- [modules/llm-gateway/types.nix](./../../modules/llm-gateway/types.nix)
 - [modules/llm-gateway/config.nix](./../../modules/llm-gateway/config.nix)
 - [modules/llm-gateway/README.md](./../../modules/llm-gateway/README.md)
 - [profiles/llm-gateway/README.md](./../../profiles/llm-gateway/README.md)

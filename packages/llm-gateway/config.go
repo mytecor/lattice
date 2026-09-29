@@ -372,6 +372,21 @@ type AffinityConfig struct {
 }
 
 func loadConfig(path string) (Config, error) {
+	cfg, err := decodeConfig(path)
+	if err != nil {
+		return Config{}, err
+	}
+	if err := resolveConfigSecrets(&cfg); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
+// decodeConfig reads and strictly decodes the public configuration without
+// resolving env.NAME secret references. Keeping this boundary separate lets
+// `llm-gateway check` validate a generated config in a Nix build, where the
+// runtime credentials deliberately do not exist.
+func decodeConfig(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("read config: %w", err)
@@ -384,9 +399,6 @@ func loadConfig(path string) (Config, error) {
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return Config{}, errors.New("decode config: trailing JSON content")
-	}
-	if err := resolveConfigSecrets(&cfg); err != nil {
-		return Config{}, err
 	}
 	return cfg, nil
 }
@@ -412,6 +424,70 @@ func resolveConfigSecrets(cfg *Config) error {
 		cfg.Providers[i].VertexAuthCredentials = credentials
 	}
 	return nil
+}
+
+// validateEnvSecretReferences enforces the NixOS public-config boundary:
+// credentials may be absent, but every configured value must be an env.NAME
+// reference with a portable environment-variable name. Runtime loading still
+// resolves and requires the referenced value separately.
+func validateEnvSecretReferences(cfg Config, allowed map[string]bool) error {
+	referenced := make(map[string]bool)
+	for i, clientKey := range cfg.ClientAPIKeys {
+		name, err := validateEnvSecretReference(clientKey.Key)
+		if err != nil {
+			return fmt.Errorf("client_api_keys[%d] (%s): %w", i, clientKey.ID, err)
+		}
+		if name != "" {
+			referenced[name] = true
+		}
+	}
+	for _, provider := range cfg.Providers {
+		name, err := validateEnvSecretReference(provider.APIKey)
+		if err != nil {
+			return fmt.Errorf("provider %q api_key: %w", provider.ID, err)
+		}
+		if name != "" {
+			referenced[name] = true
+		}
+		name, err = validateEnvSecretReference(provider.VertexAuthCredentials)
+		if err != nil {
+			return fmt.Errorf("provider %q vertex_auth_credentials: %w", provider.ID, err)
+		}
+		if name != "" {
+			referenced[name] = true
+		}
+	}
+	for name := range referenced {
+		if allowed != nil && !allowed[name] {
+			return fmt.Errorf("environment variable %s is referenced but not declared", name)
+		}
+	}
+	for name := range allowed {
+		if !referenced[name] {
+			return fmt.Errorf("environment variable %s is declared but not referenced", name)
+		}
+	}
+	return nil
+}
+
+func validateEnvSecretReference(value string) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+	if !strings.HasPrefix(value, "env.") {
+		return "", errors.New("literal secret is forbidden; use env.NAME")
+	}
+	name := strings.TrimPrefix(value, "env.")
+	for index, char := range name {
+		if (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || char == '_' || (index > 0 && char >= '0' && char <= '9') {
+			continue
+		}
+		return "", fmt.Errorf("invalid environment variable name %q", name)
+	}
+	if name == "" {
+		return "", errors.New("empty environment variable name")
+	}
+	return name, nil
 }
 
 func resolveSecret(value string) (string, error) {
@@ -482,6 +558,7 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 		catalogSources: make(map[string][]catalogSource),
 		clientKeys:     make(map[string]string, len(cfg.ClientAPIKeys)),
 	}
+	bifrostProviderKeys := make(map[string]string, len(cfg.Providers))
 	for _, clientKey := range cfg.ClientAPIKeys {
 		id := strings.TrimSpace(clientKey.ID)
 		if id == "" {
@@ -525,6 +602,14 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 		if _, exists := compiled.providers[provider.ID]; exists {
 			return nil, fmt.Errorf("duplicate provider id %q", provider.ID)
 		}
+		providerKey, _, err := bifrostProviderKey(provider)
+		if err != nil {
+			return nil, err
+		}
+		if existingID, exists := bifrostProviderKeys[string(providerKey)]; exists {
+			return nil, fmt.Errorf("providers %q and %q resolve to the same Bifrost provider key %q", existingID, provider.ID, providerKey)
+		}
+		bifrostProviderKeys[string(providerKey)] = provider.ID
 		if provider.RequestTimeout.Duration == 0 {
 			provider.RequestTimeout.Duration = 60 * time.Second
 		}

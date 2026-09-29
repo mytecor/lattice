@@ -249,7 +249,7 @@ request(model=standard) → standard → timeout? → standard.retry → (attemp
   ограничивает выбор winner, но не обрывает уже выбранный успешный stream. Абсолютный deadline
   общий для запроса.
 
-Пример (Nix-форма):
+Пример (`settings.routing_rules` в Nix использует нативные JSON-поля):
 
 ```nix
 { route = "standard"; action = "filter"; where = { model = { eq = "standard"; }; }; }
@@ -301,15 +301,15 @@ action, неизвестное поле и поле чужого action откл
 `fallback`/`hedge` больше не несут provider lists, `scope`, `count`, `on` или `fallback_strategy`:
 эти поля удалены и при наличии fail fast. Compiled scheduler зависит только от immutable
 routing graph (map route name → `compiledRoute`; переходы — скомпилированные ссылки на target
-route), не от JSON DTO. Nix `routingRules` — discriminated union: каждый entry валидируется своим
-action-подмодулем при evaluation и генерирует только принадлежащие ему поля плюс envelope
-`route`/`action`.
+route), не от JSON DTO. NixOS module передаёт `settings.routing_rules` без преобразований;
+тот же строгий Go decoder используется командой `check` во время Nix build и командой
+`serve` при запуске.
 
 Добавление нового action не трогает общий union-struct и центральный compiler switch (его нет):
 нужно только зарегистрировать action в `ruleRegistry` (`rule.go`, позиция в pipeline + factory),
-написать новый файл `rule_<action>.go` (тип, `apply(*stageContext)`, defaults/validation),
-добавить action-подмодуль в Nix `options.nix` и покрыть новый action тестами в
-`rule_<action>_test.go` (положительный decode/compile и отрицательные кейсы).
+написать новый файл `rule_<action>.go` (тип, `apply(*stageContext)`, defaults/validation) и
+покрыть новый action тестами в `rule_<action>_test.go` (положительный decode/compile и
+отрицательные кейсы). Nix-схему обновлять не нужно.
 
 ## Model discovery
 
@@ -363,6 +363,11 @@ Standalone binary поддерживает literal secrets и ссылки `env.
 `EnvironmentFile`. Ни имена
 `gonka-*`, ни модели `stupid`/`standard` не являются требованиями package — это только пример
 конкретного deployment.
+
+Обычные OpenAI/Anthropic/Gemini-compatible instances регистрируются в Bifrost как custom
+providers и сохраняют свой deployment ID. Vertex является исключением: Bifrost поддерживает
+его только как built-in provider `vertex`. Gateway отображает внешний routing ID (например,
+`google-vertex`) в built-in Bifrost key, не меняя labels, cooldown или route filters.
 
 ```json
 {
@@ -489,8 +494,16 @@ nix build .#packages.x86_64-linux.llm-gateway
 ```sh
 go test ./...
 go test -race ./...
+go run . --require-env-secrets --allowed-env CLIENT_KEY,PROVIDER_KEY \
+  --config /path/to/config.json check
 nix flake check --no-build
 ```
+
+`check` выполняет strict decode и компиляцию route graph, но не резолвит
+`env.NAME`; поэтому его можно безопасно запускать во время Nix build без
+runtime credentials. `--require-env-secrets` запрещает literal credentials и
+проверяет синтаксис environment variable names; `--allowed-env` сверяет ссылки
+с environment names, объявленными service wrapper.
 
 Тесты покрывают:
 

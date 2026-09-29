@@ -56,9 +56,10 @@ func (silentLogger) LogHTTPRequest(schemas.LogLevel, string) schemas.LogEventBui
 }
 
 type BifrostExecutor struct {
-	client    *bifrost.Bifrost
-	providers map[string]Provider
-	logger    *slog.Logger
+	client           *bifrost.Bifrost
+	providers        map[string]Provider
+	bifrostProviders map[string]schemas.ModelProvider
+	logger           *slog.Logger
 }
 
 func newBifrostExecutor(ctx context.Context, config *compiledConfig) (*BifrostExecutor, error) {
@@ -66,17 +67,22 @@ func newBifrostExecutor(ctx context.Context, config *compiledConfig) (*BifrostEx
 		configs: make(map[schemas.ModelProvider]*schemas.ProviderConfig, len(config.providers)),
 		keys:    make(map[schemas.ModelProvider][]schemas.Key, len(config.providers)),
 	}
+	bifrostProviders := make(map[string]schemas.ModelProvider, len(config.providers))
 	for _, id := range sortedProviderIDs(config.providers) {
 		provider := config.providers[id]
-		providerKey := schemas.ModelProvider(provider.ID)
 		baseProvider := schemas.ModelProvider(provider.BaseProvider)
-		if !bifrost.IsSupportedBaseProvider(baseProvider) {
-			return nil, fmt.Errorf("provider %q has unsupported Bifrost base_provider %q", provider.ID, provider.BaseProvider)
+		providerKey, custom, err := bifrostProviderKey(provider)
+		if err != nil {
+			return nil, err
 		}
+		bifrostProviders[provider.ID] = providerKey
 		account.providers = append(account.providers, providerKey)
-		customConfig := &schemas.CustomProviderConfig{
-			BaseProviderType: baseProvider,
-			IsKeyLess:        provider.APIKey == "" && provider.VertexAuthCredentials == "",
+		var customConfig *schemas.CustomProviderConfig
+		if custom {
+			customConfig = &schemas.CustomProviderConfig{
+				BaseProviderType: baseProvider,
+				IsKeyLess:        provider.APIKey == "" && provider.VertexAuthCredentials == "",
+			}
 		}
 		// The OpenAI-compatible adapter pads a hard-coded "/v1" onto the base URL
 		// unless a path override is supplied. We pin the request paths to their
@@ -85,7 +91,7 @@ func newBifrostExecutor(ctx context.Context, config *compiledConfig) (*BifrostEx
 		// arbitrary routed path (e.g. "/functions/v1/gonka"). The override is
 		// scoped to the OpenAI adapter so other base providers keep their native
 		// paths (e.g. Anthropic's "/v1/messages").
-		if baseProvider == schemas.OpenAI {
+		if custom && baseProvider == schemas.OpenAI {
 			customConfig.RequestPathOverrides = map[schemas.RequestType]string{
 				schemas.ChatCompletionRequest:       "/chat/completions",
 				schemas.ChatCompletionStreamRequest: "/chat/completions",
@@ -117,7 +123,34 @@ func newBifrostExecutor(ctx context.Context, config *compiledConfig) (*BifrostEx
 	if err != nil {
 		return nil, fmt.Errorf("initialize Bifrost: %w", err)
 	}
-	return &BifrostExecutor{client: client, providers: config.providers, logger: config.logger}, nil
+	for providerID, providerKey := range bifrostProviders {
+		if client.GetProviderByKey(providerKey) == nil {
+			client.Shutdown()
+			return nil, fmt.Errorf("initialize Bifrost provider %q as %q: provider was not prepared", providerID, providerKey)
+		}
+	}
+	return &BifrostExecutor{
+		client:           client,
+		providers:        config.providers,
+		bifrostProviders: bifrostProviders,
+		logger:           config.logger,
+	}, nil
+}
+
+// bifrostProviderKey translates the stable Lattice provider ID into the key
+// Bifrost expects. Most configured instances are custom providers and retain
+// their Lattice ID. Vertex is different: Bifrost implements it only as the
+// built-in `vertex` provider, so requests use that key while routing, metrics
+// and cooldown state continue to use the external `google-vertex` ID.
+func bifrostProviderKey(provider Provider) (schemas.ModelProvider, bool, error) {
+	baseProvider := schemas.ModelProvider(provider.BaseProvider)
+	if bifrost.IsSupportedBaseProvider(baseProvider) {
+		return schemas.ModelProvider(provider.ID), true, nil
+	}
+	if baseProvider == schemas.Vertex {
+		return schemas.Vertex, false, nil
+	}
+	return "", false, fmt.Errorf("provider %q has unsupported Bifrost base_provider %q", provider.ID, provider.BaseProvider)
 }
 
 func bifrostKeyForProvider(provider Provider, baseProvider schemas.ModelProvider) schemas.Key {
@@ -342,7 +375,7 @@ func (e *BifrostExecutor) chatRequest(ctx *schemas.BifrostContext, target Target
 		params.MaxCompletionTokens = wire.MaxTokens
 	}
 	request := &schemas.BifrostChatRequest{
-		Provider: schemas.ModelProvider(target.Provider),
+		Provider: e.bifrostProviders[target.Provider],
 		Model:    target.Model,
 		Input:    wire.Messages,
 		Params:   params,
@@ -375,7 +408,7 @@ func (e *BifrostExecutor) responsesRequest(ctx *schemas.BifrostContext, target T
 		return nil, &CallError{Class: ErrorInvalid, Status: 400, Cause: err}
 	}
 	request := &schemas.BifrostResponsesRequest{
-		Provider: schemas.ModelProvider(target.Provider),
+		Provider: e.bifrostProviders[target.Provider],
 		Model:    target.Model,
 		Input:    input,
 		Params:   params,

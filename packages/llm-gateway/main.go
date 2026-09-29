@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -24,11 +25,32 @@ func main() {
 func run(arguments []string) error {
 	flags := flag.NewFlagSet("llm-gateway", flag.ContinueOnError)
 	configPath := flags.String("config", "", "path to runtime JSON config")
+	requireEnvSecrets := flags.Bool("require-env-secrets", false, "reject literal secrets in public config")
+	allowedEnv := flags.String("allowed-env", "", "comma-separated env names declared by the service wrapper")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
-	if *configPath == "" || flags.NArg() != 1 || flags.Arg(0) != "serve" {
-		return errors.New("usage: llm-gateway --config PATH serve")
+	if *configPath == "" || flags.NArg() != 1 {
+		return errors.New("usage: llm-gateway --config PATH <check|serve>")
+	}
+	command := flags.Arg(0)
+	if command != "check" && command != "serve" {
+		return errors.New("usage: llm-gateway --config PATH <check|serve>")
+	}
+	if command == "check" {
+		cfg, err := decodeConfig(*configPath)
+		if err != nil {
+			return err
+		}
+		if *requireEnvSecrets {
+			if err := validateEnvSecretReferences(cfg, parseAllowedEnv(*allowedEnv)); err != nil {
+				return fmt.Errorf("validate config: %w", err)
+			}
+		}
+		if _, err := compileConfig(cfg); err != nil {
+			return fmt.Errorf("validate config: %w", err)
+		}
+		return nil
 	}
 	cfg, err := loadConfig(*configPath)
 	if err != nil {
@@ -95,6 +117,17 @@ func run(arguments []string) error {
 		}
 		return err
 	}
+}
+
+func parseAllowedEnv(value string) map[string]bool {
+	allowed := make(map[string]bool)
+	if value == "" {
+		return allowed
+	}
+	for _, name := range strings.Split(value, ",") {
+		allowed[name] = true
+	}
+	return allowed
 }
 
 func reportCatalogErrors(logger *slog.Logger, errorsByProvider map[string]error) {

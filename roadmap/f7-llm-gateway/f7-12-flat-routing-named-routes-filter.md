@@ -220,7 +220,7 @@ Entry route определяется через обычные `filter`, отд�
 - [Gateway runtime](../../packages/llm-gateway/README.md) — `rule_filter.go` (новый),
   `rule_map.go`, `rule_retry.go`, `rule_fallback.go`, `rule_hedge.go`, envelope/decoder,
   compiler, discovery, scheduler.
-- [LLM gateway Nix module](../../modules/llm-gateway/README.md) — `routingRules` schema.
+- [LLM gateway Nix module](../../modules/llm-gateway/README.md) — прозрачная `settings` boundary и build-time validation.
 - [Nix evaluation и service tests](../../tests/default.nix).
 - [F7 architecture](./README.md) и `README.md` gateway.
 

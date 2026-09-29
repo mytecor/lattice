@@ -486,6 +486,25 @@ func TestCompileConfigRequiresVertexProjectAndRegion(t *testing.T) {
 	}
 }
 
+func TestCompileConfigRejectsUnsupportedBifrostBaseProvider(t *testing.T) {
+	cfg := testConfig()
+	cfg.Providers[0].BaseProvider = "azure"
+	if _, err := compileConfig(cfg); err == nil || !strings.Contains(err.Error(), "unsupported Bifrost base_provider") {
+		t.Fatalf("expected unsupported Bifrost base provider error, got %v", err)
+	}
+}
+
+func TestCompileConfigRejectsDuplicateStandardProvider(t *testing.T) {
+	cfg := testConfig()
+	cfg.Providers = []Provider{
+		{ID: "vertex-a", BaseProvider: "vertex", InferenceURL: "https://aiplatform.googleapis.com", VertexProjectID: "a", VertexRegion: "global"},
+		{ID: "vertex-b", BaseProvider: "vertex", InferenceURL: "https://aiplatform.googleapis.com", VertexProjectID: "b", VertexRegion: "global"},
+	}
+	if _, err := compileConfig(cfg); err == nil || !strings.Contains(err.Error(), "same Bifrost provider key") {
+		t.Fatalf("expected duplicate standard provider error, got %v", err)
+	}
+}
+
 func TestResolveConfigSecretsResolvesVertexCredentials(t *testing.T) {
 	t.Setenv("VERTEX_TEST_CREDENTIALS", `{"type":"service_account"}`)
 	cfg := Config{Providers: []Provider{{
@@ -525,6 +544,56 @@ func TestLoadConfigRejectsTrailingJSON(t *testing.T) {
 	}
 	if _, err := loadConfig(path); err == nil || !strings.Contains(err.Error(), "trailing") {
 		t.Fatalf("expected trailing JSON error, got %v", err)
+	}
+}
+
+func TestCheckConfigDoesNotResolveRuntimeSecrets(t *testing.T) {
+	raw := `
+{
+  "client_api_keys": [{"id":"client","key":"env.MISSING_CLIENT_KEY"}],
+  "providers": [
+    {"id":"a","base_provider":"openai","inference_url":"https://a.invalid","api_key":"env.MISSING_PROVIDER_KEY"}
+  ],
+  "routing_rules": [
+    {"route":"standard","action":"filter","where":{"model":{"eq":"standard"}}},
+    {"route":"standard","action":"filter","where":{"provider":{"in":["a"]}}},
+    {"route":"standard","action":"map","native":"native-model"},
+    {"route":"standard","action":"rank","strategy":"priority"},
+    {"route":"standard","action":"race","count":1}
+  ]
+}`
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"--require-env-secrets", "--allowed-env", "MISSING_CLIENT_KEY,MISSING_PROVIDER_KEY", "--config", path, "check"}); err != nil {
+		t.Fatalf("check must validate env references without resolving them: %v", err)
+	}
+	if _, err := loadConfig(path); err == nil || !strings.Contains(err.Error(), "MISSING_CLIENT_KEY") {
+		t.Fatalf("serve-time load must still require runtime secrets, got %v", err)
+	}
+}
+
+func TestCheckConfigRejectsLiteralSecrets(t *testing.T) {
+	cfg := testConfig()
+	cfg.Providers[0].APIKey = "plaintext"
+	if err := validateEnvSecretReferences(cfg, nil); err == nil || !strings.Contains(err.Error(), "literal secret") {
+		t.Fatalf("expected literal secret rejection, got %v", err)
+	}
+	cfg.Providers[0].APIKey = "env.INVALID-NAME"
+	if err := validateEnvSecretReferences(cfg, nil); err == nil || !strings.Contains(err.Error(), "invalid environment") {
+		t.Fatalf("expected invalid environment reference rejection, got %v", err)
+	}
+}
+
+func TestCheckConfigMatchesDeclaredEnvironment(t *testing.T) {
+	cfg := testConfig()
+	cfg.Providers[0].APIKey = "env.PROVIDER_A_KEY"
+	if err := validateEnvSecretReferences(cfg, map[string]bool{"PROVIDER_A_KEY": true}); err != nil {
+		t.Fatalf("matching declaration was rejected: %v", err)
+	}
+	if err := validateEnvSecretReferences(cfg, map[string]bool{"OTHER_KEY": true}); err == nil || !strings.Contains(err.Error(), "not declared") {
+		t.Fatalf("expected undeclared reference rejection, got %v", err)
 	}
 }
 

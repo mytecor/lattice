@@ -57,6 +57,57 @@ func TestBifrostKeyForVertexCarriesProjectRegionAndCredentials(t *testing.T) {
 	}
 }
 
+func TestBifrostExecutorRegistersVertexAsStandardProvider(t *testing.T) {
+	cfg := testConfig()
+	cfg.Providers = []Provider{{
+		ID:                    "google-vertex",
+		BaseProvider:          "vertex",
+		InferenceURL:          "https://aiplatform.googleapis.com",
+		VertexProjectID:       "mytecor",
+		VertexRegion:          "global",
+		VertexAuthCredentials: `{"type":"service_account"}`,
+	}}
+	cfg.RoutingRules = []Rule{
+		filterModel("smart", "smart"),
+		filterProvider("smart", "google-vertex"),
+		mapRule("smart", "gemini-3.8-flash"),
+		rankRule("smart"),
+		raceRule("smart", 1),
+	}
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor, err := newBifrostExecutor(context.Background(), compiled)
+	if err != nil {
+		t.Fatalf("Vertex must initialize through Bifrost's standard provider path: %v", err)
+	}
+	defer executor.Close()
+	if got := executor.bifrostProviders["google-vertex"]; got != schemas.Vertex {
+		t.Fatalf("google-vertex resolved to %q, want %q", got, schemas.Vertex)
+	}
+	request, callErr := executor.chatRequest(schemas.NewBifrostContext(context.Background(), schemas.NoDeadline), Target{
+		Provider: "google-vertex",
+		Model:    "gemini-3.8-flash",
+	}, []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
+	if callErr != nil {
+		t.Fatal(callErr)
+	}
+	if request.Provider != schemas.Vertex {
+		t.Fatalf("request provider = %q, want %q", request.Provider, schemas.Vertex)
+	}
+	responsesRequest, callErr := executor.responsesRequest(schemas.NewBifrostContext(context.Background(), schemas.NoDeadline), Target{
+		Provider: "google-vertex",
+		Model:    "gemini-3.8-flash",
+	}, []byte(`{"input":"hello"}`))
+	if callErr != nil {
+		t.Fatal(callErr)
+	}
+	if responsesRequest.Provider != schemas.Vertex {
+		t.Fatalf("responses provider = %q, want %q", responsesRequest.Provider, schemas.Vertex)
+	}
+}
+
 func TestBifrostExecutorCustomProviderChat(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/chat/completions" {

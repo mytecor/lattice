@@ -33,22 +33,6 @@ let
   # Peer DID of the node (public, generated on the node 2026-09-23):
   #   did:key:z6MkqUjzpiYfDAcjnj2379bYfEk4DdLtWQkyfk7nECn6HyZx
   radiclePeerHome = "/persist/var/lib/radicle-peer";
-  # zai `thinking` control rejected by generic OpenAI-compatible upstreams
-  # (hyperfusion/litellm 400). Stripped for every provider so reasoning level
-  # choice stays a native-model concern and no provider fails a race over an
-  # unsupported request parameter.
-  stripReasoningParams = [ "thinking" "reasoning_effort" ];
-  # Gateways serving OpenAI-compatible models natively (the gonka carriers)
-  # accept the zai `thinking` control. For these we don't just strip it: we
-  # force `thinking:{"type":"disabled"}` on every request so reasoning is
-  # hard-off for the Gonka-backed standard/stupid models (DeepSeek-V4-Flash and
-  # MiniMax). `smart` is routed separately to native Gemini providers. Applied
-  # after strip_params, so the forced value wins even over a client that asked
-  # for reasoning. hyperfusion/dahl/gonkarouter stay strip-only: litellm
-  # rejects the zai `thinking` key with 400, and the others are untested.
-  forceReasoningOff = {
-    thinking = { type = "disabled"; };
-  };
   # f4-05: внешний mesh-домен (aaa-записи *.homelab.myt.su → yggdrasil-адрес ноды).
   # Совпадает с lattice.tcp-gateway.meshDomain; используется для внешнего URL Grafana
   # и OIDC-контрактов Authentik (mesh-canonical, см. lattice.grafana ниже).
@@ -97,7 +81,7 @@ in
   # Grafana выпускается на mesh (https://grafana.homelab.myt.su) — доступ через ygg
   # закрыт Authentik SSO (F14, нативный OIDC). llm-gateway (с 2026-09-28) тоже открыт
   # на mesh (https://llm-gateway.homelab.myt.su): client-auth настраивается через
-  # clientKeys (node-pi, mac) и включается при следующей пересборке ноды; до этого
+  # settings.client_api_keys (node-pi, mac) и включается при следующей пересборке ноды; до этого
   # доступ как раньше — только для доверенных участников yggdrasil-сети (mesh — не
   # публичный интернет). meshExclude не задан — ни один сервис не исключён из mesh;
   # если сервису нужно остаться только на LAN-контракте *.local, добавить его сюда.
@@ -161,7 +145,7 @@ in
         file = ./secrets/llm-provider-google-vertex-credentials.age;
         mode = "0400";
       };
-      # LLM Gateway client keys (clientKeys): по одному на потребителя.
+      # LLM Gateway client keys (settings.client_api_keys): по одному на потребителя.
       # node-pi — Pi на самой ноде (loopback); mac — операторский Mac (mDNS
       # llm-gateway + mesh llm-gateway-mesh). Значения созданы оператором и
       # зашифрованы для [admin node]. При смене значения gateway перезапускается
@@ -449,350 +433,168 @@ in
     textModelApiKeyFile = if hasJevTextModelKey then config.age.secrets.jev-text-model-api-key.path else null;
   };
 
-  # LLM Gateway: fully flat routing. `routingRules` is the single source of
-  # truth — every entry route, transition subroute (<model>.retry / .hedge)
-  # and fallback net is written explicitly below; there is no generated
-  # pipeline (the `models`/`pipeline` sugar was removed). Providers whose
-  # catalog does not serve a native ID fail exact validation locally
-  # (model_not_found, no upstream call) and are skipped.
-  #
-  # Balance is p2c (power of two choices): two random healthy candidates are
-  # drawn and the one with fewer in-flight branches wins, so load spreads
-  # under concurrency without latency feedback. f7-13 showed that
-  # latency-weighted selection (adaptive) and priority-derived weights both
-  # re-concentrate on the fastest provider; p2c's in-flight signal is the
-  # missing distribution mechanism. round_robin/adaptive/weighted remain
-  # available as the balance action's strategy. Hedge is enabled at 20s as a
-  # selection-phase safety net, with the f7-13 caveat kept in mind: an
-  # aggressive `hedge after 3s` re-concentrates completions (~2/3 on the
-  # fastest provider) even with a distributed primary choice — 20s is
-  # deliberately outside the healthy-response head of the distribution, so
-  # healthy requests never trigger it and only a genuinely mute upstream pays
-  # the second call.
-  # One request never creates more than five upstream calls (race 1 + hedge 1
-  # + two retries + fallback), more than three concurrent ones, or a repeated
-  # call to one provider (the unused provider policy restricts retry/hedge/
-  # fallback); smart overrides to 6/4 with race count 0 (see below).
+  # LLM Gateway: the `settings` attribute is the gateway's public JSON contract
+  # verbatim. Field names are snake_case and every routing rule is written
+  # literally; the NixOS module does not generate pipelines or translate a
+  # second Nix-specific schema. Secrets remain separate runtime paths in
+  # `credentials` and are referenced from settings as env.NAME.
   lattice.llm-gateway = {
-    # Именованные клиентские ключи: каждый потребитель — свой id, метрики
-    # запросов/токенов атрибутируются по id. node-pi — Pi на самой ноде;
-    # mac — Pi на операторском Mac (mDNS llm-gateway и mesh llm-gateway-mesh).
-    clientKeys = [
-      {
-        id = "node-pi";
-        secretFile = config.age.secrets.llm-gateway-client-node-pi.path;
-      }
-      {
-        id = "mac";
-        secretFile = config.age.secrets.llm-gateway-client-mac.path;
-      }
-    ];
-    # Debug logs contain routing metadata and sanitized upstream errors, never prompts or keys.
-    logLevel = "debug";
-    # Mid-stream 5xx breaks (hyperfusion, 2026-09-16 regression) feed the
-    # gateway's cooldown/health/lease machinery, so a provider that repeatedly
-    # breaks streams stops winning races; the pi-retry client fallback stays
-    # as the last line of defense. The idle watchdog re-arms on every event,
-    # so the explicit default only bounds a fully silent stream.
-    streamIdleTimeout = "5m";
-    providers = {
-      gonka-proxy = {
-        id = "gonka-proxy";
-        inferenceUrl = "https://api.proxy.gonka.gg/v1";
-        apiKeySecretFile = config.age.secrets.llm-provider-gonka-gg-proxy.path;
-        apiKeyEnv = "LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY";
-        priority = 50;
-        stripParams = stripReasoningParams;
-        setParams = forceReasoningOff;
-      };
-      gonka-openbroker = {
-        id = "gonka-openbroker";
-        inferenceUrl = "https://api.openbroker.gonka.gg/v1";
-        apiKeySecretFile = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
-        apiKeyEnv = "LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY";
-        priority = 40;
-        stripParams = stripReasoningParams;
-        setParams = forceReasoningOff;
-      };
-      gonka-api = {
-        id = "gonka-api";
-        inferenceUrl = "https://hskyauefqcgbvgvxkluj.supabase.co/functions/v1/gonka";
-        apiKeySecretFile = config.age.secrets.llm-provider-gonka-api.path;
-        apiKeyEnv = "LATTICE_LLM_PROVIDER_GONKA_API_KEY";
-        priority = 30;
-        stripParams = stripReasoningParams;
-        setParams = forceReasoningOff;
-      };
-      dahl = {
-        id = "dahl";
-        inferenceUrl = "https://inference.dahl.global/v1";
-        apiKeySecretFile = config.age.secrets.llm-provider-dahl.path;
-        apiKeyEnv = "LATTICE_LLM_PROVIDER_DAHL_KEY";
-        priority = 20;
-        stripParams = stripReasoningParams;
-      };
-      dahl-2 = {
-        id = "dahl-2";
-        inferenceUrl = "https://inference.dahl.global/v1";
-        apiKeySecretFile = config.age.secrets.llm-provider-dahl-2.path;
-        apiKeyEnv = "LATTICE_LLM_PROVIDER_DAHL_2_KEY";
-        priority = 20;
-        stripParams = stripReasoningParams;
-      };
-      hyperfusion = {
-        id = "hyperfusion";
-        inferenceUrl = "https://api.hyperfusion.io/v1";
-        apiKeySecretFile = config.age.secrets.llm-provider-hyperfusion.path;
-        apiKeyEnv = "LATTICE_LLM_PROVIDER_HYPERFUSION_KEY";
-        priority = 100;
-        stripParams = stripReasoningParams;
-      };
-      gonkarouter = {
-        id = "gonkarouter";
-        inferenceUrl = "https://api.gonkarouter.io/v1";
-        apiKeySecretFile = config.age.secrets.llm-provider-gonkarouter.path;
-        apiKeyEnv = "LATTICE_LLM_PROVIDER_GONKAROUTER_KEY";
-        priority = 10;
-        stripParams = stripReasoningParams;
-      };
-      google-vertex = {
-        id = "google-vertex";
-        baseProvider = "vertex";
-        inferenceUrl = "https://aiplatform.googleapis.com";
-        vertexCredentialsSecretFile = config.age.secrets.llm-provider-google-vertex.path;
-        vertexCredentialsEnv = "LATTICE_LLM_PROVIDER_GOOGLE_VERTEX_CREDENTIALS";
-        vertexProjectId = "mytecor";
-        vertexRegion = "global";
-        priority = 100;
-      };
+    credentials = {
+      LATTICE_CLIENT_NODE_PI_KEY = config.age.secrets.llm-gateway-client-node-pi.path;
+      LATTICE_CLIENT_MAC_KEY = config.age.secrets.llm-gateway-client-mac.path;
+      LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY = config.age.secrets.llm-provider-gonka-gg-proxy.path;
+      LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
+      LATTICE_LLM_PROVIDER_GONKA_API_KEY = config.age.secrets.llm-provider-gonka-api.path;
+      LATTICE_LLM_PROVIDER_DAHL_KEY = config.age.secrets.llm-provider-dahl.path;
+      LATTICE_LLM_PROVIDER_DAHL_2_KEY = config.age.secrets.llm-provider-dahl-2.path;
+      LATTICE_LLM_PROVIDER_HYPERFUSION_KEY = config.age.secrets.llm-provider-hyperfusion.path;
+      LATTICE_LLM_PROVIDER_GONKAROUTER_KEY = config.age.secrets.llm-provider-gonkarouter.path;
+      LATTICE_LLM_PROVIDER_GOOGLE_VERTEX_CREDENTIALS = config.age.secrets.llm-provider-google-vertex.path;
     } // lib.optionalAttrs hasGoogleAiStudioKey {
-      google-ai-studio = {
-        id = "google-ai-studio";
-        baseProvider = "gemini";
-        inferenceUrl = "https://generativelanguage.googleapis.com/v1beta";
-        apiKeySecretFile = config.age.secrets.llm-provider-google-ai-studio.path;
-        apiKeyEnv = "LATTICE_LLM_PROVIDER_GOOGLE_AI_STUDIO_KEY";
-        priority = 90;
-      };
+      LATTICE_LLM_PROVIDER_GOOGLE_AI_STUDIO_KEY = config.age.secrets.llm-provider-google-ai-studio.path;
     };
-    # Fully flat routing table: no generated pipelines. Every rule — entry
-    # route, transition subroutes, fallback nets — is written by hand below.
-    # Each toggle that the removed `models`/`pipeline` sugar used to express
-    # is now an explicit typed action on the owning route:
-    #   * in-gateway stream takeover `continue` (idle 30s, reshare full,
-    #     whole-chain retries 2) lands on every entry route explicitly;
-    #   * selection-phase `hedge` (after 20s, unused providers) is its own
-    #     hedge subroute per model;
-    #   * semaphore/timeout/retry/affinity are spelled out per route.
-    routingRules =
-      let
-        # The one error set every transition subroute accepts. Mirrors
-        # allRetryableClasses() plus the catalog model_not_found. Every
-        # retry/fallback entry below carries the SAME set, including both a
-        # live upstream 404 ("404") and the catalog pre-dispatch rejection
-        # ("model_not_found"). The standard route once omitted "404"
-        # (2026-09-20, session 01a0bd52): gonka-proxy dropped
-        # DeepSeek-V4-Flash-0731 from its serving pool while still advertising
-        # it in /models, the upstream returned a live HTTP 404 (class "404",
-        # not "model_not_found"), neither retry nor fallback matched, and the
-        # terminal 404 was surfaced verbatim to the client.
-        transitionErrorClasses = [
-          "404"
-          "model_not_found"
-          "429"
-          "5xx"
-          "timeout"
-          "connection_error"
-          "invalid_response"
-        ];
-        allProviders = [
-          "gonka-proxy"
-          "gonka-openbroker"
-          "gonka-api"
-          "dahl"
-          "dahl-2"
-          "hyperfusion"
-          "gonkarouter"
-        ];
-        # One virtual Gemini group behind the existing `smart` logical model.
-        # AI Studio uses a separately provisioned key/quota and joins this pool
-        # automatically once its encrypted secret exists.
-        smartProviders = [ "google-vertex" ]
-          ++ lib.optional hasGoogleAiStudioKey "google-ai-studio";
-        # Entry-route filter that narrows applicability to one logical model.
-        entryModel = model: {
-          route = model;
-          action = "filter";
-          where = { model = { eq = model; }; };
-        };
-        # Provider selection → native map, the two rules that pair a provider
-        # group with its native model. `unused` restricts the subroute pool to
-        # providers not yet used by the current request graph (retry/hedge
-        # re-race the untouched carriers).
-        mapGroup = route: unused: providers: native: [
-          {
-            route = route;
-            action = "filter";
-            where = { provider = { "in" = providers; } // lib.optionalAttrs unused { unused = true; }; };
-          }
-          { route = route; action = "map"; native = native; }
-        ];
-        # Canonical pipeline for one logical model. `pairs` is the ordered
-        # list of (providers, native) filter→map groups: candidates from all
-        # groups are collected before rank/race, so every native group must
-        # precede the pipeline actions. `raceCount` and `semaphore` carry the
-        # per-model overrides (smart races the whole pool and runs an
-        # aggressive semaphore; the others keep 1 and 4/3/1).
-        pipelineFor = model: raceCount: semaphore: pairs:
-          [ (entryModel model) ]
-          ++ lib.concatMap (p: mapGroup model false p.providers p.native) pairs
-          ++ [
-            { route = model; action = "rank"; strategy = "priority"; }
-            {
-              route = model;
-              action = "balance";
-              strategy = "p2c";
-              weights = { };
-              window = "5m";
-              errorBudget = 0.2;
-            }
-            {
-              route = model;
-              action = "affinity";
-              sources = [ "responses.conversation" "responses.previous_response_id" ];
-              ttl = "24h";
-              onMissing = "ignore";
-              onProviderFailure = "fail-closed";
-            }
-            { route = model; action = "race"; count = raceCount; }
-            {
-              route = model;
-              action = "retry";
-              target = "${model}.retry";
-              attempts = 2;
-              backoffType = "exponential";
-              backoffInitial = "200ms";
-              backoffMax = "1s";
-            }
-            {
-              route = model;
-              action = "hedge";
-              after = "20s";
-              target = "${model}.hedge";
-            }
-            {
-              route = model;
-              action = "semaphore";
-              maxCalls = semaphore.maxCalls;
-              maxInFlight = semaphore.maxInFlight;
-              maxCallsPerProvider = semaphore.maxCallsPerProvider;
-            }
-            { route = model; action = "timeout"; duration = "60s"; }
-            {
-              route = model;
-              action = "continue";
-              idle = "30s";
-              reshare = "full";
-              retries = 2;
-            }
-          ]
-          # <model>.retry: applies only to the listed failures and re-selects
-          # unused providers, one per retry entry.
-          ++ [
-            {
-              route = "${model}.retry";
-              action = "filter";
-              where = { error = { "in" = transitionErrorClasses; }; };
-            }
-          ]
-          ++ lib.concatMap (p: mapGroup "${model}.retry" true p.providers p.native) pairs
-          ++ [
-            { route = "${model}.retry"; action = "rank"; strategy = "priority"; }
-            { route = "${model}.retry"; action = "race"; count = 1; }
-          ]
-          # <model>.hedge: raced on the selection-phase hedge after 20s,
-          # re-selecting providers not already used by the entry route.
-          ++ lib.concatMap (p: mapGroup "${model}.hedge" true p.providers p.native) pairs
-          ++ [
-            { route = "${model}.hedge"; action = "rank"; strategy = "priority"; }
-            { route = "${model}.hedge"; action = "race"; count = 1; }
-          ];
-        defaultSemaphore = { maxCalls = 4; maxInFlight = 3; maxCallsPerProvider = 1; };
-        smartSemaphore = { maxCalls = 6; maxInFlight = 4; maxCallsPerProvider = 1; };
-      in
-      # --- stupid (MiniMax-M2.7): every provider serves the plain native ---
-      pipelineFor "stupid" 1 defaultSemaphore [
-        { providers = allProviders; native = "MiniMaxAI/MiniMax-M2.7"; }
-      ]
-      ++
-      # --- standard (DeepSeek-V4-Flash): every provider serves the plain
-      # native (no per-provider alias on the entry route); hyperfusion's
-      # gonka/-prefixed DeepSeek alias is only on the standard.fallback net
-      # below ---
-      pipelineFor "standard" 1 defaultSemaphore [
-        { providers = allProviders; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
-      ]
-      ++
-      # --- smart (Gemini 3.8 Flash): race both independent Google quota pools
-      # when the AI Studio key is provisioned; Vertex remains usable alone. ---
-      pipelineFor "smart" 0 smartSemaphore [
-        { providers = smartProviders; native = "gemini-3.8-flash"; }
-      ]
-      ++ [
-        # --- standard: Hyperfusion's second catalog alias. Narrow on purpose — the
-        # entry+retry chain re-races all plain-deepseek carriers, so this net
-        # only gives Hyperfusion its gonka/-prefixed native for the
-        # model_not_found/404 case.
+
+    settings = {
+      log_level = "debug";
+      stream_idle_timeout = "5m";
+      client_api_keys = [
+        { id = "node-pi"; key = "env.LATTICE_CLIENT_NODE_PI_KEY"; }
+        { id = "mac"; key = "env.LATTICE_CLIENT_MAC_KEY"; }
+      ];
+      providers = [
         {
-          route = "standard";
-          action = "fallback";
-          target = "standard.fallback";
+          id = "gonka-proxy";
+          base_provider = "openai";
+          inference_url = "https://api.proxy.gonka.gg/v1";
+          api_key = "env.LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY";
+          priority = 50;
+          strip_params = [ "thinking" "reasoning_effort" ];
+          set_params.thinking.type = "disabled";
         }
         {
-          route = "standard.fallback";
-          action = "filter";
-          where = { error = { "in" = transitionErrorClasses; }; };
+          id = "gonka-openbroker";
+          base_provider = "openai";
+          inference_url = "https://api.openbroker.gonka.gg/v1";
+          api_key = "env.LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY";
+          priority = 40;
+          strip_params = [ "thinking" "reasoning_effort" ];
+          set_params.thinking.type = "disabled";
         }
         {
-          route = "standard.fallback";
-          action = "filter";
-          where = { provider = { "in" = [ "hyperfusion" ]; }; };
+          id = "gonka-api";
+          base_provider = "openai";
+          inference_url = "https://hskyauefqcgbvgvxkluj.supabase.co/functions/v1/gonka";
+          api_key = "env.LATTICE_LLM_PROVIDER_GONKA_API_KEY";
+          priority = 30;
+          strip_params = [ "thinking" "reasoning_effort" ];
+          set_params.thinking.type = "disabled";
         }
+        { id = "dahl"; base_provider = "openai"; inference_url = "https://inference.dahl.global/v1"; api_key = "env.LATTICE_LLM_PROVIDER_DAHL_KEY"; priority = 20; strip_params = [ "thinking" "reasoning_effort" ]; }
+        { id = "dahl-2"; base_provider = "openai"; inference_url = "https://inference.dahl.global/v1"; api_key = "env.LATTICE_LLM_PROVIDER_DAHL_2_KEY"; priority = 20; strip_params = [ "thinking" "reasoning_effort" ]; }
+        { id = "hyperfusion"; base_provider = "openai"; inference_url = "https://api.hyperfusion.io/v1"; api_key = "env.LATTICE_LLM_PROVIDER_HYPERFUSION_KEY"; priority = 100; strip_params = [ "thinking" "reasoning_effort" ]; }
+        { id = "gonkarouter"; base_provider = "openai"; inference_url = "https://api.gonkarouter.io/v1"; api_key = "env.LATTICE_LLM_PROVIDER_GONKAROUTER_KEY"; priority = 10; strip_params = [ "thinking" "reasoning_effort" ]; }
         {
-          route = "standard.fallback";
-          action = "map";
-          native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731";
+          id = "google-vertex";
+          base_provider = "vertex";
+          inference_url = "https://aiplatform.googleapis.com";
+          vertex_auth_credentials = "env.LATTICE_LLM_PROVIDER_GOOGLE_VERTEX_CREDENTIALS";
+          vertex_project_id = "mytecor";
+          vertex_region = "global";
+          priority = 100;
         }
+      ] ++ lib.optionals hasGoogleAiStudioKey [{
+        id = "google-ai-studio";
+        base_provider = "gemini";
+        inference_url = "https://generativelanguage.googleapis.com/v1beta";
+        api_key = "env.LATTICE_LLM_PROVIDER_GOOGLE_AI_STUDIO_KEY";
+        priority = 90;
+      }];
+
+      routing_rules = [
+        # stupid
+        { route = "stupid"; action = "filter"; where.model.eq = "stupid"; }
+        { route = "stupid"; action = "filter"; where.provider."in" = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ]; }
+        { route = "stupid"; action = "map"; native = "MiniMaxAI/MiniMax-M2.7"; }
+        { route = "stupid"; action = "rank"; strategy = "priority"; }
+        { route = "stupid"; action = "balance"; strategy = "p2c"; weights = { }; window = "5m"; error_budget = 0.2; }
+        { route = "stupid"; action = "affinity"; sources = [ "responses.conversation" "responses.previous_response_id" ]; ttl = "24h"; on_missing = "ignore"; on_provider_failure = "fail-closed"; }
+        { route = "stupid"; action = "race"; count = 1; }
+        { route = "stupid"; action = "retry"; target = "stupid.retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
+        { route = "stupid"; action = "hedge"; after = "20s"; target = "stupid.hedge"; }
+        { route = "stupid"; action = "semaphore"; max_calls = 4; max_in_flight = 3; max_calls_per_provider = 1; }
+        { route = "stupid"; action = "timeout"; duration = "60s"; }
+        { route = "stupid"; action = "continue"; idle = "30s"; reshare = "full"; retries = 2; }
+        { route = "stupid.retry"; action = "filter"; where.error."in" = [ "404" "model_not_found" "429" "5xx" "timeout" "connection_error" "invalid_response" ]; }
+        { route = "stupid.retry"; action = "filter"; where.provider = { "in" = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ]; unused = true; }; }
+        { route = "stupid.retry"; action = "map"; native = "MiniMaxAI/MiniMax-M2.7"; }
+        { route = "stupid.retry"; action = "rank"; strategy = "priority"; }
+        { route = "stupid.retry"; action = "race"; count = 1; }
+        { route = "stupid.hedge"; action = "filter"; where.provider = { "in" = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ]; unused = true; }; }
+        { route = "stupid.hedge"; action = "map"; native = "MiniMaxAI/MiniMax-M2.7"; }
+        { route = "stupid.hedge"; action = "rank"; strategy = "priority"; }
+        { route = "stupid.hedge"; action = "race"; count = 1; }
+
+        # standard
+        { route = "standard"; action = "filter"; where.model.eq = "standard"; }
+        { route = "standard"; action = "filter"; where.provider."in" = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ]; }
+        { route = "standard"; action = "map"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
+        { route = "standard"; action = "rank"; strategy = "priority"; }
+        { route = "standard"; action = "balance"; strategy = "p2c"; weights = { }; window = "5m"; error_budget = 0.2; }
+        { route = "standard"; action = "affinity"; sources = [ "responses.conversation" "responses.previous_response_id" ]; ttl = "24h"; on_missing = "ignore"; on_provider_failure = "fail-closed"; }
+        { route = "standard"; action = "race"; count = 1; }
+        { route = "standard"; action = "retry"; target = "standard.retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
+        { route = "standard"; action = "hedge"; after = "20s"; target = "standard.hedge"; }
+        { route = "standard"; action = "semaphore"; max_calls = 4; max_in_flight = 3; max_calls_per_provider = 1; }
+        { route = "standard"; action = "timeout"; duration = "60s"; }
+        { route = "standard"; action = "continue"; idle = "30s"; reshare = "full"; retries = 2; }
+        { route = "standard.retry"; action = "filter"; where.error."in" = [ "404" "model_not_found" "429" "5xx" "timeout" "connection_error" "invalid_response" ]; }
+        { route = "standard.retry"; action = "filter"; where.provider = { "in" = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ]; unused = true; }; }
+        { route = "standard.retry"; action = "map"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
+        { route = "standard.retry"; action = "rank"; strategy = "priority"; }
+        { route = "standard.retry"; action = "race"; count = 1; }
+        { route = "standard.hedge"; action = "filter"; where.provider = { "in" = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ]; unused = true; }; }
+        { route = "standard.hedge"; action = "map"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
+        { route = "standard.hedge"; action = "rank"; strategy = "priority"; }
+        { route = "standard.hedge"; action = "race"; count = 1; }
+
+        # smart
+        { route = "smart"; action = "filter"; where.model.eq = "smart"; }
+        { route = "smart"; action = "filter"; where.provider."in" = [ "google-vertex" ] ++ lib.optional hasGoogleAiStudioKey "google-ai-studio"; }
+        { route = "smart"; action = "map"; native = "gemini-3.8-flash"; }
+        { route = "smart"; action = "rank"; strategy = "priority"; }
+        { route = "smart"; action = "balance"; strategy = "p2c"; weights = { }; window = "5m"; error_budget = 0.2; }
+        { route = "smart"; action = "affinity"; sources = [ "responses.conversation" "responses.previous_response_id" ]; ttl = "24h"; on_missing = "ignore"; on_provider_failure = "fail-closed"; }
+        { route = "smart"; action = "race"; count = 0; }
+        { route = "smart"; action = "retry"; target = "smart.retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
+        { route = "smart"; action = "hedge"; after = "20s"; target = "smart.hedge"; }
+        { route = "smart"; action = "semaphore"; max_calls = 6; max_in_flight = 4; max_calls_per_provider = 1; }
+        { route = "smart"; action = "timeout"; duration = "60s"; }
+        { route = "smart"; action = "continue"; idle = "30s"; reshare = "full"; retries = 2; }
+        { route = "smart.retry"; action = "filter"; where.error."in" = [ "404" "model_not_found" "429" "5xx" "timeout" "connection_error" "invalid_response" ]; }
+        { route = "smart.retry"; action = "filter"; where.provider = { "in" = [ "google-vertex" ] ++ lib.optional hasGoogleAiStudioKey "google-ai-studio"; unused = true; }; }
+        { route = "smart.retry"; action = "map"; native = "gemini-3.8-flash"; }
+        { route = "smart.retry"; action = "rank"; strategy = "priority"; }
+        { route = "smart.retry"; action = "race"; count = 1; }
+        { route = "smart.hedge"; action = "filter"; where.provider = { "in" = [ "google-vertex" ] ++ lib.optional hasGoogleAiStudioKey "google-ai-studio"; unused = true; }; }
+        { route = "smart.hedge"; action = "map"; native = "gemini-3.8-flash"; }
+        { route = "smart.hedge"; action = "rank"; strategy = "priority"; }
+        { route = "smart.hedge"; action = "race"; count = 1; }
+
+        # Explicit fallback nets.
+        { route = "standard"; action = "fallback"; target = "standard.fallback"; }
+        { route = "standard.fallback"; action = "filter"; where.error."in" = [ "404" "model_not_found" "429" "5xx" "timeout" "connection_error" "invalid_response" ]; }
+        { route = "standard.fallback"; action = "filter"; where.provider."in" = [ "hyperfusion" ]; }
+        { route = "standard.fallback"; action = "map"; native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731"; }
         { route = "standard.fallback"; action = "rank"; strategy = "priority"; }
         { route = "standard.fallback"; action = "race"; count = 1; }
-      ]
-      ++ [
-        # --- stupid: universe-wide safety net (all providers serve the plain
-        # MiniMax native, no capability exclusion needed), mirrored from smart
-        # so every model has a uniform generic fallback.
-        {
-          route = "stupid";
-          action = "fallback";
-          target = "stupid.fallback";
-        }
-        {
-          route = "stupid.fallback";
-          action = "filter";
-          where = { error = { "in" = transitionErrorClasses; }; };
-        }
-        {
-          route = "stupid.fallback";
-          action = "filter";
-          where = { provider = { "in" = allProviders; unused = true; }; };
-        }
-        {
-          route = "stupid.fallback";
-          action = "map";
-          native = "MiniMaxAI/MiniMax-M2.7";
-        }
+        { route = "stupid"; action = "fallback"; target = "stupid.fallback"; }
+        { route = "stupid.fallback"; action = "filter"; where.error."in" = [ "404" "model_not_found" "429" "5xx" "timeout" "connection_error" "invalid_response" ]; }
+        { route = "stupid.fallback"; action = "filter"; where.provider = { "in" = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ]; unused = true; }; }
+        { route = "stupid.fallback"; action = "map"; native = "MiniMaxAI/MiniMax-M2.7"; }
         { route = "stupid.fallback"; action = "rank"; strategy = "priority"; }
         { route = "stupid.fallback"; action = "race"; count = 0; }
       ];
+    };
   };
 
   # F12 observability: Grafana admin password comes from an agenix secret via

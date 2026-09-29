@@ -139,7 +139,7 @@ let
 
     # 3. OpenAI-compatible LLM Gateway via its mDNS alias.
     (mkIf llmGatewayEnabled (serviceSites "llm-gateway" ''
-      reverse_proxy ${config.lattice.llm-gateway.host}:${toString config.lattice.llm-gateway.port}
+      reverse_proxy ${config.lattice.llm-gateway.settings.host}:${toString config.lattice.llm-gateway.settings.port}
     ''))
 
     # 4. Authenticated LAN WebSocket ingress for the loopback-only Pi ACP daemon.

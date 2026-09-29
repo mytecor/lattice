@@ -2,18 +2,6 @@
 
 let
   inherit (lib) mkOption types;
-
-  shared = import ./types.nix { inherit lib; };
-  inherit (shared) routingRuleType;
-
-  # Deterministic env-var name for a credentials holder: the non-secret ID is
-  # uppercased and separators folded to underscores, so a provider id
-  # `gonka-proxy` maps to `LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY` and a client
-  # key id `pi-desktop` to `LATTICE_CLIENT_PI_DESKTOP_KEY`. The generated
-  # EnvironmentFile and the runtime config reference this same name, so the
-  # two stay in sync by construction.
-  envVarName = prefix: id:
-    prefix + lib.toUpper (lib.replaceStrings [ "-" "." ] [ "_" "_" ] id) + "_KEY";
 in
 {
   options.lattice.llm-gateway = {
@@ -48,273 +36,33 @@ in
       description = "systemd RuntimeDirectory name below /run.";
     };
 
-    host = mkOption {
-      type = types.str;
-      default = "127.0.0.1";
-      description = "Gateway listen address.";
-    };
-
-    port = mkOption {
-      type = types.port;
-      default = 9208;
-      description = "Gateway listen port.";
-    };
-
-    metricsHost = mkOption {
-      type = types.str;
-      default = "127.0.0.1";
-      description = "Metrics listen address. Loopback by default so the Prometheus scrape endpoint is not public; wire it to a private scrape network explicitly.";
-    };
-
-    metricsPort = mkOption {
-      type = types.port;
-      default = 9209;
-      description = "Metrics listen port (Prometheus text exposition). Must not equal the API port.";
-    };
-
-    clientKeys = mkOption {
-      default = [ ];
-      type = types.listOf (types.submodule ({ config, ... }: {
-        options = {
-          id = mkOption {
-            type = types.strMatching "[A-Za-z0-9][A-Za-z0-9_.-]*";
-            description = "Non-secret client key identifier: authenticates the bearer and labels the per-key metrics (api_key dimension). Never the key material.";
-          };
-          secretFile = mkOption {
-            type = types.nullOr types.str;
-            default = null;
-            description = "Runtime path to this client key secret, normally an agenix secret. The module bakes it into the gateway EnvironmentFile under the env name below; the file itself is never read during Nix evaluation and never lands in the store.";
-          };
-          env = mkOption {
-            type = types.nullOr (types.strMatching "[A-Za-z_][A-Za-z0-9_]*");
-            default = envVarName "LATTICE_CLIENT_" config.id;
-            description = "Environment variable name that carries this client key. The gateway runtime config references it as env.<name>; the module writes the secret into the EnvironmentFile under exactly this name.";
-          };
-        };
-      }));
-      description = ''
-        Named client keys accepted by the gateway. Each request is attributed
-        to the matching key's id in the request/usage metrics, so different
-        consumers can carry their own key and their usage is split per key.
-        An empty list (default) disables client authentication entirely
-        (keyless loopback mode).
-      '';
-    };
-
-    logLevel = mkOption {
-      type = types.enum [ "silent" "error" "warn" "info" "debug" "trace" ];
-      default = "silent";
-      description = "Gateway log level. Silent is the secure production default.";
-    };
-
-    catalogRefreshInterval = mkOption {
-      type = types.strMatching "[0-9]+(ms|s|m|h)";
-      default = "10m";
-      description = "Refresh interval for internal provider model catalogs.";
-    };
-
-    streamIdleTimeout = mkOption {
-      type = types.strMatching "[0-9]+(ms|s|m|h)";
-      default = "5m";
-      description = ''
-        Idle timeout for the relayed winner stream: a stream producing no
-        events at all for this long is cancelled and reported to the client as
-        a structured timeout error, and the failure is recorded against the
-        provider (cooldown, health, lease). Any event, including provider
-        keep-alives, re-arms the timer. The 5m default is deliberately
-        conservative because reasoning models may legitimately pause
-        mid-stream.
-      '';
-    };
-
-    providers = mkOption {
+    settings = mkOption {
+      type = types.submodule {
+        freeformType = types.attrsOf types.anything;
+      };
       default = { };
-      description = "Bifrost-backed provider instances for the Lattice-owned proxy.";
-      type = types.attrsOf (types.submodule ({ name, config, ... }: {
-        options = {
-          enable = mkOption {
-            type = types.bool;
-            default = true;
-            description = "Include this provider instance in runtime configuration.";
-          };
-          id = mkOption {
-            type = types.strMatching "[A-Za-z0-9][A-Za-z0-9_.-]*";
-            default = name;
-            description = "Stable Bifrost custom-provider instance ID.";
-          };
-          baseProvider = mkOption {
-            type = types.enum [ "openai" "anthropic" "cohere" "gemini" "vertex" "huggingface" "replicate" ];
-            default = "openai";
-            description = "Bifrost base provider adapter used by this custom provider instance.";
-          };
-          inferenceUrl = mkOption {
-            type = types.str;
-            description = ''
-              Provider inference base URL. For baseProvider `openai`, this is the
-              full OpenAI-compatible base path including the version segment: the
-              gateway appends only the operation and never inserts `/v1`.
-            '';
-          };
-          modelsUrl = mkOption {
-            type = types.nullOr types.str;
-            default = null;
-            description = ''
-              Optional independent model catalog URL. For baseProvider `openai`,
-              the gateway derives it by appending `/models` to inferenceUrl when
-              unset. Other adapters require an explicit URL for discovery.
-            '';
-          };
-          apiKeySecretFile = mkOption {
-            type = types.nullOr types.str;
-            default = null;
-            description = "Runtime path to this provider's API key secret, normally an agenix secret. The module bakes it into the gateway EnvironmentFile under the env name below; the file itself is never read during Nix evaluation and never lands in the store.";
-          };
-          apiKeyEnv = mkOption {
-            type = types.nullOr (types.strMatching "[A-Za-z_][A-Za-z0-9_]*");
-            default = envVarName "LATTICE_LLM_PROVIDER_" config.id;
-            description = ''
-              Environment variable name that carries this provider's API key.
-              The runtime config references it as env.<name> (the gateway
-              resolves it from the process environment, never from a file),
-              and the module writes the secret into the EnvironmentFile under
-              exactly this name. One common key covers inference and model
-              catalog discovery: there is no separate models key.
-            '';
-          };
-          vertexProjectId = mkOption {
-            type = types.nullOr types.str;
-            default = null;
-            description = "Google Cloud project ID for a Vertex provider.";
-          };
-          vertexProjectNumber = mkOption {
-            type = types.nullOr types.str;
-            default = null;
-            description = "Optional Google Cloud project number for Vertex fine-tuned endpoint models.";
-          };
-          vertexRegion = mkOption {
-            type = types.nullOr types.str;
-            default = null;
-            description = "Google Cloud region or multi-region used by a Vertex provider.";
-          };
-          vertexCredentialsSecretFile = mkOption {
-            type = types.nullOr types.str;
-            default = null;
-            description = "Runtime path to Vertex service-account JSON, normally an agenix secret.";
-          };
-          vertexCredentialsEnv = mkOption {
-            type = types.nullOr (types.strMatching "[A-Za-z_][A-Za-z0-9_]*");
-            default = "LATTICE_LLM_PROVIDER_"
-              + lib.toUpper (lib.replaceStrings [ "-" "." ] [ "_" "_" ] config.id)
-              + "_VERTEX_CREDENTIALS";
-            description = "Environment variable carrying Vertex service-account JSON.";
-          };
-          priority = mkOption {
-            type = types.int;
-            default = 0;
-            description = ''
-              Compile-time pool order: higher-priority providers are ranked first
-              (the fail-open order and the order race/hedge batches are built
-              in). Priority never feeds the runtime balance choice.
-            '';
-          };
-          cooldown = mkOption {
-            type = types.strMatching "[0-9]+(ms|s|m|h)";
-            default = "15s";
-            description = ''
-              Circuit-breaker cooldown after retryable failures, keyed per
-              (provider, native model) pair: a broken mapping cools down alone
-              while the provider's other models stay in the candidate pool.
-            '';
-          };
-          requestTimeout = mkOption {
-            type = types.strMatching "[0-9]+(ms|s|m|h)";
-            default = "60s";
-            description = "Bifrost provider request timeout.";
-          };
-          bifrostMaxRetries = mkOption {
-            type = types.ints.unsigned;
-            default = 0;
-            description = "Provider-internal Bifrost retries; routing_rules retries wrap the composed route.";
-          };
-          allowPrivateNetwork = mkOption {
-            type = types.bool;
-            default = false;
-            description = "Allow Bifrost to call private addresses; intended for controlled test/LAN providers.";
-          };
-          headers = mkOption {
-            type = types.attrsOf types.str;
-            default = { };
-            description = "Non-secret extra headers sent to the provider.";
-          };
-          stripParams = mkOption {
-            type = types.listOf types.str;
-            default = [ ];
-            description = ''
-              Top-level request-body keys removed before the request reaches this
-              provider. The gateway serves clients that encode a provider-specific
-              reasoning control (zai's `thinking`) which generic OpenAI-compatible
-              upstreams (hyperfusion/litellm) reject with 400; listing it here lets
-              such a provider carry the same logical model with that control
-              stripped, while other providers keep their native control.
-            '';
-          };
-          setParams = mkOption {
-            type = types.attrsOf types.json;
-            default = { };
-            description = ''
-              Top-level request-body keys forced to fixed JSON values before the
-              request reaches this provider. Applied after `stripParams`, so a key
-              listed in both ends up as its forced value, never the client's.
-              Used to hard-disable reasoning upstream (e.g. `thinking = { type =
-              "disabled"; }`) on providers that accept the control, while
-              `stripParams` covers the providers that reject it.
-            '';
-          };
-        };
-      }));
-    };
-
-    routingRules = mkOption {
-      default = [ ];
       description = ''
-        Flat ordered routing table for logical models. Every rule belongs to a
-        named route (the route scope; dots such as "standard.retry" are a
-        naming convention only). The physical config stays a flat array: there
-        is no nested routes/plans structure; this is the single source of
-        routing truth (no generated pipelines).
-
-        Per route, the typical order is
-        filter (model / provider / error / attempt) → map (native mapping) →
-        rank → lease → affinity → race → retry/hedge (target) →
-        semaphore → timeout, and every transition (retry, fallback, hedge)
-        points at its own named subroute with «target». Retry/fallback/hedge
-        own no applicability: the destination route's own filter decides it.
-
-        Each entry is a discriminated rule for exactly one action: it owns only
-        that action's fields, and an unknown action, an unknown field or a
-        field owned by another action fails during Nix evaluation. The gateway
-        binary independently re-validates the generated JSON at startup, so
-        JSON produced outside Nix receives the same strict per-action checks.
+        Public gateway configuration written verbatim as JSON. Keys use the
+        gateway's native snake_case names; the NixOS module neither rewrites
+        fields nor duplicates the Go configuration schema.
       '';
-      type = types.listOf routingRuleType;
     };
 
-    affinityFile = mkOption {
-      type = types.nullOr types.str;
-      default = null;
+    credentials = mkOption {
+      type = types.attrsOf types.str;
+      default = { };
       description = ''
-        Runtime path for the opaque Responses affinity mapping file. The file is
-        owned by the gateway user with mode 0600 and contains only opaque id →
-        provider mappings with expiry; never prompts, keys, or provider URLs. It
-        survives service restarts in the runtime directory and is cleared on a
-        full service stop or reboot.
+        Environment variable name to runtime secret-file path mapping. Public
+        settings refer to these values as env.NAME; secret contents are loaded
+        by systemd and never enter the Nix store. Build-time validation requires
+        the declared names and public env.NAME references to match exactly.
       '';
     };
 
     publicConfigFile = mkOption {
       type = types.path;
       readOnly = true;
-      description = "Generated non-secret gateway configuration template in the Nix store.";
+      description = "Generated and gateway-validated non-secret JSON configuration.";
     };
   };
 }
