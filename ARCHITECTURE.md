@@ -188,10 +188,10 @@ policy и композицией маршрутов. Parallel race реализ�
 форком Bifrost, внешним proxy перед его HTTP gateway или dynamic plugin с рекурсивным вызовом.
 
 Стабильная клиентская граница независимо от runtime — OpenAI-compatible API с отдельным gateway
-credential и временным набором logical models `stupid`, `standard`. Provider credentials
+credential и набором logical models `stupid`, `standard`, `smart`. Provider credentials
 и реальные model IDs существуют только внутри runtime-конфигурации gateway.
 
-`/v1/models` принадлежит Lattice proxy и публикует только два логических имени. Входящий model
+`/v1/models` принадлежит Lattice proxy и публикует только три логических имени. Входящий model
 ID преобразуется в native target до вызова Bifrost, а исходное logical имя восстанавливается во
 всех ответах и безопасных ошибках. Provider identity, native IDs, внутренние URLs и route selectors
 не входят в клиентскую поверхность. Непубличные upstream keys подаются отдельно от client key.
@@ -242,7 +242,7 @@ streaming победитель выбирается по первому meaningf
 отменённые losers не влияют на cooldown и lease. После winner, client cancellation, timeout или
 исчерпания semaphore budget новые upstream calls не стартуют.
 
-В production все настроенные Gonka providers входят в primary `map` обоих logical models,
+В production все настроенные Gonka providers входят в primary `map` классов `stupid` и `standard`,
 ранжируются по priority (hyperfusion 100, gonka-proxy 50, gonka-openbroker 40, gonka-api 30, dahl
 20, gonkarouter 10), а race/retry/hedge потребляют топ-2 и по одному следующему unused target при
 целевом semaphore `max_calls = 4`, `max_in_flight = 3`, `max_calls_per_provider = 1` — один запрос
@@ -252,7 +252,11 @@ call к одному provider. Для `standard` второй stage даёт Hyp
 классифицируется как `model_not_found` и переводит выполнение на fallback без
 лексикографической подстановки произвольной модели. Provider с retryable failure получает
 cooldown и временно пропускается; если охлаждаются все ветки, gateway fail-open пробует pool
-снова. Legacy `race accessGroups`, отдельный `models` registry и access-group routing удалены.
+снова. `smart` отображается на `gemini-3.8-flash` и гоняет независимые Google Vertex AI и Google
+AI Studio provider instances; у Vertex отдельный service-account credential, у AI Studio — API
+key, а quota, health и cooldown учитываются независимо, но для клиента они образуют один
+логический класс. Legacy `race accessGroups`, отдельный `models` registry и access-group routing
+удалены.
 
 Executable spike [f7-01](./roadmap/f7-llm-gateway/f7-01-token-proxy-spike.md) остаётся историческим
 подтверждением требуемого поведения и источником regression tests. NixOS-модуль, безопасная сборка
@@ -263,21 +267,22 @@ runtime-specific legacy config удалены после подтверждён�
 
 ### Контракт логических моделей
 
-До появления дополнительных provider classes клиентская поверхность содержит два имени. Logical model registry выводится runtime из успешно скомпилированных executable plans, а не из отдельного конфигурационного списка:
+Клиентская поверхность содержит три имени. Logical model registry выводится runtime из успешно скомпилированных executable plans, а не из отдельного конфигурационного списка:
 
 | Имя | Семантика (native через `map`) |
 | --- | --- |
 | `stupid` | `MiniMaxAI/MiniMax-M2.7`, назначен всем provider primary stage; дешёвые и простые шаги. |
 | `standard` | `deepseek-ai/DeepSeek-V4-Flash-0731` в primary stage, плюс `model_not_found`-fallback на `gonka/deepseek-ai/DeepSeek-V4-Flash-0731` (Hyperfusion); основной рабочий класс. |
+| `smart` | `gemini-3.8-flash` через отдельные Vertex AI и Google AI Studio quota pools; сложные и мультимодальные задачи. |
 
 Mappings можно менять без изменения клиента, если новое назначение сохраняет смысл класса,
 поддерживает нужный OpenAI-compatible protocol и проходит контрактные/resilience checks. Изменение
 цены, provider ID, priority или fallback внутри класса не меняет API. Перенос модели в другой класс
 является изменением эксплуатационной политики и требует проверки качества, но не нового имени.
 
-Профиль задаёт `logicalModels` этим списком, а runtime проверяет, что `/v1/models` не включает
-upstream prefixes, каждый advertised ID выводится из скомпилированного плана и имеет явный
-`map(native, providers)`. Неизвестное или provider-specific имя отклоняется с 404 до обращения
+Runtime проверяет, что `/v1/models` не включает upstream prefixes: каждый advertised ID выводится
+из скомпилированного плана и имеет явный `map(native, providers)`. Неизвестное или
+provider-specific имя отклоняется с 404 до обращения
 к upstream. Ошибки клиентской авторизации остаются 401; исчерпание retry/fallback возвращает
 gateway error без credentials и без раскрытия внутреннего model ID. Native/provider данные не
 попадают в client responses, SSE и безопасные ошибки.

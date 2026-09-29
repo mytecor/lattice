@@ -23,6 +23,14 @@ let
     allow_private_network = provider.allowPrivateNetwork;
     strip_params = provider.stripParams;
     set_params = provider.setParams;
+  } // lib.optionalAttrs (provider.baseProvider == "vertex") {
+    vertex_project_id = provider.vertexProjectId;
+    vertex_project_number = provider.vertexProjectNumber;
+    vertex_region = provider.vertexRegion;
+    vertex_auth_credentials =
+      if provider.vertexCredentialsSecretFile != null
+      then "env.${provider.vertexCredentialsEnv}"
+      else null;
   };
 
   # Emits exactly the fields a routing action owns plus the rule envelope
@@ -79,6 +87,9 @@ let
     lib.mapAttrsToList
       (name: provider: { env = provider.apiKeyEnv; file = provider.apiKeySecretFile; })
       (lib.filterAttrs (_: provider: provider.apiKeySecretFile != null) activeProviders)
+    ++ lib.mapAttrsToList
+      (name: provider: { env = provider.vertexCredentialsEnv; file = provider.vertexCredentialsSecretFile; })
+      (lib.filterAttrs (_: provider: provider.vertexCredentialsSecretFile != null) activeProviders)
     ++ map (client: { env = client.env; file = client.secretFile; }) cfg.clientKeys;
 
   envDir = "/run/llm-gateway-env";
@@ -134,6 +145,20 @@ in
           (provider: provider.apiKeySecretFile == null || provider.apiKeyEnv != null)
           (builtins.attrValues activeProviders);
         message = "llm-gateway: apiKeySecretFile requires a non-null apiKeyEnv.";
+      }
+      {
+        assertion = lib.all
+          (provider:
+            provider.baseProvider != "vertex"
+            || (provider.vertexProjectId != null && provider.vertexRegion != null))
+          (builtins.attrValues activeProviders);
+        message = "llm-gateway: Vertex providers require vertexProjectId and vertexRegion.";
+      }
+      {
+        assertion = lib.all
+          (provider: provider.vertexCredentialsSecretFile == null || provider.vertexCredentialsEnv != null)
+          (builtins.attrValues activeProviders);
+        message = "llm-gateway: vertexCredentialsSecretFile requires a non-null vertexCredentialsEnv.";
       }
       {
         assertion = builtins.length cfg.clientKeys == builtins.length (lib.unique (map (client: client.id) cfg.clientKeys));

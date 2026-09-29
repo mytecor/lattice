@@ -76,6 +76,14 @@ type Provider struct {
 	BaseProvider string `json:"base_provider"`
 	InferenceURL string `json:"inference_url"`
 	ModelsURL    string `json:"models_url,omitempty"`
+	// VertexProjectID and VertexRegion configure Vertex's resource path.
+	// VertexAuthCredentials carries service-account JSON independently from an
+	// optional Vertex API key; production uses OAuth because the standard
+	// project endpoint requires a principal.
+	VertexProjectID       string `json:"vertex_project_id,omitempty"`
+	VertexProjectNumber   string `json:"vertex_project_number,omitempty"`
+	VertexRegion          string `json:"vertex_region,omitempty"`
+	VertexAuthCredentials string `json:"vertex_auth_credentials,omitempty"`
 	// APIKey is the provider's single credential, used for inference and for
 	// any model-catalog discovery (explicit or inferred). There is no separate
 	// models key: one common key covers the whole provider. Value is a secret
@@ -397,6 +405,11 @@ func resolveConfigSecrets(cfg *Config) error {
 			return fmt.Errorf("provider %q api_key: %w", cfg.Providers[i].ID, err)
 		}
 		cfg.Providers[i].APIKey = key
+		credentials, err := resolveSecret(cfg.Providers[i].VertexAuthCredentials)
+		if err != nil {
+			return fmt.Errorf("provider %q vertex_auth_credentials: %w", cfg.Providers[i].ID, err)
+		}
+		cfg.Providers[i].VertexAuthCredentials = credentials
 	}
 	return nil
 }
@@ -487,6 +500,10 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 		provider.BaseProvider = strings.TrimSpace(provider.BaseProvider)
 		provider.InferenceURL = strings.TrimRight(strings.TrimSpace(provider.InferenceURL), "/")
 		provider.ModelsURL = strings.TrimSpace(provider.ModelsURL)
+		provider.VertexProjectID = strings.TrimSpace(provider.VertexProjectID)
+		provider.VertexProjectNumber = strings.TrimSpace(provider.VertexProjectNumber)
+		provider.VertexRegion = strings.TrimSpace(provider.VertexRegion)
+		provider.VertexAuthCredentials = strings.TrimSpace(provider.VertexAuthCredentials)
 		provider.StripParams = trimNonEmpty(provider.StripParams)
 		if provider.ID == "" || provider.InferenceURL == "" {
 			return nil, errors.New("every provider requires id and inference_url")
@@ -501,6 +518,9 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 		}
 		if provider.BaseProvider == "" {
 			provider.BaseProvider = "openai"
+		}
+		if provider.BaseProvider == "vertex" && (provider.VertexProjectID == "" || provider.VertexRegion == "") {
+			return nil, fmt.Errorf("provider %q: vertex base_provider requires vertex_project_id and vertex_region", provider.ID)
 		}
 		if _, exists := compiled.providers[provider.ID]; exists {
 			return nil, fmt.Errorf("duplicate provider id %q", provider.ID)

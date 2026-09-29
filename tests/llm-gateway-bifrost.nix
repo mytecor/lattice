@@ -33,6 +33,15 @@ let
               apiKeyEnv = "LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY";
               priority = 10;
             };
+            vertex = {
+              id = "google-vertex";
+              baseProvider = "vertex";
+              inferenceUrl = "https://aiplatform.googleapis.com";
+              vertexCredentialsSecretFile = "/run/agenix/llm-provider-google-vertex-credentials";
+              vertexCredentialsEnv = "LATTICE_LLM_PROVIDER_GOOGLE_VERTEX_CREDENTIALS";
+              vertexProjectId = "mytecor";
+              vertexRegion = "global";
+            };
           };
           routingRules = lib.concatMap (model: [
             { route = model; action = "filter"; where = { model = { eq = model; }; }; }
@@ -89,6 +98,7 @@ assert builtins.elem "llm-gateway-env.service" service.after;
 assert builtins.elem "LATTICE_CLIENT_PRIMARY_KEY:/run/agenix/llm-gateway-client-key" envCredentials;
 assert builtins.elem "LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY:/run/agenix/llm-provider-proxy" envCredentials;
 assert builtins.elem "LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY:/run/agenix/llm-provider-openbroker" envCredentials;
+assert builtins.elem "LATTICE_LLM_PROVIDER_GOOGLE_VERTEX_CREDENTIALS:/run/agenix/llm-provider-google-vertex-credentials" envCredentials;
 assert builtins.elem "llm-gateway.service" envUnit.requiredBy;
 assert builtins.elem "llm-gateway.service" envUnit.partOf;
 assert builtins.elem "llm-gateway.service" envUnit.before;
@@ -167,6 +177,10 @@ pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ 
     echo "gonka-openbroker env api_key reference missing" >&2
     exit 1
   fi
+  if ! jq -e 'any(.providers[]; .id == "google-vertex" and .base_provider == "vertex" and .vertex_project_id == "mytecor" and .vertex_region == "global" and .vertex_auth_credentials == "env.LATTICE_LLM_PROVIDER_GOOGLE_VERTEX_CREDENTIALS")' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+    echo "Vertex provider resource configuration missing" >&2
+    exit 1
+  fi
   # The Go ClientKey decoder is strict and its credential field is `key`.
   # Using provider-style `api_key` makes the service reject the generated
   # config at startup, which in turn aborts every NixOS activation.
@@ -206,7 +220,7 @@ pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ 
 
   # No credential paths, secret values or secret env values land in the public
   # config: only env-var NAMES do.
-  if grep -q 'llm-gateway-client-key\|llm-provider-proxy\|llm-provider-openbroker' ${config.lattice.llm-gateway.publicConfigFile}; then
+  if grep -q 'llm-gateway-client-key\|llm-provider-proxy\|llm-provider-openbroker\|llm-provider-google-vertex-credentials' ${config.lattice.llm-gateway.publicConfigFile}; then
     echo "public Bifrost proxy config contains a credential path" >&2
     exit 1
   fi

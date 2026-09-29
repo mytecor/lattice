@@ -143,7 +143,7 @@ in
             description = "Stable Bifrost custom-provider instance ID.";
           };
           baseProvider = mkOption {
-            type = types.enum [ "openai" "anthropic" "cohere" "gemini" "huggingface" "replicate" ];
+            type = types.enum [ "openai" "anthropic" "cohere" "gemini" "vertex" "huggingface" "replicate" ];
             default = "openai";
             description = "Bifrost base provider adapter used by this custom provider instance.";
           };
@@ -180,6 +180,33 @@ in
               exactly this name. One common key covers inference and model
               catalog discovery: there is no separate models key.
             '';
+          };
+          vertexProjectId = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            description = "Google Cloud project ID for a Vertex provider.";
+          };
+          vertexProjectNumber = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            description = "Optional Google Cloud project number for Vertex fine-tuned endpoint models.";
+          };
+          vertexRegion = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            description = "Google Cloud region or multi-region used by a Vertex provider.";
+          };
+          vertexCredentialsSecretFile = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            description = "Runtime path to Vertex service-account JSON, normally an agenix secret.";
+          };
+          vertexCredentialsEnv = mkOption {
+            type = types.nullOr (types.strMatching "[A-Za-z_][A-Za-z0-9_]*");
+            default = "LATTICE_LLM_PROVIDER_"
+              + lib.toUpper (lib.replaceStrings [ "-" "." ] [ "_" "_" ] config.id)
+              + "_VERTEX_CREDENTIALS";
+            description = "Environment variable carrying Vertex service-account JSON.";
           };
           priority = mkOption {
             type = types.int;

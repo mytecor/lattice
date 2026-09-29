@@ -41,8 +41,8 @@ let
   # Gateways serving OpenAI-compatible models natively (the gonka carriers)
   # accept the zai `thinking` control. For these we don't just strip it: we
   # force `thinking:{"type":"disabled"}` on every request so reasoning is
-  # hard-off for all models (standard/stupid DeepSeek-V4-Flash & MiniMax, and
-  # smart GLM which — always-reasoning — ignores the toggle anyway). Applied
+  # hard-off for the Gonka-backed standard/stupid models (DeepSeek-V4-Flash and
+  # MiniMax). `smart` is routed separately to native Gemini providers. Applied
   # after strip_params, so the forced value wins even over a client that asked
   # for reasoning. hyperfusion/dahl/gonkarouter stay strip-only: litellm
   # rejects the zai `thinking` key with 400, and the others are untested.
@@ -61,6 +61,11 @@ let
   hasJevTypesafeKey = builtins.pathExists jevTypesafeApiKeyFile;
   jevTextModelApiKeyFile = ./secrets/jev-text-model-api-key.age;
   hasJevTextModelKey = builtins.pathExists jevTextModelApiKeyFile;
+  # Google AI Studio joins the `smart` logical model as soon as its existing
+  # API key is encrypted at this path. Vertex is provisioned independently and
+  # remains the active Gemini carrier until then.
+  googleAiStudioKeyFile = ./secrets/llm-provider-google-ai-studio.age;
+  hasGoogleAiStudioKey = builtins.pathExists googleAiStudioKeyFile;
 in
 {
   networking.hostName = "mytecor-homelab";
@@ -150,6 +155,10 @@ in
       };
       llm-provider-gonkarouter = {
         file = ./secrets/llm-provider-gonkarouter.age;
+        mode = "0400";
+      };
+      llm-provider-google-vertex = {
+        file = ./secrets/llm-provider-google-vertex-credentials.age;
         mode = "0400";
       };
       # LLM Gateway client keys (clientKeys): по одному на потребителя.
@@ -259,6 +268,11 @@ in
         owner = "r1s";
         group = "r1s";
       };
+    } // lib.optionalAttrs hasGoogleAiStudioKey {
+      llm-provider-google-ai-studio = {
+        file = googleAiStudioKeyFile;
+        mode = "0400";
+      };
     };
   };
 
@@ -339,30 +353,22 @@ in
           };
           compat = { supportsReasoningEffort = false; };
         };
-        # smart → zai-org/GLM-5.3-Flash via the llm-gateway. Hyperfusion serves
-        # the same GLM under a second catalog alias: the per-provider mapping
-        # gives it gonka/zai-org/GLM-5.3-Flash directly in the entry pipeline,
-        # not through a fallback — hyperfusion carries smart on its own native.
-        # Multimodal
-        # (vision verified), accepts the developer role, and always-reasoning:
-        # GLM ignores a thinking:disabled toggle and reasons regardless. Pi's
-        # zai thinkingFormat sends thinking:{type:enabled/disabled}; since no
-        # reasoning level is controllable, none is exposed (all null keeps
-        # getSupportedThinkingLevels empty) and input stays full multimodal.
+        # smart → gemini-3.8-flash through the independent Vertex and AI Studio
+        # quota pools. Bifrost maps OpenAI reasoning_effort to Gemini's native
+        # thinkingLevel; the current Gemini 3 fallback ladder is low/medium/high.
         smart = {
           reasoning = true;
           input = [ "text" "image" ];
           thinkingLevelMap = {
-            off = null; minimal = null; low = null; medium = null;
-            high = null; xhigh = null; max = null;
+            off = null;
+            minimal = "low";
+            low = "low";
+            medium = "medium";
+            high = "high";
+            xhigh = "high";
+            max = "high";
           };
-          compat = {
-            supportsReasoningEffort = false;
-            # GLM-5.3-Flash accepts the developer role and the zai thinking
-            # shape; declare thinkingFormat explicitly so the model is treated
-            # as reasoning-capable through the gateway passthrough.
-            thinkingFormat = "zai";
-          };
+          compat = { supportsReasoningEffort = true; };
         };
       };
     };
@@ -466,7 +472,7 @@ in
   # One request never creates more than five upstream calls (race 1 + hedge 1
   # + two retries + fallback), more than three concurrent ones, or a repeated
   # call to one provider (the unused provider policy restricts retry/hedge/
-  # fallback; smart overrides to 6/4 with race count 0 (see below).
+  # fallback); smart overrides to 6/4 with race count 0 (see below).
   lattice.llm-gateway = {
     # Именованные клиентские ключи: каждый потребитель — свой id, метрики
     # запросов/токенов атрибутируются по id. node-pi — Pi на самой ноде;
@@ -549,6 +555,25 @@ in
         priority = 10;
         stripParams = stripReasoningParams;
       };
+      google-vertex = {
+        id = "google-vertex";
+        baseProvider = "vertex";
+        inferenceUrl = "https://aiplatform.googleapis.com";
+        vertexCredentialsSecretFile = config.age.secrets.llm-provider-google-vertex.path;
+        vertexCredentialsEnv = "LATTICE_LLM_PROVIDER_GOOGLE_VERTEX_CREDENTIALS";
+        vertexProjectId = "mytecor";
+        vertexRegion = "global";
+        priority = 100;
+      };
+    } // lib.optionalAttrs hasGoogleAiStudioKey {
+      google-ai-studio = {
+        id = "google-ai-studio";
+        baseProvider = "gemini";
+        inferenceUrl = "https://generativelanguage.googleapis.com/v1beta";
+        apiKeySecretFile = config.age.secrets.llm-provider-google-ai-studio.path;
+        apiKeyEnv = "LATTICE_LLM_PROVIDER_GOOGLE_AI_STUDIO_KEY";
+        priority = 90;
+      };
     };
     # Fully flat routing table: no generated pipelines. Every rule — entry
     # route, transition subroutes, fallback nets — is written by hand below.
@@ -589,20 +614,11 @@ in
           "hyperfusion"
           "gonkarouter"
         ];
-        # The 4096-token completion cap on dahl/gonkarouter is absorbed by the
-        # continue rule (idle 30s + retries 2): a winner that truncates at
-        # 4096 and goes silent is continued on another provider with the
-        # partial output reshared. All carriers serve the exact GLM native
-        # (live /models check), so keep the full universe in the smart pool.
-        smartPlainProviders = [
-          "gonka-proxy"
-          "gonka-openbroker"
-          "gonka-api"
-          "dahl"
-          "dahl-2"
-          "gonkarouter"
-        ];
-        smartAliasProviders = [ "hyperfusion" ];
+        # One virtual Gemini group behind the existing `smart` logical model.
+        # AI Studio uses a separately provisioned key/quota and joins this pool
+        # automatically once its encrypted secret exists.
+        smartProviders = [ "google-vertex" ]
+          ++ lib.optional hasGoogleAiStudioKey "google-ai-studio";
         # Entry-route filter that narrows applicability to one logical model.
         entryModel = model: {
           route = model;
@@ -717,11 +733,10 @@ in
         { providers = allProviders; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
       ]
       ++
-      # --- smart (GLM-5.3-Flash): races the whole pool (0) with an aggressive
-      # semaphore; hyperfusion maps its gonka/-prefixed native ---
+      # --- smart (Gemini 3.8 Flash): race both independent Google quota pools
+      # when the AI Studio key is provisioned; Vertex remains usable alone. ---
       pipelineFor "smart" 0 smartSemaphore [
-        { providers = smartPlainProviders; native = "zai-org/GLM-5.3-Flash"; }
-        { providers = smartAliasProviders; native = "gonka/zai-org/GLM-5.3-Flash"; }
+        { providers = smartProviders; native = "gemini-3.8-flash"; }
       ]
       ++ [
         # --- standard: Hyperfusion's second catalog alias. Narrow on purpose — the
@@ -777,36 +792,6 @@ in
         }
         { route = "stupid.fallback"; action = "rank"; strategy = "priority"; }
         { route = "stupid.fallback"; action = "race"; count = 0; }
-      ]
-      ++ [
-        # --- smart (GLM): generic universe-wide safety net (unused, race 0)
-        # for the 404/model_not_found and all-down cases — carriers without the
-        # exact GLM native pre-fail locally and the valid ones re-race in
-        # parallel. Hyperfusion maps its gonka/-prefixed GLM native on the
-        # entry route, so here it pre-fails locally and is skipped; the gonka
-        # carriers serve the plain native.
-        {
-          route = "smart";
-          action = "fallback";
-          target = "smart.fallback";
-        }
-        {
-          route = "smart.fallback";
-          action = "filter";
-          where = { error = { "in" = transitionErrorClasses; }; };
-        }
-        {
-          route = "smart.fallback";
-          action = "filter";
-          where = { provider = { "in" = allProviders; unused = true; }; };
-        }
-        {
-          route = "smart.fallback";
-          action = "map";
-          native = "zai-org/GLM-5.3-Flash";
-        }
-        { route = "smart.fallback"; action = "rank"; strategy = "priority"; }
-        { route = "smart.fallback"; action = "race"; count = 0; }
       ];
   };
 

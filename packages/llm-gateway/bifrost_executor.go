@@ -76,7 +76,7 @@ func newBifrostExecutor(ctx context.Context, config *compiledConfig) (*BifrostEx
 		account.providers = append(account.providers, providerKey)
 		customConfig := &schemas.CustomProviderConfig{
 			BaseProviderType: baseProvider,
-			IsKeyLess:        provider.APIKey == "",
+			IsKeyLess:        provider.APIKey == "" && provider.VertexAuthCredentials == "",
 		}
 		// The OpenAI-compatible adapter pads a hard-coded "/v1" onto the base URL
 		// unless a path override is supplied. We pin the request paths to their
@@ -106,16 +106,7 @@ func newBifrostExecutor(ctx context.Context, config *compiledConfig) (*BifrostEx
 			SendBackRawResponse:     false,
 			StoreRawRequestResponse: false,
 		}
-		key := schemas.Key{
-			ID:      "key-" + provider.ID,
-			Name:    "key-" + provider.ID,
-			Models:  schemas.WhiteList{"*"},
-			Weight:  1,
-			Enabled: schemas.Ptr(true),
-		}
-		if provider.APIKey != "" {
-			key.Value = *schemas.NewSecretVar(provider.APIKey)
-		}
+		key := bifrostKeyForProvider(provider, baseProvider)
 		account.keys[providerKey] = []schemas.Key{key}
 	}
 	client, err := bifrost.Init(ctx, schemas.BifrostConfig{
@@ -127,6 +118,28 @@ func newBifrostExecutor(ctx context.Context, config *compiledConfig) (*BifrostEx
 		return nil, fmt.Errorf("initialize Bifrost: %w", err)
 	}
 	return &BifrostExecutor{client: client, providers: config.providers, logger: config.logger}, nil
+}
+
+func bifrostKeyForProvider(provider Provider, baseProvider schemas.ModelProvider) schemas.Key {
+	key := schemas.Key{
+		ID:      "key-" + provider.ID,
+		Name:    "key-" + provider.ID,
+		Models:  schemas.WhiteList{"*"},
+		Weight:  1,
+		Enabled: schemas.Ptr(true),
+	}
+	if provider.APIKey != "" {
+		key.Value = *schemas.NewSecretVar(provider.APIKey)
+	}
+	if baseProvider == schemas.Vertex {
+		key.VertexKeyConfig = &schemas.VertexKeyConfig{
+			ProjectID:       *schemas.NewSecretVar(provider.VertexProjectID),
+			ProjectNumber:   *schemas.NewSecretVar(provider.VertexProjectNumber),
+			Region:          *schemas.NewSecretVar(provider.VertexRegion),
+			AuthCredentials: *schemas.NewSecretVar(provider.VertexAuthCredentials),
+		}
+	}
+	return key
 }
 
 func sortedProviderIDs(providers map[string]Provider) []string {

@@ -35,6 +35,28 @@ func bifrostTestConfig(t *testing.T, upstreamURL string) *compiledConfig {
 	return compiled
 }
 
+func TestBifrostKeyForVertexCarriesProjectRegionAndCredentials(t *testing.T) {
+	provider := Provider{
+		ID:                    "google-vertex",
+		VertexProjectID:       "mytecor",
+		VertexRegion:          "global",
+		VertexAuthCredentials: `{"type":"service_account"}`,
+	}
+	key := bifrostKeyForProvider(provider, schemas.Vertex)
+	if key.Value.GetValue() != "" {
+		t.Fatal("OAuth-backed Vertex provider unexpectedly carries an API key")
+	}
+	if key.VertexKeyConfig == nil {
+		t.Fatal("Vertex key config is missing")
+	}
+	if key.VertexKeyConfig.ProjectID.GetValue() != "mytecor" || key.VertexKeyConfig.Region.GetValue() != "global" {
+		t.Fatalf("unexpected Vertex resource config: %#v", key.VertexKeyConfig)
+	}
+	if key.VertexKeyConfig.AuthCredentials.GetValue() != `{"type":"service_account"}` {
+		t.Fatal("Vertex service-account credentials were not wired into the Bifrost key")
+	}
+}
+
 func TestBifrostExecutorCustomProviderChat(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/chat/completions" {

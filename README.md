@@ -37,7 +37,7 @@ Lattice - проект для построения сети связанных �
 работает selective Radicle seed, публичная реплика доступна через независимые seeds, а `comin`
 выбирает локальный Radicle remote перед GitHub. Первый прикладной node-status endpoint и Radicle
 HTTP API опубликованы через Caddy. В F7 развёрнут собственный Lattice-owned Go proxy поверх Bifrost Core: добавлены декларативный
-модуль/профиль и контракт двух logical models (`stupid`, `standard`). После подтверждённой
+модуль/профиль и контракт трёх logical models (`stupid`, `standard`, `smart`). После подтверждённой
 runtime-проверки legacy `mxyhi/token_proxy` удалён целиком из активной конфигурации (input,
 package, patches, spike-тест и legacy-ветки модуля); исторические findings f7-01/f7-05/f7-06
 сохранены. В f8 выбран интерактивный ingress через ACP (Pi TUI не используется): Pi закреплён

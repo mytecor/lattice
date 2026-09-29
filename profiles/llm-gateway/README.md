@@ -9,12 +9,11 @@ Go proxy поверх Bifrost Core.
 - `modules/llm-gateway/` — NixOS module и безопасная сборка runtime config;
 - `profiles/llm-gateway/` — loopback port и production-safe defaults.
 
-Профиль оставляет `runtime`/`package` умолчаниям модуля (`pkgs.lattice.llm-gateway`); нода задаёт
-providers, logical models (через `models`) и плоские `routingRules`. `inferenceUrl` — это полный путь
-до OpenAI-совместимой точки входа (включая версионный сегмент). Если `modelsUrl` не задан, gateway
-получает каталог из `${inferenceUrl}/models`; явный `modelsUrl` позволяет направить discovery на
-независимый endpoint (один общий ключ провайдера покрывает и inference, и каталог — отдельного
-models-ключа нет).
+Профиль оставляет `package` умолчанию модуля (`pkgs.lattice.llm-gateway`); нода задаёт providers и
+плоские `routingRules`, из entry routes которых выводятся logical models. Для OpenAI-compatible
+adapter `inferenceUrl` — полный путь до точки входа (включая версионный сегмент), а при отсутствии
+`modelsUrl` каталог получается из `${inferenceUrl}/models`. Другим adapters для discovery нужен
+явный `modelsUrl`; без него настроенный native target вызывается оптимистично.
 Полный пример находится в
 [`modules/llm-gateway/README.md`](../../modules/llm-gateway/README.md).
 

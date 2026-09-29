@@ -473,6 +473,33 @@ func TestCompileConfigDoesNotInferCatalogForNonOpenAIAdapter(t *testing.T) {
 	}
 }
 
+func TestCompileConfigRequiresVertexProjectAndRegion(t *testing.T) {
+	cfg := testConfig()
+	cfg.Providers[0].BaseProvider = "vertex"
+	if _, err := compileConfig(cfg); err == nil || !strings.Contains(err.Error(), "vertex_project_id and vertex_region") {
+		t.Fatalf("expected missing Vertex resource configuration error, got %v", err)
+	}
+	cfg.Providers[0].VertexProjectID = "mytecor"
+	cfg.Providers[0].VertexRegion = "global"
+	if _, err := compileConfig(cfg); err != nil {
+		t.Fatalf("valid Vertex provider was rejected: %v", err)
+	}
+}
+
+func TestResolveConfigSecretsResolvesVertexCredentials(t *testing.T) {
+	t.Setenv("VERTEX_TEST_CREDENTIALS", `{"type":"service_account"}`)
+	cfg := Config{Providers: []Provider{{
+		ID:                    "google-vertex",
+		VertexAuthCredentials: "env.VERTEX_TEST_CREDENTIALS",
+	}}}
+	if err := resolveConfigSecrets(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Providers[0].VertexAuthCredentials != `{"type":"service_account"}` {
+		t.Fatal("Vertex credentials env reference was not resolved")
+	}
+}
+
 func TestCompileConfigRejectsDuplicateProviderID(t *testing.T) {
 	cfg := testConfig()
 	cfg.Providers = append(cfg.Providers, cfg.Providers[0])
