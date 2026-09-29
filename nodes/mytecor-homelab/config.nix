@@ -513,87 +513,81 @@ in
       routing_rules = [
         # stupid
         { route = "stupid"; action = "filter"; where.model.eq = "stupid"; }
-        { route = "stupid"; action = "filter"; where.provider."in" = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ]; }
-        { route = "stupid"; action = "map"; native = "MiniMaxAI/MiniMax-M2.7"; }
+        {
+          route = "stupid";
+          action = "map";
+          providers = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ];
+          native = "MiniMaxAI/MiniMax-M2.7";
+          tier = 0;
+        }
+        {
+          route = "stupid";
+          action = "admission";
+          maxInFlight = 4;
+          maxPending = 16;
+          waitTimeout = "30s";
+        }
         { route = "stupid"; action = "rank"; strategy = "priority"; }
-        { route = "stupid"; action = "balance"; strategy = "p2c"; weights = { }; window = "5m"; error_budget = 0.2; }
+        { route = "stupid"; action = "balance"; strategy = "expected-ttft"; window = "5m"; error_budget = 0.2; }
         { route = "stupid"; action = "affinity"; sources = [ "responses.conversation" "responses.previous_response_id" ]; ttl = "24h"; on_missing = "ignore"; on_provider_failure = "fail-closed"; }
         { route = "stupid"; action = "race"; count = 1; }
-        { route = "stupid"; action = "retry"; target = "stupid.retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
-        { route = "stupid"; action = "hedge"; after = "20s"; target = "stupid.hedge"; }
-        { route = "stupid"; action = "semaphore"; max_calls = 4; max_in_flight = 3; max_calls_per_provider = 1; }
+        { route = "stupid"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
+        { route = "stupid"; action = "hedge"; after = "20s"; }
         { route = "stupid"; action = "timeout"; duration = "60s"; }
-        { route = "stupid"; action = "continue"; idle = "30s"; reshare = "full"; retries = 2; }
-        { route = "stupid.retry"; action = "filter"; where.error."in" = [ "404" "model_not_found" "429" "5xx" "timeout" "connection_error" "invalid_response" ]; }
-        { route = "stupid.retry"; action = "filter"; where.provider = { "in" = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ]; unused = true; }; }
-        { route = "stupid.retry"; action = "map"; native = "MiniMaxAI/MiniMax-M2.7"; }
-        { route = "stupid.retry"; action = "rank"; strategy = "priority"; }
-        { route = "stupid.retry"; action = "race"; count = 1; }
-        { route = "stupid.hedge"; action = "filter"; where.provider = { "in" = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ]; unused = true; }; }
-        { route = "stupid.hedge"; action = "map"; native = "MiniMaxAI/MiniMax-M2.7"; }
-        { route = "stupid.hedge"; action = "rank"; strategy = "priority"; }
-        { route = "stupid.hedge"; action = "race"; count = 1; }
 
         # standard
         { route = "standard"; action = "filter"; where.model.eq = "standard"; }
-        { route = "standard"; action = "filter"; where.provider."in" = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ]; }
-        { route = "standard"; action = "map"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
+        {
+          route = "standard";
+          action = "map";
+          providers = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ];
+          native = "deepseek-ai/DeepSeek-V4-Flash-0731";
+          tier = 0;
+        }
+        {
+          route = "standard";
+          action = "map";
+          providers = [ "hyperfusion" ];
+          native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731";
+          tier = 1;
+        }
+        {
+          route = "standard";
+          action = "admission";
+          maxInFlight = 4;
+          maxPending = 16;
+          waitTimeout = "30s";
+        }
         { route = "standard"; action = "rank"; strategy = "priority"; }
-        { route = "standard"; action = "balance"; strategy = "p2c"; weights = { }; window = "5m"; error_budget = 0.2; }
+        { route = "standard"; action = "balance"; strategy = "expected-ttft"; window = "5m"; error_budget = 0.2; }
         { route = "standard"; action = "affinity"; sources = [ "responses.conversation" "responses.previous_response_id" ]; ttl = "24h"; on_missing = "ignore"; on_provider_failure = "fail-closed"; }
         { route = "standard"; action = "race"; count = 1; }
-        { route = "standard"; action = "retry"; target = "standard.retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
-        { route = "standard"; action = "hedge"; after = "20s"; target = "standard.hedge"; }
-        { route = "standard"; action = "semaphore"; max_calls = 4; max_in_flight = 3; max_calls_per_provider = 1; }
+        { route = "standard"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
+        { route = "standard"; action = "hedge"; after = "20s"; }
         { route = "standard"; action = "timeout"; duration = "60s"; }
-        { route = "standard"; action = "continue"; idle = "30s"; reshare = "full"; retries = 2; }
-        { route = "standard.retry"; action = "filter"; where.error."in" = [ "404" "model_not_found" "429" "5xx" "timeout" "connection_error" "invalid_response" ]; }
-        { route = "standard.retry"; action = "filter"; where.provider = { "in" = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ]; unused = true; }; }
-        { route = "standard.retry"; action = "map"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
-        { route = "standard.retry"; action = "rank"; strategy = "priority"; }
-        { route = "standard.retry"; action = "race"; count = 1; }
-        { route = "standard.hedge"; action = "filter"; where.provider = { "in" = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ]; unused = true; }; }
-        { route = "standard.hedge"; action = "map"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
-        { route = "standard.hedge"; action = "rank"; strategy = "priority"; }
-        { route = "standard.hedge"; action = "race"; count = 1; }
 
         # smart
-        # Start exactly one Google provider per HTTP request, rotate the primary,
-        # and reach the other provider only through the sequential unused-provider
-        # retry after a terminal failure. Do not add a hedge here: it would restore
-        # parallel Google requests. Chat has no cross-request affinity, so a tool
-        # step carrying a backend-specific thought signature may first fail on the
-        # other backend and then recover through this retry route.
         { route = "smart"; action = "filter"; where.model.eq = "smart"; }
-        { route = "smart"; action = "filter"; where.provider."in" = [ "google-vertex" ] ++ lib.optional hasGoogleAiStudioKey "google-ai-studio"; }
-        { route = "smart"; action = "map"; native = "gemini-3.8-flash"; }
+        {
+          route = "smart";
+          action = "map";
+          providers = [ "google-vertex" ] ++ lib.optional hasGoogleAiStudioKey "google-ai-studio";
+          native = "gemini-3.8-flash";
+          tier = 0;
+        }
+        {
+          route = "smart";
+          action = "admission";
+          maxInFlight = 6;
+          maxPending = 16;
+          waitTimeout = "30s";
+        }
         { route = "smart"; action = "rank"; strategy = "priority"; }
         { route = "smart"; action = "balance"; strategy = "round_robin"; weights = { }; window = "5m"; error_budget = 0.2; }
         { route = "smart"; action = "affinity"; sources = [ "responses.conversation" "responses.previous_response_id" ]; ttl = "24h"; on_missing = "ignore"; on_provider_failure = "fail-closed"; }
         { route = "smart"; action = "race"; count = 1; }
-        { route = "smart"; action = "retry"; target = "smart.retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
-        { route = "smart"; action = "semaphore"; max_calls = 6; max_in_flight = 4; max_calls_per_provider = 1; }
+        { route = "smart"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
         { route = "smart"; action = "timeout"; duration = "60s"; }
-        { route = "smart"; action = "continue"; idle = "30s"; reshare = "full"; retries = 2; }
-        { route = "smart.retry"; action = "filter"; where.error."in" = [ "404" "model_not_found" "429" "5xx" "timeout" "connection_error" "invalid_response" ]; }
-        { route = "smart.retry"; action = "filter"; where.provider = { "in" = [ "google-vertex" ] ++ lib.optional hasGoogleAiStudioKey "google-ai-studio"; unused = true; }; }
-        { route = "smart.retry"; action = "map"; native = "gemini-3.8-flash"; }
-        { route = "smart.retry"; action = "rank"; strategy = "priority"; }
-        { route = "smart.retry"; action = "race"; count = 1; }
-
-        # Explicit fallback nets.
-        { route = "standard"; action = "fallback"; target = "standard.fallback"; }
-        { route = "standard.fallback"; action = "filter"; where.error."in" = [ "404" "model_not_found" "429" "5xx" "timeout" "connection_error" "invalid_response" ]; }
-        { route = "standard.fallback"; action = "filter"; where.provider."in" = [ "hyperfusion" ]; }
-        { route = "standard.fallback"; action = "map"; native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731"; }
-        { route = "standard.fallback"; action = "rank"; strategy = "priority"; }
-        { route = "standard.fallback"; action = "race"; count = 1; }
-        { route = "stupid"; action = "fallback"; target = "stupid.fallback"; }
-        { route = "stupid.fallback"; action = "filter"; where.error."in" = [ "404" "model_not_found" "429" "5xx" "timeout" "connection_error" "invalid_response" ]; }
-        { route = "stupid.fallback"; action = "filter"; where.provider = { "in" = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ]; unused = true; }; }
-        { route = "stupid.fallback"; action = "map"; native = "MiniMaxAI/MiniMax-M2.7"; }
-        { route = "stupid.fallback"; action = "rank"; strategy = "priority"; }
-        { route = "stupid.fallback"; action = "race"; count = 0; }
       ];
     };
   };
