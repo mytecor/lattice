@@ -163,6 +163,13 @@ in
         Type = "oneshot";
         RuntimeDirectory = "llm-gateway-env";
         RuntimeDirectoryMode = "0700";
+        # The oneshot exits after writing keys.env, and systemd removes its
+        # RuntimeDirectory on deactivation. Without this, keys.env vanishes the
+        # moment the unit finishes and llm-gateway.service (which reads it as
+        # EnvironmentFile) fails to spawn with "Failed to load environment
+        # files: No such file or directory". Preserve the directory so the file
+        # persists until reboot or the next gateway restart re-runs this unit.
+        RuntimeDirectoryPreserve = "yes";
         UMask = "0077";
         # Credential name == the config-declared env var name, so the env file
         # lines and the runtime config reference the same names by construction.

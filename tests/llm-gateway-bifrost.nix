@@ -92,6 +92,12 @@ assert builtins.elem "LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY:/run/agenix/llm-
 assert builtins.elem "llm-gateway.service" envUnit.requiredBy;
 assert builtins.elem "llm-gateway.service" envUnit.partOf;
 assert builtins.elem "llm-gateway.service" envUnit.before;
+# The oneshot writes keys.env into its RuntimeDirectory; systemd removes that
+# directory when the oneshot deactivates. Without RuntimeDirectoryPreserve the
+# file is deleted the instant the unit finishes and llm-gateway.service fails
+# to load its EnvironmentFile ("Failed to load environment files: No such file
+# or directory") and never starts.
+assert envUnit.serviceConfig.RuntimeDirectoryPreserve == "yes";
 # preStart no longer assembles secrets with jq: it only copies the now-public
 # (env-name-only) config template into the runtime directory.
 assert !(lib.hasInfix ".providers |= map" service.preStart);
