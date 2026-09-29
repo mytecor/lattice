@@ -303,6 +303,11 @@ pkgs.runCommand "authentik-evaluation" {
   grep -F 'external_host: "http://acp-ui.${hostName}.local"' "$blueprintPath"
   grep -F 'external_host: "https://acp-ui.homelab.myt.su"' "$blueprintPath"
   grep -F 'model: authentik_outposts.outpost' "$blueprintPath"
+  # A new database has no embedded outpost yet. OutpostSerializer requires
+  # type and config when the Blueprint creates it; omitting either validates
+  # only against an already-existing row and blocks the first activation.
+  grep -A10 -F 'name: authentik Embedded Outpost' "$blueprintPath" | grep -F 'type: proxy'
+  grep -A10 -F 'name: authentik Embedded Outpost' "$blueprintPath" | grep -F 'config: {}'
   grep -A6 'slug: "acp-ui-fa"' "$blueprintPath" | grep -F 'name: "acp-ui (LAN)"'
   grep -A6 'slug: "acp-ui-fa"' "$blueprintPath" | grep -F 'meta_hide: false'
   # Application Dashboard mirrors Caddy: explicit visible LAN and mesh cards.

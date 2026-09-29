@@ -167,7 +167,10 @@ pkgs.runCommand "llm-gateway-bifrost-module-evaluation" { nativeBuildInputs = [ 
     echo "gonka-openbroker env api_key reference missing" >&2
     exit 1
   fi
-  if ! jq -e '.client_api_keys == [ { "id": "primary", "api_key": "env.LATTICE_CLIENT_PRIMARY_KEY" } ]' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
+  # The Go ClientKey decoder is strict and its credential field is `key`.
+  # Using provider-style `api_key` makes the service reject the generated
+  # config at startup, which in turn aborts every NixOS activation.
+  if ! jq -e '.client_api_keys == [ { "id": "primary", "key": "env.LATTICE_CLIENT_PRIMARY_KEY" } ]' ${config.lattice.llm-gateway.publicConfigFile} >/dev/null; then
     echo "client_api_keys env references missing" >&2
     exit 1
   fi

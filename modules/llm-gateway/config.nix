@@ -55,7 +55,7 @@ let
     log_level = cfg.logLevel;
     # Named client keys; the runtime config carries only the non-secret key id
     # and the env-var reference, never the key material.
-    client_api_keys = map (client: { id = client.id; api_key = "env.${client.env}"; }) cfg.clientKeys;
+    client_api_keys = map (client: { id = client.id; key = "env.${client.env}"; }) cfg.clientKeys;
     catalog_refresh_interval = cfg.catalogRefreshInterval;
     stream_idle_timeout = cfg.streamIdleTimeout;
     affinity_file = if (cfg.affinityFile != null) then cfg.affinityFile else "${dataDir}/affinity.json";
