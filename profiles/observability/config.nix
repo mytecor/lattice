@@ -10,6 +10,7 @@ in
     enable = lib.mkDefault true;
     listenAddress = lib.mkDefault "127.0.0.1";
     port = lib.mkDefault latticePorts.prometheus;
+    nodeStatusPort = lib.mkDefault latticePorts.node-status;
   };
 
   lattice.observability-loki = {

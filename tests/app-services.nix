@@ -19,7 +19,7 @@ let
   acpUiHost = "acp-ui.node-a.local";
   gateway = config.services.caddy.virtualHosts."http://${statusHost}";
   acpUi = config.services.caddy.virtualHosts."http://${acpUiHost}";
-  statusWriter = config.system.activationScripts.lattice-node-status;
+  statusService = config.systemd.services.lattice-node-status;
 
   # f13-01 (mesh, 2026-09-20): как и status, acp-ui живёт не только на LAN;
   # на mesh-домене тот же статический SPA обслуживается по HTTPS (f4-05
@@ -43,18 +43,18 @@ let
 in
 assert !config.services.nginx.enable;
 assert config.services.caddy.enable;
-# f4-04: endpoint отдаёт runtime JSON из /run через file_server (не static respond),
-# root на каталог /run + rewrite на файл (без 308-редиректа).
-assert lib.hasInfix "file_server" gateway.extraConfig;
-assert lib.hasInfix "lattice-node-status" gateway.extraConfig;
-assert lib.hasInfix "/run" gateway.extraConfig;
-assert lib.hasInfix "lattice-node-status.json" gateway.extraConfig;
-assert !lib.hasInfix "respond" gateway.extraConfig;
-# Активационный скрипт генерирует документ: stateVersion и commit source /var/lib/comin/source/repository.
-assert lib.hasInfix "lattice-node-status-write" statusWriter.text;
-assert lib.hasInfix "/var/lib/comin/source/repository" statusWriter.text;
-assert lib.hasInfix "LATTICE_NODE_STATE_VERSION" statusWriter.text;
-assert lib.hasInfix "26.05" statusWriter.text;
+# Status ingress proxies the loopback-only Go backend; its private port is not
+# opened in the firewall and the process runs under a strict sandbox.
+assert lib.hasInfix "reverse_proxy 127.0.0.1:9217" gateway.extraConfig;
+assert lib.hasInfix "respond @metrics 404" gateway.extraConfig;
+assert lib.hasInfix "node-status" statusService.serviceConfig.ExecStart;
+assert statusService.environment.NODE_STATUS_STATE_VERSION == "26.05";
+assert statusService.environment.NODE_STATUS_COMIN_REPO == "/var/lib/comin/source/repository";
+assert lib.hasInfix "caddy.service" statusService.environment.NODE_STATUS_SYSTEMD_UNITS;
+assert statusService.serviceConfig.DynamicUser;
+assert statusService.serviceConfig.NoNewPrivileges;
+assert statusService.serviceConfig.ProtectSystem == "strict";
+assert !(builtins.elem 9217 config.networking.firewall.allowedTCPPorts);
 assert config.services.avahi.publish.userServices;
 # f13-01: acp-ui LAN site отдаёт статический SPA из store-path пакета acp-web;
 # SPA-fallback на index.html (клиентская маршрутизация).

@@ -3,6 +3,9 @@
 let
   hostName = config.networking.hostName;
   statusHost = "status.${hostName}.local";
+  latticePorts = import ../networking/ports.nix;
+  statusAddress = "127.0.0.1";
+  statusPort = latticePorts.node-status;
 
   # f4-05: mesh (внешний) доступ к status — параллельно LAN-контракту. Читаем те же
   # опции, что задаёт профиль tcp-gateway: meshDomain и cloudflareToken. Без токена
@@ -18,42 +21,13 @@ let
   # Без токена (meshCloudflare) mesh-сайт обслуживается по plain HTTP через тот же :80.
   acpUiMeshHost = if meshDomain != null then "${meshScheme}://acp-ui.${meshDomain}" else null;
 
-  # Общий extraConfig статус-сайта (LAN и mesh используют один и тот же контент-блок).
+  # LAN и mesh проксируют один loopback-only Go backend.
   statusSiteConfig = ''
-    # f4-04: единый статус-файл отдаётся на любой путь. root указывает на
-    # каталог /run, а rewrite перенаправляет запрос на сам файл, чтобы
-    # file_server не делал 308-редирект (трактуя root-файл как директорию).
-    root * /run
-    rewrite * /lattice-node-status.json
-    header Content-Type application/json
-    file_server
+    @metrics path /metrics
+    respond @metrics 404
+    reverse_proxy ${statusAddress}:${toString statusPort}
   '';
-
-  # f4-04: JSON генерируется на каждой активации из runtime-фактов узла
-  # (NixOS generation, применённый comin commit). Обслуживает сам Caddy через
-  # file_server — без отдельного backend-процесса и внутреннего порта
-  # (контракт f4-02 сохранён).
-  statusFile = "/run/lattice-node-status.json";
   cominSourceRepo = "/var/lib/comin/source/repository";
-  # f4-04: writer статус-документа. Собираем через replaceVarsWith: вшиваем
-  # полные store-пути bash/git/jq (@bash@/@git@/@jq@) — их нет в активационной
-  # среде NixOS (иначе activation падал 127 и валил comin-switch). Остальные
-  # команды (readlink/basename/hostname/uname/date/chmod/mv) уже есть в PATH
-  # активации через coreutils. dir="bin" + isExecutable дают executable в
-  # $out/bin/lattice-node-status-write.
-  statusWriterPkg = pkgs.replaceVarsWith {
-    name = "lattice-node-status-write";
-    src = ./status-write.sh;
-    replacements = {
-      bash = "${pkgs.bash}/bin/bash";
-      git = "${pkgs.git}/bin/git";
-      jq = "${pkgs.jq}/bin/jq";
-      hostname = "${pkgs.inetutils}/bin/hostname";
-    };
-    dir = "bin";
-    isExecutable = true;
-  };
-  statusWriter = "${statusWriterPkg}/bin/lattice-node-status-write";
 
   # f13-01: web-клиент ACP (acp-components) как статический SPA. Обслуживается
   # Caddy file_server из store-path пакета packages/acp-web; mDNS-alias
@@ -172,19 +146,47 @@ in
       "${acpUiMeshHost}".extraConfig = wrapForwardAuth "acp-ui" acpUiSiteConfig;
     };
 
-    # f4-04: пишем статус-документ при каждой активации. Специальный
-    # 'lattice-node-status' activation script работает без отдельного юнита:
-    # значения generation/commit меняются именно на активации, а Caddy читает
-    # файл только по запросу. Если коммит ещё не выбран (свежая нода до первого
-    # comin-цикла), commit=null, endpoint остаётся валидным JSON.
-    system.activationScripts.lattice-node-status = {
-      deps = [ ];
-      text = ''
-        LATTICE_NODE_STATUS_FILE=${statusFile} \
-        LATTICE_NODE_STATE_VERSION=${lib.escapeShellArg config.system.stateVersion} \
-        LATTICE_COMIN_SOURCE_REPO=${lib.escapeShellArg cominSourceRepo} \
-        ${statusWriter}
-      '';
+    systemd.services.lattice-node-status = {
+      description = "Lattice node status API and system metrics exporter";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" ];
+      environment = {
+        NODE_STATUS_LISTEN_ADDRESS = "${statusAddress}:${toString statusPort}";
+        NODE_STATUS_STATE_VERSION = config.system.stateVersion;
+        NODE_STATUS_COMIN_REPO = cominSourceRepo;
+        NODE_STATUS_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
+        NODE_STATUS_SYSTEMD_UNITS = lib.concatStringsSep " " [
+          "caddy.service"
+          "comin.service"
+          "llm-gateway.service"
+          "prometheus.service"
+          "loki.service"
+          "alloy.service"
+          "grafana.service"
+          "rns-server.service"
+          "rnsh.service"
+        ];
+      };
+      serviceConfig = {
+        ExecStart = lib.getExe pkgs.lattice.node-status;
+        Restart = "on-failure";
+        RestartSec = 5;
+        DynamicUser = true;
+        NoNewPrivileges = true;
+        PrivateTmp = true;
+        PrivateDevices = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectControlGroups = true;
+        RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
+        RestrictNamespaces = true;
+        LockPersonality = true;
+        MemoryDenyWriteExecute = true;
+        CapabilityBoundingSet = "";
+        SystemCallArchitectures = "native";
+      };
     };
 
     systemd.services.node-status-mdns = mdnsPublishService statusHost;

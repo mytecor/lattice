@@ -51,12 +51,11 @@ peer, общий реестр в flake и исходящие TCP-соедине�
 2. **Reticulum interface discovery / auto-connect** — проверить поддержку в закреплённом
    `rns-rs`, затем использовать публичные peers как bootstrap для обнаружения других соседей.
 
-3. **Наблюдаемость LLM gateway (метрики + Grafana)** — заведена отдельной вертикалью
-   [F12](./f12-observability/README.md), а не follow-up к закрытой F7. Метрики считаются в
-   Prometheus-счётчиках (`/metrics`), логи остаются событийными для расследования по
-   `request_id`; дашборды — в Grafana. Задачи: [f12-01](./f12-observability/f12-01-gateway-metrics-endpoint.md)
-   .. [f12-04](./f12-observability/f12-04-grafana-dashboards.md). OpenTelemetry traces отложены
-   до тех пор, пока метрики и логи не покроют реальные вопросы настройки.
+3. **OpenTelemetry traces** — базовая наблюдаемость LLM gateway и ноды оформлена в
+   [F12](./f12-observability/README.md): Prometheus metrics, Loki events и Grafana dashboards;
+   node follow-up [f12-06..f12-09](./f12-observability/README.md#follow-up-наблюдаемость-ноды)
+   также заведены отдельными задачами. Traces отложены до появления вопроса, который нельзя
+   надёжно ответить через текущие метрики, structured events и correlation по `request_id`.
 
 4. **Stdio shim для Zed поверх no-auth LAN ACP endpoint** — stock-клиент
    [`@hydra-acp/cli`](../packages/hydra-acp/README.md) несовместим с безаутентичным endpoint

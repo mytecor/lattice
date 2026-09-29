@@ -13,6 +13,8 @@
   loki = 9214;
   grafana = 9215;
   alloy = 9216;
+  # Go node-status API and Prometheus exporter (loopback-only behind Caddy).
+  node-status = 9217;
   # F14: central SSO (Authentik). Loopback-only; the `auth` Caddy site is the ingress.
   authentik = 9220;
   # F18: browser agent stack (loopback-only).

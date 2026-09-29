@@ -35,6 +35,7 @@ let
 
   # One scrape job must target the llm-gateway metrics endpoint.
   gatewayJob = builtins.head (builtins.filter (job: job.job_name == "llm-gateway") scrapeJobs);
+  nodeStatusJob = builtins.head (builtins.filter (job: job.job_name == "node-status") scrapeJobs);
 in
 assert cfg.services.prometheus.enable;
 assert cfg.services.loki.enable;
@@ -52,6 +53,10 @@ assert gatewayJob.metrics_path == "/metrics";
 assert builtins.any
   (sc: builtins.any (t: t == "127.0.0.1:9209") (sc.targets or [ ]))
   gatewayJob.static_configs;
+assert nodeStatusJob.metrics_path == "/metrics";
+assert builtins.any
+  (sc: builtins.any (t: t == "127.0.0.1:9217") (sc.targets or [ ]))
+  nodeStatusJob.static_configs;
 
 # --- Alloy reads the llm-gateway journal unit and pushes to Loki ---
 # request_id is extracted as structured metadata (searchable field), but never

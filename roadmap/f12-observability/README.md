@@ -29,6 +29,21 @@ llm-gateway
 [f12-04](./f12-04-grafana-dashboards.md),
 [f12-05](./f12-05-dashboard-polish.md) (доработка дашбордов: status, p50/p99, data links, версия сборки).
 
+## Follow-up: наблюдаемость ноды
+
+- [f12-06](./f12-06-node-system-metrics.md) — 🟡 Go `node-status`, системные метрики,
+  стабильность systemd-сервисов и `Node overview`: реализация готова 2026-09-29, live-приёмка
+  после deploy ещё не выполнена.
+- [f12-07](./f12-07-node-alerting.md) — P0: Prometheus alerts и notification route для service
+  down/restart burst/resource exhaustion.
+- [f12-08](./f12-08-storage-health.md) — P1: SMART/NVMe, Btrfs integrity/scrub и ресурс
+  накопителей через отдельную privilege boundary.
+- [f12-09](./f12-09-operational-probes.md) — P2: synthetic probes, deploy/backup freshness,
+  time/network health и позднее `r1sd`/`containerd`.
+
+Базовая F12 остаётся завершённой; follow-up не блокируют F10/F11. Порядок продолжения:
+live-приёмка f12-06 → alerts f12-07 → storage health f12-08 → probes f12-09.
+
 **Критерий готовности:** любой запрос через gateway наблюдаем двумя путями: числовые метрики
 (RPS, latency p50/p95, TTFT, input/output tokens, errors, cost) доступны в Prometheus и видны в
 Grafana-дашборде; конкретный запрос связывается по `request_id` от JSON-события до перехода в

@@ -221,7 +221,11 @@
   «LLM Gateway», «Gateway runtime», «Loki / Расследование») реализована 2026-09-16;
   [f12-05](./roadmap/f12-observability/f12-05-dashboard-polish.md) (доработка дашбордов: status,
   p50/p99, data links, версия сборки + фикс утечки `llm_requests_in_flight` и фильтра
-  `request_id`) реализована 2026-09-16.
+  `request_id`) реализована 2026-09-16. Follow-up наблюдаемости ноды:
+  [f12-06](./roadmap/f12-observability/f12-06-node-system-metrics.md) (Go `node-status`, system
+  metrics, service stability, dashboard) реализован 2026-09-29 и ждёт live-приёмки;
+  [f12-07..f12-09](./roadmap/f12-observability/README.md#follow-up-наблюдаемость-ноды)
+  фиксируют alerts, storage health и synthetic/operational probes.
 - **Готово, когда:** числовые метрики (`/metrics` → Prometheus) и JSON-события (stdout → Alloy /
   Loki) видны в Grafana; конкретный запрос связывается по `request_id` до переходов в
   retry/fallback/race; димензии низкой cardinality, без публичных сервисов.

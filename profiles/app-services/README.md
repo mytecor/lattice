@@ -2,8 +2,9 @@
 
 Профиль подключает первый прикладной payload узла и импортирует
 [`tcp-gateway`](../tcp-gateway/README.md). Endpoint `lattice-node-status` обслуживается напрямую
-директивой Caddy `file_server` над JSON-файлом, сгенерированным на активации: отдельный
-backend-процесс, внутренний порт и persistent state ему не нужны.
+Go-сервисом из [`packages/node-status`](../../packages/node-status/README.md). Он слушает только
+`127.0.0.1:9217`; Caddy публикует API через общий ingress, а Prometheus скрейпит `/metrics`
+на loopback. Внутренний порт не открывается в firewall.
 
 Для ноды `<node>` endpoint имеет отдельный mDNS-адрес:
 
@@ -43,12 +44,12 @@ https://acp-ui.<meshDomain>/
 из собственного hostname и выбирает `wss://`/`ws://` по схеме страницы, так что mesh-UI
 подключается к `wss://acp.<meshDomain>/` без ручной настройки и без mixed-content блокировки.
 
-## Формат ответа (f4-04)
+## HTTP API и текущий статус
 
-Endpoint отдаёт JSON с runtime-метаинформацией узла, сгенерированный на каждой активации
-активационным скриптом `lattice-node-status` ([`status-write.sh`](./status-write.sh)) в
-`/run/lattice-node-status.json`. Caddy отдаёт файл как `application/json` без какого-либо backend
-процесса.
+`GET /` сохраняет исходный контракт runtime-метаданных и добавляет объект `system` с текущими
+CPU, load average, памятью, корневой файловой системой, uptime и состояниями контролируемых
+systemd-юнитов. `GET /healthz` — дешёвая liveness-проверка, `GET /metrics` — Prometheus text
+exposition. Caddy не публикует `/metrics` наружу: endpoint доступен только Prometheus по loopback.
 
 ```json
 {
@@ -58,7 +59,20 @@ Endpoint отдаёт JSON с runtime-метаинформацией узла, �
   "commit": "d28b1987d705c6684cdd6c745deae86cb452fc5c",
   "kernel": "6.12.10",
   "stateVersion": "26.05",
-  "activatedAt": 1758042700
+  "activatedAt": 1758042700,
+  "system": {
+    "uptimeSeconds": 86400,
+    "load1": 0.18,
+    "load5": 0.21,
+    "load15": 0.19,
+    "cpuUtilization": 0.07,
+    "memoryTotalBytes": 16777216000,
+    "memoryAvailableBytes": 10485760000,
+    "memoryUsedBytes": 6291456000,
+    "rootTotalBytes": 499963174912,
+    "rootAvailableBytes": 402653184000,
+    "services": { "caddy.service": "active" }
+  }
 }
 ```
 
@@ -66,27 +80,36 @@ Endpoint отдаёт JSON с runtime-метаинформацией узла, �
 
 | Поле | Тип | Источник | Назначение |
 | --- | --- | --- | --- |
-| `node` | string | `hostname` (при активации) | Имя узла. |
+| `node` | string | `hostname` при старте сервиса | Имя узла. |
 | `service` | string | константа | Имя сервиса — `lattice-node-status`. |
 | `generation` | number \| null | первый уровень `readlink /run/current-system` → `system-N-link` | Текущее NixOS поколение; по нему можно откатиться. `null`, если поколение не читается. |
 | `commit` | string \| null | `refs/lattice/source` в `/var/lib/comin/source/repository` | Коммит, фактически выбранный `comin` **source sync** (до нормализации) — то значение, которое [comin-source-sync](../gitops/comin-source-sync.sh) решил применить. Это канонический ответ на вопрос «на каком коммите работает узел». `null` на свежей ноде до первого `comin`-цикла. |
 | `kernel` | string | `uname -r` | Версия ядра. |
 | `stateVersion` | string | `system.stateVersion` (build-time) | Версия состояния конфигурации. |
-| `activatedAt` | number | `date +%s` при активации | Unix-время последней активации (привязка к «когда включили это поколение»). |
+| `activatedAt` | number | mtime `/run/current-system` | Unix-время последней активации поколения. |
+| `system` | object | `/proc`, `/sys`, `statfs`, systemd | Текущие показатели системы и состояния сервисов. |
 
-Sensory-поля вроде uptime намеренно не включены: они меняются часто и плохо кэшируются; endpoint
-остаётся детерминированным между активациями.
+Исторические ряды не хранятся самим сервисом: их собирает Prometheus. Поэтому перезапуск
+`node-status` не теряет историю дашборда.
 
-## Почему activation-time, а не build-time
+## Runtime-метаданные
 
 `self.rev` для comin-сборок не является каноническим: он пуст на грязном дереве и не отражает
 фактически применённый источник. `commit` поэтому читается из runtime-фактов
 (`refs/lattice/source`) — это значение, которое реально выбрал `comin-source-sync`, соответствуя
 критерию «значения соответствуют реальному состоянию узла, а не константе».
 
-Файл пишется транзакционно (tmp + `mv`), так что Caddy никогда не отдаёт частично записанный JSON.
+Go-сервис читает generation, commit и время активации при каждом запросе: metadata обновляется даже
+если очередной `comin` switch не потребовал перезапуска самого юнита.
+
+## Метрики
+
+`/metrics` экспортирует CPU time/utilization, load average, RAM/swap, заполнение root filesystem,
+I/O физических block devices, сетевой трафик/errors/drops, thermal zones, uptime, длительность и
+ошибки сбора. Для ключевых systemd-юнитов доступны `node_status_systemd_unit_state` и
+`node_status_systemd_unit_restarts_total`.
 
 ## Примечания
 
-- Профиль открывает только стандартные порты gateway; отдельного backend-порта нет.
-- Активационный скрипт работает без отдельного systemd-юнита; Caddy читает файл только по запросу.
+- Профиль открывает только стандартные порты gateway; `9217` остаётся loopback-only.
+- Юнит использует `DynamicUser`, `NoNewPrivileges`, `ProtectSystem=strict` и пустой capability set.

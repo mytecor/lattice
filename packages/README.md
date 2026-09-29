@@ -53,6 +53,13 @@ executable spike-test) удалён из активной конфигураци
 находки сохранены в задачах `f7-01`/`f7-05`/`f7-06`. Подробности cutover — в
 [`roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md`](../roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md).
 
+## Node status
+
+[`node-status`](./node-status/README.md) — Lattice-owned Go API и Prometheus exporter системных
+показателей. Пакет экспортируется как `pkgs.lattice.node-status` и `packages.<system>.node-status`;
+NixOS-интеграция и публичный status ingress находятся в
+[`profiles/app-services`](../profiles/app-services/README.md).
+
 ## pnpm CLI
 
 [`packages/pnpm-cli-builder`](./pnpm-cli-builder/README.md) предоставляет общий `buildPnpmCli`

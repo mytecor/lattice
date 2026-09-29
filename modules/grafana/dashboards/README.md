@@ -33,6 +33,9 @@ Fleet (rev. 2026-09-16, полная переработка):
   `extractFields`, клик по `request_id` фильтрует панели); счёт событий по
   типам; лента сбоев и переходов; полная лента одного запроса по переменной
   `request_id` (хронологический порядок).
+- [`node-overview.json`](./node-overview.json) — «Node overview»: CPU, load, RAM, root filesystem,
+  uptime, disk/network throughput, температуры, ошибки сборщика и сети, состояния выбранных
+  systemd-сервисов и прирост их рестартов. Переменные `environment`, `unit`, `device`, `disk`.
 
 ### Ревизия 2026-09-16 (переработка UX)
 

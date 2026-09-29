@@ -45,6 +45,18 @@ in
             };
           }];
         }
+        {
+          job_name = "node-status";
+          scrape_interval = cfg.scrapeInterval;
+          metrics_path = "/metrics";
+          static_configs = [{
+            targets = [ "127.0.0.1:${toString cfg.nodeStatusPort}" ];
+            labels = {
+              service = "node-status";
+              environment = cfg.gatewayEnvironment;
+            };
+          }];
+        }
       ] ++ cfg.extraScrapeConfigs;
     };
 

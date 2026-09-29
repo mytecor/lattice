@@ -1,90 +1,37 @@
-{ pkgs, statusWriter }:
+{ pkgs, nodeStatus }:
 
-# f4-04: runtime smoke — status-write.sh генерирует валидный JSON из
-# runtime-фактов узла: extraction NixOS generation из symlink, commit из
-# refs/lattice/source, пустой commit → null. Исполняется в build sandbox, без
-# VM; проверяет сам скрипт, а не Nix-конфигурацию.
-pkgs.runCommand "node-status-writer-test" {
-  nativeBuildInputs = [ pkgs.git pkgs.jq statusWriter ];
+# Runtime smoke test for the assembled Go package and its three HTTP contracts.
+# It disables systemd-unit probing because the Nix build sandbox has no PID 1.
+pkgs.runCommand "node-status-runtime-test" {
+  nativeBuildInputs = [ pkgs.curl pkgs.jq nodeStatus ];
 } ''
-  export HOME="$TMPDIR/home"
-  mkdir -p "$HOME" "$TMPDIR/work"
-  git config --global user.name test
-  git config --global user.email test@localhost
+  export NODE_STATUS_LISTEN_ADDRESS=127.0.0.1:19217
+  export NODE_STATUS_STATE_VERSION=26.05
+  export NODE_STATUS_SYSTEMD_UNITS=""
+  node-status >server.log 2>&1 &
+  server_pid=$!
+  trap 'kill "$server_pid" 2>/dev/null || true' EXIT
 
-  # Mock ноды, как на реальной ноде: /nix/var/nix/profiles/system ->
-  # system-42-link (первый уровень readlink даёт номер поколения), а
-  # system-42-link в свою очередь -> store-путь nixos-system.
-  mkdir -p "$TMPDIR/fs/nix/var/nix/profiles" "$TMPDIR/fs/run"
-  ln -sfn "$TMPDIR/fs/nix/store/nixos-system-mock" \
-    "$TMPDIR/fs/nix/var/nix/profiles/system-42-link"
-  ln -sfn system-42-link "$TMPDIR/fs/nix/var/nix/profiles/system"
-  # fallback-источник: /run/current-system -> system-7-link иначе
-  mkdir -p "$TMPDIR/fs/run/fallback/nix/var/nix/profiles"
-  ln -sfn "$TMPDIR/fs/nix/store/nixos-system-mock" \
-    "$TMPDIR/fs/run/fallback/nix/var/nix/profiles/system-7-link"
-  ln -sfn ../nix/var/nix/profiles/system-7-link \
-    "$TMPDIR/fs/run/fallback/current-system"
+  for _ in $(seq 1 50); do
+    curl --fail --silent http://127.0.0.1:19217/healthz >health.json && break
+    sleep 0.1
+  done
 
-  # Mock comin source repo с выбранным head в refs/lattice/source
-  git init --bare "$TMPDIR/source-repo"
-  git init "$TMPDIR/work"
-  git -C "$TMPDIR/work" commit --allow-empty -m one
-  head=$(git -C "$TMPDIR/work" rev-parse HEAD)
-  git -C "$TMPDIR/source-repo" fetch "$TMPDIR/work" "+$head:refs/lattice/source"
+  jq -e '.status == "ok"' health.json >/dev/null
+  curl --fail --silent http://127.0.0.1:19217/ >status.json
+  jq -e '
+    .service == "lattice-node-status" and
+    .stateVersion == "26.05" and
+    (.system.uptimeSeconds | type == "number") and
+    (.system.memoryTotalBytes | type == "number")
+  ' status.json >/dev/null
 
-  run_status() {
-    LATTICE_NODE_STATUS_FILE="$1" \
-    LATTICE_NODE_STATE_VERSION="26.05" \
-    LATTICE_COMIN_SOURCE_REPO="$TMPDIR/source-repo" \
-    LATTICE_CURRENT_SYSTEM_LINK="$TMPDIR/fs/run/current-system" \
-    LATTICE_NIXOS_PROFILES_SYSTEM="$TMPDIR/fs/nix/var/nix/profiles/system" \
-    LATTICE_NODE_NAME="node-a" \
-    lattice-node-status-write
-    jq -e . "$1" >/dev/null
-  }
-
-  # 1. Обычный узел: generation=42 (из profiles/system), commit из refs/lattice/source
-  run_status "$TMPDIR/status1.json"
-  test "$(jq -r .generation "$TMPDIR/status1.json")" = "42"
-  test "$(jq -r .commit "$TMPDIR/status1.json")" = "$head"
-  test "$(jq -r .node "$TMPDIR/status1.json")" = "node-a"
-  test "$(jq -r .service "$TMPDIR/status1.json")" = "lattice-node-status"
-  test "$(jq -r .stateVersion "$TMPDIR/status1.json")" = "26.05"
-  test "$(jq -r .kernel "$TMPDIR/status1.json")" != ""
-
-  # 2. Свежая нода без выбранного коммита → commit=null, JSON валиден
-  mkdir -p "$TMPDIR/empty-source"
-  git init --bare "$TMPDIR/empty-source/repository"  # без refs
-  LATTICE_NODE_STATUS_FILE="$TMPDIR/status2.json" \
-  LATTICE_NODE_STATE_VERSION="26.05" \
-  LATTICE_COMIN_SOURCE_REPO="$TMPDIR/empty-source/repository" \
-  LATTICE_CURRENT_SYSTEM_LINK="$TMPDIR/fs/run/current-system" \
-  LATTICE_NIXOS_PROFILES_SYSTEM="$TMPDIR/fs/nix/var/nix/profiles/system" \
-  LATTICE_NODE_NAME="fresh" \
-  lattice-node-status-write
-  jq -e '.commit == null and (.generation | type == "number")' \
-    "$TMPDIR/status2.json" >/dev/null
-
-  # 3. Нет profiles/system → fallback на /run/current-system (generation=7)
-  LATTICE_NODE_STATUS_FILE="$TMPDIR/status3.json" \
-  LATTICE_NODE_STATE_VERSION="26.05" \
-  LATTICE_COMIN_SOURCE_REPO="$TMPDIR/source-repo" \
-  LATTICE_CURRENT_SYSTEM_LINK="$TMPDIR/fs/run/fallback/current-system" \
-  LATTICE_NIXOS_PROFILES_SYSTEM="$TMPDIR/no-such-profile-system" \
-  LATTICE_NODE_NAME="fallback" \
-  lattice-node-status-write
-  jq -e '.generation == 7' "$TMPDIR/status3.json" >/dev/null
-
-  # 4. Нет ни profiles/system, ни current-system → generation=null (не падает)
-  LATTICE_NODE_STATUS_FILE="$TMPDIR/status4.json" \
-  LATTICE_NODE_STATE_VERSION="26.05" \
-  LATTICE_COMIN_SOURCE_REPO="$TMPDIR/source-repo" \
-  LATTICE_CURRENT_SYSTEM_LINK="$TMPDIR/no-such-link" \
-  LATTICE_NIXOS_PROFILES_SYSTEM="$TMPDIR/no-such-profile-system" \
-  LATTICE_NODE_NAME="no-gen" \
-  lattice-node-status-write
-  jq -e '.generation == null' "$TMPDIR/status4.json" >/dev/null
+  curl --fail --silent http://127.0.0.1:19217/metrics >metrics.txt
+  grep -q '^node_status_up 1$' metrics.txt
+  grep -q '^node_status_cpu_seconds_total{' metrics.txt
+  grep -q '^node_status_memory_total_bytes ' metrics.txt
+  grep -q '^node_status_filesystem_size_bytes{' metrics.txt
 
   mkdir "$out"
+  cp health.json status.json metrics.txt "$out"/
 ''

@@ -198,25 +198,7 @@
             export RAD_HOME="''${LATTICE_RADICLE_PEER_HOME:-/persist/var/lib/radicle-peer}"
             exec ${final.lib.getExe' final.radicle-node "rad"} "$@"
           '';
-          # f4-04: writer runtime-статуса узла (generation/commit JSON).
-          # replaceVars вшивает полные store-пути команд, чтобы скрипт работал
-          # из активационной среды (PATH там не содержит git/jq). Используется
-          # smoke-тестом tests/node-status.nix.
-          # f4-04: writer runtime-статуса узла (generation/commit JSON).
-          # replaceVarsWith вшивает полные store-пути bash/git/jq, чтобы скрипт
-          # работал из активационной среды (PATH там не содержит git/jq).
-          node-status-write = final.replaceVarsWith {
-            name = "lattice-node-status-write";
-            src = ./profiles/app-services/status-write.sh;
-            replacements = {
-              bash = "${final.bash}/bin/bash";
-              git = "${final.git}/bin/git";
-              jq = "${final.jq}/bin/jq";
-              hostname = "${final.inetutils}/bin/hostname";
-            };
-            dir = "bin";
-            isExecutable = true;
-          };
+          node-status = final.callPackage ./packages/node-status/package.nix { };
           acp-normalizer = final.callPackage ./packages/acp-normalizer/package.nix { };
           # f13-01: web client for ACP — acp-components workbench as a static SPA.
           acp-web = final.callPackage ./packages/acp-web/package.nix { };
@@ -288,7 +270,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) acp-normalizer acp-web git-cache-proxy hydra-acp llm-gateway pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
+          inherit (pkgs.lattice) acp-normalizer acp-web git-cache-proxy hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
         });

@@ -73,6 +73,12 @@ in
       '';
     };
 
+    nodeStatusPort = mkOption {
+      type = types.port;
+      default = 9217;
+      description = "Loopback port of the lattice node-status metrics endpoint.";
+    };
+
     extraScrapeConfigs = mkOption {
       type = types.listOf types.attrs;
       default = [ ];

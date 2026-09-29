@@ -167,7 +167,7 @@ in
 
   node-status = import ./node-status.nix {
     inherit pkgs;
-    statusWriter = pkgs.lattice.node-status-write;
+    nodeStatus = pkgs.lattice.node-status;
   };
 
   # acp-normalizer regression: the pure id-stability core (normalize.mjs) must
@@ -316,4 +316,3 @@ in
     assert builtins.elem 22 homelabConfig.networking.firewall.allowedTCPPorts;
     homelabConfig.system.build.toplevel;
 }
-

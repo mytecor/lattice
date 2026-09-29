@@ -180,6 +180,18 @@ assert !lib.hasInfix "provider=~\"$provider\"" (joinExprs providersDb);
 assert !lib.hasInfix "model=~\"$model\"" (joinExprs llm);
 assert !lib.hasInfix "model=~\"$model\"" (joinExprs providersDb);
 
+# --- Node system and service stability dashboard ---
+let node = byUid "node-overview"; in
+assert lib.hasInfix "node_status_cpu_utilization_ratio" (joinExprs node);
+assert lib.hasInfix "node_status_memory_used_bytes" (joinExprs node);
+assert lib.hasInfix "node_status_filesystem_available_bytes" (joinExprs node);
+assert lib.hasInfix "node_status_network_receive_bytes_total" (joinExprs node);
+assert lib.hasInfix "node_status_disk_read_bytes_total" (joinExprs node);
+assert lib.hasInfix "node_status_thermal_zone_celsius" (joinExprs node);
+assert lib.hasInfix "node_status_systemd_unit_state" (joinExprs node);
+assert lib.hasInfix "node_status_systemd_unit_restarts_total" (joinExprs node);
+assert lib.hasInfix "environment=\"$environment\"" (joinExprs node);
+
 pkgs.runCommand "grafana-dashboards-contract" { } ''
   echo "f12-04 grafana dashboards contract holds:
   dashboards: ${builtins.concatStringsSep ", " (map (d: d.uid) dashboards)}

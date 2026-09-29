@@ -62,8 +62,8 @@ JSON `{"node":<hostName>,"service":"lattice-node-status"}`. Это полезн�
 ## Прогресс
 
 2026-09-16: реализована декларативная часть. `profiles/app-services/config.nix` пишет
-`/run/lattice-node-status.json` активационным скриптом `lattice-node-status` из
-[`status-write.sh`](../../profiles/app-services/status-write.sh); Caddy отдаёт его через
+`/run/lattice-node-status.json` активационным скриптом `lattice-node-status` (эта реализация
+позднее заменена сервисом [`packages/node-status`](../../packages/node-status/README.md)); Caddy отдаёт его через
 `file_server` (root `/run` + rewrite на файл, без 308-redirect). `tests/app-services.nix`
 переведён на новые контракты; добавлен runtime smoke-тест `tests/node-status.nix`. `nix flake
 check --all-systems --no-build` проходит.
@@ -85,3 +85,11 @@ Live-находки, исправленные по ходу:
 - `substituteAll` удалён из текущего nixpkgs — используется `replaceVarsWith`.
 - `file_server` с root-файлом на `/` даёт 308-redirect-loop (root-файл трактуется как директория) —
   root указывает на `/run`, а `rewrite * /lattice-node-status.json` отдаёт файл по любому пути.
+
+## Последующее развитие
+
+2026-09-29 статический activation-time writer заменён Go-сервисом
+[`packages/node-status`](../../packages/node-status/README.md). Исходные metadata-поля сохранены,
+а поверх них добавлены текущий системный статус, `/healthz`, Prometheus `/metrics`, показатели
+стабильности systemd-сервисов и provisioning-дашборд Grafana. Описание выше остаётся историей
+первой реализации.

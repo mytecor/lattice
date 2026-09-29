@@ -61,9 +61,11 @@ Avahi публикует этот service-specific hostname в mDNS, поэто�
 curl --fail http://status.mytecor-homelab.local/
 ```
 
-Ожидаемый ответ — `{"node":"mytecor-homelab","service":"lattice-node-status"}`. Отдельный
-backend или внутренний listener для статического endpoint не запускается. Radicle HTTP API
-доступен по тому же ingress-контракту:
+Ответ сохраняет поля `node` и `service`, а также содержит runtime metadata и объект `system` с
+текущими CPU/load/memory/disk/service-state. Go backend слушает только `127.0.0.1:9217`, а Caddy
+остаётся единственным LAN ingress. Метрики и дашборд описаны в
+[`profiles/app-services`](../../profiles/app-services/README.md). Radicle HTTP API доступен по
+тому же ingress-контракту:
 
 ```text
 http://radicle.mytecor-homelab.local/
