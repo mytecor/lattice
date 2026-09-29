@@ -65,11 +65,12 @@ func TestHedgeRuleRejectsZeroAfter(t *testing.T) {
 	}
 }
 
-func TestHedgeRuleRejectsMissingTarget(t *testing.T) {
-	_, err := compileRules(append(standardEntry(),
+func TestHedgeRuleWithoutTargetEnablesInternalHedge(t *testing.T) {
+	result := mustCompile(t, append(standardEntry(),
 		hedgeRule("standard", 3*time.Second, ""),
 	)...)
-	if err == nil || !strings.Contains(err.Error(), "non-empty target") {
-		t.Fatalf("expected missing target error, got %v", err)
+	route := entryRoute(t, result, "standard")
+	if !route.Hedge.Internal || route.Hedge.After != 3*time.Second {
+		t.Fatalf("expected internal hedge with 3s delay, got %#v", route.Hedge)
 	}
 }

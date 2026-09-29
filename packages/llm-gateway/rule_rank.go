@@ -24,6 +24,9 @@ func (r *RankRule) apply(ctx *stageContext) error {
 		return ctx.errf("unsupported rank strategy %q (only \"priority\" is implemented)", r.Strategy)
 	}
 	sort.SliceStable(ctx.st.pending, func(i, j int) bool {
+		if ctx.st.pending[i].Tier != ctx.st.pending[j].Tier {
+			return ctx.st.pending[i].Tier < ctx.st.pending[j].Tier
+		}
 		left, right := ctx.providers[ctx.st.pending[i].Provider], ctx.providers[ctx.st.pending[j].Provider]
 		if left.Priority != right.Priority {
 			return left.Priority > right.Priority

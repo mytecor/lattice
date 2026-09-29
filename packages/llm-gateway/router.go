@@ -11,6 +11,14 @@ import (
 
 type ErrorClass string
 
+type FailureScope string
+
+const (
+	FailureScopeProvider FailureScope = "provider"
+	FailureScopeTarget   FailureScope = "target"
+	FailureScopeRequest  FailureScope = "request"
+)
+
 const (
 	ErrorTimeout       ErrorClass = "timeout"
 	ErrorConnection    ErrorClass = "connection_error"
@@ -26,6 +34,7 @@ type CallError struct {
 	Class  ErrorClass
 	Status int
 	Cause  error
+	Scope  FailureScope
 }
 
 func (e *CallError) Error() string {
@@ -38,6 +47,7 @@ func (e *CallError) Error() string {
 type Target struct {
 	Provider string
 	Model    string
+	Tier     int
 }
 
 type RequestKind string
@@ -93,11 +103,12 @@ type Runner struct {
 	// until which that pair is excluded from candidate pools. The window is
 	// lazy: no timer rearms it, entries are checked at request time and an
 	// expired entry is dropped on the pair's next success.
-	cooling  map[cooldownKey]time.Time
-	leases   *LeaseStore
-	scores   *ScoreStore
-	affinity *AffinityStore
-	metrics  *Metrics
+	cooling   map[cooldownKey]time.Time
+	leases    *LeaseStore
+	scores    *ScoreStore
+	affinity  *AffinityStore
+	metrics   *Metrics
+	admission *AdmissionController
 }
 
 // cooldownKey identifies the unit of provider failure isolation: one native
@@ -130,6 +141,14 @@ func newRunnerMetrics(config *compiledConfig, catalog *Catalog, executor Executo
 	runner.affinity = newAffinityStore(runner.now, config.raw.AffinityFile, func(err error) {
 		logEvent(context.Background(), config.logger, slog.LevelError, "affinity_persistence_failed", "detail", safeLogDetail(err.Error()))
 	})
+	runner.admission = newAdmissionController(runner.metrics, runner.now)
+	if config != nil {
+		for id, p := range config.providers {
+			runner.scores.SetMaxConcurrent(id, p.MaxConcurrent)
+			runner.metrics.ObserveProviderCapacity(id, p.MaxConcurrent)
+			runner.metrics.ObserveProviderEWMATTFT(id, time.Duration(runner.scores.latencyOf(id)*float64(time.Second)))
+		}
+	}
 	return runner
 }
 
@@ -241,10 +260,35 @@ func (r *Runner) Close() error {
 	return nil
 }
 
+func (r *Runner) admit(ctx context.Context, logical string, runtime *routeRuntime) (func(), *CallError) {
+	if r.admission == nil || r.config == nil {
+		return func() {}, nil
+	}
+	entry, ok := r.config.models[logical]
+	if !ok {
+		return func() {}, nil
+	}
+	deadline := time.Time{}
+	if runtime != nil {
+		deadline = runtime.deadline
+	}
+	return r.admission.Admit(ctx, entry.Name, entry.Admission, deadline)
+}
+
 // Run executes the bounded non-streaming route graph and returns the winner
 // body.
 func (r *Runner) Run(ctx context.Context, logical string, request ExecuteRequest) ([]byte, *CallError) {
-	outcome := r.runPlan(ctx, logical, request, false)
+	entry, ok := r.config.models[logical]
+	if !ok {
+		return nil, &CallError{Class: ErrorInvalid, Status: 404, Scope: FailureScopeRequest}
+	}
+	runtime := newRouteRuntime(entry)
+	release, admitErr := r.admit(ctx, logical, runtime)
+	if admitErr != nil {
+		return nil, admitErr
+	}
+	defer release()
+	outcome := r.executeRoute(ctx, logical, entry, request, false, runtime)
 	if outcome.err != nil {
 		return nil, outcome.err
 	}
@@ -254,7 +298,17 @@ func (r *Runner) Run(ctx context.Context, logical string, request ExecuteRequest
 // RunWithResult executes the non-streaming route graph and also reports the
 // winning provider, needed for lease and affinity bookkeeping.
 func (r *Runner) RunWithResult(ctx context.Context, logical string, request ExecuteRequest) (*RunOutcome, *CallError) {
-	outcome := r.runPlan(ctx, logical, request, false)
+	entry, ok := r.config.models[logical]
+	if !ok {
+		return nil, &CallError{Class: ErrorInvalid, Status: 404, Scope: FailureScopeRequest}
+	}
+	runtime := newRouteRuntime(entry)
+	release, admitErr := r.admit(ctx, logical, runtime)
+	if admitErr != nil {
+		return nil, admitErr
+	}
+	defer release()
+	outcome := r.executeRoute(ctx, logical, entry, request, false, runtime)
 	if outcome.err != nil {
 		return nil, outcome.err
 	}
@@ -294,6 +348,47 @@ func (r *Runner) executeRoute(ctx context.Context, logical string, route *compil
 		return outcome
 	}
 	original := outcome.err
+
+	if route.Retry.Attempts > 0 && route.Retry.Internal {
+		for attempt := 0; attempt < route.Retry.Attempts; attempt++ {
+			if !isReschedulableError(outcome.err) {
+				break
+			}
+			logEvent(ctx, r.logger, slog.LevelWarn, "llm_retry",
+				"route", route.Name,
+				"provider", outcome.failedProvider,
+				"error_type", string(outcome.err.Class),
+				"status_code", outcome.err.Status,
+				"attempt", attempt+1,
+			)
+			if callErr := runtime.waitBackoff(ctx, backoffDuration(route.Retry.Backoff, attempt), r.sleep); callErr != nil {
+				return &routeOutcome{err: callErr}
+			}
+			for target := range outcome.failedTargets {
+				runtime.excludeTargets[target] = true
+			}
+			if len(outcome.failedTargets) == 0 && outcome.failedProvider != "" {
+				runtime.exclude[outcome.failedProvider] = true
+			}
+			next := r.raceRoute(ctx, logical, route, request, streamMode, runtime)
+			if next.err == nil || next.err.Class == ErrorCancelled {
+				if next.err == nil {
+					logEvent(ctx, r.logger, slog.LevelInfo, "llm_attempt",
+						"route", route.Name,
+						"provider", next.provider,
+						"native_model", next.model,
+						"status", "success",
+						"attempt", attempt+1,
+					)
+				}
+				return next
+			}
+			if next.empty {
+				break
+			}
+			outcome = next
+		}
+	}
 
 	if route.Retry.Attempts > 0 && route.retryTarget != nil {
 		for attempt := 0; attempt < route.Retry.Attempts; attempt++ {
@@ -421,12 +516,16 @@ func (r *Runner) buildDynamicPool(route *compiledRoute, _ ExecuteRequest, runtim
 	// re-dispatch must never re-hit an upstream that already failed a previous
 	// round of the same request, even when the route does not carry the unused
 	// policy. Empty for fresh requests, so the normal path is untouched.
-	if len(runtime.exclude) > 0 {
+	if len(runtime.exclude) > 0 || len(runtime.excludeTargets) > 0 {
 		filtered := make([]Target, 0, len(pool))
 		for _, target := range pool {
-			if !runtime.exclude[target.Provider] {
-				filtered = append(filtered, target)
+			if runtime.exclude[target.Provider] {
+				continue
 			}
+			if runtime.excludeTargets[targetKey{provider: target.Provider, model: target.Model}] {
+				continue
+			}
+			filtered = append(filtered, target)
 		}
 		if len(filtered) == 0 {
 			return nil, nil
@@ -697,6 +796,19 @@ func streamSelectionContextError(ctx context.Context) *CallError {
 		return &CallError{Class: ErrorTimeout, Status: 504, Cause: context.DeadlineExceeded}
 	}
 	return &CallError{Class: ErrorCancelled, Status: 499, Cause: ctx.Err()}
+}
+
+func isReschedulableError(callErr *CallError) bool {
+	if callErr == nil {
+		return false
+	}
+	if callErr.Class == ErrorCancelled || callErr.Scope == FailureScopeRequest {
+		return false
+	}
+	// Preserve the historical meaning of an unscoped invalid_response as a
+	// terminal request/configuration failure. Executor-originated failures set
+	// an explicit provider/target scope.
+	return callErr.Class != ErrorInvalid || callErr.Scope != ""
 }
 
 // probeStream reads one streaming branch until the first meaningful content,

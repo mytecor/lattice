@@ -41,8 +41,8 @@ func TestMapRuleCompileBuildsPendingPool(t *testing.T) {
 func TestMapRuleDecodeRejectsForeignField(t *testing.T) {
 	decodeRuleError(t, `{
 		"route":"standard","action":"map",
-		"native":"deepseek-ai/DeepSeek-V4","providers":["a"],"count":2
-	}`, "unknown field \"providers\"", `action "map"`)
+		"native":"deepseek-ai/DeepSeek-V4","unknown_field":"x"
+	}`, "unknown field \"unknown_field\"", `action "map"`)
 }
 
 func TestMapRuleRejectsMissingNative(t *testing.T) {

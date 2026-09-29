@@ -20,18 +20,30 @@ type SelectedStream struct {
 	TTFT time.Duration
 	// Attempts is the number of route executions dispatched for the request.
 	Attempts int
+	Release  func()
 }
 
 // SelectStream executes the bounded streaming route and returns the winner.
 // The winner is chosen only by the first meaningful content, reasoning, or
 // tool-call event; losers are cancelled and never affect health or lease state.
 func (r *Runner) SelectStream(ctx context.Context, logical string, request ExecuteRequest) (*SelectedStream, *CallError) {
-	outcome := r.runPlan(ctx, logical, request, true)
+	entry, ok := r.config.models[logical]
+	if !ok {
+		return nil, &CallError{Class: ErrorInvalid, Status: 404, Scope: FailureScopeRequest}
+	}
+	runtime := newRouteRuntime(entry)
+	release, admitErr := r.admit(ctx, logical, runtime)
+	if admitErr != nil {
+		return nil, admitErr
+	}
+	outcome := r.executeRoute(ctx, logical, entry, request, true, runtime)
 	if outcome.err != nil {
+		release()
 		return nil, outcome.err
 	}
 	outcome.selected.TTFT = outcome.ttft
 	outcome.selected.Attempts = outcome.attempts
+	outcome.selected.Release = release
 	return outcome.selected, nil
 }
 
@@ -91,7 +103,19 @@ func (r *Runner) continuePolicy(logical string) (ContinueConfig, bool) {
 	if !ok {
 		return ContinueConfig{}, false
 	}
-	return entry.Continue, entry.Continue.Enabled
+	if entry.Continue.Enabled {
+		return entry.Continue, true
+	}
+	if entry.Retry.Internal && entry.Retry.Attempts > 0 {
+		return ContinueConfig{
+			Enabled: true,
+			Idle:    30 * time.Second,
+			Reshare: "full",
+			Retries: entry.Retry.Attempts,
+			Wait:    30 * time.Second,
+		}, true
+	}
+	return ContinueConfig{}, false
 }
 
 // repetitionPolicy reports the compiled in-gateway loop-guard policy (the

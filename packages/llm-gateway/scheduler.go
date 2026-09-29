@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -33,14 +34,17 @@ type branchResult struct {
 // transition route whose dynamic pool had no available targets: the transition
 // is not applicable and must never mask the original terminal failure.
 type routeOutcome struct {
-	provider       string
-	model          string
-	body           []byte
-	selected       *SelectedStream
-	err            *CallError
-	pinned         bool
-	empty          bool
-	failedProvider string
+	provider        string
+	model           string
+	body            []byte
+	selected        *SelectedStream
+	err             *CallError
+	pinned          bool
+	empty           bool
+	failedProvider  string
+	failedModel     string
+	failedTargets   map[targetKey]bool
+	capacityBlocked bool
 	// attempts counts route executions dispatched for the request (races plus
 	// retry/fallback rounds); ttft is the winner's time to first meaningful
 	// event (stream) or the full response duration (non-stream).
@@ -66,6 +70,11 @@ type semaphore struct {
 }
 
 // routeRuntime owns request-wide state shared by the whole route graph. The
+type targetKey struct {
+	provider string
+	model    string
+}
+
 // deadline is absolute so backoff and every transition consume the same
 // timeout budget; semaphore counters and the used-provider set are monotonic
 // for the request and never reset when entering a subroute.
@@ -77,7 +86,8 @@ type routeRuntime struct {
 	// a continuation (the "continue" rule): providers in this set must never
 	// be re-dispatched, regardless of the route's unused policy. It is empty for
 	// fresh requests and only populated by ContinueStream.
-	exclude map[string]bool
+	exclude        map[string]bool
+	excludeTargets map[targetKey]bool
 	// strictAvailability disables the availability fail-open: when every
 	// candidate is cooling, a strict runtime returns no targets instead of
 	// re-adding the whole (cooling) pool. Continuations must never re-race a
@@ -93,7 +103,11 @@ type routeRuntime struct {
 }
 
 func newRouteRuntime(entry *compiledRoute) *routeRuntime {
-	runtime := &routeRuntime{used: make(map[string]bool), exclude: make(map[string]bool)}
+	runtime := &routeRuntime{
+		used:           make(map[string]bool),
+		exclude:        make(map[string]bool),
+		excludeTargets: make(map[targetKey]bool),
+	}
 	if entry != nil && entry.RouteTimeout > 0 {
 		runtime.deadline = time.Now().Add(entry.RouteTimeout)
 	}
@@ -169,10 +183,12 @@ type failureAggregate struct {
 	count      int
 	selectedID int
 	provider   string
+	model      string
 	selected   *CallError
+	targets    map[targetKey]bool
 }
 
-func (f *failureAggregate) add(id int, provider string, callErr *CallError, retryable func(ErrorClass) bool) {
+func (f *failureAggregate) add(id int, provider, model string, callErr *CallError, retryable func(ErrorClass) bool) {
 	if callErr == nil {
 		callErr = &CallError{Class: ErrorInvalid, Status: 502}
 	}
@@ -181,6 +197,13 @@ func (f *failureAggregate) add(id int, provider string, callErr *CallError, retr
 		f.selected = callErr
 		f.selectedID = id
 		f.provider = provider
+		f.model = model
+	}
+	if provider != "" && model != "" {
+		if f.targets == nil {
+			f.targets = make(map[targetKey]bool)
+		}
+		f.targets[targetKey{provider: provider, model: model}] = true
 	}
 	f.count++
 }
@@ -263,20 +286,21 @@ type schedule struct {
 	// hedgeG limits how many hedge members may actually launch: the unused
 	// policy is applied at launch time, so the hedge group carries the full
 	// ordered pool and the race count caps the launches.
-	limits     []int
-	started    [][]bool
-	launched   []bool
-	request    ExecuteRequest
-	stream     bool
-	results    chan *branchResult
-	cancels    map[int]context.CancelFunc
-	sem        *semaphore
-	runtime    *routeRuntime
-	active     int
-	seq        int
-	hedgeG     int
-	hedgeC     <-chan time.Time
-	hedgeTimer *time.Timer
+	limits         []int
+	started        [][]bool
+	launched       []bool
+	request        ExecuteRequest
+	stream         bool
+	results        chan *branchResult
+	cancels        map[int]context.CancelFunc
+	sem            *semaphore
+	runtime        *routeRuntime
+	active         int
+	seq            int
+	hedgeG         int
+	hedgeC         <-chan time.Time
+	hedgeTimer     *time.Timer
+	capacityDenied bool
 }
 
 // launch starts the not-yet-started members of group g that still have a
@@ -329,7 +353,18 @@ func (sc *schedule) launch(g int) bool {
 			launchedN++
 			continue
 		}
+		if !sc.r.scores.TryAcquireProvider(target.Provider) {
+			sc.capacityDenied = true
+			logEvent(sc.ctx, sc.r.logger, slog.LevelDebug, "provider_capacity_denied",
+				"route", sc.route.Name,
+				"provider", target.Provider,
+				"model", target.Model,
+			)
+			allStarted = false
+			continue
+		}
 		if !sc.sem.acquire(target.Provider, sc.active) {
+			sc.r.scores.DecrInFlight(target.Provider)
 			logEvent(sc.ctx, sc.r.logger, slog.LevelDebug, "semaphore_denied",
 				"route", sc.route.Name,
 				"provider", target.Provider,
@@ -352,7 +387,6 @@ func (sc *schedule) launch(g int) bool {
 		// the load signal behind the p2c balance strategy, fed at the same
 		// launch/completion points as the exported gauge so both describe the
 		// same concurrency state.
-		sc.r.scores.IncrInFlight(target.Provider)
 		go sc.runBranch(branchCtx, id, cancel, target)
 	}
 	if allStarted {
@@ -425,26 +459,22 @@ func (sc *schedule) cancelAll() {
 // runBranch performs one upstream call and delivers exactly one terminal
 // result. The send never blocks the caller past cancellation.
 func (sc *schedule) runBranch(ctx context.Context, id int, cancel context.CancelFunc, target Target) {
-	// Every branch that reached runBranch was counted by IncrInFlight at launch
-	// (scheduler.launch). The gauge slot is released here, in the branch itself,
-	// so it is returned on every exit path — including when a racing sibling
-	// wins and the main loop returns before draining this branch's result from
-	// sc.results (previously the decrement lived only in the main loop, so a
-	// cancelled loser left +1 in the gauge forever). The score store mirrors
-	// the decrement: its per-provider in-flight count is the p2c load signal.
-	// Scope: a streamed branch completes at winner selection (the first
-	// meaningful event), so the signal — and the gauge — cover the probe phase
-	// of a stream, not the whole relayed response.
-	// Every branch that reached runBranch was counted by IncrInFlight at launch
-	// (scheduler.launch). The gauge slot is released here, in the branch itself,
-	// so it is returned on every exit path — including when a racing sibling
-	// wins and the main loop returns before draining this branch's result from
-	// sc.results (previously the decrement lived only in the main loop, so a
-	// cancelled loser left +1 in the gauge forever). The score store mirrors
-	// the decrement: its per-provider in-flight count is the p2c load signal.
+	// Failed probes, non-streaming calls and cancelled losers release their
+	// provider slot on branch exit. A streaming winner transfers that release to
+	// SelectedStream.Cancel because its upstream call remains active after the
+	// first meaningful event.
+	var releaseOnce sync.Once
+	handedOff := false
+	releaseProvider := func() {
+		releaseOnce.Do(func() {
+			sc.r.metrics.DecrInFlight(target.Provider)
+			sc.r.scores.DecrInFlight(target.Provider)
+		})
+	}
 	defer func() {
-		sc.r.metrics.DecrInFlight(target.Provider)
-		sc.r.scores.DecrInFlight(target.Provider)
+		if !handedOff {
+			releaseProvider()
+		}
 	}()
 
 	started := sc.r.now()
@@ -454,7 +484,13 @@ func (sc *schedule) runBranch(ctx context.Context, id int, cancel context.Cancel
 		if res.selected != nil {
 			res.selected.Provider = target.Provider
 			res.selected.Model = target.Model
-			res.selected.Cancel = cancel
+			res.selected.Cancel = func() {
+				cancel()
+				releaseProvider()
+			}
+			// The selected upstream stream is still physically active after the
+			// probe returns. Its provider slot is handed to SelectedStream.Cancel.
+			handedOff = true
 		}
 	} else {
 		body, callErr := sc.r.executor.Do(ctx, target, sc.request)
@@ -484,7 +520,7 @@ func (sc *schedule) drainPrefailed(failures *failureAggregate, retryable func(Er
 			if !res.winner && res.err == nil {
 				res.err = &CallError{Class: ErrorInvalid, Status: 502}
 			}
-			failures.add(res.id, res.provider, res.err, retryable)
+			failures.add(res.id, res.provider, res.model, res.err, retryable)
 		default:
 			return
 		}
@@ -497,12 +533,38 @@ func (sc *schedule) drainPrefailed(failures *failureAggregate, retryable func(Er
 // of the route execution. No retry/fallback scheduling lives here: those are
 // explicit transitions owned by the caller (see executeRoute).
 func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledRoute, request ExecuteRequest, streamMode bool, runtime *routeRuntime) *routeOutcome {
+	for {
+		capacityChanged := r.scores.capacitySignal()
+		outcome := r.raceRouteOnce(ctx, logical, route, request, streamMode, runtime)
+		if !outcome.capacityBlocked {
+			return outcome
+		}
+		deadline, stopDeadline := runtime.deadlineTimer()
+		select {
+		case <-capacityChanged:
+			stopDeadline()
+			continue
+		case <-deadline:
+			stopDeadline()
+			return &routeOutcome{err: routeTimeoutError()}
+		case <-ctx.Done():
+			stopDeadline()
+			return &routeOutcome{err: streamSelectionContextError(ctx)}
+		}
+	}
+}
+
+func (r *Runner) raceRouteOnce(ctx context.Context, logical string, route *compiledRoute, request ExecuteRequest, streamMode bool, runtime *routeRuntime) *routeOutcome {
 	pool, pinned, callErr := r.buildPool(logical, route, request, runtime)
 	if callErr != nil {
 		return &routeOutcome{err: callErr, pinned: pinned}
 	}
 	if len(pool) == 0 {
 		return &routeOutcome{err: emptyPoolError(), empty: true}
+	}
+	pool = r.scores.targetsWithCapacity(pool)
+	if len(pool) == 0 {
+		return &routeOutcome{capacityBlocked: true}
 	}
 	ordered := r.applyLease(logical, route, pool)
 	ordered = r.applyBalance(route.Name, route, ordered)
@@ -522,6 +584,13 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 		if len(hedgeBatch) > 0 {
 			hedgeG = len(groups)
 			groups = append(groups, hedgeBatch)
+		}
+	} else if route.Hedge.Internal && route.Hedge.After > 0 && !pinned {
+		if len(ordered) > raceN {
+			// Keep only a placeholder here. The candidate set is rebuilt when
+			// the timer fires so load, health, cooldown and capacity are current.
+			hedgeG = len(groups)
+			groups = append(groups, nil)
 		}
 	}
 
@@ -553,13 +622,18 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 		sc.limits[g] = len(groups[g])
 	}
 	sc.armed[0] = true
-	if hedgeG >= 0 && route.hedgeTarget != nil {
-		// The hedge target's unused routing policy is enforced at launch time,
-		// because the request's used set grows while the source route races;
-		// the race count caps how many hedge members may actually launch.
-		sc.excludeUsed[hedgeG] = route.hedgeTarget.ProviderUnused
-		if route.hedgeTarget.RaceCount > 0 {
-			sc.limits[hedgeG] = route.hedgeTarget.RaceCount
+	if hedgeG >= 0 {
+		if route.hedgeTarget != nil {
+			// The hedge target's unused routing policy is enforced at launch time,
+			// because the request's used set grows while the source route races;
+			// the race count caps how many hedge members may actually launch.
+			sc.excludeUsed[hedgeG] = route.hedgeTarget.ProviderUnused
+			if route.hedgeTarget.RaceCount > 0 {
+				sc.limits[hedgeG] = route.hedgeTarget.RaceCount
+			}
+		} else {
+			sc.excludeUsed[hedgeG] = true
+			sc.limits[hedgeG] = 1
 		}
 	}
 
@@ -574,6 +648,9 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 		if runtime.expired() {
 			return &routeOutcome{err: routeTimeoutError()}
 		}
+		if sc.capacityDenied {
+			return &routeOutcome{capacityBlocked: true}
+		}
 		// Every member is blocked by the request-wide semaphore budget: the
 		// route has no available targets for this request.
 		return &routeOutcome{err: emptyPoolError(), empty: true}
@@ -586,6 +663,10 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 	retryable := func(ErrorClass) bool { return false }
 	if route.retryTarget != nil {
 		retryable = func(class ErrorClass) bool { return route.retryTarget.ErrorIn[class] }
+	} else if route.Retry.Internal {
+		retryable = func(class ErrorClass) bool {
+			return class != ErrorCancelled && class != ErrorInvalid
+		}
 	}
 
 	failures := &failureAggregate{}
@@ -612,6 +693,9 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 						latency = res.finished.Sub(res.started)
 					}
 					r.scores.Observe(res.provider, res.err, latency)
+					if r.metrics != nil {
+						r.metrics.ObserveProviderEWMATTFT(res.provider, time.Duration(r.scores.latencyOf(res.provider)*float64(time.Second)))
+					}
 				}
 			} else {
 				r.observeBranchCancelled(res)
@@ -636,7 +720,7 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 			if !res.prefailed {
 				sc.active--
 			}
-			failures.add(res.id, res.provider, res.err, retryable)
+			failures.add(res.id, res.provider, res.model, res.err, retryable)
 			// A slot just freed: try to start members of an armed group that were
 			// denied a permit while it was held (refills the race batch and the
 			// hedge batch alike).
@@ -648,7 +732,7 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 				// latency-only and must not delay a fast terminal failure).
 				sc.drainPrefailed(failures, retryable)
 				sc.cancelAll()
-				return &routeOutcome{err: failures.err(), pinned: pinned, failedProvider: failures.provider, attempts: runtime.attempts}
+				return &routeOutcome{err: failures.err(), pinned: pinned, failedProvider: failures.provider, failedModel: failures.model, failedTargets: failures.targets, attempts: runtime.attempts}
 			}
 		case <-sc.hedgeC:
 			sc.hedgeC = nil
@@ -657,6 +741,24 @@ func (r *Runner) raceRoute(ctx context.Context, logical string, route *compiledR
 				return &routeOutcome{err: routeTimeoutError()}
 			}
 			if sc.hedgeG >= 0 {
+				if route.Hedge.Internal && route.hedgeTarget == nil {
+					pool, _, hedgeErr := r.buildPool(logical, route, request, runtime)
+					if hedgeErr == nil {
+						pool = r.scores.targetsWithCapacity(pool)
+						pool = r.applyLease(logical, route, pool)
+						pool = r.applyBalance(route.Name, route, pool)
+						unused := make([]Target, 0, len(pool))
+						for _, target := range pool {
+							if !runtime.used[target.Provider] {
+								unused = append(unused, target)
+							}
+						}
+						sc.groups[sc.hedgeG] = unused
+						sc.started[sc.hedgeG] = make([]bool, len(unused))
+						sc.launched[sc.hedgeG] = false
+						sc.limits[sc.hedgeG] = 1
+					}
+				}
 				sc.armed[sc.hedgeG] = true
 				sc.launch(sc.hedgeG)
 				logEvent(ctx, r.logger, slog.LevelDebug, "hedge_launched",

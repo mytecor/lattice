@@ -159,117 +159,92 @@ curl -s localhost:9209/metrics
 
 `routing_rules` — плоская упорядоченная таблица rules. Каждый rule принадлежит именованному
 route (поле `route`) и выполняет одно действие с одной ответственностью; физически конфигурация
-остаётся плоским массивом, никаких вложенных `routes`/`plans`/`children` нет. Route — просто
-строковый scope (`standard`, `standard.retry`, `standard.fallback`); точки в имени не имеют
-runtime-семантики. Rules одного route выполняются в порядке появления в глобальном списке.
-Retry/fallback/hedge — явные переходы на другой именованный route через `target`; целевой route
-сам описывает свои фильтры, providers, mapping и race.
+остаётся плоским массивом, никаких вложенных `routes`/`plans`/`children` нет. Route —
+строковый scope (`standard`, `fast`); правила одного route компилируются в единую декларативную
+политику `CompiledRoute`, исполняемую динамическим Runtime Scheduler.
 
-Канонический порядок внутри route:
+Архитектура разделяет ответственность:
+- **Routing Rules** = eligibility (`filter`) + mapping & tiers (`map`) + execution & recovery policy (`admission`, `balance`, `race`, `retry`, `hedge`, `timeout`);
+- **Runtime Scheduler** = route admission queue + dynamic dispatch + recovery loop;
+- **Provider Runtime State** = capacity (`max_concurrent`) + inFlight + latency (EWMA TTFT) + health + cooldown.
 
-```text
-filter → map → rank → lease | balance → affinity → race → retry/hedge → semaphore → timeout
-```
-
-Transition graph (`standard → standard.retry` for retry, `standard → standard.fallback` for
-fallback, `standard → standard.hedge` for a latency alternative):
+Типичный набор плоских правил для маршрута:
 
 ```text
-request(model=standard) → standard → timeout? → standard.retry → (attempts) → timeout? → standard.fallback
-                                         └──────────────→ standard.hedge (concurrently, after `after`)
+filter → map (tier 0, 1...) → admission → balance → affinity → race → retry → hedge → timeout
 ```
 
-- `filter` ограничивает применимость route или текущую provider selection; это typed declarative
-  primitive без expression language. Одна rule объявляет ровно одну dimension в `where`:
-  - `where.model = {"eq": "standard"}` делает route entry route для logical model `standard`
-    (request-level applicability и discovery);
-  - `where.provider = {"in": [...], "not_in": [...], "unused": true}` строит свежую selection из
-    provider universe route: `in` выбирает из universe, `not_in` исключает, `unused` (routing
-    policy, не скрытое свойство retry) ограничивает pool providers, ещё не использованными
-    текущим request graph. Первый provider filter не удаляет остальных providers навсегда:
-    следующий `filter` снова выбирает из universe, поэтому разные provider groups могут получать
-    разные native модели через последовательность `filter + map`;
-  - `where.error = {"in": ["429", "5xx", "timeout", "connection_error"]}` гейтит переходы в route:
-    destination владеет применяемостью (not substring matching; строго typed failure classes);
-  - `where.attempt = {"lt": N}` ограничивает вход в route номером текущей попытки.
-- `map` привязывает текущую provider selection к одному native model ID и добавляет готовые
-  target-пары `(provider ID, native model)` в route pool. Provider selection целиком остаётся в
-  предшествующем `filter`; `map` — только transformation. Один provider не может встретиться в
-  одном pool более одного раза;
-- `rank` сортирует pending pool по `strategy = "priority"`; `race` делает immutable snapshot и
-  задаёт размер race batch (0 = весь pool);
-- `lease` временно поднимает победителя в начало ranking. Lease scoped по logical model,
-  продлевается успешным ответом (`renew_on_success`) и освобождается по настроенным hard
-  failures (`release_on`) либо после `release_after_slow_starts` последовательных превышений
-  `slow_start`;
-- `balance` — runtime-выбор провайдера **до** race (f7-13). Пока race выбирает first-responder,
-  победитель всегда самый быстрый, какой бы порядок/вес ни задать — `rank` компиляционный, а
-  `lease` лишь «клеит» к самому быстрому. `balance` поднимает выбранного провайдера в начало
-  бэтча, поэтому равномерное распределение достигается при `race count = 1` (при `count > 1`
-  балансировка меняет лишь начало бэтча и работает как latency-hedge). Стратегии: `p2c`
-  (power of two choices: два случайных здоровых кандидата, выигрывает тот, у кого меньше
-  in-flight веток; сигнал — живые счётчики scheduler в тех же точках, что gauge
-  `llm_requests_in_flight`; для стримов ветка завершается выбором победителя, так что сигнал
-  покрывает фазу выбора/TTFT, а не всю длину стрима; при равном пуле — равновероятный выбор),
-  `round_robin` (курсор
-  per-route по здоровым кандидатам), `adaptive` (weighted-random по
-  `score(p) = base(p) × health(p)`, где `health(p) ∈ [0,1]` — доля ошибок относительно
-  `error_budget` плюс относительный фактор лёгкости EWMA TTFT), `weighted` (только статические
-  веса). По умолчанию все веса равны (1): `priority` провайдера не участвует в runtime-выборе
-  (f7-13: приоритетные весы концентрируют трафик), он задаёт только compile-time порядок пула.
-  Провайдер на/за `error_budget` исключается из выбора `p2c`/`adaptive`/`round_robin`; при всех
-  нездоровых кандидатах выбор fail-open
-  к базовому порядку. `balance` и `lease` на одном route взаимоисключаемы (fail fast); `affinity`
-  совместим (балансировка только для unpinned запросов). Health state — in-memory, per-provider;
-  питается в тех же точках scheduler, что cooldown и lease; не переживает перезагрузку;
-- `affinity` закрепляет stateful Responses chain за provider, вернувшим `conversation` или
-  `previous_response_id`. Chat Completions никогда не получает affinity; `prompt_cache_key` не
-  считается session identifier. Known affinity сужает route до одного provider и при его отказе
-  завершает request fail closed (без state replay; cross-provider stateful retry невозможен) —
-  весь route graph, включая переходы, подавлен. Unknown identifier игнорируется
-  (`on_missing = "ignore"`);
-- `race` берёт первые `count` targets из snapshot и запускает их одновременно (first-success
-  semantics);
-- `retry` — bounded repeated transition в named subroute: только `target`, `attempts` и
-  `backoff`. Применимость (какие классы ошибок retryable, какие providers и native) живёт в
-  destination route (`standard.retry`), а не в retry. `scope`/`count`/`on` удалены: нужные
-  providers явно фильтруются retry route, повтор provider исключается политикой `unused`.
-  Следующий entry запускается после backoff и только если terminal failure входит в filter
-  destination. Возвращаемый класс выбирается детерминированно;
-- `fallback` — one-shot переход в named subroute через `target` (обычно `standard.fallback`);
-  это обычная точка в графе, скомпилированная тем же механизмом, что и retry, без отдельного
-  «second stage» в compiler state;
-- `hedge` — latency-переход: если winner не появился за `after`, target route (`standard.hedge`)
-  стартует параллельно, пока ветки ещё выполняются. Hedge не клонирует полный pool, не повторяет
-  used providers и не задерживает быстрый terminal failure;
-- `semaphore` — request-wide safety action: `max_calls`, `max_in_flight`,
-  `max_calls_per_provider` ограничивают суммарные/одновременные/на-провайдера upstream calls на
-  весь route graph (share не сбрасывается при входе в subroute);
-- `timeout` ограничивает весь route graph, включая retry backoff и fallback. Для streaming он
-  ограничивает выбор winner, но не обрывает уже выбранный успешный stream. Абсолютный deadline
-  общий для запроса.
+- `filter` объявляет принадлежность маршрута модели (`where.model.eq = "standard"`) для entry route
+  (discovery и клиентский роутинг);
+- `map` привязывает список провайдеров к нативной модели и уровню (`tier`):
+  `providers = [ "a" "b" ]`, `nativeModel = "model-x"`, `tier = 0`. Fallback между моделями
+  задается уровнями (tiers), что устраняет необходимость плодить именованные подмаршруты
+  (`standard.fallback`, `standard.retry`);
+- `admission` управляет очередью и конкурентностью на уровне виртуальной модели:
+  `maxInFlight` (максимум активных запросов роута), `maxPending` (размер очереди ожидания),
+  `waitTimeout` (таймаут ожидания в очереди). При уходе клиента (`disconnect`) запрос
+  немедленно снимается с очереди без обращения к провайдерам;
+- `balance` осуществляет динамический выбор таргета непосредственно перед диспетчеризацией.
+  Стратегия `expected-ttft` вычисляет ожидаемое время до первого токена:
+  `expectedTTFT = ewmaTTFT * (1 + inFlight / maxConcurrent) / health`.
+  Провайдер с заполненной емкостью `max_concurrent` автоматически уступает место менее
+  загруженным или резервным таргетам;
+- `affinity` закрепляет stateful Responses chain за выигравшим провайдером;
+- `race` задает размер параллельного запуска (`count = 1`);
+- `retry` управляет восстановлением: при сбое upstream attempt (429, 5xx, timeout, stream break,
+  model_not_found) логический запрос возвращается в планировщик, который исключает сбойный таргет
+  и динамически выбирает следующий лучший доступный таргет в текущем или следующем tier.
+  Клиентский HTTP/SSE поток при этом остается открытым и видит единый логический запрос;
+- `hedge` — динамический latency hedge: по истечении задержки `after` планировщик динамически
+  выбирает и запускает лучший неиспользованный таргет из пула;
+- `timeout` ограничивает полное время жизни логического запроса (очередь + диспетчеризация +
+  ретраи + hedge).
 
-Пример (`settings.routing_rules` в Nix использует нативные JSON-поля):
+Пример (`settings.routing_rules` в Nix):
 
 ```nix
-{ route = "standard"; action = "filter"; where = { model = { eq = "standard"; }; }; }
-{ route = "standard"; action = "filter"; where = { provider = { "in" = [ "gonka-proxy" "hyperfusion" ]; }; }; }
-{ route = "standard"; action = "map"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
-{ route = "standard"; action = "race"; count = 2; }
-{ route = "standard"; action = "retry"; target = "standard.retry"; attempts = 2; }
+{ route = "standard"; action = "filter"; where.model.eq = "standard"; }
 
-{ route = "standard.retry"; action = "filter";
-  where = { error = { "in" = [ "429" "5xx" "timeout" "connection_error" ]; }; }; }
-{ route = "standard.retry"; action = "filter"; where = { provider = { "in" = allProviders; unused = true; }; }; }
-{ route = "standard.retry"; action = "map"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }
-{ route = "standard.retry"; action = "race"; count = 1; }
+# Tier 0 (основные провайдеры)
+{
+  route = "standard";
+  action = "map";
+  providers = [ "gonka-proxy" "dahl" "hyperfusion" ];
+  native = "deepseek-ai/DeepSeek-V4-Flash-0731";
+  tier = 0;
+}
 
-{ route = "standard"; action = "fallback"; target = "standard.fallback"; }
-{ route = "standard.fallback"; action = "filter";
-  where = { error = { "in" = [ "model_not_found" "429" "5xx" "timeout" "connection_error" ]; }; }; }
-{ route = "standard.fallback"; action = "filter"; where = { provider = { "in" = [ "hyperfusion" ]; }; }; }
-{ route = "standard.fallback"; action = "map"; native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731"; }
-{ route = "standard.fallback"; action = "race"; count = 1; }
+# Tier 1 (резервный fallback)
+{
+  route = "standard";
+  action = "map";
+  providers = [ "hyperfusion" ];
+  native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731";
+  tier = 1;
+}
+
+# Очередь маршрута
+{
+  route = "standard";
+  action = "admission";
+  maxInFlight = 4;
+  maxPending = 16;
+  waitTimeout = "30s";
+}
+
+# Балансировка по задержке и нагрузке
+{
+  route = "standard";
+  action = "balance";
+  strategy = "expected-ttft";
+}
+
+# Сессии и исполнение
+{ route = "standard"; action = "affinity"; sources = [ "responses.conversation" ]; ttl = "24h"; }
+{ route = "standard"; action = "race"; count = 1; }
+{ route = "standard"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
+{ route = "standard"; action = "hedge"; after = "20s"; }
+{ route = "standard"; action = "timeout"; duration = "60s"; }
 ```
 
 Одна ветка, вернувшая ошибку при живой другой ветке, сама по себе не создаёт новый call: ранний

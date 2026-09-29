@@ -5,36 +5,46 @@ import (
 	"time"
 )
 
-// RetryRule configures a bounded repeated transition to another named route:
-// it owns only attempts, the backoff schedule and the target route. The retry
-// condition (which terminal failures are retryable) lives entirely in the
-// destination route's filter; retry no longer knows about error classes,
-// providers, scope or batch sizes. The target's own filter decides whether the
-// transition applies for the incoming failure.
+// RetryRule configures repeated upstream attempts: either internal scheduler
+// retry across available candidate targets/tiers (when target is omitted) or
+// transition to another named route.
 type RetryRule struct {
 	ruleBase
-	Target   string         `json:"target"`
-	Attempts int            `json:"attempts"`
-	Backoff  *BackoffConfig `json:"backoff"`
+	Target           string         `json:"target,omitempty"`
+	Attempts         int            `json:"attempts,omitempty"`
+	MaxAttempts      int            `json:"max_attempts,omitempty"`
+	MaxAttemptsCamel int            `json:"maxAttempts,omitempty"`
+	Backoff          *BackoffConfig `json:"backoff,omitempty"`
 }
 
-// apply validates the retry schedule and normalizes backoff defaults (a
-// constant 100ms..1s backoff) into the compiled route.
+// apply validates the retry schedule and normalizes backoff defaults into the
+// compiled route.
 func (r *RetryRule) apply(ctx *stageContext) error {
 	if !ctx.st.sawRace {
 		return ctx.errf("retry requires a preceding race action in the same route")
 	}
 	target := strings.TrimSpace(r.Target)
-	if target == "" {
-		return ctx.errf("retry requires a non-empty target route")
-	}
-	if target == ctx.route {
+	if target != "" && target == ctx.route {
 		return ctx.errf("retry must not target the route it belongs to (use a named subroute)")
 	}
-	if r.Attempts < 1 {
+	if target != "" && r.Attempts < 1 {
 		return ctx.errf("retry attempts must be at least 1")
 	}
-	retry := RetryConfig{Target: target, Attempts: r.Attempts}
+	attempts := r.Attempts
+	if attempts == 0 && r.MaxAttempts != 0 {
+		attempts = r.MaxAttempts
+	}
+	if attempts == 0 && r.MaxAttemptsCamel != 0 {
+		attempts = r.MaxAttemptsCamel
+	}
+	if attempts < 1 {
+		attempts = 3
+	}
+	retry := RetryConfig{
+		Target:   target,
+		Attempts: attempts,
+		Internal: target == "",
+	}
 	if r.Backoff != nil {
 		retry.Backoff = *r.Backoff
 	}

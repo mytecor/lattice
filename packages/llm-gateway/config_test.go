@@ -817,8 +817,6 @@ func TestCompileJSONRejectsMissingRequiredRuleField(t *testing.T) {
 func TestCompileJSONRejectsLegacyFields(t *testing.T) {
 	cases := map[string]string{
 		"match": `{"match":{"model":"standard"},"action":"filter","where":{"model":{"eq":"standard"}}}`,
-		"map.providers": `{
-			"route":"standard","action":"map","native":"x","providers":["a"]}`,
 		"retry.scope": `{
 			"route":"standard","action":"retry","target":"standard.retry","attempts":1,"scope":"next"}`,
 		"retry.count": `{

@@ -54,9 +54,15 @@ func (r *BalanceRule) apply(ctx *stageContext) error {
 		return ctx.errf("balance and lease are mutually exclusive on one route")
 	}
 	switch r.Strategy {
-	case "p2c", "round_robin", "adaptive", "weighted":
+	case "p2c", "round_robin", "adaptive", "weighted", "expected-ttft", "expected_ttft", "expected-completion", "expected_completion":
 	default:
-		return ctx.errf("unsupported balance strategy %q (only \"p2c\", \"round_robin\", \"adaptive\" or \"weighted\")", r.Strategy)
+		return ctx.errf("unsupported balance strategy %q (only \"p2c\", \"round_robin\", \"adaptive\", \"weighted\", or \"expected-ttft\")", r.Strategy)
+	}
+	strategy := r.Strategy
+	if strategy == "expected_ttft" {
+		strategy = "expected-ttft"
+	} else if strategy == "expected_completion" {
+		strategy = "expected-completion"
 	}
 	weights := make(map[string]int, len(r.Weights))
 	for provider, weight := range r.Weights {
@@ -81,7 +87,7 @@ func (r *BalanceRule) apply(ctx *stageContext) error {
 		errorBudget = 1
 	}
 	ctx.plan.Balance = BalanceConfig{
-		Enabled: true, Strategy: r.Strategy, Weights: weights,
+		Enabled: true, Strategy: strategy, Weights: weights,
 		Window: window, ErrorBudget: errorBudget,
 	}
 	ctx.st.sawBalance = true

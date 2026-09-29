@@ -90,6 +90,8 @@ type Provider struct {
 	// literal or an "env.VARNAME" reference resolved at load time.
 	APIKey              string            `json:"api_key,omitempty"`
 	Priority            int               `json:"priority,omitempty"`
+	MaxConcurrent       int               `json:"max_concurrent,omitempty"`
+	MaxConcurrentCamel  int               `json:"maxConcurrent,omitempty"`
 	Cooldown            Duration          `json:"cooldown,omitempty"`
 	RequestTimeout      Duration          `json:"request_timeout,omitempty"`
 	BifrostMaxRetries   int               `json:"bifrost_max_retries,omitempty"`
@@ -170,6 +172,7 @@ type compiledRoute struct {
 	// RaceCount is the size of the route race batch; 0 means all pool
 	// candidates.
 	RaceCount int
+	Admission AdmissionConfig
 	Lease     LeaseConfig
 	Balance   BalanceConfig
 	Affinity  AffinityConfig
@@ -214,6 +217,7 @@ func (rt *compiledRoute) applicable(callErr *CallError, attempt int) bool {
 type RetryConfig struct {
 	Target   string // resolved to retryTarget at compile stage
 	Attempts int
+	Internal bool // true when Target is empty (in-route scheduler retry)
 	Backoff  BackoffConfig
 }
 
@@ -225,8 +229,9 @@ type FallbackConfig struct {
 // HedgeConfig is a latency transition: after the delay the target route's
 // batch may start while the current route is still executing.
 type HedgeConfig struct {
-	After  time.Duration
-	Target string // resolved to hedgeTarget at compile stage
+	After    time.Duration
+	Target   string // resolved to hedgeTarget at compile stage
+	Internal bool   // true when Target is empty (in-route scheduler dynamic hedge)
 }
 
 type SemaphoreConfig struct {
@@ -615,6 +620,12 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 		}
 		if provider.Cooldown.Duration == 0 {
 			provider.Cooldown.Duration = 15 * time.Second
+		}
+		if provider.MaxConcurrent == 0 && provider.MaxConcurrentCamel != 0 {
+			provider.MaxConcurrent = provider.MaxConcurrentCamel
+		}
+		if provider.MaxConcurrent <= 0 {
+			provider.MaxConcurrent = 16
 		}
 		compiled.providers[provider.ID] = provider
 		// Discovery is provider-scoped: each provider contributes exactly one

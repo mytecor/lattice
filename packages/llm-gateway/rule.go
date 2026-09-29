@@ -49,6 +49,7 @@ const (
 	ActionFilter     = "filter"
 	ActionMap        = "map"
 	ActionRank       = "rank"
+	ActionAdmission  = "admission"
 	ActionLease      = "lease"
 	ActionBalance    = "balance"
 	ActionAffinity   = "affinity"
@@ -78,7 +79,8 @@ var ruleRegistry = map[string]ruleDescriptor{
 	ActionFilter:     {rank: 1, new: func() Rule { return &FilterRule{} }},
 	ActionMap:        {rank: 2, new: func() Rule { return &MapRule{} }},
 	ActionRank:       {rank: 3, new: func() Rule { return &RankRule{} }},
-	ActionLease:      {rank: 4, new: func() Rule { return &LeaseRule{} }},
+	ActionAdmission:  {rank: 4, new: func() Rule { return &AdmissionRule{} }},
+	ActionLease:      {rank: 5, new: func() Rule { return &LeaseRule{} }},
 	ActionBalance:    {rank: 5, new: func() Rule { return &BalanceRule{} }},
 	ActionAffinity:   {rank: 6, new: func() Rule { return &AffinityRule{} }},
 	ActionRace:       {rank: 7, new: func() Rule { return &RaceRule{} }},

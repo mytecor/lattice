@@ -261,3 +261,34 @@ func TestRepetitionMetric(t *testing.T) {
 		t.Errorf("missing series for provider b:\n%s", body)
 	}
 }
+
+func TestAdmissionAndCapacityMetrics(t *testing.T) {
+	m := newMetrics()
+	m.ObserveRoutePending("standard", 3)
+	m.ObserveRouteInFlight("standard", 2)
+	m.ObserveRouteQueueWait("standard", 150*time.Millisecond)
+	m.ObserveRouteQueueRejection("standard", "max_pending")
+	m.ObserveProviderCapacity("fast", 8)
+	m.ObserveProviderEWMATTFT("fast", 120*time.Millisecond)
+
+	body := scrape(t, m)
+
+	if !strings.Contains(body, `llm_route_pending_requests{route="standard"} 3`) {
+		t.Errorf("missing or wrong route pending requests metric:\n%s", body)
+	}
+	if !strings.Contains(body, `llm_route_in_flight_requests{route="standard"} 2`) {
+		t.Errorf("missing or wrong route in flight requests metric:\n%s", body)
+	}
+	if !strings.Contains(body, `llm_route_queue_rejections_total{route="standard",reason="max_pending"} 1`) {
+		t.Errorf("missing or wrong route queue rejections metric:\n%s", body)
+	}
+	if !strings.Contains(body, `llm_provider_capacity{provider="fast"} 8`) {
+		t.Errorf("missing or wrong provider capacity metric:\n%s", body)
+	}
+	if !strings.Contains(body, `llm_provider_ewma_ttft_seconds{provider="fast"} 0.12`) {
+		t.Errorf("missing or wrong provider EWMA TTFT metric:\n%s", body)
+	}
+	if !strings.Contains(body, `llm_route_queue_wait_duration_seconds_bucket{route="standard",le="0.5"} 1`) {
+		t.Errorf("missing or wrong route queue wait duration bucket:\n%s", body)
+	}
+}

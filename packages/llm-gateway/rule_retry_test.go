@@ -90,12 +90,13 @@ func TestRetryRuleRejectsZeroAttempts(t *testing.T) {
 	}
 }
 
-func TestRetryRuleRejectsMissingTarget(t *testing.T) {
-	_, err := compileRules(append(standardEntry(),
+func TestRetryRuleWithoutTargetEnablesInternalRetry(t *testing.T) {
+	result := mustCompile(t, append(standardEntry(),
 		retryRule("standard", "", 2),
 	)...)
-	if err == nil || !strings.Contains(err.Error(), "non-empty target") {
-		t.Fatalf("expected missing target error, got %v", err)
+	route := entryRoute(t, result, "standard")
+	if !route.Retry.Internal || route.Retry.Attempts != 2 {
+		t.Fatalf("expected internal retry with 2 attempts, got %#v", route.Retry)
 	}
 }
 

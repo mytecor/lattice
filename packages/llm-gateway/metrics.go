@@ -102,6 +102,13 @@ type Metrics struct {
 	// snapshots.
 	cooldownUntil *gaugeVec
 
+	routePendingRequests   *gaugeVec
+	routeInFlightRequests  *gaugeVec
+	routeQueueWaitDuration *histogramVec
+	routeQueueRejections   *counterVec
+	providerCapacity       *gaugeVec
+	providerEWMATTFT       *gaugeVec
+
 	startTime time.Time
 }
 
@@ -122,22 +129,28 @@ var (
 
 func newMetrics() *Metrics {
 	return &Metrics{
-		requestsTotal:     newCounterVec([]string{"api_key", "route", "model", "provider", "native_model", "status"}),
-		attemptTotal:      newCounterVec([]string{"provider", "native_model", "error_type"}),
-		streamBreaks:      newCounterVec([]string{"provider", "native_model", "error_type"}),
-		fallbackTotal:     newCounterVec([]string{"from_provider", "to_provider", "reason"}),
-		continueTotal:     newCounterVec([]string{"from_provider", "to_provider", "kind"}),
-		chainRetriesTotal: newCounterVec([]string{"status"}),
-		repetitionTotal:   newCounterVec([]string{"route", "provider"}),
-		balanceSelections: newCounterVec([]string{"route", "provider"}),
-		inputTokens:       newCounterVec([]string{"api_key", "model", "provider", "native_model"}),
-		outputTokens:      newCounterVec([]string{"api_key", "model", "provider", "native_model"}),
-		requestDuration:   newHistogramVec([]string{"api_key", "route", "model", "provider", "native_model"}, requestDurationBucketsSec),
-		ttft:              newHistogramVec([]string{"model", "provider", "native_model"}, ttftBucketsSec),
-		requestsInFlight:  newGaugeVec([]string{"provider"}),
-		balanceHealth:     newGaugeVec([]string{"provider"}),
-		cooldownUntil:     newGaugeVec([]string{"provider", "native_model"}),
-		startTime:         time.Now(),
+		requestsTotal:          newCounterVec([]string{"api_key", "route", "model", "provider", "native_model", "status"}),
+		attemptTotal:           newCounterVec([]string{"provider", "native_model", "error_type"}),
+		streamBreaks:           newCounterVec([]string{"provider", "native_model", "error_type"}),
+		fallbackTotal:          newCounterVec([]string{"from_provider", "to_provider", "reason"}),
+		continueTotal:          newCounterVec([]string{"from_provider", "to_provider", "kind"}),
+		chainRetriesTotal:      newCounterVec([]string{"status"}),
+		repetitionTotal:        newCounterVec([]string{"route", "provider"}),
+		balanceSelections:      newCounterVec([]string{"route", "provider"}),
+		inputTokens:            newCounterVec([]string{"api_key", "model", "provider", "native_model"}),
+		outputTokens:           newCounterVec([]string{"api_key", "model", "provider", "native_model"}),
+		requestDuration:        newHistogramVec([]string{"api_key", "route", "model", "provider", "native_model"}, requestDurationBucketsSec),
+		ttft:                   newHistogramVec([]string{"model", "provider", "native_model"}, ttftBucketsSec),
+		requestsInFlight:       newGaugeVec([]string{"provider"}),
+		balanceHealth:          newGaugeVec([]string{"provider"}),
+		cooldownUntil:          newGaugeVec([]string{"provider", "native_model"}),
+		routePendingRequests:   newGaugeVec([]string{"route"}),
+		routeInFlightRequests:  newGaugeVec([]string{"route"}),
+		routeQueueWaitDuration: newHistogramVec([]string{"route"}, []float64{0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30}),
+		routeQueueRejections:   newCounterVec([]string{"route", "reason"}),
+		providerCapacity:       newGaugeVec([]string{"provider"}),
+		providerEWMATTFT:       newGaugeVec([]string{"provider"}),
+		startTime:              time.Now(),
 	}
 }
 
@@ -281,6 +294,60 @@ func (m *Metrics) ObserveCooldownUntil(provider, native string, until time.Time)
 	m.cooldownUntil.set(provider, native, float64(until.UnixNano())/1e9)
 }
 
+func (m *Metrics) ObserveRoutePending(route string, count int) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.routePendingRequests.set(route, float64(count))
+}
+
+func (m *Metrics) ObserveRouteInFlight(route string, count int) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.routeInFlightRequests.set(route, float64(count))
+}
+
+func (m *Metrics) ObserveRouteQueueWait(route string, duration time.Duration) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.routeQueueWaitDuration.observe([]string{route}, duration.Seconds())
+}
+
+func (m *Metrics) ObserveRouteQueueRejection(route, reason string) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.routeQueueRejections.inc(route, reason)
+}
+
+func (m *Metrics) ObserveProviderCapacity(provider string, capacity int) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.providerCapacity.set(provider, float64(capacity))
+}
+
+func (m *Metrics) ObserveProviderEWMATTFT(provider string, ttft time.Duration) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.providerEWMATTFT.set(provider, ttft.Seconds())
+}
+
 // WriteExposition renders the full metric surface in the Prometheus text
 // exposition format (version 0.0.4: TYPE/HELP lines plus one line per unique
 // label set, families sorted by name). It also emits a small set of
@@ -317,6 +384,12 @@ func (m *Metrics) WriteExposition(writer io.Writer) error {
 	m.cooldownUntil.write(buffered, "llm_cooldown_until_seconds", "Unix seconds until a cooling provider native-model pair re-enters the candidate pool.")
 	m.requestDuration.write(buffered, "llm_request_duration_seconds", "Request duration histogram by client key id, route, logical model, provider and native model.")
 	m.ttft.write(buffered, "llm_ttft_seconds", "Time to first meaningful event histogram by logical model, provider and native model.")
+	m.routePendingRequests.write(buffered, "llm_route_pending_requests", "Current pending requests waiting in route queue.")
+	m.routeInFlightRequests.write(buffered, "llm_route_in_flight_requests", "Current active requests admitted into route.")
+	m.routeQueueWaitDuration.write(buffered, "llm_route_queue_wait_duration_seconds", "Histogram of duration spent waiting in route queue.")
+	m.routeQueueRejections.write(buffered, "llm_route_queue_rejections_total", "Route queue rejections by route and reason.")
+	m.providerCapacity.write(buffered, "llm_provider_capacity", "Configured hard concurrency capacity of each provider.")
+	m.providerEWMATTFT.write(buffered, "llm_provider_ewma_ttft_seconds", "Current EWMA time to first token per provider.")
 
 	return buffered.Flush()
 }

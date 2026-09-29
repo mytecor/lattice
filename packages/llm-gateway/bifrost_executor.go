@@ -293,7 +293,7 @@ func (e *BifrostExecutor) Stream(ctx context.Context, target Target, request Exe
 				data, event, meaningful, err := sanitizeStreamChunk(chunk, target.Model)
 				if err != nil {
 					select {
-					case output <- StreamEvent{Err: &CallError{Class: ErrorInvalid, Status: 502, Cause: err}}:
+					case output <- StreamEvent{Err: &CallError{Class: ErrorInvalid, Status: 502, Cause: err, Scope: FailureScopeProvider}}:
 					case <-ctx.Done():
 					}
 					return
@@ -493,35 +493,37 @@ func classifyBifrostError(ctx context.Context, err *schemas.BifrostError) *CallE
 	}
 	switch {
 	case status == 429:
-		return &CallError{Class: ErrorRateLimit, Status: status}
+		return &CallError{Class: ErrorRateLimit, Status: status, Scope: FailureScopeProvider}
 	case status == 404 || status == 410:
-		return &CallError{Class: ErrorNotFound, Status: status}
+		return &CallError{Class: ErrorNotFound, Status: status, Scope: FailureScopeTarget}
 	case status == 408 || status == 504:
-		return &CallError{Class: ErrorTimeout, Status: status}
+		return &CallError{Class: ErrorTimeout, Status: status, Scope: FailureScopeProvider}
 	case status >= 500:
-		return &CallError{Class: ErrorUpstream, Status: status}
+		return &CallError{Class: ErrorUpstream, Status: status, Scope: FailureScopeProvider}
 	}
 	message := ""
 	if err != nil && err.Error != nil {
 		message = strings.ToLower(err.Error.Message)
 	}
 	if strings.Contains(message, "timeout") || strings.Contains(message, "deadline") {
-		return &CallError{Class: ErrorTimeout, Status: 504}
+		return &CallError{Class: ErrorTimeout, Status: 504, Scope: FailureScopeProvider}
 	}
 	if strings.Contains(message, "connection") || strings.Contains(message, "network") || strings.Contains(message, "dns") {
-		return &CallError{Class: ErrorConnection, Status: 502}
+		return &CallError{Class: ErrorConnection, Status: 502, Scope: FailureScopeProvider}
 	}
-	return &CallError{Class: ErrorInvalid, Status: status}
+	// The rejection came from one concrete upstream target. Another eligible
+	// target may support the parameters or context size, so retry may reschedule.
+	return &CallError{Class: ErrorInvalid, Status: status, Scope: FailureScopeTarget}
 }
 
 func marshalSanitized(value any, logicalModel string) ([]byte, *CallError) {
 	data, err := json.Marshal(value)
 	if err != nil {
-		return nil, &CallError{Class: ErrorInvalid, Status: 502, Cause: err}
+		return nil, &CallError{Class: ErrorInvalid, Status: 502, Cause: err, Scope: FailureScopeProvider}
 	}
 	data, err = sanitizeJSON(data, logicalModel)
 	if err != nil {
-		return nil, &CallError{Class: ErrorInvalid, Status: 502, Cause: err}
+		return nil, &CallError{Class: ErrorInvalid, Status: 502, Cause: err, Scope: FailureScopeProvider}
 	}
 	return data, nil
 }

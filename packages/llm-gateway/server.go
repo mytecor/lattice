@@ -272,7 +272,13 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 		writeCallError(writer, callErr)
 		return
 	}
-	cancelCurrent := func() { selected.Cancel() }
+	cancelCurrent := func() {
+		selected.Cancel()
+		if selected.Release != nil {
+			selected.Release()
+			selected.Release = nil
+		}
+	}
 	defer func() { cancelCurrent() }()
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
@@ -389,7 +395,20 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	swapTo := func(next *SelectedStream) bool {
 		cur.Cancel()
 		brokenProviders = append(brokenProviders, cur.Provider)
-		cancelCurrent = next.Cancel
+		if cur.Release != nil {
+			if next.Release != nil {
+				next.Release()
+			}
+			next.Release = cur.Release
+			cur.Release = nil
+		}
+		cancelCurrent = func() {
+			next.Cancel()
+			if next.Release != nil {
+				next.Release()
+				next.Release = nil
+			}
+		}
 		cur = next
 		sawFinishReason = false
 		// A fresh winner means a fresh stream: reset the loop guard so the
