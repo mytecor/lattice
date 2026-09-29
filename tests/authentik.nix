@@ -304,10 +304,25 @@ pkgs.runCommand "authentik-evaluation" {
   grep -F 'external_host: "https://acp-ui.homelab.myt.su"' "$blueprintPath"
   grep -F 'model: authentik_outposts.outpost' "$blueprintPath"
   # A new database has no embedded outpost yet. OutpostSerializer requires
-  # type and config when the Blueprint creates it; omitting either validates
-  # only against an already-existing row and blocks the first activation.
+  # type on create; config must be OMITTED so the model JSONField default
+  # (default_outpost_config, which carries authentik_host) applies. Emitting
+  # `config: {}` writes a literally empty dict into _config (validate_config
+  # returns the raw input unchanged) and the proxyv2 Go outpost panics on
+  # `Outpost.Config["authentik_host"].(string)` -> crash-loop.
   grep -A10 -F 'name: authentik Embedded Outpost' "$blueprintPath" | grep -F 'type: proxy'
-  grep -A10 -F 'name: authentik Embedded Outpost' "$blueprintPath" | grep -F 'config: {}'
+  # The outpost must NOT carry an explicit config key; the model JSONField
+  # default (default_outpost_config, which carries authentik_host) applies on
+  # create instead. `config: {}` writes a literally empty dict into _config
+  # (validate_config fills defaults only for validation and returns the raw
+  # input) and the proxyv2 Go outpost panics on
+  # Outpost.Config["authentik_host"].(string) -> crash-loop. Skip comment
+  # lines so prose mentioning `config:` does not trip the check.
+  grep -A10 -F 'name: authentik Embedded Outpost' "$blueprintPath" \
+    | grep -v '^[[:space:]]*#' \
+    | grep -F 'config:' && {
+      echo 'FAIL: blueprint outpost block must not carry a config key' >&2
+      exit 1
+    } || true
   grep -A6 'slug: "acp-ui-fa"' "$blueprintPath" | grep -F 'name: "acp-ui (LAN)"'
   grep -A6 'slug: "acp-ui-fa"' "$blueprintPath" | grep -F 'meta_hide: false'
   # Application Dashboard mirrors Caddy: explicit visible LAN and mesh cards.

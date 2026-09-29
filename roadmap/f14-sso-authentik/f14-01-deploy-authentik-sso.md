@@ -83,6 +83,41 @@ admin-пароль из agenix, у статических сайтов защи�
       оператор), создание провайдера, вход Grafana через SSO, проверка ForwardAuth-сайта,
       достижимость `auth` на LAN и mesh. Зафиксировать результат в этой задаче.
 
+## Инцидент: crash-loop `authentik-server` из-за `config: {}` в blueprint (2026-09-29)
+
+При развёртывании ForwardAuth для `acp-ui` embedded outpost получал `config: {}` из
+сгенерированного blueprint'а, и авторизационная нода входила в бесконечный crash-loop
+(`NRestarts` сотни, вентиляторы крутятся от постоянной перезагрузки):
+
+```
+panic: interface conversion: interface {} is nil, not string
+goauthentik.io/internal/outpost/proxyv2/application.NewApplication  application.go:101
+goauthentik.io/internal/outpost/proxyv2.(*ProxyServer).Refresh      refresh.go:69
+```
+
+**Механизм (проверено на живом хомлабе, а не только по исходникам):**
+
+1. Модуль создаёт embedded outpost строкой `config: {}` (ради «empty config expanded to
+   defaults»). На деле `OutpostSerializer.validate_config` подставляет дефолты
+   `OutpostConfig` только для валидации и возвращает **исходный словарь** — в БД уходит
+   буквально `_config = {}` вместо полного конфига.
+2. Go-аутпост `NewApplication` безусловно читает `Outpost.Config["authentik_host"].(string)`
+   (приложение.go:101) — ключа нет (map отдаёт nil interface) → `panic: interface conversion`.
+3. Паника роняет `authentik-server` (exit 2), systemd `Restart=on-failure` поднимает через 5с.
+
+**Что исключили** (важно, чтобы не искать заново): падение происходит для **любого**
+proxy-провайдера (и `forward_single`, и `proxy`) — при нуле провайдеров в outpost сервер
+стабилен. НЕ причина: `certificate` (прикрепляли сертификат — panic остаётся), режим,
+`external_host`/`cookie_domain`/`client_secret` (все заполнены), mesh vs LAN.
+
+**Фикс**: в blueprint `config` **опущен** (не `config: {}`) — на создание outpost'а срабатывает
+модельный default `default_outpost_config()`, который включает `authentik_host`. При update
+(partial serializer) `_config` не трогается, поэтому пересборки не ломают. Правки:
+`modules/authentik/config.nix` (убрать `config: {}` + комментарий-обоснование) и
+`tests/authentik.nix` (assert «config отсутствует» вместо «config: {}»). На live-ноду хотфикс
+(полный конфиг в `_config`) уже занесён и сервер стабилен; blueprint на `state: present` его не
+затрёт.
+
 ## Критерий готовности (Definition of Done)
 
 - [ ] Authentik развёрнут декларативно (module + flake), читает секреты только из agenix

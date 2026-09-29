@@ -328,13 +328,12 @@ print(f"authentik-invalidate-apps-cache: cleared {len(keys)} application cache e
         identifiers:
           name: authentik Embedded Outpost
         attrs:
-          # A fresh Authentik database has no embedded outpost until the app
-          # reconciliation hook has run.  The Blueprint must therefore be able
-          # to create it, not only partially update an existing row: both
-          # fields are required by OutpostSerializer on create.  An empty
-          # config is expanded to Authentik's dataclass defaults.
+          # `config` must be OMITTED (not `config: {}`) so the model JSONField
+          # default (default_outpost_config with authentik_host) applies on
+          # create; `config: {}` stores a literally empty dict and the proxyv2
+          # Go outpost panics on Outpost.Config["authentik_host"].(string)
+          # -> crash-loop (found 2026-09-29, see f14-01).
           type: proxy
-          config: {}
           providers:
     ${outpostProviders}
     ''}
