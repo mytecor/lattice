@@ -558,15 +558,20 @@ in
         { route = "standard.hedge"; action = "race"; count = 1; }
 
         # smart
+        # Start exactly one Google provider per HTTP request, rotate the primary,
+        # and reach the other provider only through the sequential unused-provider
+        # retry after a terminal failure. Do not add a hedge here: it would restore
+        # parallel Google requests. Chat has no cross-request affinity, so a tool
+        # step carrying a backend-specific thought signature may first fail on the
+        # other backend and then recover through this retry route.
         { route = "smart"; action = "filter"; where.model.eq = "smart"; }
         { route = "smart"; action = "filter"; where.provider."in" = [ "google-vertex" ] ++ lib.optional hasGoogleAiStudioKey "google-ai-studio"; }
         { route = "smart"; action = "map"; native = "gemini-3.8-flash"; }
         { route = "smart"; action = "rank"; strategy = "priority"; }
-        { route = "smart"; action = "balance"; strategy = "p2c"; weights = { }; window = "5m"; error_budget = 0.2; }
+        { route = "smart"; action = "balance"; strategy = "round_robin"; weights = { }; window = "5m"; error_budget = 0.2; }
         { route = "smart"; action = "affinity"; sources = [ "responses.conversation" "responses.previous_response_id" ]; ttl = "24h"; on_missing = "ignore"; on_provider_failure = "fail-closed"; }
-        { route = "smart"; action = "race"; count = 0; }
+        { route = "smart"; action = "race"; count = 1; }
         { route = "smart"; action = "retry"; target = "smart.retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
-        { route = "smart"; action = "hedge"; after = "20s"; target = "smart.hedge"; }
         { route = "smart"; action = "semaphore"; max_calls = 6; max_in_flight = 4; max_calls_per_provider = 1; }
         { route = "smart"; action = "timeout"; duration = "60s"; }
         { route = "smart"; action = "continue"; idle = "30s"; reshare = "full"; retries = 2; }
@@ -575,10 +580,6 @@ in
         { route = "smart.retry"; action = "map"; native = "gemini-3.8-flash"; }
         { route = "smart.retry"; action = "rank"; strategy = "priority"; }
         { route = "smart.retry"; action = "race"; count = 1; }
-        { route = "smart.hedge"; action = "filter"; where.provider = { "in" = [ "google-vertex" ] ++ lib.optional hasGoogleAiStudioKey "google-ai-studio"; unused = true; }; }
-        { route = "smart.hedge"; action = "map"; native = "gemini-3.8-flash"; }
-        { route = "smart.hedge"; action = "rank"; strategy = "priority"; }
-        { route = "smart.hedge"; action = "race"; count = 1; }
 
         # Explicit fallback nets.
         { route = "standard"; action = "fallback"; target = "standard.fallback"; }
