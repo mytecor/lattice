@@ -18,7 +18,7 @@ MAC для `ap0` (иначе RTL8822CE откажет в UP), hostapd в foregro
 
 - [x] Переход в `ap`: `nmcli device disconnect $wifi` → интерфейс unmanaged → `iw phy ... interface
       add ap0 type __ap` с уникальным MAC → `hostapd.conf` из age-секрета пароля (фиксированные
-      `channel`/`hwMode`) → hostapd + dnsmasq + FORWARD → идемпотентный NAT/MASQUERADE через
+      `channel`/`channelWidth`/`hwMode`, опциональный VHT) → hostapd + dnsmasq + FORWARD → идемпотентный NAT/MASQUERADE через
       проводной аплинк.
 - [x] Откат: остановить hostapd/dnsmasq, удалить `ap0`, вернуть интерфейс в managed — NetworkManager
       сам переподключит Wi-Fi-профиль (autoconnect-priority из `lattice.wireless` уже ранжирован).

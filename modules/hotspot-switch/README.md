@@ -66,6 +66,7 @@
 | `lattice.hotspot-switch.ap.ssid` | `str` | _(обязательно)_ | SSID раздаваемой Wi-Fi-сети. |
 | `lattice.hotspot-switch.ap.passwordFile` | `path` | _(обязательно)_ | Путь к файлу с WPA2-паролем (agenix секрет). |
 | `lattice.hotspot-switch.ap.channel` | `int` | `36` | RF-канал точки доступа (5 GHz). |
+| `lattice.hotspot-switch.ap.channelWidth` | `enum [ 20 80 ]` | `20` | Ширина канала; 80 требует VHT и поддерживаемый primary channel. |
 | `lattice.hotspot-switch.ap.hwMode` | `enum [ "a" "g" ]` | `"a"` | Режим радио: `a` (5 GHz) или `g` (2.4 GHz). |
 | `lattice.hotspot-switch.ap.countryCode` | `str` | `"US"` | Код страны IEEE 802.11d. |
 | `lattice.hotspot-switch.ap.macAddress` | `str` | `"02:0a:44:00:00:01"` | Локально-администрируемый MAC-адрес интерфейса `ap0`. |
@@ -73,6 +74,7 @@
 | `lattice.hotspot-switch.ap.subnet` | `str` | `"10.44.0.0/24"` | Подсеть хотспота. |
 | `lattice.hotspot-switch.ap.dhcpRange` | `str` | `"10.44.0.10,10.44.0.100,255.255.255.0,12h"` | Пул адресов DHCP для клиентов. |
 | `lattice.hotspot-switch.ap.dnsServers` | `listOf str` | `[ "1.1.1.1" "8.8.8.8" ]` | Upstream DNS-серверы для клиентов хотспота. |
+| `lattice.hotspot-switch.ap.vht` | `bool` | `false` | Включить 802.11ac; вместе с `channelWidth = 80` включает VHT80. |
 
 ## CLI-утилита `lattice-hotspot-switch`
 

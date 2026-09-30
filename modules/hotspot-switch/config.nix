@@ -7,6 +7,37 @@ let
   wifiConfiguredStr = if cfg.wifiInterface != null then cfg.wifiInterface else "";
   phyConfiguredStr = if cfg.phy != null then cfg.phy else "";
 
+  # VHT80 uses a 20 MHz primary channel inside an 80 MHz block. hostapd
+  # requires both the secondary-channel direction and the block's center
+  # segment index explicitly.
+  vht80Channels = {
+    "36" = { center = 42; ht40 = "+"; };
+    "40" = { center = 42; ht40 = "-"; };
+    "44" = { center = 42; ht40 = "+"; };
+    "48" = { center = 42; ht40 = "-"; };
+    "52" = { center = 58; ht40 = "+"; };
+    "56" = { center = 58; ht40 = "-"; };
+    "60" = { center = 58; ht40 = "+"; };
+    "64" = { center = 58; ht40 = "-"; };
+    "100" = { center = 106; ht40 = "+"; };
+    "104" = { center = 106; ht40 = "-"; };
+    "108" = { center = 106; ht40 = "+"; };
+    "112" = { center = 106; ht40 = "-"; };
+    "116" = { center = 122; ht40 = "+"; };
+    "120" = { center = 122; ht40 = "-"; };
+    "124" = { center = 122; ht40 = "+"; };
+    "128" = { center = 122; ht40 = "-"; };
+    "132" = { center = 138; ht40 = "+"; };
+    "136" = { center = 138; ht40 = "-"; };
+    "140" = { center = 138; ht40 = "+"; };
+    "144" = { center = 138; ht40 = "-"; };
+    "149" = { center = 155; ht40 = "+"; };
+    "153" = { center = 155; ht40 = "-"; };
+    "157" = { center = 155; ht40 = "+"; };
+    "161" = { center = 155; ht40 = "-"; };
+  };
+  vht80Channel = vht80Channels.${toString cfg.ap.channel} or null;
+
   # CLI utility and switcher script
   switchScript = pkgs.writeShellScriptBin "lattice-hotspot-switch" ''
     set -euo pipefail
@@ -320,9 +351,19 @@ ssid=${cfg.ap.ssid}
 hw_mode=${cfg.ap.hwMode}
 channel=${toString cfg.ap.channel}
 ieee80211n=1
-${lib.optionalString (cfg.ap.vht && cfg.ap.hwMode == "a") ''
+${lib.optionalString (cfg.ap.channelWidth == 20) ''
+ht_capab=[SHORT-GI-20]
+''}
+${lib.optionalString (cfg.ap.channelWidth == 80 && vht80Channel != null) ''
+ht_capab=[HT40${vht80Channel.ht40}][SHORT-GI-20][SHORT-GI-40]
+''}
+${lib.optionalString cfg.ap.vht ''
 ieee80211ac=1
-vht_oper_chwidth=0
+vht_oper_chwidth=${if cfg.ap.channelWidth == 80 then "1" else "0"}
+${lib.optionalString (cfg.ap.channelWidth == 80 && vht80Channel != null) ''
+vht_capab=[SHORT-GI-80]
+vht_oper_centr_freq_seg0_idx=${toString vht80Channel.center}
+''}
 ''}
 wmm_enabled=1
 wpa=2
@@ -411,6 +452,18 @@ in
       {
         assertion = cfg.ap.passwordFile != null;
         message = "lattice.hotspot-switch: ap.passwordFile must be specified.";
+      }
+      {
+        assertion = !cfg.ap.vht || cfg.ap.hwMode == "a";
+        message = "lattice.hotspot-switch: ap.vht requires ap.hwMode = \"a\" (5 GHz).";
+      }
+      {
+        assertion = cfg.ap.channelWidth != 80 || cfg.ap.vht;
+        message = "lattice.hotspot-switch: ap.channelWidth = 80 requires ap.vht = true.";
+      }
+      {
+        assertion = cfg.ap.channelWidth != 80 || vht80Channel != null;
+        message = "lattice.hotspot-switch: ap.channelWidth = 80 requires a supported 5 GHz primary channel.";
       }
       {
         assertion = config.networking.networkmanager.enable;

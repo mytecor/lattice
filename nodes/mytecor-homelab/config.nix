@@ -280,7 +280,10 @@ in
       ssid = "Mytecor Homelab";
       passwordFile = config.age.secrets.hotspot-password.path;
       channel = 36;
+      channelWidth = 80;
       hwMode = "a";
+      countryCode = "VN";
+      vht = true;
     };
   };
 

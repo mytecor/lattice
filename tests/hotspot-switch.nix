@@ -33,7 +33,9 @@ let
             ssid = "Test Hotspot";
             passwordFile = dummyPasswordFile;
             channel = 36;
+            channelWidth = 80;
             hwMode = "a";
+            vht = true;
           };
         };
       }
@@ -61,6 +63,9 @@ let
   badEmptySsid = mkConfig { lattice.hotspot-switch.ap.ssid = lib.mkForce ""; };
   badNullPassword = mkConfig { lattice.hotspot-switch.ap.passwordFile = lib.mkForce null; };
   badFirewallBackend = mkConfig { networking.firewall.backend = "firewalld"; };
+  badVhtMode = mkConfig { lattice.hotspot-switch.ap.hwMode = lib.mkForce "g"; };
+  badWidthWithoutVht = mkConfig { lattice.hotspot-switch.ap.vht = lib.mkForce false; };
+  badVht80Channel = mkConfig { lattice.hotspot-switch.ap.channel = lib.mkForce 165; };
 
   # Extract script from valid config
   switchPkg = lib.findFirst (p: p.name == "lattice-hotspot-switch") null valid.environment.systemPackages;
@@ -103,12 +108,22 @@ assert lib.elem "lattice.hotspot-switch: ap.interfaceName cannot be in ethInterf
 assert lib.elem "lattice.hotspot-switch: ap.ssid must not be empty." (failures badEmptySsid);
 assert lib.elem "lattice.hotspot-switch: ap.passwordFile must be specified." (failures badNullPassword);
 assert lib.elem "lattice.hotspot-switch supports only the iptables and nftables firewall backends." (failures badFirewallBackend);
+assert lib.elem ''lattice.hotspot-switch: ap.vht requires ap.hwMode = "a" (5 GHz).'' (failures badVhtMode);
+assert lib.elem "lattice.hotspot-switch: ap.channelWidth = 80 requires ap.vht = true." (failures badWidthWithoutVht);
+assert lib.elem "lattice.hotspot-switch: ap.channelWidth = 80 requires a supported 5 GHz primary channel." (failures badVht80Channel);
 
 # 3. Smoke test for lattice-hotspot-switch evaluator logic under simulated conditions
 pkgs.runCommand "hotspot-switch-eval-test" {
-  nativeBuildInputs = [ pkgs.coreutils pkgs.bash pkgs.gawk ];
+  nativeBuildInputs = [ pkgs.coreutils pkgs.bash pkgs.gawk pkgs.gnugrep ];
 } ''
   set -eu
+
+  AP_START_PRE=${valid.systemd.services.lattice-hotspot-ap.serviceConfig.ExecStartPre}
+  grep -Fqx 'ht_capab=[HT40+][SHORT-GI-20][SHORT-GI-40]' "$AP_START_PRE"
+  grep -Fqx 'ieee80211ac=1' "$AP_START_PRE"
+  grep -Fqx 'vht_oper_chwidth=1' "$AP_START_PRE"
+  grep -Fqx 'vht_capab=[SHORT-GI-80]' "$AP_START_PRE"
+  grep -Fqx 'vht_oper_centr_freq_seg0_idx=42' "$AP_START_PRE"
 
   TEST_DIR="$PWD/test-env"
   mkdir -p "$TEST_DIR/sysfs/enp3s0" "$TEST_DIR/sysfs/wlp2s0" "$TEST_DIR/run" "$TEST_DIR/bin"

@@ -69,6 +69,12 @@ in
         description = "RF channel for the AP. Defaults to channel 36 (5 GHz).";
       };
 
+      channelWidth = mkOption {
+        type = types.enum [ 20 80 ];
+        default = 20;
+        description = "AP channel width in MHz. Width 80 requires 5 GHz VHT and a supported primary channel.";
+      };
+
       hwMode = mkOption {
         type = types.enum [ "a" "g" ];
         default = "a";
@@ -120,7 +126,7 @@ in
       vht = mkOption {
         type = types.bool;
         default = false;
-        description = "Enable 802.11ac (VHT) on 5 GHz.";
+        description = "Enable 802.11ac (VHT) on 5 GHz. Set channelWidth to 80 for VHT80.";
       };
     };
   };
