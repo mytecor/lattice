@@ -101,7 +101,8 @@ lattice.hotspot-switch = {
 
 **Выход из AP-режима** (Ethernet пропал / потерял default-route):
 1. Остановить hostapd, dnsmasq, удалить `ap0`.
-2. Вернуть интерфейс в managed, NetworkManager сам переподключит известный Wi-Fi-профиль
+2. Вернуть интерфейс в managed, явно снять оставленный `nmcli device disconnect` autoconnect-block
+   и попросить NetworkManager активировать лучший известный Wi-Fi-профиль
    (`autoconnect-priority` из `lattice.wireless` уже ранжирован).
 
 ### Надёжность

@@ -415,8 +415,12 @@ EOF
     ${pkgs.iproute2}/bin/ip link set "${cfg.ap.interfaceName}" down 2>/dev/null
     ${pkgs.iw}/bin/iw dev "${cfg.ap.interfaceName}" del 2>/dev/null
 
-    # 3. Restore Wi-Fi STA in NetworkManager
+    # 3. Restore Wi-Fi STA in NetworkManager. `nmcli device disconnect` sets
+    # an explicit autoconnect block which survives managed=no -> managed=yes,
+    # so clear it and request activation of the best known Wi-Fi profile.
     ${pkgs.networkmanager}/bin/nmcli device set "$WIFI_IF" managed yes 2>/dev/null
+    ${pkgs.networkmanager}/bin/nmcli device set "$WIFI_IF" autoconnect yes 2>/dev/null
+    ${pkgs.networkmanager}/bin/nmcli --wait 15 device connect "$WIFI_IF" 2>/dev/null
 
     # 4. Re-enumerate interfaces for mDNS publishers
     ${pkgs.systemd}/bin/systemctl try-restart "*-mdns.service" 2>/dev/null

@@ -119,11 +119,15 @@ pkgs.runCommand "hotspot-switch-eval-test" {
   set -eu
 
   AP_START_PRE=${valid.systemd.services.lattice-hotspot-ap.serviceConfig.ExecStartPre}
+  AP_STOP_POST=${valid.systemd.services.lattice-hotspot-ap.serviceConfig.ExecStopPost}
   grep -Fqx 'ht_capab=[HT40+][SHORT-GI-20][SHORT-GI-40]' "$AP_START_PRE"
   grep -Fqx 'ieee80211ac=1' "$AP_START_PRE"
   grep -Fqx 'vht_oper_chwidth=1' "$AP_START_PRE"
   grep -Fqx 'vht_capab=[SHORT-GI-80]' "$AP_START_PRE"
   grep -Fqx 'vht_oper_centr_freq_seg0_idx=42' "$AP_START_PRE"
+  grep -F 'device set "$WIFI_IF" managed yes' "$AP_STOP_POST"
+  grep -F 'device set "$WIFI_IF" autoconnect yes' "$AP_STOP_POST"
+  grep -F -- '--wait 15 device connect "$WIFI_IF"' "$AP_STOP_POST"
 
   TEST_DIR="$PWD/test-env"
   mkdir -p "$TEST_DIR/sysfs/enp3s0" "$TEST_DIR/sysfs/wlp2s0" "$TEST_DIR/run" "$TEST_DIR/bin"
