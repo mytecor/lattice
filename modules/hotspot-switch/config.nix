@@ -462,6 +462,14 @@ in
       ${pkgs.iptables}/bin/iptables -w -D FORWARD -o ${cfg.ap.interfaceName} -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
     '';
 
+    # Clients must reach the local DHCP/DNS listeners and Avahi on the AP
+    # interface before any forwarding or service discovery can work. Keep
+    # these ports scoped to ap0 rather than exposing dnsmasq on every uplink.
+    networking.firewall.interfaces.${cfg.ap.interfaceName} = {
+      allowedTCPPorts = [ 53 ];
+      allowedUDPPorts = [ 53 67 5353 ];
+    };
+
     boot.kernel.sysctl."net.ipv4.ip_forward" = "1";
 
     # CLI tool available in system packages

@@ -77,6 +77,10 @@ assert lib.hasInfix "iptables -w -A FORWARD -i ap0 -j ACCEPT" valid.networking.f
 assert lib.hasInfix "iptables -w -A FORWARD -o ap0" valid.networking.firewall.extraCommands;
 assert lib.hasInfix ''iifname "ap0" accept'' nftConfig.networking.firewall.extraForwardRules;
 assert lib.hasInfix ''oifname "ap0" ct state { established, related } accept'' nftConfig.networking.firewall.extraForwardRules;
+assert lib.elem 53 valid.networking.firewall.interfaces.ap0.allowedTCPPorts;
+assert lib.all
+  (port: lib.elem port valid.networking.firewall.interfaces.ap0.allowedUDPPorts)
+  [ 53 67 5353 ];
 
 # Systemd units
 assert valid.systemd.services.lattice-hotspot-ap.serviceConfig.Type == "simple";
