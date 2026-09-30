@@ -328,12 +328,17 @@ print(f"authentik-invalidate-apps-cache: cleared {len(keys)} application cache e
         identifiers:
           name: authentik Embedded Outpost
         attrs:
-          # `config` must be OMITTED (not `config: {}`) so the model JSONField
-          # default (default_outpost_config with authentik_host) applies on
-          # create; `config: {}` stores a literally empty dict and the proxyv2
-          # Go outpost panics on Outpost.Config["authentik_host"].(string)
-          # -> crash-loop (found 2026-09-29, see f14-01).
+          # A fresh Authentik database has no embedded outpost until the app
+          # reconciliation hook or blueprint creates it. OutpostSerializer
+          # requires `type` and `config` on create. Setting `config: {}` writes
+          # a literally empty dict and makes the proxyv2 Go outpost panic on
+          # Outpost.Config["authentik_host"].(string) (see f14-01), while
+          # omitting `config` fails DRF serializer validation ('config': 'This field is required').
+          # We supply `authentik_host` pointing to loopback so both DRF
+          # validation succeeds on create and the Go outpost resolves its host.
           type: proxy
+          config:
+            authentik_host: "http://${cfg.listenAddress}:${toString cfg.port}"
           providers:
     ${outpostProviders}
     ''}

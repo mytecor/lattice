@@ -110,13 +110,13 @@ proxy-провайдера (и `forward_single`, и `proxy`) — при нуле
 стабилен. НЕ причина: `certificate` (прикрепляли сертификат — panic остаётся), режим,
 `external_host`/`cookie_domain`/`client_secret` (все заполнены), mesh vs LAN.
 
-**Фикс**: в blueprint `config` **опущен** (не `config: {}`) — на создание outpost'а срабатывает
-модельный default `default_outpost_config()`, который включает `authentik_host`. При update
-(partial serializer) `_config` не трогается, поэтому пересборки не ломают. Правки:
-`modules/authentik/config.nix` (убрать `config: {}` + комментарий-обоснование) и
-`tests/authentik.nix` (assert «config отсутствует» вместо «config: {}»). На live-ноду хотфикс
-(полный конфиг в `_config`) уже занесён и сервер стабилен; blueprint на `state: present` его не
-затрёт.
+**Фикс**: в blueprint `config` передаётся явно с обязательным `authentik_host`:
+`config.authentik_host: "http://${cfg.listenAddress}:${toString cfg.port}"`.
+Пустой словарь `config: {}` сохранял пустой `_config` и вызывал Go panic, а полное
+опускание `config` ломало DRF-валидацию на чистой БД (`This field is required`), блокируя
+старт `authentik-server` (502 Bad Gateway). Явное указание loopback URL решает обе
+проблемы: сериализатор успешно валидирует создание, а Go-аутпост штатно читает хост.
+Правки: `modules/authentik/config.nix` и `tests/authentik.nix`.
 
 ## Критерий готовности (Definition of Done)
 
