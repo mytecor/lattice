@@ -16,26 +16,26 @@ MAC для `ap0` (иначе RTL8822CE откажет в UP), hostapd в foregro
 
 ## Что сделать
 
-- [ ] Переход в `ap`: `nmcli device disconnect $wifi` → интерфейс unmanaged → `iw phy ... interface
+- [x] Переход в `ap`: `nmcli device disconnect $wifi` → интерфейс unmanaged → `iw phy ... interface
       add ap0 type __ap` с уникальным MAC → `hostapd.conf` из age-секрета пароля (фиксированные
       `channel`/`hwMode`) → hostapd + dnsmasq + FORWARD → идемпотентный NAT/MASQUERADE через
       проводной аплинк.
-- [ ] Откат: остановить hostapd/dnsmasq, удалить `ap0`, вернуть интерфейс в managed — NetworkManager
+- [x] Откат: остановить hostapd/dnsmasq, удалить `ap0`, вернуть интерфейс в managed — NetworkManager
       сам переподключит Wi-Fi-профиль (autoconnect-priority из `lattice.wireless` уже ранжирован).
-- [ ] Идемпотентность: повторный вход/выход — no-op; `RemainAfterExit` на one-shot юнитах.
-- [ ] Rollback при сбое: если hostapd не поднялся за таймаут → вернуться в `client`, оставить Wi-Fi
+- [x] Идемпотентность: повторный вход/выход — no-op; `RemainAfterExit` на one-shot юнитах.
+- [x] Rollback при сбое: если hostapd не поднялся за таймаут → вернуться в `client`, оставить Wi-Fi
       в managed (не оставлять ноду без сети).
-- [ ] mDNS (avahi) на `ap0` и публикация `.local`-адресов сервисов ноды в hotspot-подсети —
+- [x] mDNS (avahi) на `ap0` и публикация `.local`-адресов сервисов ноды в hotspot-подсети —
       согласовать с `profiles/tcp-gateway`.
-- [ ] Программная проверка отсутствия одновременности STA+AP (assertion из f17-01) в рантайме.
+- [x] Программная проверка отсутствия одновременности STA+AP (assertion из f17-01) в рантайме.
 
 ## Критерий готовности (Definition of Done)
 
-- [ ] Клиент, подключённый к hotspot SSID, получает IP от dnsmasq, NAT до интернета через провод,
+- [x] Клиент, подключённый к hotspot SSID, получает IP от dnsmasq, NAT до интернета через провод,
       нода отвечает по `.local` — при этом STA-линк выключен (одновременного Wi-Fi-клиента нет).
-- [ ] После выдёргивания провода нода возвращается в Wi-Fi-клиентский режим автоматически, и
+- [x] После выдёргивания провода нода возвращается в Wi-Fi-клиентский режим автоматически, и
       отсутствие `ap0` подтверждено (`ip link`).
-- [ ] Сбой подъёма hostapd не оставляет ноду без сети (rollback в `client`).
+- [x] Сбой подъёма hostapd не оставляет ноду без сети (rollback в `client`).
 
 ## Затрагиваемые файлы / слои
 

@@ -11,6 +11,7 @@
 - [`rns-server/`](./rns-server/README.md) - сервис `rns-server` и typed-генерация RNS ConfigObj-конфигов.
 - [`rnsh/`](./rnsh/README.md) - listener-сервис для remote shell через Reticulum.
 - [`wireless/`](./wireless/default.nix) - настройка Wi-Fi сетей через NetworkManager и runtime secret-файлы.
+- [`hotspot-switch/`](./hotspot-switch/README.md) - динамическое переключение Wi-Fi радио (клиент <-> точка доступа) при наличии/отсутствии проводного Ethernet-аплинка (F17).
 - [`git-cache-proxy/`](./git-cache-proxy/README.md) - read-only caching proxy для Git-репозиториев (f9-01): lazily клонирует bare mirror с origin и раздаёт дельту клиентам, cache на локальной POSIX FS не является source of truth.
 
 ## Правило

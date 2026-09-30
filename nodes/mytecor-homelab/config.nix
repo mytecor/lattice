@@ -50,6 +50,9 @@ let
   # remains the active Gemini carrier until then.
   googleAiStudioKeyFile = ./secrets/llm-provider-google-ai-studio.age;
   hasGoogleAiStudioKey = builtins.pathExists googleAiStudioKeyFile;
+  # F17: WPA2 passphrase for the dynamic Wi-Fi hotspot.
+  hotspotPasswordFile = ./secrets/hotspot-password.age;
+  hasHotspotPassword = builtins.pathExists hotspotPasswordFile;
 in
 {
   networking.hostName = "mytecor-homelab";
@@ -257,6 +260,27 @@ in
         file = googleAiStudioKeyFile;
         mode = "0400";
       };
+    } // lib.optionalAttrs hasHotspotPassword {
+      hotspot-password = {
+        file = hotspotPasswordFile;
+        mode = "0400";
+      };
+    };
+  };
+
+  # F17: Dynamic Wi-Fi hotspot switch. Automatically detects all Ethernet interfaces
+  # and the Wi-Fi radio. When an Ethernet uplink with an internet default route is
+  # present, switches the Wi-Fi radio to AP mode (SSID "Mytecor Homelab", channel 36
+  # on 5 GHz, dnsmasq DHCP on 10.44.0.0/24 with NAT MASQUERADE out of the Ethernet uplink).
+  # When the Ethernet cable is disconnected, automatically tears down the AP and restores
+  # the Wi-Fi interface under NetworkManager client mode to reconnect to the configured networks.
+  lattice.hotspot-switch = lib.mkIf hasHotspotPassword {
+    enable = true;
+    ap = {
+      ssid = "Mytecor Homelab";
+      passwordFile = config.age.secrets.hotspot-password.path;
+      channel = 36;
+      hwMode = "a";
     };
   };
 

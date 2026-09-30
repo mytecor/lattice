@@ -75,6 +75,11 @@
       flake = false;
     };
 
+    module-hotspot-switch = {
+      url = "path:./modules/hotspot-switch";
+      flake = false;
+    };
+
     module-git-cache-proxy = {
       url = "path:./modules/git-cache-proxy";
       flake = false;
@@ -147,6 +152,7 @@
     module-pi-acp-daemon,
     module-worker-runtime,
     module-wireless,
+    module-hotspot-switch,
     module-git-cache-proxy,
     module-verdaccio,
     module-authentik,
@@ -301,6 +307,7 @@
         pi-acp-daemon.imports = [ "${module-pi-acp-daemon}" ];
         worker-runtime.imports = [ "${module-worker-runtime}" ];
         wireless.imports = [ "${module-wireless}" ];
+        hotspot-switch.imports = [ "${module-hotspot-switch}" ];
         git-cache-proxy.imports = [ "${module-git-cache-proxy}" ];
         verdaccio.imports = [ "${module-verdaccio}" ];
         observability-prometheus.imports = [ "${module-observability-prometheus}" ];
@@ -320,6 +327,7 @@
           self.nixosModules.pi-acp-daemon
           self.nixosModules.worker-runtime
           self.nixosModules.wireless
+          self.nixosModules.hotspot-switch
           self.nixosModules.git-cache-proxy
           self.nixosModules.verdaccio
           self.nixosModules.observability-prometheus

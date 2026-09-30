@@ -100,6 +100,12 @@ in
     workerRuntimeModule = self.nixosModules.worker-runtime;
   };
 
+  # F17: dynamic Wi-Fi hotspot switch based on Ethernet internet uplink.
+  hotspot-switch = import ./hotspot-switch.nix {
+    inherit nixpkgs pkgs;
+    hotspotSwitchModule = self.nixosModules.hotspot-switch;
+  };
+
   # f4-05: тcp-gateway mesh-ингресс поверх LAN-контракта (meshDomain / cloudflare).
   tcp-gateway-mesh = import ./tcp-gateway-mesh.nix {
     inherit nixpkgs pkgs;

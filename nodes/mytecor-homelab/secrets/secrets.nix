@@ -5,6 +5,7 @@ in
 {
   "wifi-ssid.age".publicKeys = [ admin node ];
   "wifi-password.age".publicKeys = [ admin node ];
+  "hotspot-password.age".publicKeys = [ admin node ];
   "root-password-hash.age".publicKeys = [ admin node ];
   "radicle-private-key.age".publicKeys = [ admin node ];
   # f15-02: GitHub deploy key (repo-scoped write for mytecor/lattice) for the

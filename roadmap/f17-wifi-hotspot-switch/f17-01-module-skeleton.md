@@ -14,26 +14,26 @@ RTL8822CE (`#channels <= 1`). F17 переключает режим **целик
 
 ## Что сделать
 
-- [ ] Создать `modules/hotspot-switch/{options.nix,config.nix,default.nix}` по образцу снятого
+- [x] Создать `modules/hotspot-switch/{options.nix,config.nix,default.nix}` по образцу снятого
       `wireless-hotspot`, но с моделью **переключения**, а не одновременности.
-- [ ] Опции `lattice.hotspot-switch`:
+- [x] Опции `lattice.hotspot-switch`:
       `enable`, `ethInterfaces` (listOf str), `wifiInterface`, `ap.{ssid,passwordFile,ip,routerIp,
       subnet,dhcpRange,dnsServers,channel,hwMode,macAddress,countryCode}`. Пароль — путь к agenix
       secret (в store не попадает).
-- [ ] Конечный автомат с двумя состояниями `client`/`ap`, текущее состояние пишется в
+- [x] Конечный автомат с двумя состояниями `client`/`ap`, текущее состояние пишется в
       `/run/lattice-hotspot-switch/mode` идемпотентно.
-- [ ] Программная защита `ap`-состояния: assertion, что STA-профиль не активен, когда поднят `ap0`
+- [x] Программная защита `ap`-состояния: assertion, что STA-профиль не активен, когда поднят `ap0`
       (и наоборот), чтобы не воспроизвести нестабильность одновременного линка.
-- [ ] Подключить модуль во `flake.nix` (input + `nixosModules`), добавить строку в
+- [x] Подключить модуль во `flake.nix` (input + `nixosModules`), добавить строку в
       `modules/README.md`.
-- [ ] Изолированный тест на compile-time контракты (см. `tests/README.md`): опции валидируются,
+- [x] Изолированный тест на compile-time контракты (см. `tests/README.md`): опции валидируются,
       assertion работает.
 
 ## Критерий готовности (Definition of Done)
 
-- [ ] `nix flake check --all-systems --no-build` проходит с подключённым модулем (enable=false по
+- [x] `nix flake check --all-systems --no-build` проходит с подключённым модулем (enable=false по
       умолчанию) и без изменения существующих нод.
-- [ ] Конечный автомат переключается между `client` и `ap` без подъёма реального AP (заглушка
+- [x] Конечный автомат переключается между `client` и `ap` без подъёма реального AP (заглушка
       стартапа), состояние записывается в `/run`.
 
 ## Затрагиваемые файлы / слои
