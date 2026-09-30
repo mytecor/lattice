@@ -361,11 +361,12 @@ type LeaseConfig struct {
 //	adaptive    — weighted-random by static weight × health(p) ∈ [0,1];
 //	weighted    — only the static weights, no health history.
 type BalanceConfig struct {
-	Enabled     bool
-	Strategy    string // "p2c" | "round_robin" | "adaptive" | "weighted"
-	Weights     map[string]int
-	Window      time.Duration
-	ErrorBudget float64
+	Enabled         bool
+	Strategy        string // "p2c" | "round_robin" | "adaptive" | "weighted" | "expected-ttft"
+	Weights         map[string]int
+	Window          time.Duration
+	ErrorBudget     float64
+	ExplorationRate float64
 }
 
 type AffinityConfig struct {

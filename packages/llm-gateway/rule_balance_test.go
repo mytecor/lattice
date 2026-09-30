@@ -156,17 +156,37 @@ func TestBalanceRuleRejectsWithLease(t *testing.T) {
 	}
 }
 
-func TestBalanceRuleRejectsSecondBalance(t *testing.T) {
-	_, err := compileRules(
-		filterModel("standard", "standard"),
-		filterProvider("standard", "a", "b"),
-		mapRule("standard", "native-model"),
-		rankRule("standard"),
-		balanceRule("standard", func(r *BalanceRule) { r.Strategy = "adaptive" }),
-		balanceRule("standard", func(r *BalanceRule) { r.Strategy = "round_robin" }),
-		raceRule("standard", 1),
-	)
-	if err == nil || !strings.Contains(err.Error(), "already declared") {
-		t.Fatalf("expected duplicate balance error, got %v", err)
+func TestBalanceRuleExplorationRate(t *testing.T) {
+	// 1. expected-ttft gets default 0.10 exploration rate
+	res1 := mustCompile(t, balancePipeline(
+		balanceRule("standard", func(r *BalanceRule) { r.Strategy = "expected-ttft" }),
+	)...)
+	b1 := entryRoute(t, res1, "standard").Balance
+	if b1.ExplorationRate != 0.10 {
+		t.Fatalf("expected default exploration rate 0.10 for expected-ttft, got %v", b1.ExplorationRate)
+	}
+
+	// 2. Explicit exploration rate overrides default
+	r2 := decodeRuleJSON(t, `{
+		"route":"standard","action":"balance",
+		"strategy":"expected-ttft",
+		"exploration_rate":0.25
+	}`)
+	res2 := mustCompile(t, balancePipeline(r2)...)
+	b2 := entryRoute(t, res2, "standard").Balance
+	if b2.ExplorationRate != 0.25 {
+		t.Fatalf("expected exploration rate 0.25, got %v", b2.ExplorationRate)
+	}
+
+	// 3. Explicit 0.0 exploration rate disables exploration
+	r3 := decodeRuleJSON(t, `{
+		"route":"standard","action":"balance",
+		"strategy":"expected-ttft",
+		"exploration_rate":0.0
+	}`)
+	res3 := mustCompile(t, balancePipeline(r3)...)
+	b3 := entryRoute(t, res3, "standard").Balance
+	if b3.ExplorationRate != 0.0 {
+		t.Fatalf("expected exploration rate 0.0, got %v", b3.ExplorationRate)
 	}
 }

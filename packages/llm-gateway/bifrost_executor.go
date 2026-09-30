@@ -494,6 +494,8 @@ func classifyBifrostError(ctx context.Context, err *schemas.BifrostError) *CallE
 	switch {
 	case status == 429:
 		return &CallError{Class: ErrorRateLimit, Status: status, Scope: FailureScopeProvider}
+	case status == 401 || status == 402 || status == 403:
+		return &CallError{Class: ErrorUpstream, Status: status, Scope: FailureScopeProvider}
 	case status == 404 || status == 410:
 		return &CallError{Class: ErrorNotFound, Status: status, Scope: FailureScopeTarget}
 	case status == 408 || status == 504:

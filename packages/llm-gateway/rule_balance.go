@@ -31,10 +31,12 @@ import (
 // with winner-stickiness. The conflict fails at compile stage.
 type BalanceRule struct {
 	ruleBase
-	Strategy    string         `json:"strategy"`
-	Weights     map[string]int `json:"weights,omitempty"`
-	Window      Duration       `json:"window"`
-	ErrorBudget float64        `json:"error_budget"`
+	Strategy             string         `json:"strategy"`
+	Weights              map[string]int `json:"weights,omitempty"`
+	Window               Duration       `json:"window"`
+	ErrorBudget          float64        `json:"error_budget"`
+	ExplorationRate      *float64       `json:"exploration_rate,omitempty"`
+	ExplorationRateCamel *float64       `json:"explorationRate,omitempty"`
 }
 
 // apply validates the balance policy and normalizes it into the compiled
@@ -86,9 +88,27 @@ func (r *BalanceRule) apply(ctx *stageContext) error {
 	if errorBudget > 1 {
 		errorBudget = 1
 	}
+	explorationRate := 0.0
+	if strategy == "expected-ttft" || strategy == "expected-completion" {
+		explorationRate = 0.10 // 10% default exploration for expected-ttft
+	}
+	ratePtr := r.ExplorationRate
+	if ratePtr == nil {
+		ratePtr = r.ExplorationRateCamel
+	}
+	if ratePtr != nil {
+		explorationRate = *ratePtr
+	}
+	if explorationRate < 0 {
+		explorationRate = 0
+	}
+	if explorationRate > 1 {
+		explorationRate = 1
+	}
 	ctx.plan.Balance = BalanceConfig{
 		Enabled: true, Strategy: strategy, Weights: weights,
 		Window: window, ErrorBudget: errorBudget,
+		ExplorationRate: explorationRate,
 	}
 	ctx.st.sawBalance = true
 	return nil

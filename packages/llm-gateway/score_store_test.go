@@ -414,3 +414,99 @@ func TestScoreStoreInFlightConcurrentSelect(t *testing.T) {
 		t.Fatalf("in-flight must return to zero after balanced inc/dec, got %d", got)
 	}
 }
+
+func TestExpectedTTFTHealthyBeatsUnhealthyRegardlessOfInitialLatency(t *testing.T) {
+	clock := newStoreAt(time.Now())
+	clock.store.SetMaxConcurrent("proven-slow", 4)
+	clock.store.SetMaxConcurrent("broken-new", 4)
+
+	// proven-slow has high latency (5s), but is healthy
+	clock.store.Observe("proven-slow", nil, 5*time.Second)
+
+	// broken-new failed with upstream auth error (401/402/500) -> health = 0
+	clock.store.Observe("broken-new", &CallError{Class: ErrorUpstream, Status: 402}, 0)
+
+	policy := BalanceConfig{
+		Enabled:     true,
+		Strategy:    "expected-ttft",
+		Window:      5 * time.Minute,
+		ErrorBudget: 0.2,
+	}
+	targets := []Target{
+		{Provider: "broken-new", Model: "m"},
+		{Provider: "proven-slow", Model: "m"},
+	}
+
+	selected := clock.store.Select("standard", targets, policy)
+	if selected[0].Provider != "proven-slow" {
+		t.Fatalf("healthy provider must beat unhealthy provider, got %s", selected[0].Provider)
+	}
+}
+
+func TestExpectedTTFTEpsilonGreedyExploration(t *testing.T) {
+	clock := newStoreAt(time.Now())
+	clock.store.SetMaxConcurrent("fast", 4)
+	clock.store.SetMaxConcurrent("slow", 4)
+
+	clock.store.Observe("fast", nil, 1*time.Second)
+	clock.store.Observe("slow", nil, 5*time.Second)
+
+	policy := BalanceConfig{
+		Enabled:         true,
+		Strategy:        "expected-ttft",
+		Window:          5 * time.Minute,
+		ErrorBudget:     0.2,
+		ExplorationRate: 0.10,
+	}
+	targets := []Target{
+		{Provider: "fast", Model: "m"},
+		{Provider: "slow", Model: "m"},
+	}
+
+	// When pick01 returns >= 0.10, greedy choice (fast) wins
+	clock.store.pick01 = func() float64 { return 0.50 }
+	selected := clock.store.Select("standard", targets, policy)
+	if selected[0].Provider != "fast" {
+		t.Fatalf("greedy choice must pick fast, got %s", selected[0].Provider)
+	}
+
+	// When pick01 returns < 0.10, exploration triggers and alternative (slow) is promoted
+	clock.store.pick01 = func() float64 {
+		return 0.05
+	}
+	selected = clock.store.Select("standard", targets, policy)
+	if selected[0].Provider != "slow" {
+		t.Fatalf("exploration must promote slow, got %s", selected[0].Provider)
+	}
+	if selected[1].Provider != "fast" {
+		t.Fatalf("greedy choice must follow right behind as fallback, got %s", selected[1].Provider)
+	}
+}
+
+func TestExpectedTTFTExplorationPreservesTiers(t *testing.T) {
+	clock := newStoreAt(time.Now())
+	clock.store.SetMaxConcurrent("t0-a", 4)
+	clock.store.SetMaxConcurrent("t1-b", 4)
+
+	clock.store.Observe("t0-a", nil, 2*time.Second)
+	clock.store.Observe("t1-b", nil, 1*time.Second)
+
+	policy := BalanceConfig{
+		Enabled:         true,
+		Strategy:        "expected-ttft",
+		Window:          5 * time.Minute,
+		ErrorBudget:     0.2,
+		ExplorationRate: 0.50,
+	}
+	targets := []Target{
+		{Provider: "t0-a", Model: "m", Tier: 0},
+		{Provider: "t1-b", Model: "m", Tier: 1},
+	}
+
+	// Even if exploration triggers, Tier 0 must NEVER be bypassed by Tier 1
+	clock.store.pick01 = func() float64 { return 0.01 }
+	selected := clock.store.Select("standard", targets, policy)
+	if selected[0].Provider != "t0-a" || selected[0].Tier != 0 {
+		t.Fatalf("exploration must stay within top tier, got %#v", selected[0])
+	}
+}

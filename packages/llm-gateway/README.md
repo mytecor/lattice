@@ -187,6 +187,8 @@ filter → map (tier 0, 1...) → admission → balance → affinity → race �
 - `balance` осуществляет динамический выбор таргета непосредственно перед диспетчеризацией.
   Стратегия `expected-ttft` вычисляет ожидаемое время до первого токена:
   `expectedTTFT = ewmaTTFT * (1 + inFlight / maxConcurrent) / health`.
+  Поддерживает $\epsilon$-greedy exploration через параметр `exploration_rate` (по умолчанию
+  0.10 / 10% запросов зондируют альтернативных здоровых кандидатов в тире для актуализации EWMA).
   Провайдер с заполненной емкостью `max_concurrent` автоматически уступает место менее
   загруженным или резервным таргетам;
 - `affinity` закрепляет stateful Responses chain за выигравшим провайдером;

@@ -169,7 +169,18 @@ func (s *ScoreStore) latencyOf(provider string) float64 {
 	if score, ok := s.providers[provider]; ok && score.latencyOK && score.latency > 0 {
 		return score.latency
 	}
-	return 0.2
+	minLatency := math.Inf(1)
+	haveBaseline := false
+	for _, other := range s.providers {
+		if other.latencyOK && other.latency > 0 {
+			minLatency = math.Min(minLatency, other.latency)
+			haveBaseline = true
+		}
+	}
+	if haveBaseline {
+		return minLatency
+	}
+	return 1.0
 }
 
 // balanceHealthErrors are the failure classes that count against a provider's
@@ -474,8 +485,9 @@ func (s *ScoreStore) selectExpectedTTFT(targets []Target, policy BalanceConfig) 
 		return targets
 	}
 	type scoredTarget struct {
-		target Target
-		score  float64
+		target  Target
+		score   float64
+		healthy bool
 	}
 	scored := make([]scoredTarget, len(targets))
 	for i, target := range targets {
@@ -483,6 +495,7 @@ func (s *ScoreStore) selectExpectedTTFT(targets []Target, policy BalanceConfig) 
 		maxConc := s.maxConcurrentOf(target.Provider)
 		ewma := s.latencyOf(target.Provider)
 		health := s.health(target.Provider, policy.Window, policy.ErrorBudget)
+		isHealthy := health > 0
 		if health <= 0 {
 			health = 0.05
 		}
@@ -491,14 +504,40 @@ func (s *ScoreStore) selectExpectedTTFT(targets []Target, policy BalanceConfig) 
 			capacityFactor *= 10.0
 		}
 		score := (ewma * capacityFactor) / health
-		scored[i] = scoredTarget{target: target, score: score}
+		scored[i] = scoredTarget{target: target, score: score, healthy: isHealthy}
 	}
 	sort.SliceStable(scored, func(i, j int) bool {
 		if scored[i].target.Tier != scored[j].target.Tier {
 			return scored[i].target.Tier < scored[j].target.Tier
 		}
+		if scored[i].healthy != scored[j].healthy {
+			return scored[i].healthy
+		}
 		return scored[i].score < scored[j].score
 	})
+
+	// Epsilon-greedy exploration within the top tier among healthy candidates
+	if len(scored) > 1 && policy.ExplorationRate > 0 {
+		topTier := scored[0].target.Tier
+		var exploreCandidates []int
+		for i, sc := range scored {
+			if sc.target.Tier == topTier && sc.healthy {
+				exploreCandidates = append(exploreCandidates, i)
+			}
+		}
+		if len(exploreCandidates) > 1 && s.pick01() < policy.ExplorationRate {
+			// Uniformly pick one of the alternative candidates (indexes 1..len-1)
+			pickOffset := 1 + int(s.pick01()*float64(len(exploreCandidates)-1))
+			if pickOffset >= len(exploreCandidates) {
+				pickOffset = len(exploreCandidates) - 1
+			}
+			chosenIdx := exploreCandidates[pickOffset]
+			chosen := scored[chosenIdx]
+			copy(scored[1:chosenIdx+1], scored[0:chosenIdx])
+			scored[0] = chosen
+		}
+	}
+
 	result := make([]Target, len(targets))
 	for i, sc := range scored {
 		result[i] = sc.target
