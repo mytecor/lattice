@@ -1,9 +1,9 @@
 # Развернуть r1sd-allocator на ноде
 
-Фича: [F10 — disposable worker](./README.md). Зависит от
+Фича: [F10 — agent runtime](./README.md). Зависит от
 [f10-01](./f10-01-package-r1s.md) (r1s/r1sd доступны как flake-пакеты — закрыта 2026-09-16)
 и от nut-up звена исполнения на ноде. Прокладывает путь к
-[f10-04](./f10-04-pi-rpc-runner.md) (контейнерный Pi runtime через r1s-запросы).
+[f10-04](./f10-04-agent-runtime-acp.md) (контейнерный ACP agent runtime через r1s).
 
 ## Контекст
 
@@ -58,9 +58,10 @@
 `preStart` один раз), capacity/node/containerd-флаги.
 
 **Канал доступа — RNS, не локальный сокет.** По интерфейсу r1s подтверждено: `r1sd` общается по
-Reticulum (RNS), а не через loopback/AF_UNIX. `worker.sock` в диаграмме F10 (`/run/lattice/worker.sock`) —
-это клиентский локальный сокет `r1s serve` (шаг f10-04), а не канал allocator'а. Поэтому в песочнике
-разрешены `AF_UNIX` (containerd) и исходящие `AF_INET`/`AF_INET6` (RNS), без слушающих интерфейсов.
+Reticulum (RNS), а не через loopback/AF_UNIX. На момент выполнения f10-02 отдельно исследовался
+локальный сокет `r1s serve`; позднейший архитектурный cutover убрал Lattice-owned worker broker и
+`worker.sock`. Актуальный `agentd` использует r1s как library и ACP tunnel по модели из
+[TASK_EXECUTION.md](../../TASK_EXECUTION.md).
 
 **Общий реестр peers, без дублирования.** Модуль не хранит список Reticulum peers: `rnsUplinks`
 по умолчанию `{ }`, а нода задаёт их из общего

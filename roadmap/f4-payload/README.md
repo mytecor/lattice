@@ -2,7 +2,8 @@
 
 Узел перестаёт быть только участником сети: несёт первый прикладной сервис и реплику кода,
 из которой может обновляться без GitHub. Границы будущих вычислений и хранения определены здесь,
-а реализация agent runtime и disposable workers разложена в F7–F11. Соответствует
+а актуальная реализация task/agent runtime разложена в F10, F11 и F19–F21 по
+[TASK_EXECUTION.md](../../TASK_EXECUTION.md). Соответствует
 [вехе 4](../../ROADMAP.md#f4-полезная-нагрузка).
 
 Задачи: [f4-01](f4-01-radicle-seed-comin.md),
@@ -20,5 +21,5 @@
 **Критерий готовности:** конфигурация сети распространяется между узлами без GitHub, и на узлах
 работает хотя бы один прикладной сервис, доступный через шлюз.
 
-**Не входит:** shared filesystem или worker orchestration. Pi, gateway, caches, workers и controller
-реализуются отдельными вертикалями F7–F11.
+**Не входит:** shared filesystem или agent orchestration. Pi, gateway, caches, Git task pipeline и
+agent execution реализуются отдельными вертикалями.

@@ -14,31 +14,58 @@
 
 ## Очередь (приоритет сверху вниз)
 
-### [F10. Disposable worker](./roadmap/f10-disposable-worker/README.md)
+### [F10. Agent runtime](./roadmap/f10-disposable-worker/README.md)
 
-> Задача выполняется в одноразовом окружении. Execution backend — готовый
-> [r1s](https://github.com/mytecor/r1s) (`r1sd`-allocator над `containerd`); временный `LocalExecutor`
-> из плана убран.
+> Disposable OCI container предоставляет long-lived ACP endpoint внутри конкретного r1s run.
 
 - **Статус:** 🟡 начата — [f10-01](./roadmap/f10-disposable-worker/f10-01-package-r1s.md) (упаковка
   execution backend r1s/r1sd) закрыта 2026-09-16; [f10-02](./roadmap/f10-disposable-worker/f10-02-deploy-r1sd.md)
   (разворачивание `r1sd`-allocator на ноде) закрыта 2026-10-03 — `worker-runtime` активен на ноде,
-  allocator готов в mesh, `r1s`-клиент с ноды доходит до него. Следующим — общий immutable
-  Pi image и контейнерный Pi runtime (f10-04), затем worker credentials (f10-05) и acceptance (f10-06).
-  Что именно Lattice фиксирует поверх r1s (task spec, lifecycle) решается по ходу.
-- **Готово, когда:** полный цикл завершается результатом после уничтожения worker.
+  allocator готов в mesh, `r1s`-клиент с ноды доходит до него. Следующим — OCI agent image с
+  `git`, Pi, `pi-acp`, workspace bootstrap и ACP listener (f10-04), затем credentials (f10-05) и
+  disposability acceptance (f10-06).
+- **Готово, когда:** r1s запускает одноразовый agent container, а ACP client подключается к его
+  long-lived endpoint; уничтожение контейнера не теряет уникальное durable state.
 - **Зависит от:** [F8](#f8-интерактивный-pi), [F9](#f9-caches-и-artifacts)
   (только caches-часть; artifacts/S3 отложена)
 
-### [F11. Controller](./roadmap/f11-controller/README.md)
+### [F11. Git task pipeline](./roadmap/f11-git-task-pipeline/README.md)
 
-> Автоматизация очереди и жизненного цикла workers.
+> Git revisions превращаются в `TaskSpec`, а terminal `TaskResult` возвращается в Git.
 
-- **Статус:** ⏳ ещё не начата — ждёт стабилизации task specification и ручного worker
-  lifecycle в F10.
-- **Готово, когда:** задача переживает сбой controller/worker без потери или двойной публикации
-  результата.
-- **Зависит от:** [F10](#f10-disposable-worker)
+- **Статус:** ⏳ ещё не начата — архитектура и `task.md` contract зафиксированы в
+  [TASK_EXECUTION.md](./TASK_EXECUTION.md); реализация начинается с generic `git-watchd`, затем
+  `taskd` и deterministic dummy workload.
+- **Готово, когда:** task revision без terminal result обнаруживается и исполняется после restart
+  `git-watchd`, `taskd` или `agentd`, а terminal result фиксируется в Git.
+- **Зависит от:** [F10](#f10-agent-runtime)
+
+### [F19. Agent execution loop](./roadmap/f19-agent-execution-loop/README.md)
+
+> `agentd` выполняет `TaskSpec` через r1s, ACP tunnel и bounded verification loop.
+
+- **Статус:** ⏳ ещё не начата — после доказанного dummy pipeline F11.
+- **Готово, когда:** disposable agent меняет source repository, проверки проходят или возвращают
+  ACP feedback, а `agentd` выдаёт terminal `TaskResult` и восстанавливается без durable local state.
+- **Зависит от:** [F10](#f10-agent-runtime), [F11](#f11-git-task-pipeline)
+
+### [F20. Planning loop](./roadmap/f20-planning-loop/README.md)
+
+> Planning agent превращает разговор в Git commit с `task.md` через существующий ACP ingress.
+
+- **Статус:** ⏳ ещё не начата — после single-agent execution loop F19.
+- **Готово, когда:** разговор приводит к новой task revision, а весь путь до terminal result
+  запускается без прямого вызова `agentd` или r1s planning agent'ом.
+- **Зависит от:** [F11](#f11-git-task-pipeline), [F19](#f19-agent-execution-loop)
+
+### [F21. Multi-agent](./roadmap/f21-multi-agent/README.md)
+
+> Root agent запускает ephemeral child workloads через r1s и общается с ними по ACP tunnels.
+
+- **Статус:** ⏳ отложена до завершения single-agent pipeline.
+- **Готово, когда:** nested agents работают без durable Lattice control state; переживающая root
+  работа оформляется отдельной `task.md`.
+- **Зависит от:** [F19](#f19-agent-execution-loop)
 
 ### [F4. Полезная нагрузка](./roadmap/f4-payload/README.md)
 
@@ -48,7 +75,7 @@
   работают на homelab; drill без GitHub, полный bootstrap новой ноды и f4-05
   (Yggdrasil-ingress) отложены на потом.
 - **Готово, когда:** конфиг распространяется без GitHub; на ноде работает прикладной сервис.
-- **Не блокирует:** [F10](#f10-disposable-worker), [F11](#f11-controller) — зависят только
+- **Не блокирует:** [F10](#f10-agent-runtime), [F11](#f11-git-task-pipeline) — зависят только
   от f4-01 (Radicle seed/comin), который выполнен.
 - **Зависит от:** [F1](#f1-одна-железная-нода), [F2](#f2-секреты-и-идентичность)
 
@@ -59,7 +86,7 @@
 - **Статус:** 🟡 частично — caches-часть (f9-01..f9-03) выполнена и live-подтверждена 2026-09-14;
   artifacts/S3 намеренно отложена на сильно потом (не блокирует F10/F11).
 - **Готово, когда:** caches можно удалить без потери корректности, artifacts сохраняются отдельно.
-- **Не блокирует:** [F10](#f10-disposable-worker), [F11](#f11-controller).
+- **Не блокирует:** [F10](#f10-agent-runtime), [F11](#f11-git-task-pipeline).
 - **Зависит от:** [F4-01](./roadmap/f4-payload/f4-01-radicle-seed-comin.md), [F7](#f7-llm-gateway),
   [F8](#f8-интерактивный-pi)
 
@@ -83,7 +110,7 @@
   и воспроизводит acceptance из [f8-06](#f8-интерактивный-pi) — либо зафиксирован
   воспроизводимый отрицательный результат совместимости.
 - **Зависит от:** [F8](#f8-интерактивный-pi)
-- **Не блокирует:** [F10](#f10-disposable-worker), [F11](#f11-controller).
+- **Не блокирует:** [F10](#f10-agent-runtime), [F11](#f11-git-task-pipeline).
 
 ### [F6. Радио и mesh](./roadmap/f6-radio-mesh/README.md)
 
@@ -107,7 +134,7 @@
   сервисы без собственного SSO защищены Caddy ForwardAuth; Grafana входит через OIDC; M2M-пути не
   зависят от браузерной сессии; у API-сервиса с раздельными UI/API защищён только UI.
 - **Зависит от:** [F4](#f4-полезная-нагрузка), [F2](#f2-секреты-и-идентичность)
-- **Не блокирует:** [F10](#f10-disposable-worker), [F11](#f11-controller).
+- **Не блокирует:** [F10](#f10-agent-runtime), [F11](#f11-git-task-pipeline).
 
 ### [F16. Context transformation](./roadmap/f16-context-transformation/README.md)
 
@@ -149,7 +176,7 @@
   стартует декларативно на NixOS через systemd, CDP недоступен извне хоста, есть
   smoke/integration test полного пути.
 - **Зависит от:** [F4](#f4-полезная-нагрузка) (app services на ноде), [F2](#f2-секреты-и-идентичность)
-  (секреты через agenix), частично от [F8](#f8-интерактивный-pi) и [F10](#f10-disposable-worker)
+  (секреты через agenix), частично от [F8](#f8-интерактивный-pi) и [F10](#f10-agent-runtime)
   для интерфейса `browser_task` для Pi.
 
 ## Выполненные (в порядке закрытия)

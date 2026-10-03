@@ -1,7 +1,8 @@
 # Упаковать и закрепить r1s execution backend
 
-Фича: [F10 — disposable worker](./README.md). Зависит от F8 (контейнерный Pi runtime из
-[f8-06](../f8-pi-runtime/f8-06-network-acp-daemon.md) / [f10-04](./f10-04-pi-rpc-runner.md)) и
+Фича: [F10 — agent runtime](./README.md). Зависит от F8 (Pi runtime из
+[f8-06](../f8-pi-runtime/f8-06-network-acp-daemon.md) /
+[f10-04](./f10-04-agent-runtime-acp.md)) и
 готового [r1s](https://github.com/mytecor/r1s).
 
 ## Контекст
@@ -9,7 +10,7 @@
 Execution path F10 строится поверх r1s: `r1s`-клиент и `r1sd`-allocator должны появляться на ноде
 тем же декларативным способом, что и остальные пакеты Lattice, и воспроизводиться из flake lock
 state. Это подготовительная задача — она делает r1s доступным как flake-пакет, но не реализует
-executor/lifecycle поверх r1s (это остаётся более поздней работой цикла F10).
+agent runtime или lifecycle поверх r1s (это остаётся работой F10/F19).
 
 ## Что сделать
 
@@ -79,5 +80,6 @@ CLI намеренно нет.
 в GitHub Actions; локально — на x86_64-linux билдере или ноде. `doCheck = true` прогоняет
 `go test ./...` r1s в sandbox.
 
-Использование r1s как execution backend (executor contract, lifecycle, запуск worker), включая
-Lattice-специфичный контракт поверх r1s, — отдельная более поздняя работа цикла F10.
+Использование r1s как execution fabric (agent image, ACP tunnel и execution loop) — отдельная
+работа [F10](./README.md) и [F19](../f19-agent-execution-loop/README.md); Lattice-specific
+scheduler/lifecycle поверх r1s не вводится.

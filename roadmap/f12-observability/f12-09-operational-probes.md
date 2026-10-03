@@ -23,8 +23,9 @@ Process state `active` не доказывает, что сервис отвеч
       restore drill; не объявлять наличие файлов в backup-каталоге доказательством восстановления.
 - [ ] Добавить NTP synchronization/offset и сетевые packet loss/latency к выбранным стабильным
       endpoints; не использовать публичный endpoint как единственный source of truth.
-- [ ] После развёртывания F10 добавить метрики `r1sd`/`containerd`: allocator readiness,
-      running/failed workloads, queue depth и task duration, не дублируя application metrics.
+- [ ] После развёртывания F10/F19 добавить метрики `r1sd`/`containerd` и `agentd`: allocator
+      readiness, running/failed workloads и task duration, не вводя фиктивную Lattice queue depth
+      и не дублируя application metrics.
 - [ ] Добавить dashboard rows и alerts только после определения владельца, нормального диапазона
       и recovery action для каждого сигнала.
 

@@ -21,9 +21,9 @@ identity ноды, RAD_HOME=/persist/var/lib/radicle-peer), `lattice.pi-acp-daem
 impermanence. [f15-03](./f15-03-dev-loop-acceptance.md) — acceptance закрыт 2026-09-24:
 из ACP-сессии на ноде сделан doc-правка → commit → `git push publish main` → тот же commit в
 Radicle и GitHub → comin применил; нативная проверка flake прошла. Рабочая копия, ключи и опция cwd
-закрывают dev-loop; они же переиспользуются контейнерным Pi runtime из
-[f10-04](../f10-disposable-worker/f10-04-pi-rpc-runner.md), поэтому работа не выбрасывается при
-переходе к F10.
+закрывают dev-loop; Pi package/tool profile переиспользуется agent runtime из
+[f10-04](../f10-disposable-worker/f10-04-agent-runtime-acp.md), а workspace и credentials disposable
+container получает заново из явных task inputs.
 
 Задачи: [f15-01](./f15-01-workspace-checkout.md),
 [f15-02](./f15-02-publish-access.md), [f15-03](./f15-03-dev-loop-acceptance.md).
@@ -38,4 +38,4 @@ Radicle и GitHub → comin применил; нативная проверка 
 [F10](../f10-disposable-worker/README.md); auth на ACP endpoint — запись 4
 [BACKLOG.md](../BACKLOG.md); мульти-воркспейсы и несколько checkout'ов на ноде — по потребности
 после подтверждения одного цикла; запуск публикаций не-интерактивным агентом без человека —
-[F11](../f11-controller/README.md).
+[F19](../f19-agent-execution-loop/README.md).

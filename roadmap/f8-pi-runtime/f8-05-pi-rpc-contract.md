@@ -9,9 +9,9 @@
 со своим framing/streaming/exit. По решению локальный Pi TUI не используется, а клиентская работа
 идёт через ACP: надёжный сетевой ingress зафиксирован в
 [f8-06](./f8-06-network-acp-daemon.md). ACP endpoint владеет sessions и streaming, но не задаёт
-execution boundary. В [f10-04](../f10-disposable-worker/f10-04-pi-rpc-runner.md) host-side
-`pi-acp` запускает Pi RPC внутри контейнера через `PI_ACP_PI_COMMAND`; второго сетевого протокола
-при этом не появляется.
+execution boundary. В [f10-04](../f10-disposable-worker/f10-04-agent-runtime-acp.md) тот же Pi runtime
+работает внутри agent container за long-lived ACP endpoint; `agentd` подключается к нему через r1s
+tunnel. Второго agent protocol при этом не появляется.
 
 ## Что сделать
 
@@ -34,7 +34,7 @@ execution boundary. В [f10-04](../f10-disposable-worker/f10-04-pi-rpc-runner.md
 
 - [x] Один Pi package/config обслуживает интерактивных ACP-клиентов и остаётся source of truth для
       будущего контейнерного выполнения из
-      [f10-04](../f10-disposable-worker/f10-04-pi-rpc-runner.md).
+      [f10-04](../f10-disposable-worker/f10-04-agent-runtime-acp.md).
 - [x] ACP-путь не требует сохранённой Pi session или provider-specific параметров.
 
 ## Затрагиваемые файлы / слои
@@ -46,10 +46,10 @@ execution boundary. В [f10-04](../f10-disposable-worker/f10-04-pi-rpc-runner.md
 ## Открытые вопросы
 
 _нет_. Решение: Pi TUI не используется; отдельного сетевого Pi RPC endpoint нет. ACP endpoint из
-[f8-06](./f8-06-network-acp-daemon.md) — ingress/session plane, а контейнерный Pi runtime —
-execution plane F10.
+[f8-06](./f8-06-network-acp-daemon.md) — пользовательский ingress/session plane, а ACP endpoint
+внутри disposable container — execution plane F10.
 
 ## Источник уточнения
 
-Обсуждение «Контейнерный оркестратор Pi» зафиксировало разделение ACP ingress и контейнерного
-execution plane.
+Актуальное разделение ACP ingress и контейнерного execution plane зафиксировано в
+[TASK_EXECUTION.md](../../TASK_EXECUTION.md).

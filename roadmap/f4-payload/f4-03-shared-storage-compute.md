@@ -12,7 +12,9 @@
 
 - [x] Разделить source of truth, artifacts, control-plane state и disposable caches.
 - [x] Зафиксировать отсутствие общей persistent FS как зависимости workers.
-- [x] Разложить вычислительный контур на Pi runtime, disposable workers и controller в F7–F11.
+- [x] Первоначально разложить вычислительный контур на Pi runtime, disposable workers и controller
+      в F7–F11; позднейший cutover на Git/taskd/agentd зафиксирован в
+      [TASK_EXECUTION.md](../../TASK_EXECUTION.md).
 
 ## Критерий готовности
 
@@ -21,12 +23,13 @@
 
 ## Затрагиваемые файлы / слои
 
-- `ROADMAP.md`
-- `roadmap/f7-llm-gateway/README.md` — `f11-controller.md`
+- [ROADMAP.md](../../ROADMAP.md)
+- [TASK_EXECUTION.md](../../TASK_EXECUTION.md)
 
 ## Открытые вопросы
 
-_нет_. Конкретные продукты object storage, worker isolation и controller storage выбираются в
-соответствующих задачах F9–F11.
+_нет_. Object storage и worker isolation выбираются в соответствующих задачах. Прежний открытый
+вопрос controller storage снят: durable task/result state хранится в Git.
 
-**Статус:** выполнена 2026-09-05 как архитектурное планирование; реализация вынесена в F7–F11.
+**Статус:** выполнена 2026-09-05 как архитектурное планирование; актуальная реализация разложена в
+F10, F11 и F19–F21 по [TASK_EXECUTION.md](../../TASK_EXECUTION.md).

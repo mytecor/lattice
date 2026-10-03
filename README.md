@@ -21,6 +21,7 @@ Lattice - проект для построения сети связанных �
 - [AGENTS.md](./AGENTS.md) - обязательные правила для автоматизированных агентов
 - [ROADMAP.md](./ROADMAP.md) - роадмап (вехи / фичи / задачи)
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - архитектура сети, структура нод
+- [TASK_EXECUTION.md](./TASK_EXECUTION.md) - durable Git-задачи, r1s execution и ACP loop
 - [DEPLOYMENT.md](./DEPLOYMENT.md) - разворачивание нод
 - [CONTRIBUTING.md](./CONTRIBUTING.md) - добавление новых узлов в сеть
 - [KEY_MANAGEMENT.md](./KEY_MANAGEMENT.md) - ротация ключей и отзыв доступа
@@ -45,19 +46,18 @@ package, patches, spike-тест и legacy-ветки модуля); истор�
 логические классы `standard`/`stupid` по loopback; готов воспроизводимый tool profile с единым
 базовым контрактом `bash/git/tools` (`profiles/pi/base-tools.nix`). Сетевой ACP-клиент
 (Ferngeist) через общий endpoint создаёт параллельные сессии и подключается к единой live session;
-отдельный сетевой Pi RPC endpoint не вводится — execution boundary для F10 задаёт контейнерный
-runtime. В F12 развёрнут observability-стек: `/metrics` + отдельный loopback-листенер, структурированные
+отдельный сетевой Pi RPC endpoint не вводится. В F12 развёрнут observability-стек: `/metrics` + отдельный loopback-листенер, структурированные
 JSON-события request/attempt, Prometheus/Loki+Alloy/Grafana, дашборды «LLM Gateway», «Gateway
 runtime» и «Loki / Расследование»; конкретный запрос связывается по `request_id`.
 Готов исполняемый fabric
 [r1s](https://github.com/mytecor/r1s): децентрализованное выполнение OCI workload поверх Reticulum
-(клиент `r1s`, allocator `r1sd` над `containerd`). Он становится execution backend для F10
-(disposable worker) и F11 (controller); временный `LocalExecutor` из плана убран.
-Следующая вертикаль — F10 (disposable worker): execution backend (`r1s` `r1sd` над `containerd`)
-уже зафиксирован, задача f9-01..f9-03 (caches) закрыта, artifacts/S3-часть
-F9 отложена на сильно потом и не блокирует F10/F11. Затем controller.
+(клиент `r1s`, allocator `r1sd` над `containerd`). Он является готовым execution fabric;
+временный `LocalExecutor` и Lattice-owned scheduler из плана убраны. Следующая вертикаль описана в
+[TASK_EXECUTION.md](./TASK_EXECUTION.md): F10 строит ACP endpoint в disposable agent container,
+F11 добавляет Git task pipeline, F19 — `agentd` и verification loop, F20 — planning agent.
+Задачи f9-01..f9-03 (caches) закрыты, artifacts/S3-часть F9 отложена и не блокирует эту вертикаль.
 Остатки F4 (drill без GitHub, bootstrap новой ноды, f4-05) тоже отложены на потом
-и не блокируют старт цикла F10→F11.
+и не блокируют старт цикла F10→F11→F19→F20.
 
 ## Направления развития
 

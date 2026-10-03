@@ -1,55 +1,49 @@
-# F10. Disposable worker
+# F10. Agent runtime
 
-Одна задача выполняется в чистом одноразовом окружении: worker получает спецификацию, клонирует
-репозиторий, создаёт environment, запускает Pi RPC, публикует результат и уничтожается. Ни checkout,
-ни dependency directories, ни Pi session не являются состоянием продолжения задачи.
+F10 создаёт disposable OCI runtime агента: внутри конкретного r1s execution работает long-lived
+ACP endpoint, а `agentd` подключается к нему через r1s tunnel как обычный ACP client. Контейнер
+содержит workspace, Git, Pi, `pi-acp` и ACP listener; отдельного Lattice-specific Pi RPC нет.
 
-Execution path строится поверх [r1s](https://github.com/mytecor/r1s) — готового децентрализованного
-OCI workload fabric поверх Reticulum. `r1sd`-allocator выполняет OCI workload через `containerd`;
-Lattice не строит собственный scheduler/allocator и не протаскивает allocation protocol внутрь.
-Ранее планировавшийся тонкий временный `LocalExecutor` как замена r1s больше не нужен: r1s готов и
-становится execution backend. Интерактивный оркестратор и disposable workers используют один Pi
-runtime и один OCI image: различаются task context, workspace, разрешения и политика persistence, но
-не Pi package, model config, tools или extensions.
+Execution fabric — готовый [r1s](https://github.com/mytecor/r1s). Lattice не добавляет scheduler,
+allocator, worker registry, heartbeat или execution leases. Полная граница вычислительного контура
+описана в [TASK_EXECUTION.md](../../TASK_EXECUTION.md).
 
-Зависит от [F8](../f8-pi-runtime/README.md) и [F9](../f9-cache-artifact-plane/README.md). Соответствует
-[вехе 10](../../ROADMAP.md#f10-disposable-worker).
+Зависит от [F8](../f8-pi-runtime/README.md) и caches-части
+[F9](../f9-cache-artifact-plane/README.md). Соответствует
+[вехе 10](../../ROADMAP.md#f10-agent-runtime).
 
-Задачи: [f10-01](./f10-01-package-r1s.md),
-[f10-02](./f10-02-deploy-r1sd.md),
-[f10-04](./f10-04-pi-rpc-runner.md),
-[f10-05](./f10-05-worker-credentials.md),
-[f10-06](./f10-06-disposability-acceptance.md).
+Задачи: [f10-01](./f10-01-package-r1s.md) и [f10-02](./f10-02-deploy-r1sd.md) закрыты и
+сохраняют историю подготовки r1s; открытая реализация —
+[f10-04](./f10-04-agent-runtime-acp.md),
+[f10-05](./f10-05-agent-credentials.md) и
+[f10-06](./f10-06-runtime-acceptance.md).
 
-**Критерий готовности:** вручную запущенный worker выполняет задачу от чистого старта до
-commit/push/result, после уничтожения запускается заново и продолжает только из repo state, task
-specification и явно сохранённых artifacts. На worker нет уникального состояния или постоянных
-provider credentials.
+**Критерий готовности:** r1s запускает immutable agent image; контейнер создаёт workspace из
+явных source repository/revision и принимает ACP; клиент подключается через r1s tunnel;
+уничтожение контейнера не теряет уникальное durable state и повторный старт возможен только из
+объявленных входов.
 
-**Осознанно откладываем (до F11):** очередь, leases, автоматический provisioning и retry задач.
+**Осознанно откладываем:** Git task reconciliation — до
+[F11](../f11-git-task-pipeline/README.md); `agentd`, verification и recovery loop — до
+[F19](../f19-agent-execution-loop/README.md); nested agents — до
+[F21](../f21-multi-agent/README.md).
 
-## Зафиксированная архитектура
+## Зафиксированные границы
 
 ```text
-ACP client
-    ↓
-hydra-acp → pi-acp                         host ingress/session plane
-                ↓ PI_ACP_PI_COMMAND
-        orchestrator Pi container
-                ↓ pi-subagents external-job
-        /run/lattice/worker.sock
-                ↓
-        r1s request → r1sd allocator → containerd
-                ↓
-        disposable Pi container
+agent container
+├── workspace
+├── git
+├── Pi
+├── pi-acp
+└── ACP listener
 ```
 
-- [f10-01](./f10-01-package-r1s.md) фиксирует r1s как flake-пакет (клиент `r1s` + allocator
-  `r1sd`) с го-тулчейном 1.27.1 из основного пина nixpkgs; закрыто 2026-09-16.
-- [f10-02](./f10-02-deploy-r1sd.md) разворачивает `r1sd`-allocator на ноде как NixOS-модуль
-  (`modules/worker-runtime/`): systemd-сервис над containerd, строгий песочник, включение на
-  ноде и smoke-проверка соединения клиента `r1s` с allocator; закрыто 2026-10-03 — сервис
-  активен на ноде, allocator готов в mesh (`r1sd ready identity=ef33e0…`), клиент с ноды
-  доходит до allocator.
-- [f10-04](./f10-04-pi-rpc-runner.md) фиксирует host-side `pi-acp`, контейнерный Pi через
-  `PI_ACP_PI_COMMAND` и интеграцию с `pi-subagents` через внешний job provider.
+- Контейнер получает source repository, source revision, task context и ограниченные
+  credentials/capabilities.
+- ACP — единственный agent protocol. Host-side ingress F8 и ACP endpoint внутри workload имеют
+  разные роли и не делят writable session state.
+- Session, workspace и конкретный r1s execution ephemeral. Task/result state хранится в Git.
+- Runtime не содержит queue, task state machine, retry scheduler или knowledge о `task.md`.
+- Общий image может использоваться интерактивным и unattended flow, но lifetime и persistence
+  задаются вызывающей стороной.

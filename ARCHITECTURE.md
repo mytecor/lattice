@@ -172,6 +172,19 @@ Mesh-схема `http` по умолчанию; с Cloudflare-токеном —
 [f8-06](./roadmap/f8-pi-runtime/f8-06-network-acp-daemon.md) и в
 [`modules/pi-acp-daemon`](./modules/pi-acp-daemon/README.md).
 
+## Выполнение durable задач
+
+Целевой вычислительный контур зафиксирован в
+[TASK_EXECUTION.md](./TASK_EXECUTION.md). Git хранит immutable revisions постановок `task.md` и
+terminal results; `meshbus` переносит сообщения между узкими сервисами; `r1s` выполняет OCI
+workloads; `git-watchd` сообщает об изменениях Git revisions; `taskd` reconciles actionable tasks;
+`agentd` ведёт ACP execution и verification loop.
+
+Общего controller, отдельного `workd`, Lattice-owned queue, scheduler, worker registry, heartbeat
+и execution leases в архитектуре нет. Runtime state сервисов, конкретный r1s execution и ACP
+session считаются ephemeral. После сбоя незавершённая задача восстанавливается из Git и
+возможностей logical run в r1s.
+
 ## LLM gateway
 
 Runtime F7 — собственный небольшой Go HTTP proxy поверх Bifrost Core, собранный пакетом

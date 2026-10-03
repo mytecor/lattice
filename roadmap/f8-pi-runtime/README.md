@@ -1,9 +1,9 @@
 # F8. Интерактивный Pi runtime
 
 Pi — основной harness разработки на NixOS-ноде. Его runtime, конфигурация моделей и набор
-tools едины для интерактивной работы и будущего stateless-режима workers. Локальный Pi TUI по
-решению не используется: интерактивный ingress идёт через ACP, а будущая F10 execution boundary
-запускает тот же Pi RPC runtime внутри контейнера, не вводя второй клиентский endpoint.
+tools едины для интерактивной работы и будущего stateless-режима agents. Локальный Pi TUI по
+решению не используется: интерактивный ingress идёт через ACP, а F10 execution boundary запускает
+тот же runtime за ACP endpoint внутри контейнера, не вводя второй agent protocol.
 
 Интерактивная ветка публикует Pi как постоянный сетевой ACP daemon: один endpoint обслуживает
 динамические параллельные сессии и позволяет нескольким клиентам подключаться к одной live session.
@@ -25,8 +25,9 @@ boundary будущих workers.
 [f8-06](./f8-06-network-acp-daemon.md)). [f8-04](./f8-04-interactive-acceptance.md) и
 [f8-05](./f8-05-pi-rpc-contract.md) закрыты по решению «Pi TUI не используется, работа идёт через
 ACP»: интерактивная acceptance выполнена через ACP, отдельного сетевого Pi RPC-контракта нет. ACP
-endpoint остаётся ingress/session plane, а execution boundary для F10 задаёт контейнерный Pi runtime
-из [f10-04](../f10-disposable-worker/f10-04-pi-rpc-runner.md). Follow-up
+endpoint остаётся пользовательским ingress/session plane, а execution boundary для F10 задаёт
+контейнерный ACP runtime
+из [f10-04](../f10-disposable-worker/f10-04-agent-runtime-acp.md). Follow-up
 [f8-07](./f8-07-telegram-acprouter.md) (Telegram-клиент ACP через `vcoderun/acprouter` против
 закреплённого endpoint f8-06) заведён 2026-09-18, ещё не начат.
 
@@ -34,8 +35,9 @@ endpoint остаётся ingress/session plane, а execution boundary для F1
 модели и выполняет реальную задачу с `bash/git/tools` через ACP-клиента (Ferngeist) — Pi TUI не
 используется, интерактивная работа ведётся через ACP; provider-specific настройки в Pi
 отсутствуют; сетевые ACP-клиенты через один endpoint создают параллельные сессии и подключаются к
-общей live session. Тот же runtime имеет проверенный RPC mode, но F10 запускает его за контейнерной
-execution boundary; закреплённый ACP endpoint из [f8-06](./f8-06-network-acp-daemon.md) остаётся
-клиентской точкой входа, отдельный сетевой Pi RPC endpoint не вводится.
+общей live session. F10 запускает тот же Pi package/tool profile за ACP endpoint внутри
+контейнерной execution boundary; закреплённый ACP endpoint из
+[f8-06](./f8-06-network-acp-daemon.md) остаётся пользовательской точкой входа, отдельный Pi RPC
+protocol не вводится.
 
 **Осознанно откладываем (до F10):** unattended execution, sandbox и жизненный цикл worker.

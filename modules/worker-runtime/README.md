@@ -1,6 +1,6 @@
 # Worker runtime module (r1sd allocator)
 
-Модуль `lattice.worker-runtime` (F10 — disposable worker) разворачивает
+Модуль `lattice.worker-runtime` (F10 — agent runtime) разворачивает
 [`r1sd`](../../packages/r1s/package.nix) — allocator исполняемого backend Lattice — как
 декларативный foreground systemd-сервис, аналогично остальным сервисам ноды. Задача
 [f10-02](../../roadmap/f10-disposable-worker/f10-02-deploy-r1sd.md).
@@ -27,9 +27,10 @@
 ## Канал доступа к allocator
 
 `r1sd` общается по **RNS** (Reticulum), а не через локальный loopback/AF_UNIX сокет. Поэтому
-«/run/lattice/worker.sock» из диаграммы F10 — это не канал allocator'а, а клиентский локальный
-сокет `r1s serve` (используется на шаге f10-04, когда worker-брокер обращается к r1s).
-Данный модуль поднимает сам allocator: `r1s`-клиент с той же ноды доходит до него по RNS.
+Данный модуль поднимает только allocator: `r1s`-клиент с той же ноды доходит до него по RNS.
+Lattice-owned worker broker и локальный `worker.sock` в целевой архитектуре отсутствуют;
+`agentd` использует public library API r1s и открывает tunnel к ACP endpoint workload, как описано
+в [TASK_EXECUTION.md](../../TASK_EXECUTION.md).
 
 ## RNS shared instance (F22)
 
@@ -121,7 +122,7 @@ cluster credentials из `~/.config/r1s/clusters`), сервис ордерит�
 ## Ограничения / что остаётся на f10-04
 
 Данный модуль поднимает backend (allocator) и доказывает smoke-соединение клиента до него
-([f10-02](../../roadmap/f10-disposable-worker/f10-02-deploy-r1sd.md)). Контракт worker →
-`r1s serve` (локальный сокет `/run/lattice/worker.sock`), broker `external-job`
-(`pi-lattice-workers`) и запуск контейнерного Pi через `r1s run` — отдельная работа f10-04.
-Execution tunnels (`--tunnel-enabled`) выключены: для f10-02 live workload не запускается.
+([f10-02](../../roadmap/f10-disposable-worker/f10-02-deploy-r1sd.md)). OCI agent image, workspace
+bootstrap, ACP listener и подключение через r1s tunnel — отдельная работа
+[f10-04](../../roadmap/f10-disposable-worker/f10-04-agent-runtime-acp.md). Execution tunnels
+(`--tunnel-enabled`) выключены: для f10-02 live workload не запускается.
