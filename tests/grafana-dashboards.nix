@@ -156,25 +156,36 @@ assert lib.hasInfix "request_id=\"\${request_id}\"" (joinExprs lokiDb);
 assert !lib.hasInfix "request_id=~\"\${request_id}\"" (joinExprs llm);
 assert !lib.hasInfix "request_id=~\"\${request_id}\"" (joinExprs lokiDb);
 
-# --- f12-06 native_model dimension (per-provider dashboard) ---
+# --- f12-06 native_model dimension (common provider dashboard) ---
 # The provider's real model id (native_model) is now a first-class dimension:
 # every metric carries it and the dashboards slice by it instead of the logical
 # model (which is identical across providers and hid who actually answered).
-# 1. A dedicated per-provider dashboard exists with a stable uid and repeats its
-#    block per provider value (row repeat), so each provider gets its own view.
+# 1. A dedicated provider-model dashboard exists with a stable uid and shows
+#    one *common* block (no row per provider, no row repeat): each panel shows
+#    all selected providers together, series split by provider.
 let providersDb = byUid "gateway-providers"; in
 assert providersDb.title != "";
-assert lib.any (p: (p.type or "") == "row" && (p.repeat or "") == "provider")
+assert lib.all
+  (p: (p.type or "") != "row" || (p.repeat or null) == null)
   providersDb.panels;
 # 2. All metric-bearing dashboards filter/slice by native_model, never by the
 #    plain model label (the old dimension that hid which provider answered).
 assert lib.hasInfix "native_model=" (joinExprs llm);
 assert lib.hasInfix "native_model=" (joinExprs providersDb);
 assert lib.hasInfix "label_values(llm_requests_total, native_model)" (builtins.toJSON llm.templating.list);
-# 3. The per-provider dashboard keeps each row scoped to exactly one provider:
-#    every panel filters by provider = "$provider" (exact match), not a regex.
-assert lib.hasInfix "provider=\"$provider\"" (joinExprs providersDb);
-assert !lib.hasInfix "provider=~\"$provider\"" (joinExprs providersDb);
+# 3. The common dashboard scopes each panel to the selected provider(s) with a
+#    regex match against the multi-value $provider template variable (not an
+#    exact single-provider match — every panel must see all selected
+#    providers together), and every series carries the provider label.
+assert lib.hasInfix "provider=~\"$provider\"" (joinExprs providersDb);
+assert !lib.hasInfix "provider=\"$provider\"" (joinExprs providersDb);
+# 3b. Every non-row panel splits its series by provider: either it groups
+#     with a `by (provider...)` clause or the metric natively carries the
+#     provider label, and the legend renders the provider so one provider's
+#     series are never conflated with another's.
+assert lib.all
+  (p: lib.any (t: lib.hasInfix "{{provider}}" (t.legendFormat or "")) (p.targets or [ ]))
+  (lib.filter (p: (p.type or "") == "timeseries") providersDb.panels);
 # 4. The f12-05 behaviour must survive: no plain `model=~"$model"` filter (the
 #    old logical-model dimension is gone from the overview too).
 assert !lib.hasInfix "model=~\"$model\"" (joinExprs llm);
@@ -197,5 +208,5 @@ pkgs.runCommand "grafana-dashboards-contract" { } ''
   dashboards: ${builtins.concatStringsSep ", " (map (d: d.uid) dashboards)}
   environment label (scrape): ${(builtins.elemAt gatewayJob.static_configs 0).labels.environment}
   f12-05 polish: status used, p50/p99 percentiles, data links to investigation
-  f12-06 native_model: per-provider dashboard repeats per provider, native_model dimension on overview" > "$out"
+  f12-06 native_model: common provider-model dashboard (no row repeat), native_model dimension on overview" > "$out"
 ''
