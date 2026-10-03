@@ -67,7 +67,9 @@ let
   ] ++ lib.optionals (cfg.containerdSnapshotter != "")
     [ "--containerd-snapshotter" cfg.containerdSnapshotter ]
   ++ lib.optionals (cfg.node != null)
-    [ "--node" cfg.node ];
+    [ "--node" cfg.node ]
+  ++ lib.optionals cfg.tunnelEnabled
+    [ "--tunnel-enabled" ];
 
   # Allocator service dependencies: the shared RNS instance and containerd.
   # F22 r1s/r1sd attach as clients to an already-running shared RNS instance
@@ -124,6 +126,9 @@ in
         '';
       }
     ];
+
+    # nerdctl on the host PATH for OCI image management / IPFS registry facade CLI.
+    environment.systemPackages = [ cfg.package pkgs.nerdctl ];
 
     # Enable containerd and expose its gRPC socket to the r1s group only
     # (0660, group = r1s) — r1sd is the sole local consumer, nothing opens the
@@ -195,12 +200,11 @@ in
         RestartSec = 5;
         UMask = "0077";
 
-        # Strict sandbox (modeled on pi-acp-daemon). r1sd talks over RNS via
-        # the shared-instance Unix socket (AF_UNIX) and keeps outbound TCP for
-        # the tunnel edge/data plane when enabled (AF_INET/AF_INET6); containerd
-        # gRPC is AF_UNIX. No listen sockets, no capabilities, no netlink.
-        AmbientCapabilities = "";
-        CapabilityBoundingSet = "";
+        # Strict by default. Execution tunnels additionally enter the task's
+        # network namespace and bring up its loopback interface, which upstream
+        # r1s explicitly requires CAP_SYS_ADMIN + CAP_NET_ADMIN for.
+        AmbientCapabilities = lib.optionals cfg.tunnelEnabled [ "CAP_SYS_ADMIN" "CAP_NET_ADMIN" ];
+        CapabilityBoundingSet = lib.optionals cfg.tunnelEnabled [ "CAP_SYS_ADMIN" "CAP_NET_ADMIN" ];
         LockPersonality = true;
         NoNewPrivileges = true;
         PrivateDevices = true;
@@ -211,7 +215,10 @@ in
         ProtectKernelLogs = true;
         ProtectKernelModules = true;
         ProtectKernelTunables = true;
-        ProtectProc = "invisible";
+        # Tunnel setup resolves /proc/<container-pid>/ns/net. Hide other
+        # processes when tunnels are disabled, expose the namespace path only
+        # for the explicitly enabled tunnel runtime.
+        ProtectProc = if cfg.tunnelEnabled then "default" else "invisible";
         ProtectSystem = "full";
         RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
         RestrictRealtime = true;

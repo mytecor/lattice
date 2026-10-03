@@ -442,6 +442,14 @@ in
   lattice.worker-runtime = lib.mkIf hasR1sClusterToken {
     enable = true;
     clusterTokenFile = config.age.secrets.r1s-cluster-token.path;
+    tunnelEnabled = true;
+  };
+
+  # f10-04: IPFS-backed OCI registry facade (Kubo daemon + nerdctl registry serve
+  # on 127.0.0.1:5050). Distributes immutable agent runtime images over IPFS to
+  # the local containerd daemon without central registries.
+  lattice.ipfs-registry-facade = lib.mkIf hasR1sClusterToken {
+    enable = true;
   };
 
   # f9-03: Verdaccio npm caching proxy. Порт и остальные runtime-значения приходят
@@ -747,6 +755,13 @@ in
     # chown fails on a not-yet-created user). Ownership is established by the
     # worker-runtime service's StateDirectory at first start instead.
     { directory = "/var/lib/worker-runtime"; mode = "0700"; }
+  ] ++ lib.optionals hasR1sClusterToken [
+    # f10-04: IPFS repo and pinned image blocks survive reboots (impermanence).
+    # The persistent source must be owned by the service user before ipfs'
+    # ExecStartPre reads or initializes the repository. Keep the entry
+    # conditional because services.kubo defines that user only when enabled.
+    { directory = "/var/lib/ipfs-daemon"; user = "ipfs"; group = "ipfs"; mode = "0750"; }
+  ] ++ [
     # f15-02: Radicle peer profile of the node (rad-peer / RAD_HOME) survives
     # reboots. The seed profile (/var/lib/radicle) has its own entry above.
     { directory = radiclePeerHome; user = "root"; group = "root"; mode = "0700"; }

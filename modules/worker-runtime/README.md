@@ -17,8 +17,10 @@
   остаётся на loopback-юникс, наружу не публикуется.
 - Запускает `r1sd` от выделенного системного пользователя `r1s` в строгом песочнике:
   только `AF_UNIX` (containerd-сокет и shared-instance RNS-сокет) и исходящий
-  `AF_INET`/`AF_INET6` (tunnel data plane при `--tunnel-enabled`), без capabilities,
-  `NoNewPrivileges`, `ProtectSystem=full`, `PrivateTmp`.
+  `AF_INET`/`AF_INET6` (tunnel data plane при `--tunnel-enabled`), `NoNewPrivileges`,
+  `ProtectSystem=full`, `PrivateTmp`. По умолчанию capabilities отсутствуют; при явном
+  `tunnelEnabled = true` добавляются только требуемые upstream r1s `CAP_SYS_ADMIN` и
+  `CAP_NET_ADMIN`, а `ProtectProc` ослабляется до `default` для доступа к task netns.
 - Первый запуск (`preStart`) выполняет `r1sd cluster join <token>` из agenix-секрета и
   сохраняет **ID кластера** в `StateDirectory` (`cluster-id`); daemon далее всегда стартует с
   позиционным селектором `r1sd <allocator-флаги> <cluster-id>`. Credential кластера живёт в
@@ -103,6 +105,7 @@ age.secrets.r1s-cluster-token = lib.mkIf (builtins.pathExists ./secrets/r1s-clus
 | `capacity` | str | `default=1` | ресурсные capacity allocator'а (`--capacity`) |
 | `node` | nullOr str | `null` | JSON node capabilities для placement (`--node`) |
 | `announceInterval` | str | `5m` | интервал анонсов (`--announce-interval`) |
+| `tunnelEnabled` | bool | `false` | туннели исполнения (`--tunnel-enabled`) |
 | `containerdAddress` | str | `/run/containerd/containerd.sock` | сокет containerd |
 | `containerdNamespace` | str | `r1s` | namespace containerd |
 | `containerdSnapshotter` | str | `""` | snapshotter (дефолт демона при пустом) |
@@ -116,13 +119,11 @@ age.secrets.r1s-cluster-token = lib.mkIf (builtins.pathExists ./secrets/r1s-clus
 запускается только при наличии `clusterTokenFile`, `ExecStart` несёт `--identity` и позиционный
 селектор кластера (**без** `--rns-config`), `HOME` указывает на `StateDirectory` (для разрешения
 cluster credentials из `~/.config/r1s/clusters`), сервис ордерится после rns-server и containerd,
-сокет containerd настраивается под группу `r1s`, песочник не открывает лишних address families
-и не даёт capabilities.
+сокет containerd настраивается под группу `r1s`, песочник не открывает лишних address families,
+а tunnel-режим получает только capabilities для task netns.
 
-## Ограничения / что остаётся на f10-04
+## Интеграция с agent runtime
 
-Данный модуль поднимает backend (allocator) и доказывает smoke-соединение клиента до него
-([f10-02](../../roadmap/f10-disposable-worker/f10-02-deploy-r1sd.md)). OCI agent image, workspace
-bootstrap, ACP listener и подключение через r1s tunnel — отдельная работа
-[f10-04](../../roadmap/f10-disposable-worker/f10-04-agent-runtime-acp.md). Execution tunnels
-(`--tunnel-enabled`) выключены: для f10-02 live workload не запускается.
+OCI agent image, workspace bootstrap, ACP listener и подключение через r1s tunnel описаны в
+[f10-04](../../roadmap/f10-disposable-worker/f10-04-agent-runtime-acp.md). Модуль оставляет
+execution tunnels выключенными по умолчанию; production-нода включает их явно рядом с allocator.

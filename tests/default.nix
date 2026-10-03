@@ -100,6 +100,17 @@ in
     workerRuntimeModule = self.nixosModules.worker-runtime;
   };
 
+  # f10-04: IPFS registry facade module contract test.
+  ipfs-registry-facade = import ./ipfs-registry-facade.nix {
+    inherit nixpkgs pkgs;
+    ipfsRegistryFacadeModule = self.nixosModules.ipfs-registry-facade;
+  };
+
+  # f10-04: OCI agent runtime image and IPFS distribution contract test.
+  agent-image = import ./agent-image.nix {
+    inherit nixpkgs pkgs;
+  };
+
   # F17: dynamic Wi-Fi hotspot switch based on Ethernet internet uplink.
   hotspot-switch = import ./hotspot-switch.nix {
     inherit nixpkgs pkgs;

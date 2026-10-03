@@ -19,6 +19,7 @@ let
         lattice.worker-runtime = {
           enable = true;
           clusterTokenFile = tokenFile;
+          tunnelEnabled = true;
           # Exercise the optional flag path (flat argv) so a nested-list
           # regression is caught at eval time.
           node = ''{"labels":{"region":"eu"}}'';
@@ -66,9 +67,11 @@ assert containerdSettings.grpc.gid == cfg.gid;
 assert config.users.groups.r1s.gid == cfg.gid;
 assert config.users.users.r1s.uid == cfg.uid;
 assert !(builtins.hasAttr "address" containerdSettings.grpc);
-# Strict sandbox: no capabilities, no netlink, no listening socket required.
-assert unit.serviceConfig.AmbientCapabilities == "";
-assert unit.serviceConfig.CapabilityBoundingSet == "";
+# Tunnel mode gets only the two capabilities required to enter the task netns
+# and initialize loopback; it must also be able to resolve /proc/<pid>/ns/net.
+assert lib.all (capability: lib.elem capability unit.serviceConfig.AmbientCapabilities) [ "CAP_SYS_ADMIN" "CAP_NET_ADMIN" ];
+assert lib.all (capability: lib.elem capability unit.serviceConfig.CapabilityBoundingSet) [ "CAP_SYS_ADMIN" "CAP_NET_ADMIN" ];
+assert unit.serviceConfig.ProtectProc == "default";
 assert unit.serviceConfig.NoNewPrivileges == true;
 assert lib.elem "AF_UNIX" unit.serviceConfig.RestrictAddressFamilies;
 assert lib.elem "AF_INET" unit.serviceConfig.RestrictAddressFamilies;
@@ -99,6 +102,8 @@ pkgs.runCommand "worker-runtime-evaluation" { } ''
     || { echo 'no --containerd-address' >&2; exit 1; }
   grep -q -- '--containerd-namespace r1s' "$WRAPPER" \
     || { echo 'no --containerd-namespace' >&2; exit 1; }
+  grep -q -- '--tunnel-enabled' "$WRAPPER" \
+    || { echo 'no --tunnel-enabled' >&2; exit 1; }
   grep -q -- '--announce-interval 5m' "$WRAPPER" \
     || { echo 'no --announce-interval' >&2; exit 1; }
   grep -q -- '--containerd-snapshotter overlayfs' "$WRAPPER" \

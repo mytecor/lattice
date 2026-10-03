@@ -58,6 +58,9 @@ public config, `caddy adapt --validate`, generated JSON),
 native snake_case JSON fields pass through unchanged and the removed
 `routingRules` DSL fails fast on evaluation),
 [`pi-acp-daemon.nix`](./pi-acp-daemon.nix),
+[`worker-runtime.nix`](./worker-runtime.nix),
+[`ipfs-registry-facade.nix`](./ipfs-registry-facade.nix),
+[`agent-image.nix`](./agent-image.nix),
 [`comin-source-sync.nix`](./comin-source-sync.nix).
 
 ### Build/runtime smoke tests

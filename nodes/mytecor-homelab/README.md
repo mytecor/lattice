@@ -301,7 +301,8 @@ comin status
 `r1sd`-allocator (F10 execution backend) как foreground systemd-сервис от выделенного
 пользователя `r1s`, поверх локального `containerd`, с F22-контрактом: без частного
 Reticulum-стека, `r1sd` подключается как клиент к общему RNS shared instance на ноде
-(см. `modules/worker-runtime/README.md`).
+и принимает execution tunnels для доступа к ACP endpoint workload. Полный контракт описан в
+[`modules/worker-runtime`](../../modules/worker-runtime/README.md).
 Сервис включается декларативно после того, как оператор создаст join-токен кластера. Токен
 создан и зашифрован 2026-09-27 (`r1s-cluster-token.age`, реципиенты `[admin node]`, публичный
 `Cluster ID` `fea879387416a033216590028a2ee8776790ced4e2af949fbdcc7e1215d3a5b3`); до попадания
@@ -331,6 +332,23 @@ journalctl -u worker-runtime -n 50 --no-pager   # r1sd ready identity=… destin
 Identity allocator'а (`/var/lib/worker-runtime/identity`) генерируется при первом старте и
 переживает reboot через `/persist`. Полный контракт и оставшаяся smoke-валидация — в
 [`f10-02`](../../roadmap/f10-disposable-worker/f10-02-deploy-r1sd.md).
+
+## IPFS Registry Facade (ipfs-registry-facade, f10-04)
+
+Модуль [`lattice.ipfs-registry-facade`](../../modules/ipfs-registry-facade/README.md)
+поднимает локальный IPFS daemon (Kubo) и OCI registry фасад (`nerdctl ipfs registry serve`)
+на `127.0.0.1:5050` для распространения immutable OCI-образов агентского рантайма
+(`lattice-agent-runtime`) без зависимости от внешних реестров.
+Включается синхронно с `worker-runtime` при наличии секрета кластера `r1s`. Состояние
+Kubo и сохранённые пины живут в `/var/lib/ipfs-daemon` и сохраняются между перезагрузками
+через `/persist`.
+
+Smoke:
+
+```sh
+systemctl is-active ipfs ipfs-registry-facade
+curl -s http://127.0.0.1:5050/v2/
+```
 
 ## Root password
 

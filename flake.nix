@@ -70,6 +70,11 @@
       flake = false;
     };
 
+    module-ipfs-registry-facade = {
+      url = "path:./modules/ipfs-registry-facade";
+      flake = false;
+    };
+
     module-wireless = {
       url = "path:./modules/wireless";
       flake = false;
@@ -151,6 +156,7 @@
     module-pi,
     module-pi-acp-daemon,
     module-worker-runtime,
+    module-ipfs-registry-facade,
     module-wireless,
     module-hotspot-switch,
     module-git-cache-proxy,
@@ -226,6 +232,30 @@
           jev-ultrafast = final.callPackage ./packages/jev-ultrafast/package.nix { };
           # F10: r1s execution backend (client + r1sd allocator); needs go_1_27 = 1.27.1 (go.mod).
           r1s = final.callPackage ./packages/r1s/package.nix { go = final.go_1_27; };
+          # F10: immutable OCI agent runtime image and IPFS distribution tools.
+          agent-image = final.callPackage ./packages/agent-image/package.nix {
+            pi = final.lattice.pi;
+            pi-acp = final.lattice.pi-acp;
+            pi-tool-profile = final.lattice.pi-tool-profile;
+            hydra-acp = final.lattice.hydra-acp;
+          };
+          publish-agent-image = final.writeShellApplication {
+            name = "publish-agent-image";
+            runtimeInputs = [
+              final.coreutils
+              final.gnugrep
+              final.gnused
+              final.jq
+              final.nerdctl
+              final.nix
+            ];
+            text = builtins.readFile ./scripts/publish-agent-image.sh;
+          };
+          pull-agent-image = final.writeShellApplication {
+            name = "pull-agent-image";
+            runtimeInputs = [ final.coreutils final.jq final.nerdctl ];
+            text = builtins.readFile ./scripts/pull-agent-image.sh;
+          };
 
           # f8-03: воспроизводимый tool profile для Pi-рантайма.
           pi-tool-profile = final.buildEnv {
@@ -276,9 +306,29 @@
           };
         in
         {
-          inherit (pkgs.lattice) acp-normalizer acp-web git-cache-proxy hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
+          inherit (pkgs.lattice) acp-normalizer acp-web agent-image git-cache-proxy hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
+        });
+
+      apps = forAllSystems (system:
+        let
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ overlay ];
+            config.allowUnfreePredicate = package:
+              builtins.elem (nixpkgs.lib.getName package) [ "rns-server" "rnsh" ];
+          };
+        in
+        {
+          publish-agent-image = {
+            type = "app";
+            program = "${pkgs.lattice.publish-agent-image}/bin/publish-agent-image";
+          };
+          pull-agent-image = {
+            type = "app";
+            program = "${pkgs.lattice.pull-agent-image}/bin/pull-agent-image";
+          };
         });
 
       devShells = forAllSystems (system:
@@ -306,6 +356,7 @@
         pi.imports = [ "${module-pi}" ];
         pi-acp-daemon.imports = [ "${module-pi-acp-daemon}" ];
         worker-runtime.imports = [ "${module-worker-runtime}" ];
+        ipfs-registry-facade.imports = [ "${module-ipfs-registry-facade}" ];
         wireless.imports = [ "${module-wireless}" ];
         hotspot-switch.imports = [ "${module-hotspot-switch}" ];
         git-cache-proxy.imports = [ "${module-git-cache-proxy}" ];
@@ -326,6 +377,7 @@
           self.nixosModules.pi
           self.nixosModules.pi-acp-daemon
           self.nixosModules.worker-runtime
+          self.nixosModules.ipfs-registry-facade
           self.nixosModules.wireless
           self.nixosModules.hotspot-switch
           self.nixosModules.git-cache-proxy

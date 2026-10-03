@@ -83,6 +83,8 @@ in
       description = "Service announce refresh interval (r1sd --announce-interval).";
     };
 
+    tunnelEnabled = mkEnableOption "execution tunnels for r1sd allocator (--tunnel-enabled)";
+
     # --- containerd ----------------------------------------------------------
     containerdAddress = mkOption {
       type = types.str;

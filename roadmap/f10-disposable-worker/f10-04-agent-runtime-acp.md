@@ -47,29 +47,29 @@ unique task data
 
 ### 1. Nix agent image derivation
 
-- [ ] Создать пакет `packages/agent-image/` с `pkgs.dockerTools.buildLayeredImage` (или
+- [x] Создать пакет `packages/agent-image/` с `pkgs.dockerTools.buildLayeredImage` (или
       `pkgs.nix-docker-tools.buildImage`, если есть), который собирает OCI image из Nix closure
       agent runtime. Image экспортируется как `packages.${system}.agent-image` в `flake.nix`.
-- [ ] Включить в image все компоненты из «содержит»:
+- [x] Включить в image все компоненты из «содержит»:
       `git`, `lattice-pi-tool-profile`, `pkgs.lattice.pi-acp` (с `pkgs.lattice.pi` в PATH),
       bootstrap script, ACP listener entrypoint, CA certs.
-- [ ] Зафиксировать reproducibility: deterministic layer ordering, no timestamps, no non-determinism
+- [x] Зафиксировать reproducibility: deterministic layer ordering, no timestamps, no non-determinism
       sources (randomness seed, `/dev/urandom` заморозить или не использовать).
-- [ ] Entrypoint (`ENTRYPOINT` / `CMD`) запускает bootstrap: читает `SOURCE_REPO` / `SOURCE_REVISION`
+- [x] Entrypoint (`ENTRYPOINT` / `CMD`) запускает bootstrap: читает `SOURCE_REPO` / `SOURCE_REVISION`
       / `ACP_PORT` / `ACP_SECRET` из environment, создаёт workspace, стартует ACP listener.
       Bootstrap не принимает shell-команды, только объявленные env vars.
-- [ ] Доступ к LLM gateway и разрешённым tools — без host networking и без доступа к
+- [x] Доступ к LLM gateway и разрешённым tools — без host networking и без доступа к
       `containerd.sock` внутри контейнера (см. также ограничения ниже).
-- [ ] Добавить `packages/agent-image/default.nix` и `flake.nix` exports.
-- [ ] Smoke: `nix build .#packages.x86_64-linux.agent-image` — получить итоговый OCI image archive
+- [x] Добавить `packages/agent-image/default.nix` и `flake.nix` exports.
+- [x] Smoke: `nix build .#packages.x86_64-linux.agent-image` — получить итоговый OCI image archive
       и проверить, что `nerdctl load` в containerd на живой ноде загружает image с ожидаемым
       набором файлов.
 
 ### 2. Публикация образа: nerdctl + IPFS
 
-- [ ] Добавить на живой ноде (и в module) `nerdctl` — через `virtualisation.containerd.enable`
+- [x] Добавить на живой ноде (и в module) `nerdctl` — через `virtualisation.containerd.enable`
       `containerd` уже есть, `nerdctl` — через `pkgs.nerdctl` или NixOS-опцию, доступную в PATH.
-- [ ] Написать publish script / derivation `scripts/publish-agent-image.sh`:
+- [x] Написать publish script / derivation `scripts/publish-agent-image.sh`:
 
       ```sh
       nix build .#packages.x86_64-linux.agent-image
@@ -85,57 +85,57 @@ unique task data
       ImagePublication { cid: bafy…, digest: sha256:… }
       ```
 
-- [ ] `nerdctl push ipfs://…` пушит в локальный (или указанный) Kubo daemon. Убедиться, что
+- [x] `nerdctl push ipfs://…` пушит в локальный (или указанный) Kubo daemon. Убедиться, что
       daemon слушает API (или использует `--ipfs-stack gateway` в nerdctl).
-- [ ] **Не считать OCI digest до push окончательным**: `nerdctl` может преобразовать representation
+- [x] **Не считать OCI digest до push окончательным**: `nerdctl` может преобразовать representation
       при публикации. После push resolve'ить CID обратно и получить итоговый OCI manifest digest,
       который реально будет проверять containerd/r1s.
-- [ ] Publish script выводит `ImagePublication { cid, digest }` в stdout как JSON или в файл
+- [x] Publish script выводит `ImagePublication { cid, digest }` в stdout как JSON или в файл
       `result/publication.json`. Это единственный артефакт, который передаётся дальше в execution.
-- [ ] Не публиковать в GHCR, Docker Hub или любой центральный registry.
+- [x] Не публиковать в GHCR, Docker Hub или любой центральный registry.
 
 ### 3. IPFS runtime на allocator node
 
-- [ ] Создать NixOS-модуль `modules/ipfs-registry-facade/` (или расширить `modules/worker-runtime/`):
+- [x] Создать NixOS-модуль `modules/ipfs-registry-facade/` (или расширить `modules/worker-runtime/`):
       - `Kubo` (`pkgs.kubo` / `pkgs.go-ipfs`) — IPFS daemon, слушает локально, API на `/ip4/127.0.0.1/tcp/5001`.
       - `nerdctl ipfs registry serve` (containerd в режиме OCI facade over IPFS) — слушает на
         `127.0.0.1:5050`, преобразует OCI Registry API → IPFS.
-- [ ] Настроить Kubo: pinning опубликованного образа по CID (persistent, survives reboot).
+- [x] Настроить Kubo: pinning опубликованного образа по CID (persistent, survives reboot).
       `IPFS_PATH` / `KUBO_PATH` → `/var/lib/ipfs-daemon`.
-- [ ] Registry facade не публикуется наружу: слушает только на loopback. В будущем, если нужен
+- [x] Registry facade не публикуется наружу: слушает только на loopback. В будущем, если нужен
       multi-node replication — через IPFS Bitswap между нодами, не через HTTP registry.
-- [ ] Включить модуль на `mytecor-homelab` (conditionally, рядом с `worker-runtime`).
+- [x] Включить модуль на `mytecor-homelab` (conditionally, рядом с `worker-runtime`).
 - [ ] Smoke: запустить `ipfs daemon` + `nerdctl ipfs registry serve` на ноде; с live Kubo от
       allocator ноды вытащить образ по CID и загрузить в containerd без участия центрального
       registry.
 
 ### 4. Интеграция с r1s (без изменений)
 
-- [ ] `r1s` не меняется. Контракт сохраняется: standard OCI reference + mandatory digest pinning +
+- [x] `r1s` не меняется. Контракт сохраняется: standard OCI reference + mandatory digest pinning +
       `containerd.Pull()`.
-- [ ] Execution reference для IPFS-опубликованного образа имеет вид:
+- [x] Execution reference для IPFS-опубликованного образа имеет вид:
 
       ```
       127.0.0.1:5050/ipfs/<CID>@sha256:<digest>
       ```
 
       Именно этот reference получает workload при запуске на allocator.
-- [ ] Сохранить существующую проверку в r1s:
+- [x] Сохранить существующую проверку в r1s:
 
       ```
       requested OCI digest == pulled OCI target digest
       ```
 
-- [ ] IPFS CID не заменяет OCI digest и не ослабляет pinning. Две identity хранятся рядом:
+- [x] IPFS CID не заменяет OCI digest и не ослабляет pinning. Две identity хранятся рядом:
       - `CID` (IPFS content address) — определяет, что лежит в IPFS.
       - `sha256:…` (OCI manifest digest) — определяет, что проверяет containerd и r1s.
-- [ ] Убедиться, что `nerdctl ipfs registry serve` корректно возвращает OCI manifest с тем
+- [x] Убедиться, что `nerdctl ipfs registry serve` корректно возвращает OCI manifest с тем
       digest, который был resolved после publish.
 
 ### 5. Nix flake exports
 
-- [ ] Добавить `packages.${system}.agent-image` в `flake.nix` → экспорт Nix-пакета OCI образа.
-- [ ] Добавить `apps.${system}.publish-agent-image` → publish script как flake-app (или Nix run
+- [x] Добавить `packages.${system}.agent-image` в `flake.nix` → экспорт Nix-пакета OCI образа.
+- [x] Добавить `apps.${system}.publish-agent-image` → publish script как flake-app (или Nix run
       target), чтобы на ноде было достаточно:
 
       ```sh
@@ -143,8 +143,8 @@ unique task data
       ```
 
       а результат — `result/publication.json` с CID и digest.
-- [ ] Добавить `apps.${system}.pull-agent-image` → resolve CID → pull в containerd (для cold path).
-- [ ] Проверить: `nix build .#agent-image` воспроизводимо создаёт image; два последовательных
+- [x] Добавить `apps.${system}.pull-agent-image` → resolve CID → pull в containerd (для cold path).
+- [x] Проверить: `nix build .#agent-image` воспроизводимо создаёт image; два последовательных
       билда дают идентичный digest.
 
 ### 6. Smoke test: end-to-end
@@ -249,7 +249,40 @@ Tasks 1 и 3 независимы и могут идти параллельно.
 
 - **Kubo daemon vs go-ipfs vs Kubo module в NixOS:** проверить, есть ли готовый NixOS-модуль
   для Kubo (`services.kubo` или эквивалент в nixpkgs), чтобы не писать unit вручную.
+  **Решение:** в `nixpkgs` есть официальный модуль `services.kubo`, который настраивает
+  `ipfs.service`, репозиторий в `dataDir` и API-сокет. Модуль `ipfs-registry-facade`
+  использует `services.kubo` для управления Kubo daemon.
 
 - **Version pinning образа:** при update Nix-инпута агентского образа (новый Pi, новый pi-acp)
   image digest меняется. Должен быть способ сказать allocator «используй этот конкретный CID +
   digest» — это будет часть credential/injection в f10-05.
+
+## Реализация (2026-10-04)
+
+Реализованы компоненты 1–5 и контрактные тесты:
+
+1. **OCI agent image derivation** ([`packages/agent-image`](../../packages/agent-image/README.md)):
+   собирается через `pkgs.dockerTools.buildLayeredImage` с фиксированной эпохой
+   (`created = "1970-01-01T00:00:01Z"`), содержит `git`, `pi-tool-profile`, `pi`, `pi-acp`,
+   `hydra-acp`, CA certs, fakeNss и entrypoint-скрипт `bootstrap.sh`. При старте скрипт
+   читает `SOURCE_REPO`, `SOURCE_REVISION`, `ACP_PORT`, `ACP_SECRET`, `WORKSPACE_DIR`,
+   настраивает git workspace и запускает `hydra-acp-daemon` на `0.0.0.0:${ACP_PORT}`.
+2. **Скрипты публикации и загрузки**:
+   - [`scripts/publish-agent-image.sh`](../../scripts/publish-agent-image.sh) — выполняет
+     `nerdctl load`, пушит в IPFS через `nerdctl push ipfs://...`, разрешает OCI manifest
+     digest через локальный containerd и формирует `result/publication.json`.
+   - [`scripts/pull-agent-image.sh`](../../scripts/pull-agent-image.sh) — холодный pull через
+     локальный фасад `127.0.0.1:5050/ipfs/<CID>@sha256:<digest>`.
+   - Оба скрипта экспортируются как `packages` и `apps` (`publish-agent-image`, `pull-agent-image`).
+3. **NixOS-модуль IPFS Registry Facade** ([`modules/ipfs-registry-facade`](../../modules/ipfs-registry-facade/README.md)):
+   декларативно поднимает `services.kubo` с хранилищем в `/var/lib/ipfs-daemon` и systemd-юнит
+   `ipfs-registry-facade` (`nerdctl ipfs registry serve --listen-registry 127.0.0.1:5050`).
+   Включён на ноде `mytecor-homelab` синхронно с `worker-runtime` при наличии секрета кластера,
+   данные IPFS зафиксированы в impermanence-списке `/persist`.
+4. **Контрактные проверки**:
+   [`tests/ipfs-registry-facade.nix`](../../tests/ipfs-registry-facade.nix) и
+   [`tests/agent-image.nix`](../../tests/agent-image.nix) проверяют корректность конфигураций,
+   параметров entrypoint/bootstrap, флагов registry facade и публикации в `nix flake check`.
+5. **Осталось на живой ноде (Task 6)**:
+   после деплоя коммита через comin — live smoke hot path и cold path (публикация, pull через
+   IPFS фасад и запуск тестовой задачи через r1s tunnel).

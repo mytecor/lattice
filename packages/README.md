@@ -60,6 +60,14 @@ executable spike-test) удалён из активной конфигураци
 NixOS-интеграция и публичный status ingress находятся в
 [`profiles/app-services`](../profiles/app-services/README.md).
 
+## Agent runtime OCI image
+
+[`packages/agent-image`](./agent-image/README.md) собирает воспроизводимый OCI-образ агентского
+рантайма через `pkgs.dockerTools.buildLayeredImage` для выполнения в `r1s`
+([`roadmap/f10-disposable-worker/f10-04-agent-runtime-acp.md`](../roadmap/f10-disposable-worker/f10-04-agent-runtime-acp.md)).
+Образ распространяется через локальный IPFS-фасад реестра (`lattice.ipfs-registry-facade`)
+и публикуется с помощью `publish-agent-image`.
+
 ## pnpm CLI
 
 [`packages/pnpm-cli-builder`](./pnpm-cli-builder/README.md) предоставляет общий `buildPnpmCli`
