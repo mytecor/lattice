@@ -21,9 +21,10 @@
 > из плана убран.
 
 - **Статус:** 🟡 начата — [f10-01](./roadmap/f10-disposable-worker/f10-01-package-r1s.md) (упаковка
-  execution backend r1s/r1sd) закрыта 2026-09-16; следующим — разворачивание `r1sd`-allocator
-  на ноде ([f10-02](./roadmap/f10-disposable-worker/f10-02-deploy-r1sd.md)), затем общий immutable
-  Pi image и контейнерный Pi runtime (f10-04), worker credentials (f10-05) и acceptance (f10-06).
+  execution backend r1s/r1sd) закрыта 2026-09-16; [f10-02](./roadmap/f10-disposable-worker/f10-02-deploy-r1sd.md)
+  (разворачивание `r1sd`-allocator на ноде) закрыта 2026-10-03 — `worker-runtime` активен на ноде,
+  allocator готов в mesh, `r1s`-клиент с ноды доходит до него. Следующим — общий immutable
+  Pi image и контейнерный Pi runtime (f10-04), затем worker credentials (f10-05) и acceptance (f10-06).
   Что именно Lattice фиксирует поверх r1s (task spec, lifecycle) решается по ходу.
 - **Готово, когда:** полный цикл завершается результатом после уничтожения worker.
 - **Зависит от:** [F8](#f8-интерактивный-pi), [F9](#f9-caches-и-artifacts)

@@ -48,6 +48,8 @@ hydra-acp → pi-acp                         host ingress/session plane
   `r1sd`) с го-тулчейном 1.27.1 из основного пина nixpkgs; закрыто 2026-09-16.
 - [f10-02](./f10-02-deploy-r1sd.md) разворачивает `r1sd`-allocator на ноде как NixOS-модуль
   (`modules/worker-runtime/`): systemd-сервис над containerd, строгий песочник, включение на
-  ноде и smoke-проверка соединения клиента `r1s` с allocator.
+  ноде и smoke-проверка соединения клиента `r1s` с allocator; закрыто 2026-10-03 — сервис
+  активен на ноде, allocator готов в mesh (`r1sd ready identity=ef33e0…`), клиент с ноды
+  доходит до allocator.
 - [f10-04](./f10-04-pi-rpc-runner.md) фиксирует host-side `pi-acp`, контейнерный Pi через
   `PI_ACP_PI_COMMAND` и интеграцию с `pi-subagents` через внешний job provider.

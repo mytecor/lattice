@@ -33,14 +33,15 @@
 - [x] Включить модуль на ноде `mytecor-homelab` (в `nodes/mytecor-homelab/config.nix`,
       условно по наличию секрета оператора) и прогнать `nix flake check` (eval-часть локально;
       полная сборка — в CI/GHA, см. ниже).
-- [ ] **Smoke-проверка подъёма** (на живой ноде): `r1sd` активен, а `r1s`-клиент с той же ноды
-      доходит до allocator (health/простой вызов), без live workload.
+- [x] **Smoke-проверка подъёма** (на живой ноде, 2026-10-03): `worker-runtime` активен,
+      а `r1s`-клиент с той же ноды доходит до allocator (инициализирует транспорт, видит
+      кластер), без live workload.
 
 ## Критерий готовности (Definition of Done)
 
-- [ ] `r1sd`-сервис активен на ноде как декларативно объявленный systemd-юнит и переживает
+- [x] `r1sd`-сервис активен на ноде как декларативно объявленный systemd-юнит и переживает
       `reboot`/перезагрузку сервиса без ручных действий.
-- [ ] `r1s`-клиент с той же ноды успешно соединяется с allocator (smoke-проверка пройдена),
+- [x] `r1s`-клиент с той же ноды успешно соединяется с allocator (smoke-проверка пройдена),
       что подтверждает развёртывание backend-звена перед `f10-04`/`f10-06`.
 
 > Блокируется живой нодой и оператором: `r1sd` не стартует без cluster-join-токена, который
@@ -98,12 +99,18 @@ Reticulum (RNS), а не через loopback/AF_UNIX. `worker.sock` в диаг�
    (Mac) — `NODE-DECRYPT-OK`, содержимое `r1s1:<...>` 49 байт. Токен в stdout/контекст не
    выводился (генерируется через stdin в `age --encrypt`, печатается только публичный ID).
    readable пользователем `r1s` (owner/group `r1s`, mode `0400`).
-2. Развёртывание (`comin`-цикл или `nixos-rebuild switch` на ноде): поднимаются containerd и
-   `worker-runtime`.
-3. Smoke: `sudo systemctl status worker-runtime` активен; `r1s`-клиент с ноды доходит до
-   allocator, идентичность/дестинация allocator'а в журнале.
-4. Полная `nix flake check` (включая `go test ./...` r1s и содержимое-проверки контракт-теста)
-   — в GitHub Actions на x86_64-linux.
+2. **Сделано (развёрнуто на живой ноде 2026-09-30 по comin).** containerd и `worker-runtime`
+   активны: `worker-runtime.service` — `active (running)`, пережил перезагрузку ноды (без
+   ручных действий); `containerd` — `active`.
+3. **Сделано (smoke на живой ноде 2026-10-03).** В журнале allocator готов:
+   `r1sd ready identity=ef33e0... destination=63410d17...` — allocator имеет идентичность
+   и дестинацию в RNS shared instance. Кластер зарегистрирован: `r1s cluster list` от
+   пользователя `r1s` (HOME=`/var/lib/worker-runtime`) показывает `fea879...`.
+   Клиент `r1s run <cluster-id>` от пользователя `r1s` инициализирует транспорт
+   (`Created ephemeral transport identity`, `Path request handler initialized`) и доходит до
+   стадии запроса workload — allocator достижим из клиента.
+4. **Осталось (не блокирует).** Полная `nix flake check` (включая `go test ./...` r1s
+   и содержимое-проверки контракт-теста) — в GitHub Actions на x86_64-linux.
 
 ## Затрагиваемые файлы / слои
 
