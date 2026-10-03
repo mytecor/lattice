@@ -27,21 +27,41 @@ let
     }
   ];
 
-  # Dashboard provider: a provisioning "providers" entry that points Grafana
-  # at the module's own dashboards directory (modules/grafana/dashboards/).
-  # Dashboard definitions live in the repository, not hand-edited in the UI.
+  # Dashboard providers: a provisioning "providers" entry per service, each
+  # pointing Grafana at the module's own dashboards subdirectory for that
+  # service (modules/grafana/dashboards/<service>/). Dashboard definitions live
+  # in the repository, not hand-edited in the UI.
   #
   # Operators extend the fleet through cfg.dashboardProviders, which replaces
   # the default rather than appends to it: the repository is the single source
   # of truth and there is exactly one provider set (f12-04). The module ships
-  # the LLM Gateway + Gateway runtime dashboards by default.
-  dashboardProvider = {
-    name = "lattice";
-    folder = "Lattice";
+  # the gateway dashboards (LLM Gateway, provider models, runtime, Loki
+  # investigation) and the node overview, each in its own Grafana folder.
+  #
+  # A Grafana file-type dashboard provider is bound to exactly one folder and
+  # one directory; one provider per service keeps each dashboard in its own
+  # folder (the "Lattice" catch-all proved useless — Grafana here is only for
+  # Lattice, f12-10-03).
+  dashboardServices = [
+    {
+      name = "llm-gateway";
+      folder = "LLM Gateway";
+    }
+    {
+      name = "node";
+      folder = "Node";
+    }
+  ];
+
+  dashboardProviders = map (svc: {
+    name = svc.name;
+    folder = svc.folder;
     options = {
-      path = "${./dashboards}";
+      path = "${./dashboards}/${svc.name}";
+      # File provider `type = "file"` is set by nixpkgs grafana module for each
+      # entry; folder above determines the Grafana folder for that provider.
     };
-  };
+  }) dashboardServices;
 
   # The public-facing external URL Grafana advertises. `root_url` drives the
   # OIDC callback (`/login/generic_oauth`) and every absolute link Grafana
@@ -141,7 +161,7 @@ in
         dashboards.settings.providers =
           if cfg.dashboardProviders != [ ]
           then cfg.dashboardProviders
-          else [ dashboardProvider ];
+          else dashboardProviders;
       };
     };
 

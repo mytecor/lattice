@@ -27,7 +27,7 @@
 - [packages/llm-gateway/metrics.go](./../../packages/llm-gateway/metrics.go)
 - [packages/llm-gateway/logging.go](./../../packages/llm-gateway/logging.go)
 - [packages/llm-gateway/usage.go](./../../packages/llm-gateway/usage.go)
-- [modules/grafana/dashboards/llm-gateway.json](./../../modules/grafana/dashboards/llm-gateway.json)
+- [modules/grafana/dashboards/llm-gateway/llm-gateway.json](./../../modules/grafana/dashboards/llm-gateway/llm-gateway.json)
 
 Новые Go-компоненты и тесты размещать рядом с gateway; указанные точки интеграции
 не требуют реализации всей задачи в одном файле.

@@ -21,11 +21,17 @@ admin-пароль — из agenix-секрета через file provider (не
 
 ## Dashboard provisioning
 
-`dashboards/` — каталог с dashboard JSON (f12-04, доработка f12-05/f12-06): «LLM Gateway» (`llm-gateway.json`),
-«Gateway: модели по провайдерам» (`gateway-providers.json`, динамический разрез `native_model`,
-повтор строки по провайдеру), «Gateway runtime» (`gateway-runtime.json`), «Loki / Расследование»
-(`loki-investigation.json`). Провайдер `lattice` (папка "Lattice")
-подхватывает файлы при старте; definitions живут в репозитории, не в UI.
+`dashboards/` — каталог с dashboard JSON (f12-04, доработка f12-05/f12-06/f12-10-03),
+разложенный по подпапкам сервисов: `llm-gateway/` — «LLM Gateway» (`llm-gateway.json`,
+обзор: KPI, трафик, fallback, in-flight, по клиентским ключам, логи), «Gateway:
+модели по провайдерам» (`gateway-providers.json`, динамический разрез `native_model` —
+один общий набор панелей без повтора строки, единственный дашборд с провайдерским/
+модельным срезом деталей), «Gateway runtime» (`gateway-runtime.json`), «Loki /
+Расследование» (`loki-investigation.json`); `node/` — «Node overview» (`node-overview.json`).
+Провид provision объявляет по одному file-провайдеру на сервис: `name` = имя подпапки,
+каждый со своей Grafana-папкой (`LLM Gateway`, `Node`) — общая папка `Lattice` удалена,
+Grafana здесь только под Lattice, поэтому папки отражают сервисы (f12-10-03). Провайдеры
+подхватывают файлы при старте; definitions живут в репозитории, не в UI.
 `dashboardProviders` (если задан) заменяет дефолтный набор целиком — источник истины
 один (репозиторий), а не ручная правка в UI.
 

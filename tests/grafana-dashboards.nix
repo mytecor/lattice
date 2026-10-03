@@ -38,9 +38,21 @@ let
   # of the materialized flake source and stays valid, so the test (and the
   # source-of-truth check below) is self-sufficient after GC.
   dashboardsDir = self.outPath + "/modules/grafana/dashboards";
-  dashboardFiles = builtins.filter
-    (name: lib.hasSuffix ".json" name)
+
+  # Dashboards live in one subdirectory per service (f12-10-03: one Grafana
+  # folder per service, the "Lattice" catch-all is gone). Each service dir
+  # holds its dashboard JSON files; skip the README at the top level.
+  serviceDirs = builtins.filter
+    (name: name != "README.md")
     (builtins.attrNames (builtins.readDir dashboardsDir));
+
+  # Flatten: every *.json under every service subdirectory.
+  dashboardFiles = lib.flatten (map (svc:
+    let sub = "${dashboardsDir}/${svc}";
+    in map (name: "${svc}/${name}")
+      (builtins.filter (name: lib.hasSuffix ".json" name)
+        (builtins.attrNames (builtins.readDir sub))))
+    serviceDirs);
 
   # Parse each dashboard with importJSON so the test reads the exact JSON the
   # operator maintains (fails fast here rather than at Grafana startup).
@@ -61,37 +73,50 @@ let
 in
 # --- Dashboards ship from the repository and are provisioned ---
 assert lib.length dashboardFiles >= 4;
-assert builtins.any (p: (p.name or "") == "lattice") providers;
+# One file-type provider per service, each bound to its own service
+# subdirectory and Grafana folder (f12-10-03: the "Lattice" catch-all is gone;
+# Grafana here is only for Lattice, so folders are per service).
+assert builtins.any (p: (p.name or "") == "llm-gateway") providers;
+assert builtins.any (p: (p.name or "") == "node") providers;
 # The provider must be pointed at the dashboards directory. We do not compare
 # store paths for equality nor readDir the provider path: the module's
-# `path = "${./dashboards}"` coercion materializes a floating store path on a
-# dirty working tree that `nix flake check --no-build` does not keep valid after
-# GC. Check only that the configured path is the dashboards directory by name.
-assert lib.all (p: lib.hasSuffix "dashboards" (p.options.path or "")) providers;
+# `path = "${./dashboards}/<service>"` coercion materializes a floating store
+# path on a dirty working tree that `nix flake check --no-build` does not keep
+# valid after GC. Check only that each configured path ends in the service's
+# dashboards subdirectory by name.
+assert lib.all (p:
+  let name = p.name or ""; path = p.options.path or ""; in
+  name != "" && lib.baseNameOf path == name && lib.hasSuffix "-dashboards" (lib.dirOf path)
+) providers;
+# Each service folder is set to a display name, not the kebab-case service id
+# (folders are derived from the provider config, not from directory names).
+assert lib.any (p: (p.folder or "") == "LLM Gateway") providers;
+assert lib.any (p: (p.folder or "") == "Node") providers;
 
 # --- Stable uids, titles, datasource wiring ---
 assert lib.all (d: (d.uid or "") != "" && (d.title or "") != "") dashboards;
 
 # --- Metrics dashboard (llm-gateway-main) ---
+# The overview answers "is everything OK at a glance": KPI stats on top
+# (RPS, error share, p95 latency, p95 TTFT, in-flight, unhealthy providers),
+# traffic by route/status, fallback transitions, in-flight by provider, logs by
+# request_id and per-client-key consumption. The fine provider/model slice
+# (attempts, cooldown, p50/p99 latency/TTFT, tokens by model) lives in
+# gateway-providers (f12-10-03 dedup), not duplicated here.
 let llm = byUid "llm-gateway-main"; in
 assert lib.hasInfix "llm_requests_total" (joinExprs llm);
+# KPI latency/TTFT (p95 stats) keep the histogram buckets on the overview.
 assert lib.hasInfix "llm_request_duration_seconds_bucket" (joinExprs llm);
 assert lib.hasInfix "llm_ttft_seconds_bucket" (joinExprs llm);
-assert lib.hasInfix "llm_input_tokens_total" (joinExprs llm);
-# Errors, in-flight and fallback surface from f12-01 item 1.
-assert lib.hasInfix "llm_attempts_total" (joinExprs llm);
 assert lib.hasInfix "llm_requests_in_flight" (joinExprs llm);
 assert lib.hasInfix "llm_fallbacks_total" (joinExprs llm);
 # The provider pool health is visible on the overview itself (f12-04), not only
-# on the runtime dashboard.
+# on the runtime dashboard: the "health" KPI counts unhealthy providers.
 assert lib.hasInfix "llm_balance_health" (joinExprs llm);
-# Cooldown state is a first-class signal on the overview: the remaining window
-# (deadline − now) must be visible so a cooling provider reads as "cooling for
-# 15s", not as the balance-health zero that stays down for the whole 5m window.
-assert lib.hasInfix "llm_cooldown_until_seconds" (joinExprs llm);
-assert lib.hasInfix "cooldown_until_seconds" (joinExprs llm);
-# Output tokens are part of the token surface alongside input tokens.
-assert lib.hasInfix "llm_output_tokens_total" (joinExprs llm);
+# In-flight by provider and per-client-key token consumption are overview-only
+# surfaces (not part of the provider/model slice).
+assert lib.hasInfix "llm_requests_in_flight" (joinExprs llm);
+assert lib.hasInfix "api_key" (joinExprs llm);
 # Filters by the low-cardinality environment label and the route/provider/model
 # template variables.
 assert lib.hasInfix "environment=\"$environment\"" (joinExprs llm);
@@ -105,6 +130,12 @@ assert lib.hasInfix "request_id" (joinExprs llm);
 # The task requires the route/provider/model/environment/status variables; the
 # status variable is part of the templating list.
 assert lib.hasInfix "\"status\"" (builtins.toJSON llm.templating.list or []);
+# The overview must NOT duplicate the provider/model slice that lives in
+# gateway-providers: attempts-by-model, per-pair cooldown and p50/p99
+# latency/TTFT moved there and must not be re-added here.
+assert !lib.hasInfix "llm_attempts_total" (joinExprs llm);
+assert !lib.hasInfix "llm_cooldown_until_seconds" (joinExprs llm);
+assert !lib.hasInfix "histogram_quantile(0.50," (joinExprs llm);
 
 # --- Runtime dashboard (gateway-runtime) ---
 let runtime = byUid "gateway-runtime"; in
@@ -135,16 +166,27 @@ assert lib.any (tr: (tr.id or "") == "extractFields")
 assert gatewayJob.static_configs != [ ];
 assert builtins.all (sc: (sc.labels.environment or null) != null) gatewayJob.static_configs;
 
+# --- Provider/model slice dashboard (gateway-providers) ---
+# Bound here (before f12-05) because the overview-dedup and f12-05 sections
+# also reference the fine provider/model surface that lives in this dashboard.
+let providersDb = byUid "gateway-providers"; in
+assert providersDb.title != "";
+
 # --- f12-05 dashboard polish (status/p99/data links) ---
 # The `status` template variable must actually be used in at least one panel
 # (it was declared in the templating list but unused before f12-05).
 assert lib.hasInfix "status=~\"$status\"" (joinExprs llm);
 # Successful attempts (empty error_type) must not be counted as errors:
-# the errors panel filters them out.
-assert lib.hasInfix "error_type=~\".+\"" (joinExprs llm);
-# Latency and TTFT show p50 and p99 percentiles, not just p95.
-assert lib.hasInfix "histogram_quantile(0.50," (joinExprs llm);
-assert lib.hasInfix "histogram_quantile(0.99," (joinExprs llm);
+# the errors panel filters them out. The detailed error-by-model panel lives
+# in gateway-providers (the overview only keeps the failed-request share KPI).
+assert lib.hasInfix "error_type=~\".+\"" (joinExprs providersDb);
+assert !lib.hasInfix "error_type" (joinExprs llm);
+# Latency and TTFT show p50 and p99 percentiles, not just p95 — in the
+# provider/model slice of gateway-providers (the overview keeps only the
+# p95 KPI stats).
+assert lib.hasInfix "histogram_quantile(0.50," (joinExprs providersDb);
+assert lib.hasInfix "histogram_quantile(0.99," (joinExprs providersDb);
+assert !lib.hasInfix "histogram_quantile(0.99," (joinExprs llm);
 # The LLM Gateway logs panel carries a data link into the investigation
 # dashboard keyed by request_id (${__value.raw}).
 assert lib.hasInfix "loki-investigation?var-request_id=\${__value.raw}" (builtins.toJSON llm);
@@ -163,8 +205,7 @@ assert !lib.hasInfix "request_id=~\"\${request_id}\"" (joinExprs lokiDb);
 # 1. A dedicated provider-model dashboard exists with a stable uid and shows
 #    one *common* block (no row per provider, no row repeat): each panel shows
 #    all selected providers together, series split by provider.
-let providersDb = byUid "gateway-providers"; in
-assert providersDb.title != "";
+# (providersDb bound above, before f12-05.)
 assert lib.all
   (p: (p.type or "") != "row" || (p.repeat or null) == null)
   providersDb.panels;
@@ -173,6 +214,16 @@ assert lib.all
 assert lib.hasInfix "native_model=" (joinExprs llm);
 assert lib.hasInfix "native_model=" (joinExprs providersDb);
 assert lib.hasInfix "label_values(llm_requests_total, native_model)" (builtins.toJSON llm.templating.list);
+# The provider/model detail moved to the dedicated dashboard (f12-10-03 dedup):
+# attempts by provider/model/error, per-pair cooldown, input/output tokens and
+# the average reply length (tokens per completed request) are the provider-slice
+# surface and must live here, not on the overview.
+assert lib.hasInfix "llm_attempts_total" (joinExprs providersDb);
+assert lib.hasInfix "llm_cooldown_until_seconds" (joinExprs providersDb);
+assert lib.hasInfix "cooldown_until_seconds" (joinExprs providersDb);
+assert lib.hasInfix "llm_input_tokens_total" (joinExprs providersDb);
+assert lib.hasInfix "llm_output_tokens_total" (joinExprs providersDb);
+assert lib.hasInfix "Средняя длина ответа" (builtins.toJSON providersDb);
 # 3. The common dashboard scopes each panel to the selected provider(s) with a
 #    regex match against the multi-value $provider template variable (not an
 #    exact single-provider match — every panel must see all selected

@@ -1,41 +1,50 @@
 # Grafana dashboards (f12-04)
 
 Dashboard definitions live here as Grafana dashboard JSON so the repository is
-the single source of truth (provisioning, not hand-editing in the UI). The
-module's Grafana provisioning points the `lattice` provider at this directory,
-so every file here becomes a dashboard under the "Lattice" folder at startup.
+the single source of truth (provisioning, not hand-editing in the UI). Each
+service has a subdirectory here; the module's Grafana provisioning declares one
+file-type provider per service, so every JSON file becomes a dashboard in the
+service's own Grafana folder (f12-10-03: the "Lattice" catch-all folder is
+gone — Grafana here is only for Lattice, so folders are per service).
+
+Structure: [`llm-gateway/`](./llm-gateway/) holds the four gateway dashboards,
+[`node/`](./node/) the node overview. Subdirectory name == provider name;
+Grafana folder is the display name set in [config.nix](../config.nix) (`LLM
+Gateway`, `Node`).
 
 Fleet (rev. 2026-09-16, полная переработка):
 
-- [`llm-gateway.json`](./llm-gateway.json) — «LLM Gateway»: обзор. Верхний ряд
+- [`llm-gateway/llm-gateway.json`](./llm-gateway/llm-gateway.json) — «LLM Gateway»: обзор. Верхний ряд
   KPI отвечает «всё ли в порядке» за ~3 секунды: RPS, доля ошибок, p95
   длительности, p95 TTFT, активные запросы, число нездоровых провайдеров.
-  Ниже: трафик по route/status, задержки p50/p95/p99, надёжность (attempts,
-  fallback, in-flight, `llm_balance_health`, кулдаун `llm_cooldown_until_seconds`),
-  токены; логи по `request_id` — внизу. Переменные `environment`, `route`,
-  `provider`, `native_model`, `status`, `request_id`. (Панель «Распределение
-  результатов запросов» — теперь `sum by (provider, native_model, status)`:
-  видно, кто именно ответил и с каким результатом, а не только success/failed.)
-- [`gateway-providers.json`](./gateway-providers.json) — «Gateway: модели по
+  Ниже: трафик по route/status, fallback-переходы, in-flight по провайдеру,
+  потребление по клиентским ключам; логи по `request_id` — внизу. Детальный
+  разрез по провайдерам/нативным моделям (задержки p50/p95/p99, попытки,
+  кулдаун, токены по модели) живёт в `gateway-providers`, здесь он не
+  дублируется. Переменные `environment`, `route`, `provider`, `native_model`,
+  `status`, `request_id`.
+- [`llm-gateway/gateway-providers.json`](./llm-gateway/gateway-providers.json) — «Gateway: модели по
   провайдерам» (f12-06): динамический разрез `native_model`. **Один общий
   набор панелей** (без повторяющейся строки `repeat: provider`) — каждая
   панель показывает всех выбранных провайдеров вместе: RPS, latency/TTFT
-  p50/p95/p99, ошибочные попытки, здоровье пула, кулдаун и токены вход/выход
-  по нативным моделям. Панели фильтруются `provider=~"$provider"` (regex по
+  p50/p95/p99, ошибочные попытки, здоровье пула, кулдаун, токены вход/выход
+  и средняя длина ответа по нативным моделям. Единственный дашборд с
+  провайдерским/модельным срезом деталей (f12-10-03: обзор больше не
+  дублирует эти панели). Панели фильтруются `provider=~"$provider"` (regex по
   мультивыбору) и группируются `by (provider, ...)`, так что серии одного
   провайдера никогда не смешиваются с другим; легенды содержат `{{provider}}`.
-- [`gateway-runtime.json`](./gateway-runtime.json) — «Gateway runtime»: сервис
+- [`llm-gateway/gateway-runtime.json`](./llm-gateway/gateway-runtime.json) — «Gateway runtime»: сервис
   (версия `llm_gateway_build_info`, аптайм, горутины, куча Go), балансировка
   (выборы `llm_balance_selections_total`, здоровье пула `llm_balance_health`),
   события пула из Loki (cooldown/retry/fallback/hedge/semaphore + счёт за
   период), диагностика (динамика горутин/кучи, сбои `catalog_refresh_failed`).
-- [`loki-investigation.json`](./loki-investigation.json) — «Loki /
+- [`llm-gateway/loki-investigation.json`](./llm-gateway/loki-investigation.json) — «Loki /
   Расследование»: точка входа без ввода id — таблица «Последние запросы»
   (`request_completed|request_failed`, JSON-поля извлекаются трансформацией
   `extractFields`, клик по `request_id` фильтрует панели); счёт событий по
   типам; лента сбоев и переходов; полная лента одного запроса по переменной
   `request_id` (хронологический порядок).
-- [`node-overview.json`](./node-overview.json) — «Node overview»: CPU, load, RAM, root filesystem,
+- [`node/node-overview.json`](./node/node-overview.json) — «Node overview»: CPU, load, RAM, root filesystem,
   uptime, disk/network throughput, температуры, ошибки сборщика и сети, состояния выбранных
   systemd-сервисов и прирост их рестартов. Переменные `environment`, `unit`, `device`, `disk`.
 
@@ -90,6 +99,36 @@ Fleet (rev. 2026-09-16, полная переработка):
 попыток/токенов, а health/кулдаун несут `provider`-лейбл нативно; все легенды
 содержат `{{provider}}`. Контракт-тест обновлён: вместо «есть row `repeat:
 provider`» проверяется отсутствие row-repeat и `provider=~"$provider"`.
+
+### Ревизия 2026-10-03 (дедупликация: обзор против провайдерского среза)
+
+`llm-gateway` (обзор) и `gateway-providers` (разрез по провайдерам/моделям)
+вместе показывали одни и те же 7 панелей (RPS/латентность/TTFT/попытки/
+здоровье пула/кулдаун/токены по модели) — разрез нативного среза жил в
+обоих. Убрано с обзора: «Распределение результатов запросов», «Длительность
+ответа по провайдеру и модели», «TTFT по провайдеру и модели», «Попытки по
+провайдеру, модели и типу ошибки», «Здоровье провайдеров пула», «Остаток
+кулдауна по паре провайдер/модель», «Токены в секунду по провайдеру и
+модели» — всё это теперь единственно в `gateway-providers`; опустевшие ряды
+«Задержки»/«Кулдаун провайдеров»/«Токены» удалены, панель «Средняя длина
+ответа» (разрез по провайдеру/модели, раньше была на обзоре) перенесена в
+`gateway-providers`. Обзор оставляет: KPI-ряд, трафик по route/status,
+fallback, in-flight по провайдеру, потребление по клиентским ключам и логи по
+`request_id`. Контракт-тест обновлён: детальный срез теперь проверяется на
+`gateway-providers`, а на обзоре запрещены `llm_attempts_total`,
+`llm_cooldown_until_seconds` и `histogram_quantile(0.50,` (провайдерский
+разрез не должен возвращаться в обзор).
+
+### Ревизия 2026-10-03 (папки по сервисам)
+
+Дашборды разложены по подпапкам одного сервиса — `llm-gateway/` (обзор,
+провайдерский срез, runtime, расследование) и `node/` (node overview) —
+вместо плоского каталога. Grafana-провид provision объявляет по одному
+file-провайдеру на сервис (`name` = имя подпапки), каждый со своей `folder`
+(`LLM Gateway`, `Node`); бессмысленная общая папка `Lattice` удалена —
+Grafana здесь только под Lattice, так что папки теперь отражают сервисы.
+Контракт-тест проверяет: каждый провайдер смотрит в свою подпапку
+`dashboards/<service>` и несёт display-`folder`.
 
 ## Используемые метрики (источник — `/metrics` gateway, f12-01)
 

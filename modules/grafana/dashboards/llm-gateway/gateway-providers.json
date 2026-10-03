@@ -867,6 +867,102 @@
    "title": "Токены выход по провайдерам",
    "type": "timeseries",
    "description": "Выходных токенов/сек по провайдеру и нативной модели."
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     },
+     "unit": "short",
+     "custom": {
+      "axisBorderShow": false,
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "токенов/запрос",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "gradientMode": "none",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "linear",
+      "lineWidth": 1,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "group": "A",
+       "mode": null
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 25
+   },
+   "id": 209,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true,
+     "width": 0
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "exemplar": false,
+     "expr": "sum by (provider, native_model) (rate(llm_output_tokens_total{environment=\"$environment\",provider=~\"$provider\",native_model=~\"$native_model\"}[$__rate_interval])) / sum by (provider, native_model) (rate(llm_requests_total{environment=\"$environment\",route=~\"$route\",provider=~\"$provider\",native_model=~\"$native_model\"}[$__rate_interval]))",
+     "instant": false,
+     "legendFormat": "{{provider}} · {{native_model}}",
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "title": "Средняя длина ответа",
+   "type": "timeseries",
+   "description": "Среднее число выходных токенов на один завершённый запрос по провайдеру и нативной модели."
   }
  ],
  "refresh": "30s",

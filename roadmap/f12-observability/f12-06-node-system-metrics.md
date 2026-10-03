@@ -34,7 +34,7 @@ NixOS, а Caddy отдавал через `file_server`. Он показывал
 - [x] В [`observability-prometheus`](../../modules/observability-prometheus/README.md) добавлен
       отдельный `node-status` scrape job с постоянными `service` и `environment` labels.
 - [x] Добавлен provisioning-дашборд
-      [`Node overview`](../../modules/grafana/dashboards/node-overview.json): service state/restarts,
+      [`Node overview`](../../modules/grafana/dashboards/node/node-overview.json): service state/restarts,
       CPU, load, memory, root filesystem, uptime, disk/network throughput, температуры и ошибки.
 - [x] Добавлены Go unit/runtime tests и Nix contract tests; `go test -race`, `go vet`,
       `nix flake check --all-systems --no-build` и `lychee` проходят локально.
