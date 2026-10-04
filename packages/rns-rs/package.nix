@@ -16,16 +16,16 @@ let
 in
 rustPlatform.buildRustPackage rec {
   pname = bin;
-  version = if bin == "rnsh" then "0.4.1-unstable-2026-09-04" else "0.3.1-unstable-2026-09-04";
+  version = if bin == "rnsh" then "0.4.3" else "0.3.3";
 
   src = fetchFromGitHub {
     owner = "lelloman";
     repo = "rns-rs";
-    rev = "042e37047b70ea0e06b9aff0aed6214bc305ab35";
-    hash = "sha256-cwei72TfRBlk5fEvbLyIxhRSef8Zy9GkrZmj667EjMA=";
+    rev = "3ddb784b19203d72b2ef119dbd3c3dc6a39a21dd";
+    hash = "sha256-xQhatgwb4Fo53l3jB+jXkJcrs9QNJksVBAIZYpyiH7M=";
   };
 
-  cargoHash = "sha256-cWUs8ZQEhYwjwHPTP2lA3BxbtH49KRs1wQjwygwmtPY=";
+  cargoHash = "sha256-vUBQXq2oKltRp+LSKAD5f4fdPwFEplTJ4dQpabDzBNU=";
 
   patches = lib.optionals (bin == "rns-server") (
     [ ./shared-local-delivery.patch ]
