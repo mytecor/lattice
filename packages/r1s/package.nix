@@ -5,20 +5,20 @@
   fetchFromGitHub,
 }:
 # Lattice execution backend (F10): `r1s` client + `r1sd` allocator.
-# Needs go >= 1.27.1 (go.mod + Reticulum-Go v1.2.0); the flake passes
+# Needs go >= 1.27.1; the flake passes
 # go_1_27 = 1.27.1 from the main nixpkgs pin.
 (buildGoModule.override { inherit go; }) rec {
   pname = "r1s";
-  version = "0.4.0-unstable-2026-09-26";
+  version = "0.5.0";
 
   src = fetchFromGitHub {
     owner = "mytecor";
     repo = "r1s";
-    rev = "739f26ee3a901040fd5ad5b49f65220337f492da";
-    hash = "sha256-7tAg4+GiqiHFxWTTBCw2mymIrc9ulHA/roPmtKX2+WU=";
+    rev = "832a2744b06d4ebdbb5d601e9a26cc7bff4048d7";
+    hash = "sha256-VSi52qpRkuJc0wY2hv5H0J0DzmmBM244uapnem5ORdg=";
   };
 
-  vendorHash = "sha256-lwsRn5JlCguU9mIgtQF+4O+xeKmiYzX+TIW48X9HuUg=";
+  vendorHash = "sha256-WArtt0x1GJXXWiFAMyBSDCuOSsgIkuVRcgmuq/KnbCE=";
 
   # Both binaries are produced by `go build ./cmd/r1s ./cmd/r1sd`.
   subPackages = [ "cmd/r1s" "cmd/r1sd" ];

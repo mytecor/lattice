@@ -83,3 +83,19 @@ CLI намеренно нет.
 Использование r1s как execution fabric (agent image, ACP tunnel и execution loop) — отдельная
 работа [F10](./README.md) и [F19](../f19-agent-execution-loop/README.md); Lattice-specific
 scheduler/lifecycle поверх r1s не вводится.
+
+### Обновление пина (2026-10-04): v0.5.0 / meshbus control plane
+
+Пин обновлён на tag `v0.5.0`, commit `832a2744…`. Версия заменяет собственный RNS control
+transport r1s на meshbus и исправляет live shared-instance path, на котором v0.4.0 не обнаруживал
+allocator на `mytecor-homelab` (`no online outgoing interface with positive bitrate`). Upstream
+v0.5.0 прошёл live acceptance через shared RNS.
+
+Auth domain изменился намеренно: credentials теперь находятся в
+`$HOME/.config/r1s/realms/<id>`, старый `clusters` store не импортируется, а realm ID отличается.
+`lattice.worker-runtime` обнаруживает отсутствующий/stale selector, повторяет `cluster join` из
+того же agenix-секрета и обновляет публичный `cluster-id`. CLI-клиент v0.5 использует локальный
+authority broker (`r1s cluster use`); будущий `agentd` работает через public Go client API и не
+shell-out'ится в CLI.
+
+Source hash и `vendorHash` пересчитаны; Go toolchain остаётся 1.27.1.

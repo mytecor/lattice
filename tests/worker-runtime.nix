@@ -56,8 +56,8 @@ assert lib.elem "rns-server.service" unit.wants;
 # writeShellScript emits the script at $out (no bin/ subdir), so ExecStart is
 # the wrapper derivation path itself, ending in '-r1sd-worker'.
 assert lib.hasSuffix "-r1sd-worker" execStart;
-# F22 cluster credentials resolve via os.UserHomeDir() to
-# $HOME/.config/r1s/clusters/<id>; the unit must export HOME pointing at the
+# Cluster credentials resolve via os.UserHomeDir() to
+# $HOME/.config/r1s/realms/<id>; the unit must export HOME pointing at the
 # persistent StateDirectory (systemd system users otherwise default to
 # /var/empty, which is read-only and non-persistent).
 assert builtins.elem "HOME=/var/lib/worker-runtime" unit.serviceConfig.Environment;
@@ -81,6 +81,8 @@ assert !(lib.elem "AF_NETLINK" unit.serviceConfig.RestrictAddressFamilies);
 # touches the cluster-id state file.
 assert builtins.isString unit.preStart;
 assert lib.hasInfix "cluster join" unit.preStart;
+assert lib.hasInfix "cluster list" unit.preStart;
+assert lib.hasInfix "grep -Fxq" unit.preStart;
 assert lib.hasInfix "cluster-id" unit.preStart;
 # The r1sd argv lives inside the wrapper script (writeShellScript), not in
 # the unit's ExecStart. We inspect the wrapper text here for the F22 flag
@@ -97,7 +99,8 @@ pkgs.runCommand "worker-runtime-evaluation" { } ''
   grep -q -- '--identity' "$WRAPPER" || { echo 'no --identity' >&2; exit 1; }
   grep -q -- '${cfg.stateDirectory}' "$WRAPPER" \
     || { echo 'no stateDirectory' >&2; exit 1; }
-  grep -q -- '--capacity default=1' "$WRAPPER" || { echo 'no --capacity' >&2; exit 1; }
+  grep -Eq -- "--capacity '?default=1'?" "$WRAPPER" \
+    || { echo 'no --capacity' >&2; exit 1; }
   grep -q -- '--containerd-address /run/containerd/containerd.sock' "$WRAPPER" \
     || { echo 'no --containerd-address' >&2; exit 1; }
   grep -q -- '--containerd-namespace r1s' "$WRAPPER" \

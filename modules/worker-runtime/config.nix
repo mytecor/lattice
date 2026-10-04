@@ -16,7 +16,7 @@ let
   # state/log paths — lands under it and survives reboots through
   # StateDirectory/impermanence.
   #
-  # F22 detail: cluster membership lives in $HOME/.config/r1s/clusters/<id>`
+  # Since r1s v0.5, cluster membership lives in $HOME/.config/r1s/realms/<id>`
   # (cluster.DefaultDirectory() resolves via os.UserHomeDir), so the service
   # MUST export HOME=<homeDir>. systemd system users default to HOME=/var/empty
   # (read-only, non-persistent), which would make `r1sd cluster join` and the
@@ -43,11 +43,11 @@ let
     exec ${lib.getExe' cfg.package "r1sd"} ${lib.escapeShellArgs r1sdArgs} "$(cat ${lib.escapeShellArg clusterStateFile})"
   '';
 
-  # F22 cutover: r1s/r1sd attach as clients to an already-running shared RNS
+  # r1s/r1sd attach as clients to an already-running shared RNS
   # instance (the node's rns-server with share_instance = Yes) and never build
   # a private Reticulum stack. There is no --rns-config anymore. Cluster
   # membership is a per-user credential stored by `r1sd cluster join` under
-  # $HOME/.config/r1s/clusters/<cluster-id>`; the running daemon selects the
+  # $HOME/.config/r1s/realms/<cluster-id>`; the running daemon selects the
   # cluster positionally by ID. This module therefore wires:
   #
   #   preStart  r1sd cluster join <token>   (once, from the agenix secret)
@@ -86,17 +86,26 @@ let
   backendAfter = [ "network-online.target" "containerd.service" rnsUnit ];
   backendWants = [ "network-online.target" "containerd.service" rnsUnit ];
 
-  # preStart: join the cluster once and persist the resolved cluster ID.
+  # preStart: join the cluster when needed and persist the resolved cluster ID.
   # The token is a sensitive agenix secret read only at runtime (never baked
   # into the store or ExecStart argv); `r1sd cluster join` prints only the
   # Cluster ID and credential path (no token) to the journal. `cluster list`
   # prints the same public IDs, which is what the ExecStart wrapper consumes.
   joinScript = ''
     set -eu
-    if [ ! -f "${lib.escapeShellArg clusterStateFile}" ]; then
-      ${pkgs.coreutils}/bin/install -d -m 0700 \
-        -o ${lib.escapeShellArg user} -g ${lib.escapeShellArg group} \
-        ${lib.escapeShellArg homeDir}
+    ${pkgs.coreutils}/bin/install -d -m 0700 \
+      -o ${lib.escapeShellArg user} -g ${lib.escapeShellArg group} \
+      ${lib.escapeShellArg homeDir}
+
+    # v0.5 changed the authentication domain and deliberately does not import
+    # the v0.4 clusters store. Rejoin when the persisted selector is absent or
+    # no longer names a credential returned by the installed r1sd.
+    ${lib.getExe' cfg.package "r1sd"} cluster list > "${homeDir}/cluster-list.tmp"
+    if [ ! -s "${homeDir}/cluster-list.tmp" ] \
+      || [ ! -r ${lib.escapeShellArg clusterStateFile} ] \
+      || ! ${pkgs.gnugrep}/bin/grep -Fxq \
+        "$(${pkgs.coreutils}/bin/tr -d '[:space:]' < ${lib.escapeShellArg clusterStateFile})" \
+        "${homeDir}/cluster-list.tmp"; then
       # token file must be readable by the service user
       ${pkgs.gnused}/bin/sed -n '1p' ${lib.escapeShellArg cfg.clusterTokenFile} \
         > "${homeDir}/join-token.tmp"
@@ -106,12 +115,18 @@ let
       TOKEN=$(${pkgs.coreutils}/bin/cat "${homeDir}/join-token.tmp")
       ${lib.getExe' cfg.package "r1sd"} cluster join "$TOKEN"
       ${pkgs.coreutils}/bin/rm -f "${homeDir}/join-token.tmp"
-      # Resolve the single cluster ID to a stable selector for ExecStart.
       ${lib.getExe' cfg.package "r1sd"} cluster list > "${homeDir}/cluster-id.tmp"
-      ${pkgs.coreutils}/bin/tr -d '[:space:]' < "${homeDir}/cluster-id.tmp" \
-        > "${homeDir}/cluster-id"
-      ${pkgs.coreutils}/bin/rm -f "${homeDir}/cluster-id.tmp"
+    else
+      ${pkgs.coreutils}/bin/cp "${homeDir}/cluster-list.tmp" "${homeDir}/cluster-id.tmp"
     fi
+    ${pkgs.coreutils}/bin/rm -f "${homeDir}/cluster-list.tmp"
+
+    # This node is configured for exactly one execution cluster. Refuse an
+    # ambiguous credential store instead of concatenating multiple IDs.
+    test "$(${pkgs.coreutils}/bin/wc -l < "${homeDir}/cluster-id.tmp")" -eq 1
+    ${pkgs.coreutils}/bin/tr -d '[:space:]' < "${homeDir}/cluster-id.tmp" \
+      > "${homeDir}/cluster-id"
+    ${pkgs.coreutils}/bin/rm -f "${homeDir}/cluster-id.tmp"
   '';
 in
 {
@@ -184,7 +199,7 @@ in
         WorkingDirectory = homeDir;
         # HOME must point at the StateDirectory (not /var/empty): F22 cluster
         # credentials resolve through os.UserHomeDir() to
-        # $HOME/.config/r1s/clusters/<id>, and the allocator's default state /
+        # $HOME/.config/r1s/realms/<id>, and the allocator's default state /
         # log paths land beside the identity file under the same directory.
         Environment = [ "HOME=${homeDir}" ];
         # ExecStart is a shell wrapper (systemd does not expand $(...) inside

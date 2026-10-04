@@ -5,10 +5,10 @@
 декларативный foreground systemd-сервис, аналогично остальным сервисам ноды. Задача
 [f10-02](../../roadmap/f10-disposable-worker/f10-02-deploy-r1sd.md).
 
-> Пин r1s обновлён до v0.4.0 (F22, 2026-09-26). F22 — ломающий cutover: у `r1s`/`r1sd` больше
-> **нет** `--rns-config` и частного Reticulum-стека, кластер передаётся **позиционно** по ID, а
-> членство кластера хранится как per-user credential в `~/.config/r1s/clusters/<id>`. Модуль
-> переписан под этот контракт (см. «RNS shared instance» ниже).
+> Пин r1s обновлён до v0.5.0 (2026-10-03). `r1s`/`r1sd` подключаются к общему RNS shared
+> instance, control plane работает через meshbus, а membership хранится как per-user credential
+> в `~/.config/r1s/realms/<id>`. Auth domain v0.5 несовместим с v0.4, поэтому модуль автоматически
+> повторяет `cluster join` из agenix-секрета, когда сохранённый selector больше не существует.
 
 ## Что делает
 
@@ -21,10 +21,11 @@
   `ProtectSystem=full`, `PrivateTmp`. По умолчанию capabilities отсутствуют; при явном
   `tunnelEnabled = true` добавляются только требуемые upstream r1s `CAP_SYS_ADMIN` и
   `CAP_NET_ADMIN`, а `ProtectProc` ослабляется до `default` для доступа к task netns.
-- Первый запуск (`preStart`) выполняет `r1sd cluster join <token>` из agenix-секрета и
-  сохраняет **ID кластера** в `StateDirectory` (`cluster-id`); daemon далее всегда стартует с
+- Первый запуск и смена несовместимого auth domain (`preStart`) выполняют
+  `r1sd cluster join <token>` из agenix-секрета и
+  сохраняют **ID кластера** в `StateDirectory` (`cluster-id`); daemon далее всегда стартует с
   позиционным селектором `r1sd <allocator-флаги> <cluster-id>`. Credential кластера живёт в
-  `$HOME/.config/r1s/clusters/<id>` (под `StateDirectory`) и переживает перезагрузку.
+  `$HOME/.config/r1s/realms/<id>` (под `StateDirectory`) и переживает перезагрузку.
 
 ## Канал доступа к allocator
 
@@ -52,13 +53,12 @@ Lattice-owned worker broker и локальный `worker.sock` в целево�
 - Сервис `worker-runtime` ордерится `after`/`wants` за shared-instance-юнитом и containerd
   (`rnsInstanceService`, дефолт `rns-server`).
 - Сервис экспортирует `HOME=<StateDirectory>`: членство кластера живёт в
-  `$HOME/.config/r1s/clusters/<id>` (распознаётся через `os.UserHomeDir`), и системные юзеры
+  `$HOME/.config/r1s/realms/<id>` (распознаётся через `os.UserHomeDir`), и системные юзеры
   systemd иначе получили бы `HOME=/var/empty` (read-only, non-persistent).
 
-Совместимость rns-rs↔Reticulum-Go на wire-уровне — предмет живого smoke-теста (см. критерий
-f10-02): rns-rs сервер протестирован против Python RNS, а r1s-клиент — против Go/Python shared
-instance. Если smoke покажет расхождение протокола, альтернатива — развернуть выделенный
-`reticulum-go` daemon (`share_instance = Yes`) и указать его юнит через `rnsInstanceService`.
+Пин v0.4.0 подключался к shared instance, но его собственный control transport не находил
+allocator на живой ноде. В v0.5.0 control plane переведён на meshbus; upstream live acceptance и
+Lattice smoke используют тот же общий rns-rs instance. Выделенный `reticulum-go` daemon не нужен.
 
 ## Требуется provisioning (оператор)
 

@@ -90,6 +90,17 @@ Reticulum (RNS), а не через loopback/AF_UNIX. На момент выпо
 - **Shared-instance юнит** — через `rnsInstanceService` (дефолт `rns-server`); toggle `rnsShared`
   удалён, т.к. shared-instance поведение F22 безусловно.
 
+### v0.5.0 cutover (2026-10-04): meshbus control plane
+
+Live F10 smoke выявил, что клиент v0.4.0 подключался к rns-rs shared instance, но не получал
+offer allocator'а: `no online outgoing interface with positive bitrate`, затем `no usable offer`.
+TCP uplinks самого rns-rs при этом оставались established. Пин обновлён до r1s v0.5.0, где
+control plane переведён на meshbus и upstream live acceptance работает через shared RNS.
+
+Auth domain v0.5 несовместим с v0.4: credential store переехал из `clusters` в `realms`, а ID
+изменился. `preStart` теперь сравнивает сохранённый selector с фактическим `r1sd cluster list` и
+при расхождении повторяет join из существующего agenix-секрета, не выводя токен в журнал.
+
 ## Что осталось (оператор + живая нода)
 
 1. **Сделано (2026-09-27).** Join-токен кластера r1s сгенерирован (через закреплённый
@@ -103,13 +114,12 @@ Reticulum (RNS), а не через loopback/AF_UNIX. На момент выпо
 2. **Сделано (развёрнуто на живой ноде 2026-09-30 по comin).** containerd и `worker-runtime`
    активны: `worker-runtime.service` — `active (running)`, пережил перезагрузку ноды (без
    ручных действий); `containerd` — `active`.
-3. **Сделано (smoke на живой ноде 2026-10-03).** В журнале allocator готов:
+3. **Частично сделано (smoke на живой ноде 2026-10-03/04).** В журнале allocator готов:
    `r1sd ready identity=ef33e0... destination=63410d17...` — allocator имеет идентичность
    и дестинацию в RNS shared instance. Кластер зарегистрирован: `r1s cluster list` от
-   пользователя `r1s` (HOME=`/var/lib/worker-runtime`) показывает `fea879...`.
-   Клиент `r1s run <cluster-id>` от пользователя `r1s` инициализирует транспорт
-   (`Created ephemeral transport identity`, `Path request handler initialized`) и доходит до
-   стадии запроса workload — allocator достижим из клиента.
+   пользователя `r1s` (HOME=`/var/lib/worker-runtime`) показывает публичный ID. Полный
+   client→allocator run оказался заблокирован transport-багом v0.4.0; исправление v0.5.0
+   разворачивается для повторного smoke.
 4. **Осталось (не блокирует).** Полная `nix flake check` (включая `go test ./...` r1s
    и содержимое-проверки контракт-теста) — в GitHub Actions на x86_64-linux.
 
