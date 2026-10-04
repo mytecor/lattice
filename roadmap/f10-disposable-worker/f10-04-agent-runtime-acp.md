@@ -266,7 +266,7 @@ Tasks 1 и 3 независимы и могут идти параллельно.
    (`created = "1970-01-01T00:00:01Z"`), содержит `git`, `pi-tool-profile`, `pi`, `pi-acp`,
    `hydra-acp`, CA certs, fakeNss и entrypoint-скрипт `bootstrap.sh`. При старте скрипт
    читает `SOURCE_REPO`, `SOURCE_REVISION`, `ACP_PORT`, `ACP_SECRET`, `WORKSPACE_DIR`,
-   настраивает git workspace и запускает `hydra-acp-daemon` на `0.0.0.0:${ACP_PORT}`.
+   настраивает git workspace и запускает `hydra-acp-daemon` на `127.0.0.1:${ACP_PORT}`.
 2. **Скрипты публикации и загрузки**:
    - [`scripts/publish-agent-image.sh`](../../scripts/publish-agent-image.sh) — выполняет
      `nerdctl load`, пушит в IPFS через `nerdctl push ipfs://...`, разрешает OCI manifest
@@ -284,5 +284,8 @@ Tasks 1 и 3 независимы и могут идти параллельно.
    [`tests/agent-image.nix`](../../tests/agent-image.nix) проверяют корректность конфигураций,
    параметров entrypoint/bootstrap, флагов registry facade и публикации в `nix flake check`.
 5. **Осталось на живой ноде (Task 6)**:
-   после деплоя коммита через comin — live smoke hot path и cold path (публикация, pull через
-   IPFS фасад и запуск тестовой задачи через r1s tunnel).
+   - Проверены hot/cold path публикации образа в IPFS и pull через фасад `127.0.0.1:5050`.
+   - В `bootstrap.sh` адрес слушателя `hydra-acp-daemon` зафиксирован на loopback `127.0.0.1` (устранена ошибка `Refusing to bind to non-loopback host 0.0.0.0 without TLS configured`).
+   - Финальный end-to-end smoke `r1s run -p 15514:55514` ожидает апстрим-исправлений в `r1s` и `meshbus`:
+     1. В `r1s` (`cmd/r1s/detach.go`): вызов `a.start()` в `runDetachedChild`, чтобы дочерний процесс слушал discovery-анонсы от локального брокера.
+     2. В `meshbus` / `r1s`: поддержка активного запроса пути/анонса (demand/path request) при старте клиента вместо ожидания пассивного периодического вещания (`announceInterval`), приводящего к `no usable offer` по таймауту.

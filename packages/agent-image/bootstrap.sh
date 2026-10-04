@@ -71,7 +71,7 @@ jq -n \
   --arg workspace "$WORKSPACE_DIR" \
   '{
     daemon: {
-      host: "0.0.0.0",
+      host: "127.0.0.1",
       port: $port,
       logLevel: $logLevel,
       sessionIdleTimeoutSeconds: 0,
@@ -97,5 +97,5 @@ jq -n \
     defaultCwd: $workspace
   }' > "$HYDRA_HOME/config.json"
 
-echo "agent-bootstrap: starting ACP listener on 0.0.0.0:$ACP_PORT (workspace: $WORKSPACE_DIR)"
+echo "agent-bootstrap: starting ACP listener on 127.0.0.1:$ACP_PORT (workspace: $WORKSPACE_DIR)"
 exec hydra-acp-daemon
