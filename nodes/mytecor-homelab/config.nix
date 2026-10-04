@@ -765,12 +765,14 @@ in
     # f15-02: Radicle peer profile of the node (rad-peer / RAD_HOME) survives
     # reboots. The seed profile (/var/lib/radicle) has its own entry above.
     { directory = radiclePeerHome; user = "root"; group = "root"; mode = "0700"; }
-    # F12 observability data survives reboots (impermanence).
     { directory = "/var/lib/prometheus"; user = "prometheus"; group = "prometheus"; mode = "0750"; }
     { directory = "/var/lib/loki"; user = "loki"; group = "loki"; mode = "0750"; }
     { directory = "/var/lib/grafana"; user = "grafana"; group = "grafana"; mode = "0750"; }
     # F14: Authentik SSO data (media/storage) survives reboots (impermanence).
     { directory = "/var/lib/authentik"; user = "authentik"; group = "authentik"; mode = "0750"; }
+    # agentrun-openai: persistent native session metadata (resume IDs, never
+    # message text) survives reboots. Owned by the module's dedicated user.
+    { directory = "/var/lib/agentrun-openai"; user = "agentrun"; group = "agentrun"; mode = "0700"; }
   ];
 
   system.stateVersion = "26.05";

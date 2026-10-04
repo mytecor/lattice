@@ -55,6 +55,11 @@
       flake = false;
     };
 
+    module-agentrun-openai = {
+      url = "path:./modules/agentrun-openai";
+      flake = false;
+    };
+
     module-pi = {
       url = "path:./modules/pi";
       flake = false;
@@ -153,6 +158,7 @@
     module-rns-server,
     module-rnsh,
     module-llm-gateway,
+    module-agentrun-openai,
     module-pi,
     module-pi-acp-daemon,
     module-worker-runtime,
@@ -218,6 +224,7 @@
           rnsh = final.callPackage "${rns-rs}/package.nix" { bin = "rnsh"; };
           hydra-acp = final.callPackage ./packages/hydra-acp/package.nix { };
           llm-gateway = final.callPackage ./packages/llm-gateway/package.nix { };
+          agentrun-openai = final.callPackage ./packages/agentrun-openai/package.nix { };
           pi = final.callPackage ./packages/pi/package.nix { };
           pi-mcp-adapter = final.callPackage ./packages/pi-mcp-adapter/package.nix { };
           pi-retry = final.callPackage ./packages/pi-retry/package.nix { };
@@ -306,7 +313,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) acp-normalizer acp-web agent-image git-cache-proxy hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
+          inherit (pkgs.lattice) acp-normalizer acp-web agent-image agentrun-openai git-cache-proxy hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
         });
@@ -353,6 +360,7 @@
         rns-server.imports = [ "${module-rns-server}" ];
         rnsh.imports = [ "${module-rnsh}" ];
         llm-gateway.imports = [ "${module-llm-gateway}" ];
+        agentrun-openai.imports = [ "${module-agentrun-openai}" ];
         pi.imports = [ "${module-pi}" ];
         pi-acp-daemon.imports = [ "${module-pi-acp-daemon}" ];
         worker-runtime.imports = [ "${module-worker-runtime}" ];
@@ -374,6 +382,7 @@
           self.nixosModules.rns-server
           self.nixosModules.rnsh
           self.nixosModules.llm-gateway
+          self.nixosModules.agentrun-openai
           self.nixosModules.pi
           self.nixosModules.pi-acp-daemon
           self.nixosModules.worker-runtime
@@ -402,6 +411,7 @@
           "${profiles}/cache-plane/config.nix"
           "${profiles}/observability/config.nix"
           "${profiles}/llm-gateway/config.nix"
+          "${profiles}/agentrun-openai/config.nix"
           "${profiles}/pi-acp/config.nix"
           "${profiles}/radicle/config.nix"
           "${profiles}/rns-network/config.nix"

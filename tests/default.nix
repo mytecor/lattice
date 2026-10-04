@@ -63,6 +63,11 @@ in
     gatewayModule = self.nixosModules.llm-gateway;
   };
 
+  agentrun-openai = import ./agentrun-openai.nix {
+    inherit nixpkgs pkgs;
+    agentrunModule = self.nixosModules.agentrun-openai;
+  };
+
   pi-tool-profile = import ./pi-tool-profile.nix {
     inherit nixpkgs pkgs;
     piModule = self.nixosModules.pi;
@@ -274,6 +279,7 @@ in
     assert homelabConfig.lattice.ephemeral-root.enable;
     assert homelabConfig.lattice.rns-server.enable;
     assert homelabConfig.lattice.llm-gateway.enable;
+    assert homelabConfig.lattice.agentrun-openai.enable;
     assert homelabConfig.lattice.pi.enable;
     assert homelabConfig.lattice.rnsh.enable;
     assert homelabConfig.lattice.git-cache-proxy.enable;

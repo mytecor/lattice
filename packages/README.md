@@ -58,6 +58,16 @@ executable spike-test) удалён из активной конфигураци
 NixOS-интеграция и публичный status ingress находятся в
 [`profiles/app-services`](../profiles/app-services/README.md).
 
+## agentrun-openai
+
+[`agentrun-openai`](./agentrun-openai/README.md) — OpenAI-compatible HTTP-шлюз над
+[`github.com/dmora/agentrun`](https://github.com/dmora/agentrun) (форк
+[`github.com/mytecor/agentrun`](https://github.com/mytecor/agentrun)); предоставляет
+persistent Claude Code / Codex / Antigravity сессии как модели OpenAI API. Пакет пинится на
+release `v0.1.1` внешнего репозитория (см. `package.nix`). NixOS-интеграция —
+[`modules/agentrun-openai`](../modules/agentrun-openai/README.md), профиль —
+[`profiles/agentrun-openai`](../profiles/agentrun-openai/README.md).
+
 ## Agent runtime OCI image
 
 [`packages/agent-image`](./agent-image/README.md) собирает воспроизводимый OCI-образ агентского

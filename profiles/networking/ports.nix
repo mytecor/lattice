@@ -20,4 +20,6 @@
   # F18: browser agent stack (loopback-only).
   foxbridge-cdp = 9222;
   jev-inspector = 8766;
+  # agentrun-openai: OpenAI-compatible gateway over agentrun (loopback-only).
+  agentrun-openai = 8787;
 }

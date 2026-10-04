@@ -7,6 +7,8 @@
 - [`ephemeral-root/`](./ephemeral-root/README.md) - безопасная ротация Btrfs root subvolume при загрузке и постоянные данные через `nix-community/impermanence`.
 - [`llm-gateway/`](./llm-gateway/README.md) - Lattice Go proxy поверх Bifrost и безопасные
   credentials через systemd.
+- [`agentrun-openai/`](./agentrun-openai/README.md) - OpenAI-compatible HTTP-шлюз над
+  agentrun для persistent Claude Code / Codex / Antigravity сессий.
 - [`pi/`](./pi/README.md) - версия и системное подключение воспроизводимой pnpm-сборки Pi + декларативная конфигурация `~/.pi/agent`.
 - [`rns-server/`](./rns-server/README.md) - сервис `rns-server` и typed-генерация RNS ConfigObj-конфигов.
 - [`rnsh/`](./rnsh/README.md) - listener-сервис для remote shell через Reticulum.

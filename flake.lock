@@ -156,6 +156,18 @@
         "type": "github"
       }
     },
+    "module-agentrun-openai": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/agentrun-openai",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/agentrun-openai",
+        "type": "path"
+      },
+      "parent": []
+    },
     "module-authentik": {
       "flake": false,
       "locked": {
@@ -467,6 +479,7 @@
         "disko": "disko",
         "hardware-intel-n100": "hardware-intel-n100",
         "impermanence": "impermanence",
+        "module-agentrun-openai": "module-agentrun-openai",
         "module-authentik": "module-authentik",
         "module-ephemeral-root": "module-ephemeral-root",
         "module-foxbridge-camoufox": "module-foxbridge-camoufox",
