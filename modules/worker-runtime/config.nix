@@ -188,8 +188,13 @@ in
       preStart = joinScript;
 
       serviceConfig = {
-        User = user;
-        Group = group;
+        # containerd's Go client resolves the prepared overlayfs snapshot while
+        # assembling the OCI spec. Access to the gRPC socket alone is not
+        # sufficient: the allocator must be root to traverse containerd's
+        # root-owned snapshot tree. The systemd sandbox and capability bound
+        # below remain the actual privilege boundary.
+        User = "root";
+        Group = "root";
         StateDirectory = cfg.stateDirectory;
         StateDirectoryMode = "0700";
         StateDirectoryPreserve = "restart";

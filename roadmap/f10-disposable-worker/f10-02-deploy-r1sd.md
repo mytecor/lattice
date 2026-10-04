@@ -123,6 +123,16 @@ Auth domain v0.5 несовместим с v0.4: credential store перееха
 4. **Осталось (не блокирует).** Полная `nix flake check` (включая `go test ./...` r1s
    и содержимое-проверки контракт-теста) — в GitHub Actions на x86_64-linux.
 
+### Containerd privilege correction (2026-10-04)
+
+Первый реальный workload дошёл до assignment, но `containerd.NewContainer` завершился на
+`open .../io.containerd.snapshotter.v1.overlayfs/snapshots/.../fs: permission denied`.
+Предыдущее предположение «r1sd достаточно доступа к gRPC-сокету» оказалось неверным: Go client
+обходит подготовленный root-owned snapshot при сборке OCI spec. Поэтому основной процесс `r1sd`
+работает от root, но остаётся внутри строгого systemd sandbox и capability bounding set; tunnel
+режим получает только `CAP_SYS_ADMIN`/`CAP_NET_ADMIN`. Пользователь/группа `r1s` сохраняются как
+владельцы realm credential и группа доступа к containerd socket.
+
 ## Затрагиваемые файлы / слои
 
 - `modules/worker-runtime/` (новый модуль: `options.nix`, `config.nix`, `default.nix`, `README.md`)
@@ -142,4 +152,5 @@ _нет_ — закрыты реализацией:
 - **Привилегии в песочнике**: `r1sd` не требует root — он только gRPC-клиент containerd
   (сам подъём OCI делает containerd-daemon). Поэтому строгий песочник без capabilities безопасен;
   сокет открыт только группе `r1s`. `--tunnel-enabled` выключен (для f10-02 live workload не нужен).
-- **Права**: отдельный системный пользователь `r1s` (не root).
+- **Права**: daemon работает от root из-за traversal overlayfs snapshot; systemd sandbox и
+  capability bounding set обязательны. Realm credential остаётся у системного пользователя `r1s`.

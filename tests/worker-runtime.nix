@@ -67,6 +67,10 @@ assert containerdSettings.grpc.gid == cfg.gid;
 assert config.users.groups.r1s.gid == cfg.gid;
 assert config.users.users.r1s.uid == cfg.uid;
 assert !(builtins.hasAttr "address" containerdSettings.grpc);
+# The containerd client must traverse root-owned overlayfs snapshots while it
+# creates the OCI spec. Socket membership alone is insufficient.
+assert unit.serviceConfig.User == "root";
+assert unit.serviceConfig.Group == "root";
 # Tunnel mode gets only the two capabilities required to enter the task netns
 # and initialize loopback; it must also be able to resolve /proc/<pid>/ns/net.
 assert lib.all (capability: lib.elem capability unit.serviceConfig.AmbientCapabilities) [ "CAP_SYS_ADMIN" "CAP_NET_ADMIN" ];

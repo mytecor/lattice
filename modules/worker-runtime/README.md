@@ -15,7 +15,9 @@
 - Включает `virtualisation.containerd` и открывает его gRPC-сокет
   (`/run/containerd/containerd.sock`) только для группы `r1s` (0660, group = r1s). Сокет
   остаётся на loopback-юникс, наружу не публикуется.
-- Запускает `r1sd` от выделенного системного пользователя `r1s` в строгом песочнике:
+- Запускает `r1sd` от root в строгом песочнике: containerd client при создании OCI spec
+  проходит по root-owned overlayfs snapshot, поэтому одного доступа к gRPC-сокету недостаточно.
+  Root ограничен systemd sandbox:
   только `AF_UNIX` (containerd-сокет и shared-instance RNS-сокет) и исходящий
   `AF_INET`/`AF_INET6` (tunnel data plane при `--tunnel-enabled`), `NoNewPrivileges`,
   `ProtectSystem=full`, `PrivateTmp`. По умолчанию capabilities отсутствуют; при явном
@@ -99,7 +101,7 @@ age.secrets.r1s-cluster-token = lib.mkIf (builtins.pathExists ./secrets/r1s-clus
 | --- | --- | --- | --- |
 | `enable` | bool | `false` | включить модуль |
 | `package` | package | `pkgs.lattice.r1s` | пакет с `r1s` и `r1sd` |
-| `user` / `group` | str | `r1s` | системный пользователь/группа сервиса |
+| `user` / `group` | str | `r1s` | владелец cluster credential и группа containerd-сокета; daemon работает от root |
 | `stateDirectory` | str | `worker-runtime` | имя `StateDirectory` под `/var/lib` |
 | `runtimeDirectory` | str | `worker-runtime` | имя `RuntimeDirectory` под `/run` |
 | `capacity` | str | `default=1` | ресурсные capacity allocator'а (`--capacity`) |
