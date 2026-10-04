@@ -286,11 +286,17 @@ Tasks 1 и 3 независимы и могут идти параллельно.
 5. **Осталось на живой ноде (Task 6)**:
    - Проверены hot/cold path публикации образа в IPFS и pull через фасад `127.0.0.1:5050`.
    - В `bootstrap.sh` адрес слушателя `hydra-acp-daemon` зафиксирован на loopback `127.0.0.1` (устранена ошибка `Refusing to bind to non-loopback host 0.0.0.0 without TLS configured`).
-   - Финальный end-to-end smoke `r1s run -p 15514:55514` заблокирован недетерминированным
+   - Финальный end-to-end smoke `r1s run -p 15514:55514` блокирован недетерминированным
      discovery allocator'а в `r1s`: первый `requestAttempt` не имеет известных destination'ов и
      ждёт только новые события `endpoint.Discoveries()` в пределах `offerWait`, тогда как `r1sd`
      по умолчанию повторяет announce раз в 5 минут. Клиент, запущенный между announce-пакетами,
      завершается с `no usable offer` раньше следующего объявления.
+
+     **Снято обновлением пина до v0.5.1** ([f10-01](./f10-01-package-r1s.md)): F25-01 добавляет
+     детерминированный allocator bootstrap destination. Свежий run-клиент получает известные
+     destination-ы allocator'а через cluster credentials / authority broker и пробует их
+     одновременно с новыми announced-кандидатами в пределах `offerWait`, не дожидаясь
+     следующего announce. Осталось повторить smoke на живой ноде с новым пином.
    - Локальная доставка через `rns-rs` подтверждена: после нового announce от перезапущенного
      allocator'а клиент сразу получает discovery. Поэтому текущие наблюдения не доказывают дефект
      `rns-rs`; предупреждения `invalid announce signature` и ошибки egress требуют отдельной

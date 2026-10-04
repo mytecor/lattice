@@ -5,10 +5,12 @@
 декларативный foreground systemd-сервис, аналогично остальным сервисам ноды. Задача
 [f10-02](../../roadmap/f10-disposable-worker/f10-02-deploy-r1sd.md).
 
-> Пин r1s обновлён до v0.5.0 (2026-10-03). `r1s`/`r1sd` подключаются к общему RNS shared
+> Пин r1s обновлён до v0.5.1 (2026-10-04). `r1s`/`r1sd` подключаются к общему RNS shared
 > instance, control plane работает через meshbus, а membership хранится как per-user credential
 > в `~/.config/r1s/realms/<id>`. Auth domain v0.5 несовместим с v0.4, поэтому модуль автоматически
 > повторяет `cluster join` из agenix-секрета, когда сохранённый selector больше не существует.
+> v0.5.1 (F25-01) добавляет детерминированный allocator bootstrap destination: свежий run-клиент
+> достигает allocator'а без ожидания очередного announce (снимает discovery-блокер smoke f10-04).
 
 ## Что делает
 

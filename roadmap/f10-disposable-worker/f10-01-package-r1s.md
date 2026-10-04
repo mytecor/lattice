@@ -99,3 +99,21 @@ authority broker (`r1s cluster use`); будущий `agentd` работает �
 shell-out'ится в CLI.
 
 Source hash и `vendorHash` пересчитаны; Go toolchain остаётся 1.27.1.
+
+### Обновление пина (2026-10-04): v0.5.1 / deterministic allocator bootstrap
+
+Пин обновлён на tag `v0.5.1`, commit `3ea26dc…` (F25-01). Версия добавляет детерминированный
+bootstrap allocator destination: свежий `r1s run`-клиент немедленно достигает известных
+destination-ов allocator'а, не дожидаясь периодического announce (по умолчанию 5 минут). Это
+устраняет недетерминизм discovery, который блокировал финальный end-to-end smoke f10-04
+(`no usable offer` у клиента, запущенного между announce-пакетами).
+
+- `version -> 0.5.1`, rev -> `3ea26dc7f039293f596d5aac19a13858d7193c65`.
+- SRI source hash пересчитан: `sha256-oAHiBmuZT+XP//ImUTm3wx30qX8WC81u5MfRm+GQfvo=`
+  (получен `nix-prefetch-url --unpack`, переведён в SRI через `nix hash convert`; совпадает с
+  narHash из `nix flake prefetch github:mytecor/r1s/<rev>`).
+- `vendorHash` **не изменился**: `go.mod`/`go.sum` между v0.5.0 и v0.5.1 идентичны, изменился
+  только внутренний тестовый импорт `internal/cluster`. `go mod vendor` на новом rev дал
+  идентичное дерево (NAR-хеш vendor-каталога совпал с прежним `sha256-WArtt0x1GJXXWiFAMyBSDCuOSsgIkuVRcgmuq/KnbCE=`).
+- Go toolchain остаётся 1.27.1; контракт CLI (`--identity`, позиционный cluster-id, shared-instance
+  RNS) не менялся.
