@@ -101,7 +101,7 @@ age.secrets.r1s-cluster-token = lib.mkIf (builtins.pathExists ./secrets/r1s-clus
 | --- | --- | --- | --- |
 | `enable` | bool | `false` | включить модуль |
 | `package` | package | `pkgs.lattice.r1s` | пакет с `r1s` и `r1sd` |
-| `user` / `group` | str | `r1s` | владелец cluster credential и группа containerd-сокета; daemon работает от root |
+| `user` / `group` | str | `r1s` | служебная группа доступа к containerd-сокету; daemon и realm credential работают от root |
 | `stateDirectory` | str | `worker-runtime` | имя `StateDirectory` под `/var/lib` |
 | `runtimeDirectory` | str | `worker-runtime` | имя `RuntimeDirectory` под `/run` |
 | `capacity` | str | `default=1` | ресурсные capacity allocator'а (`--capacity`) |

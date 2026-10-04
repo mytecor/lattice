@@ -130,8 +130,8 @@ Auth domain v0.5 несовместим с v0.4: credential store перееха
 Предыдущее предположение «r1sd достаточно доступа к gRPC-сокету» оказалось неверным: Go client
 обходит подготовленный root-owned snapshot при сборке OCI spec. Поэтому основной процесс `r1sd`
 работает от root, но остаётся внутри строгого systemd sandbox и capability bounding set; tunnel
-режим получает только `CAP_SYS_ADMIN`/`CAP_NET_ADMIN`. Пользователь/группа `r1s` сохраняются как
-владельцы realm credential и группа доступа к containerd socket.
+режим получает только `CAP_SYS_ADMIN`/`CAP_NET_ADMIN`. Группа `r1s` сохраняется как ограниченный
+доступ к containerd socket; realm credential находится в root-owned `StateDirectory`.
 
 ## Затрагиваемые файлы / слои
 
@@ -153,4 +153,4 @@ _нет_ — закрыты реализацией:
   (сам подъём OCI делает containerd-daemon). Поэтому строгий песочник без capabilities безопасен;
   сокет открыт только группе `r1s`. `--tunnel-enabled` выключен (для f10-02 live workload не нужен).
 - **Права**: daemon работает от root из-за traversal overlayfs snapshot; systemd sandbox и
-  capability bounding set обязательны. Realm credential остаётся у системного пользователя `r1s`.
+  capability bounding set обязательны. Realm credential хранится в root-owned `StateDirectory`.

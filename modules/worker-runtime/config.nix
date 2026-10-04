@@ -93,9 +93,7 @@ let
   # prints the same public IDs, which is what the ExecStart wrapper consumes.
   joinScript = ''
     set -eu
-    ${pkgs.coreutils}/bin/install -d -m 0700 \
-      -o ${lib.escapeShellArg user} -g ${lib.escapeShellArg group} \
-      ${lib.escapeShellArg homeDir}
+    ${pkgs.coreutils}/bin/install -d -m 0700 ${lib.escapeShellArg homeDir}
 
     # v0.5 changed the authentication domain and deliberately does not import
     # the v0.4 clusters store. Rejoin when the persisted selector is absent or
@@ -110,8 +108,6 @@ let
       ${pkgs.gnused}/bin/sed -n '1p' ${lib.escapeShellArg cfg.clusterTokenFile} \
         > "${homeDir}/join-token.tmp"
       ${pkgs.coreutils}/bin/chmod 0600 "${homeDir}/join-token.tmp"
-      ${pkgs.coreutils}/bin/chown ${lib.escapeShellArg "${user}:${group}"} \
-        "${homeDir}/join-token.tmp"
       TOKEN=$(${pkgs.coreutils}/bin/cat "${homeDir}/join-token.tmp")
       ${lib.getExe' cfg.package "r1sd"} cluster join "$TOKEN"
       ${pkgs.coreutils}/bin/rm -f "${homeDir}/join-token.tmp"
