@@ -3,7 +3,7 @@
 # (github.com/dmora/agentrun). Предоставляет persistent Claude Code / Codex /
 # Antigravity CLI-сессии как модели OpenAI API: библиотека agentrun живёт в
 # процессе gateway и сама запускает agent CLI, хранит их сессии и транслирует
-# в чат-историю. Пакет пинится на релиз-тег v0.1.1 (rev 7c8de8f) внешнего
+# в чат-историю. Пакет пинится на релиз-тег v0.2.0 (rev 6a3be1b) внешнего
 # репозитория.
 #
 # go.mod использует replace-директиву на форк github.com/mytecor/agentrun
@@ -12,26 +12,26 @@
 # покрывает всё дерево зависимостей (см. packages/foxbridge/package.nix).
 buildGoModule rec {
   pname = "agentrun-openai";
-  version = "0.1.1";
+  version = "0.2.0";
 
   src = fetchFromGitHub {
     owner = "mytecor";
     repo = "agentrun-openai";
-    rev = "v0.1.1";
-    hash = "sha256-RNbosYVDPqDARV2NpxLEm8ug9ujDnxMsqhjFMkjFqhQ=";
+    rev = "v0.2.0";
+    hash = "sha256-yEe1L4NXSUH2PWo+Wr+wQhsKW3Coy6Lr9QsGIN5z9GU=";
   };
 
   # Версия stamp через -ldflags, как делает scripts/build-release.sh.
   ldflags = [
     "-s"
     "-w"
-    "-X main.version=v0.1.1"
+    "-X main.version=v0.2.0"
   ];
 
   # Computed from the pinned source's go.mod (github.com/dmora/agentrun with
   # replace to github.com/mytecor/agentrun): `go mod vendor`, then
   # `nix hash path --type sha256 vendor` (2026-10-05).
-  vendorHash = "sha256-R9ms2yhDtqHqjj3BCz+z2ES5i+otjPko4wluX6qKXzY=";
+  vendorHash = "sha256-r3x46YP3Rk9ymPB9fGT8XijDUs07cquUlQBczWeDZOE=";
 
   subPackages = [ "./cmd/agentrun-openai" ];
 

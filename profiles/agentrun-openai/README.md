@@ -5,11 +5,10 @@
 [`packages/agentrun-openai`](../../packages/agentrun-openai/README.md), модуль —
 [`modules/agentrun-openai`](../../modules/agentrun-openai/README.md).
 
-Профиль не задаёт agent CLI (`path`, `claudeBinary`, `codexAcpBinary`,
-`agyBinary`) — их подключает нода, когда готова предоставить authenticированные
-агентские бинари. Пока их нет, шлюз отвечает на `/healthz` и `/v1/models`,
-а обращения к моделям падают с ошибкой отсутствующего бинари — это ожидаемое
-промежуточное состояние.
+Профиль не задаёт agent CLI (`path`, `backends`) — их подключает нода, когда
+готова предоставить authenticированные агентские бинари. Пока их нет, шлюз
+отвечает на `/healthz` и `/v1/models`, а обращения к моделям падают с ошибкой
+отсутствующего бинари — это ожидаемое промежуточное состояние.
 
 ### Аутентификация agent CLI
 

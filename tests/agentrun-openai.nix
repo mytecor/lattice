@@ -23,7 +23,18 @@ let
           turnTimeout = "5m";
           sessionTtl = "2m";
           streamHeartbeat = "15s";
-          claudeThinkingBudget = 0;
+          backends = {
+            codex = {
+              command = "codex-acp";
+              effortFormat = "bracket";
+            };
+            claude = {
+              command = "claude-agent-acp";
+              args = [ "--debug" ];
+            };
+          };
+          defaultEffortFormat = "none";
+          extraArgs = [ "--shutdown-timeout" "15s" ];
         };
       }
     ];
@@ -64,6 +75,22 @@ assert lib.elem "5m" args;
 assert lib.elem "--session-ttl" args;
 assert lib.elem "2m" args;
 assert !(lib.elem "--api-key" args);
+
+# ACP backends and effort formats
+assert lib.elem "--acp" args;
+assert lib.elem "claude=claude-agent-acp --debug" args;
+assert lib.elem "codex=codex-acp" args;
+assert lib.elem "--effort-format" args;
+assert lib.elem "codex=bracket" args;
+assert lib.elem "none" args;
+assert lib.elem "--shutdown-timeout" args;
+assert lib.elem "15s" args;
+
+# Obsolete flags are not present
+assert !(lib.elem "--claude-binary" args);
+assert !(lib.elem "--codex-acp-binary" args);
+assert !(lib.elem "--agy-binary" args);
+assert !(lib.elem "--claude-thinking-budget" args);
 
 # ExecStart is the wrapper script — systemd would pass a literal "$api_key"
 # otherwise. It is a writeShellScript derivation whose path ends

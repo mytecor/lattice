@@ -100,11 +100,11 @@ in
       description = ''
         Packages whose bin directories are put on the PATH of every spawned
         agent CLI process (injected via the service `environment.PATH`). The
-        agent CLIs (`claude`, `codex-acp`, `agy`) are resolved by name from the
-        gateway's PATH, so declare them here (or rely on the NixOS system
-        profile via AppendEnvironment). A minimal bash/git/tools profile
-        (`pkgs.lattice.pi-tool-profile`) is recommended so sessions get the
-        same shell/tool contract as the Lattice Pi runtime.
+        agent CLIs (`codex-acp`, `claude-agent-acp`, `pi-acp`) are resolved by
+        name from the gateway's PATH, so declare them here (or rely on the
+        NixOS system profile via AppendEnvironment). A minimal bash/git/tools
+        profile (`pkgs.lattice.pi-tool-profile`) is recommended so sessions get
+        the same shell/tool contract as the Lattice Pi runtime.
       '';
     };
 
@@ -136,28 +136,56 @@ in
       description = "Idle interval before a keep-alive stream delta is sent (Go duration, `--stream-heartbeat`).";
     };
 
-    claudeThinkingBudget = mkOption {
-      type = types.ints.unsigned;
-      default = 0;
-      description = "Claude Code extended-thinking token budget (0 leaves thinking off, `--claude-thinking-budget`).";
+    backends = mkOption {
+      type = types.attrsOf (types.submodule ({ name, ... }: {
+        options = {
+          command = mkOption {
+            type = types.str;
+            default = name;
+            description = "Command or binary to run for this ACP backend (e.g. `codex-acp`, `npx @agentclientprotocol/codex-acp`).";
+          };
+
+          args = mkOption {
+            type = types.listOf types.str;
+            default = [ ];
+            description = "Additional command-line arguments passed to the backend command.";
+          };
+
+          effortFormat = mkOption {
+            type = types.nullOr (types.enum [ "bracket" "codex" "none" ]);
+            default = null;
+            description = ''
+              Reasoning effort format for this backend (`bracket`, `codex`, or `none`).
+              `bracket` aggregates bracketed model variants (e.g. `o3-mini[low]`) into
+              a base model with selectable reasoning effort in OpenAI chat requests.
+            '';
+          };
+        };
+      }));
+      default = {
+        codex = {
+          command = "codex-acp";
+          effortFormat = "bracket";
+        };
+      };
+      description = ''
+        ACP backends registered via `--acp <id>=<command> [args...]`.
+        At least one backend is required by agentrun-openai.
+      '';
     };
 
-    claudeBinary = mkOption {
-      type = types.str;
-      default = "claude";
-      description = "Claude Code binary name resolved from PATH (`--claude-binary`).";
+    defaultEffortFormat = mkOption {
+      type = types.nullOr (types.enum [ "bracket" "codex" "none" ]);
+      default = null;
+      description = ''
+        Global default reasoning effort parsing format (`--effort-format <format>`).
+      '';
     };
 
-    codexAcpBinary = mkOption {
-      type = types.str;
-      default = "codex-acp";
-      description = "Codex ACP binary name resolved from PATH (`--codex-acp-binary`).";
-    };
-
-    agyBinary = mkOption {
-      type = types.str;
-      default = "agy";
-      description = "Antigravity CLI binary name resolved from PATH (`--agy-binary`).";
+    extraArgs = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      description = "Extra command-line arguments passed to the agentrun-openai binary.";
     };
 
     commandLineArgs = mkOption {

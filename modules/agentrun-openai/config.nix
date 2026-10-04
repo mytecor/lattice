@@ -11,22 +11,41 @@ let
     then "${stateDir}/sessions.json"
     else cfg.sessionStoreFile;
 
+  acpArgs = lib.flatten (lib.mapAttrsToList (name: backend:
+    let
+      cmdStr = if backend.args == [ ]
+        then backend.command
+        else "${backend.command} ${lib.escapeShellArgs backend.args}";
+    in
+    [ "--acp" "${name}=${cmdStr}" ]
+  ) cfg.backends);
+
+  effortArgs = lib.flatten (lib.mapAttrsToList (name: backend:
+    lib.optionals (backend.effortFormat != null) [
+      "--effort-format" "${name}=${backend.effortFormat}"
+    ]
+  ) cfg.backends)
+  ++ lib.optionals (cfg.defaultEffortFormat != null) [
+    "--effort-format" cfg.defaultEffortFormat
+  ];
+
   baseArgs = [
     "--host" cfg.host
     "--port" (toString cfg.port)
     "--turn-timeout" cfg.turnTimeout
     "--session-ttl" cfg.sessionTtl
     "--stream-heartbeat" cfg.streamHeartbeat
-    "--claude-thinking-budget" (toString cfg.claudeThinkingBudget)
-    "--claude-binary" cfg.claudeBinary
-    "--codex-acp-binary" cfg.codexAcpBinary
-    "--agy-binary" cfg.agyBinary
     "--session-store" sessionStore
-  ] ++ lib.optionals (cfg.defaultCwd != null) [
+  ]
+  ++ acpArgs
+  ++ effortArgs
+  ++ lib.optionals (cfg.defaultCwd != null) [
     "--default-cwd" (toString cfg.defaultCwd)
-  ] ++ lib.optionals (cfg.allowedRoots != []) (
+  ]
+  ++ lib.optionals (cfg.allowedRoots != [ ]) (
     lib.flatten (map (root: [ "--allowed-root" (toString root) ]) cfg.allowedRoots)
-  );
+  )
+  ++ cfg.extraArgs;
 
   # CLI flags cannot reference env vars (systemd ExecStart would pass them
   # literally), so when an api key is set we wrap ExecStart in a real shell
@@ -55,6 +74,19 @@ let
 in
 {
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = cfg.backends != { };
+        message = "lattice.agentrun-openai: at least one ACP backend must be configured in lattice.agentrun-openai.backends.";
+      }
+      {
+        assertion = lib.all
+          (id: builtins.match "[^/ \t\r\n:]+" id != null)
+          (builtins.attrNames cfg.backends);
+        message = "lattice.agentrun-openai: backend IDs must not contain '/', ':', or whitespace.";
+      }
+    ];
+
     # Прозрачная граница: реальные CLI argv доступны опцией commandLineArgs
     # (аналог llm-gateway.publicConfigFile), чтобы тесты могли проверить
     # сгенерированную команду без разбора ExecStart-обёртки.

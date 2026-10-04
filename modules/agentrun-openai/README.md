@@ -4,10 +4,10 @@
 [`packages/agentrun-openai`](../../packages/agentrun-openai) — OpenAI-compatible
 HTTP-шлюз над библиотекой `github.com/dmora/agentrun`
 (форк [`github.com/mytecor/agentrun`](https://github.com/mytecor/agentrun)).
-Шлюз предоставляет persistent-сессии agent CLI как модели OpenAI API:
+Шлюз предоставляет persistent-сессии любых ACP-совместимых агентов как модели OpenAI API:
 
-- `claude-code`, `codex`, `agy` — backend-умолчания;
-- `claude-code/<model>` и `codex/<model>` — явный выбор модели.
+- `<backend-id>` — backend-умолчание;
+- `<backend-id>/<model-id>` — явный выбор модели.
 
 Здесь важно: agentrun живёт **внутри процесса gateway** и сам запускает agent CLI,
 поэтому модуль — это headless systemd-сервис, не интерактивный клиент.
@@ -22,6 +22,7 @@ HTTP-шлюз над библиотекой `github.com/dmora/agentrun`
 | `host` | `127.0.0.1` | Loopback-листенер (policy: наружу только через Caddy). |
 | `port` | `8787` | Loopback-порт. Нода задаёт зарегистрированный порт. |
 | `apiKeyFile` | `null` | Файл-секрет с bearer-ключом; через `LoadCredential` + wrapper. |
+| `backends` | `{ codex = { command = "codex-acp"; effortFormat = "bracket"; }; }` | ACP-бэкенды (`--acp`, `--effort-format`). |
 | `defaultCwd` | `null` | Рабочая директория сессий по умолчанию. |
 | `allowedRoots` | прочее | Разрешённые корни `X-Agent-CWD` (по умолчанию любые). |
 | `path` | прочее | Пакеты на PATH каждого спавняемого agent CLI. |
@@ -42,8 +43,17 @@ agenix-секрету). По умолчанию шлюз без аутентиф
     enable = true;
     port = 8787;
     apiKeyFile = config.age.secrets.agentrun-openai-key.path;
-    # Агентские CLI на PATH сессий.
-    path = [ pkgs.claude-code pkgs.codex-acp ];
+    # Агентские CLI / ACP-адаптеры на PATH сессий.
+    path = [ pkgs.codex-acp ];
+    backends = {
+      codex = {
+        command = "codex-acp";
+        effortFormat = "bracket";
+      };
+      pi = {
+        command = "pi-acp";
+      };
+    };
   };
 }
 ```
