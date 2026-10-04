@@ -6,7 +6,8 @@
 Задачи: [f3-01](f3-01-reticulum-tcp-interfaces.md),
 [f3-02](f3-02-define-entry-points.md),
 [f3-03](f3-03-second-node-rnsh.md) (отменена),
-[f3-04](f3-04-rnsh-nat-access.md).
+[f3-04](f3-04-rnsh-nat-access.md),
+[f3-05](./f3-05-reticulum-go-daemon.md) (follow-up: запланирована).
 
 **Критерий готовности:** с ноутбука через rnsh открывается shell на узле за NAT, связь переживает
 смену IP на стороне клиента.
@@ -16,3 +17,5 @@ Sydney/ReticulumNet реализованы; на homelab работают Reticu
 После переключения Mac на мобильный hotspot клиент с прежней identity и destination повторно
 выполнил команду через публичную сеть без LAN discovery; listener и server не перезапускались.
 F3-03 отменена: второй постоянной NixOS-ноды в актуальном плане нет.
+Основной критерий F3 остаётся закрыт; [f3-05](./f3-05-reticulum-go-daemon.md) отдельно переводит
+shared daemon с patched `rns-rs` на Reticulum-Go и повторяет полную live-приёмку `rnsh`/`r1s`.

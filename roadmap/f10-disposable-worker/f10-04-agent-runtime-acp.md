@@ -286,6 +286,25 @@ Tasks 1 и 3 независимы и могут идти параллельно.
 5. **Осталось на живой ноде (Task 6)**:
    - Проверены hot/cold path публикации образа в IPFS и pull через фасад `127.0.0.1:5050`.
    - В `bootstrap.sh` адрес слушателя `hydra-acp-daemon` зафиксирован на loopback `127.0.0.1` (устранена ошибка `Refusing to bind to non-loopback host 0.0.0.0 without TLS configured`).
-   - Финальный end-to-end smoke `r1s run -p 15514:55514` ожидает апстрим-исправлений в `r1s` и `meshbus`:
-     1. В `r1s` (`cmd/r1s/detach.go`): вызов `a.start()` в `runDetachedChild`, чтобы дочерний процесс слушал discovery-анонсы от локального брокера.
-     2. В `meshbus` / `r1s`: поддержка активного запроса пути/анонса (demand/path request) при старте клиента вместо ожидания пассивного периодического вещания (`announceInterval`), приводящего к `no usable offer` по таймауту.
+   - Финальный end-to-end smoke `r1s run -p 15514:55514` заблокирован недетерминированным
+     discovery allocator'а в `r1s`: первый `requestAttempt` не имеет известных destination'ов и
+     ждёт только новые события `endpoint.Discoveries()` в пределах `offerWait`, тогда как `r1sd`
+     по умолчанию повторяет announce раз в 5 минут. Клиент, запущенный между announce-пакетами,
+     завершается с `no usable offer` раньше следующего объявления.
+   - Локальная доставка через `rns-rs` подтверждена: после нового announce от перезапущенного
+     allocator'а клиент сразу получает discovery. Поэтому текущие наблюдения не доказывают дефект
+     `rns-rs`; предупреждения `invalid announce signature` и ошибки egress требуют отдельной
+     диагностики и не считаются установленной причиной этого таймаута.
+   - Предположение о пропущенном `a.start()` в detached child опровергнуто чтением полного пути
+     запуска: родитель повторно запускает бинарник без `-d`, с `--r1s-child`, после чего общий
+     `run()` запускает transport до входа в `runDetachedChild`. Дополнительный `a.start()` там не
+     требуется.
+   - Исправление должно дать новому run-клиенту известный allocator destination или иной
+     детерминированный bootstrap/rendezvous до истечения `offerWait`. Обычный Reticulum
+     `PathRequest` принимает уже известный destination hash и не является поиском сервиса по
+     aspect, поэтому задача не сводится к вызову `RequestPath` с неизвестным allocator'ом.
+     Уменьшение `announceInterval` с достаточным запасом относительно `offerWait` допустимо как
+     временная проверка, но не заменяет устойчивый механизм discovery.
+   - Миграция общего daemon с patched `rns-rs` на Reticulum-Go ведётся отдельно в
+     [f3-05](../f3-reticulum-tcp/f3-05-reticulum-go-daemon.md). Она убирает межреализационную
+     shared-instance boundary, но не заменяет bootstrap allocator destination в `r1s`.
