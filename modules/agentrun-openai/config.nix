@@ -82,7 +82,12 @@ in
     # сгенерированную команду без разбора ExecStart-обёртки.
     lattice.agentrun-openai.commandLineArgs = baseArgs;
     users.groups.${cfg.group} = { };
-    users.users.${cfg.user} = {
+    # Only define a dedicated system user when the gateway does not run as an
+    # existing privileged user (root). When user = "root", NixOS already
+    # defines users.users.root (home = /root, etc.) and overriding it here
+    # would conflict; the shared root Pi config (/root/.pi/agent) is exactly
+    # the point of running as root.
+    users.users.${cfg.user} = lib.mkIf (cfg.user != "root") {
       isSystemUser = true;
       group = cfg.group;
       home = "/var/empty";
@@ -129,7 +134,7 @@ in
         ProtectKernelTunables = true;
         ProtectProc = "invisible";
         ProtectSystem = "full";
-        ProtectHome = true;
+        ProtectHome = cfg.protectHome;
         ReadWritePaths = stateDir;
         RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
         RestrictRealtime = true;

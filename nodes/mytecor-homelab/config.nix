@@ -424,6 +424,38 @@ in
     defaultTransformers = [ "acp-normalizer" ];
   };
 
+  # agentrun-openai: OpenAI-compatible HTTP gateway over agentrun that spawns
+  # ACP agents itself and exposes them as OpenAI chat-completions models.
+  # Runs as root (like pi-acp-daemon) so the spawned `pi-acp` agent reads the
+  # root user's shared Pi config (/root/.pi/agent — same llm-gateway
+  # credentials and extensions the daemon uses) and can resolve the `!cmd`
+  # runtime secret reference in settings.json via `cat /run/agenix/...`;
+  # ProtectHome=read-only keeps /root readable for the gateway without writing
+  # into it. Backends are ACP adapters on the session PATH: pi-acp (adapter
+  # over the locally installed Pi) is the default test backend.
+  lattice.agentrun-openai = {
+    user = lib.mkDefault "root";
+    group = lib.mkDefault "root";
+    protectHome = lib.mkDefault "read-only";
+    # pi-acp wrapper already prepends the pinned Pi (`pi`) to its own PATH, so
+    # sessions get the full runtime. pi-tool-profile gives the spawned agent
+    # the same shell/git/tools contract as pi-acp-daemon sessions.
+    path = [ pkgs.lattice.pi-acp pkgs.lattice.pi-tool-profile ];
+    backends = {
+      pi = {
+        command = "pi-acp";
+      };
+    };
+    # pi-acp reads the agent's Pi config from PI_CODING_AGENT_DIR: point at the
+    # root-shared config (same as pi-acp-daemon PI_CODING_AGENT_DIR) so agentrun
+    # sessions reuse the node Pi identity. Sessions themselves stay under
+    # /var/lib/agentrun-openai (stateDir), out of /root.
+    extraEnv = {
+      PI_CODING_AGENT_DIR = "/root/.pi/agent";
+      PI_CODING_AGENT_SESSION_DIR = "/var/lib/agentrun-openai/pi-sessions";
+    };
+  };
+
   # f9-02: repo-scoped authorization. The cache proxy is a shared reader whose
   # origin fetch (comin-source-sync) follows the public `mytecor/lattice` repo;
   # the allowlist bounds it to exactly that repository. The repo is public and
@@ -771,7 +803,9 @@ in
     # F14: Authentik SSO data (media/storage) survives reboots (impermanence).
     { directory = "/var/lib/authentik"; user = "authentik"; group = "authentik"; mode = "0750"; }
     # agentrun-openai: persistent native session metadata (resume IDs, never
-    # message text) survives reboots. Owned by the module's dedicated user.
+    # message text) survives reboots. The gateway runs as root (shared Pi
+    # config /root/.pi/agent), so ownership by the module's dedicated user is
+    # cosmetic; root reads it regardless.
     { directory = "/var/lib/agentrun-openai"; user = "agentrun"; group = "agentrun"; mode = "0700"; }
   ];
 

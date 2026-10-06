@@ -19,7 +19,6 @@ let
           allowedRoots = [ "/srv/projects" ];
           apiKeyFile = /tmp/not-a-real-key;
           path = [ pkgs.git ];
-          extraEnv.RAD_HOME = "/persist/var/lib/radicle-peer";
           turnTimeout = "5m";
           sessionTtl = "2m";
           streamHeartbeat = "15s";
@@ -31,6 +30,17 @@ let
               command = "claude-agent-acp";
               args = [ "--debug" ];
             };
+            pi = {
+              command = "pi-acp";
+            };
+          };
+          extraEnv = {
+            RAD_HOME = "/persist/var/lib/radicle-peer";
+            # pi-acp reads the agent's Pi config from PI_CODING_AGENT_DIR;
+            # when the gateway runs as root it can reuse the root-shared Pi
+            # config (same as pi-acp-daemon). Sessions stay under stateDir.
+            PI_CODING_AGENT_DIR = "/root/.pi/agent";
+            PI_CODING_AGENT_SESSION_DIR = "/var/lib/agentrun-openai/pi-sessions";
           };
           extraArgs = [ "--shutdown-timeout" "15s" ];
         };
@@ -79,6 +89,7 @@ assert !(lib.elem "--api-key" args);
 assert lib.elem "--acp" args;
 assert lib.elem "claude=claude-agent-acp --debug" args;
 assert lib.elem "codex=codex-acp" args;
+assert lib.elem "pi=pi-acp" args;
 assert !(lib.elem "--effort-format" args);
 assert lib.elem "--shutdown-timeout" args;
 assert lib.elem "15s" args;
@@ -99,5 +110,45 @@ assert unit.serviceConfig.LoadCredential == [ "api-key:/tmp/not-a-real-key" ];
 # PATH is built inside the wrapper script (not unit.environment, whose
 # default systemd PATH would conflict); extraEnv reaches the unit verbatim.
 assert unit.environment.RAD_HOME == "/persist/var/lib/radicle-peer";
+assert unit.environment.PI_CODING_AGENT_DIR == "/root/.pi/agent";
+assert unit.environment.PI_CODING_AGENT_SESSION_DIR == "/var/lib/agentrun-openai/pi-sessions";
+# Default hardening keeps ProtectHome strict (true).
+assert unit.serviceConfig.ProtectHome == true;
+
+# --- Root-mode gateway (shared root Pi config, like pi-acp-daemon) ----------
+# The module must let a node run the gateway as root with ProtectHome=read-only
+# so a spawned pi-acp agent can read /root/.pi/agent and agenix secrets.
+let
+  rootConfig = (lib.nixosSystem {
+    modules = [
+      agentrunModule
+      {
+        nixpkgs.pkgs = pkgs;
+        networking.hostName = "node-root";
+        system.stateVersion = "26.05";
+
+        lattice.agentrun-openai = {
+          enable = true;
+          host = "127.0.0.1";
+          port = 8788;
+          user = "root";
+          group = "root";
+          protectHome = "read-only";
+          path = [ pkgs.lattice.pi-acp ];
+          backends.pi.command = "pi-acp";
+        };
+      }
+    ];
+  }).config;
+
+  rootUnit = rootConfig.systemd.services.agentrun-openai;
+  rootArgs = rootConfig.lattice.agentrun-openai.commandLineArgs;
+in
+assert rootUnit.serviceConfig.User == "root";
+assert rootUnit.serviceConfig.Group == "root";
+assert rootUnit.serviceConfig.ProtectHome == "read-only";
+assert lib.elem "--acp" rootArgs;
+assert lib.elem "pi=pi-acp" rootArgs;
+assert !(lib.elem "--effort-format" rootArgs);
 
 pkgs.runCommand "agentrun-openai-config" { } "touch $out"

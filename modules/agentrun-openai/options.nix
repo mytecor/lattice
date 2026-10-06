@@ -118,6 +118,21 @@ in
       '';
     };
 
+    protectHome = mkOption {
+      type = types.nullOr (types.either types.bool (types.enum [ "read-only" ]));
+      default = true;
+      description = ''
+        systemd `ProtectHome` level for the gateway service. `true` makes
+        `/home`, `/root` and `/run/user` inaccessible/empty (default, strict).
+        `"read-only"` mounts them read-only — required when a spawned agent
+        CLI (`pi-acp`) must read the root user's shared agent config
+        (`/root/.pi/agent`) and agenix secrets under `/run/agenix`. `null`
+        disables the hardening. Prefer keeping the service user non-root and
+        this option `true`; relax only when an agent needs the shared
+        root-owned config.
+      '';
+    };
+
     turnTimeout = mkOption {
       type = types.str;
       default = "30m";

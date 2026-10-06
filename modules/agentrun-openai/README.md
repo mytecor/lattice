@@ -27,6 +27,18 @@ HTTP-шлюз над библиотекой `github.com/dmora/agentrun`
 | `allowedRoots` | прочее | Разрешённые корни `X-Agent-CWD` (по умолчанию любые). |
 | `path` | прочее | Пакеты на PATH каждого спавняемого agent CLI. |
 | `extraEnv` | прочее | Доп. переменные окружения. |
+| `user` / `group` | `agentrun` | Юзер/группа сервиса. Нода может поставить `root` (как pi-acp-daemon), когда спавняемому агенту нужен общий root-конфиг и agenix-секреты. |
+| `protectHome` | `true` | systemd `ProtectHome`: `true` (строго), `"read-only"` (root-конфиг читается агентом), или `null` (выключено). |
+
+## Root-режим и общий Pi-конфиг
+
+Когда бэкенд — `pi-acp`, а гейтвей работает как root (`user = "root"`,
+`protectHome = "read-only"`), спавняемый агент читает общий конфиг
+[`lattice.pi`](../../modules/pi) из `/root/.pi/agent` (те же llm-gateway-креды и
+расширения, что у [`pi-acp-daemon`](../../modules/pi-acp-daemon)) и может
+разрешить `!cmd`-ссылку на agenix-секрет через `/run/agenix`. Укажите
+`extraEnv.PI_CODING_AGENT_DIR = "/root/.pi/agent"`, сессии держите в stateDir
+(`PI_CODING_AGENT_SESSION_DIR`). См. `nodes/mytecor-homelab/config.nix`.
 
 ## Секреты
 
@@ -34,6 +46,10 @@ Bearer-ключ (если нужен) подаётся файлом через `
 `LoadCredential`, в Nix store не попадает (имя опции — путь к узловому
 agenix-секрету). По умолчанию шлюз без аутентификации: держите его на loopback
 или перед Caddy с credential/ForwardAuth.
+
+В root-режиме Pi-агент дополнительно читает agenix-секрет llm-gateway
+(`/run/agenix/llm-gateway-client-node-pi`, mode `0400`) — поэтому процесс
+должен быть root (схема та же, что у `pi-acp-daemon`).
 
 ## Пример
 
