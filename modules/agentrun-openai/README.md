@@ -22,7 +22,7 @@ HTTP-шлюз над библиотекой `github.com/dmora/agentrun`
 | `host` | `127.0.0.1` | Loopback-листенер (policy: наружу только через Caddy). |
 | `port` | `8787` | Loopback-порт. Нода задаёт зарегистрированный порт. |
 | `apiKeyFile` | `null` | Файл-секрет с bearer-ключом; через `LoadCredential` + wrapper. |
-| `backends` | `{ codex = { command = "codex-acp"; effortFormat = "bracket"; }; }` | ACP-бэкенды (`--acp`, `--effort-format`). |
+| `backends` | `{ codex = { command = "codex-acp"; }; }` | ACP-бэкенды (`--acp`). С `c23d957` effort-варианты авто-обнаруживаются — `--effort-format` удалён. |
 | `defaultCwd` | `null` | Рабочая директория сессий по умолчанию. |
 | `allowedRoots` | прочее | Разрешённые корни `X-Agent-CWD` (по умолчанию любые). |
 | `path` | прочее | Пакеты на PATH каждого спавняемого agent CLI. |
@@ -48,7 +48,6 @@ agenix-секрету). По умолчанию шлюз без аутентиф
     backends = {
       codex = {
         command = "codex-acp";
-        effortFormat = "bracket";
       };
       pi = {
         command = "pi-acp";

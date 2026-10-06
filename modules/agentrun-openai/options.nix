@@ -150,35 +150,18 @@ in
             default = [ ];
             description = "Additional command-line arguments passed to the backend command.";
           };
-
-          effortFormat = mkOption {
-            type = types.nullOr (types.enum [ "bracket" "codex" "none" ]);
-            default = null;
-            description = ''
-              Reasoning effort format for this backend (`bracket`, `codex`, or `none`).
-              `bracket` aggregates bracketed model variants (e.g. `o3-mini[low]`) into
-              a base model with selectable reasoning effort in OpenAI chat requests.
-            '';
-          };
         };
       }));
       default = {
         codex = {
           command = "codex-acp";
-          effortFormat = "bracket";
         };
       };
       description = ''
         ACP backends registered via `--acp <id>=<command> [args...]`.
         At least one backend is required by agentrun-openai.
-      '';
-    };
-
-    defaultEffortFormat = mkOption {
-      type = types.nullOr (types.enum [ "bracket" "codex" "none" ]);
-      default = null;
-      description = ''
-        Global default reasoning effort parsing format (`--effort-format <format>`).
+        Since c23d957 reasoning-effort variants are auto-discovered from
+        agentrun's model catalog (the obsolete `--effort-format` flag is gone).
       '';
     };
 

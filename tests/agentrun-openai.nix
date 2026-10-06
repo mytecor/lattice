@@ -26,14 +26,12 @@ let
           backends = {
             codex = {
               command = "codex-acp";
-              effortFormat = "bracket";
             };
             claude = {
               command = "claude-agent-acp";
               args = [ "--debug" ];
             };
           };
-          defaultEffortFormat = "none";
           extraArgs = [ "--shutdown-timeout" "15s" ];
         };
       }
@@ -76,13 +74,12 @@ assert lib.elem "--session-ttl" args;
 assert lib.elem "2m" args;
 assert !(lib.elem "--api-key" args);
 
-# ACP backends and effort formats
+# ACP backends; effort variants are auto-discovered since c23d957,
+# so --effort-format must not be passed (the flag is gone upstream).
 assert lib.elem "--acp" args;
 assert lib.elem "claude=claude-agent-acp --debug" args;
 assert lib.elem "codex=codex-acp" args;
-assert lib.elem "--effort-format" args;
-assert lib.elem "codex=bracket" args;
-assert lib.elem "none" args;
+assert !(lib.elem "--effort-format" args);
 assert lib.elem "--shutdown-timeout" args;
 assert lib.elem "15s" args;
 

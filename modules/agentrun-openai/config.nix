@@ -20,15 +20,6 @@ let
     [ "--acp" "${name}=${cmdStr}" ]
   ) cfg.backends);
 
-  effortArgs = lib.flatten (lib.mapAttrsToList (name: backend:
-    lib.optionals (backend.effortFormat != null) [
-      "--effort-format" "${name}=${backend.effortFormat}"
-    ]
-  ) cfg.backends)
-  ++ lib.optionals (cfg.defaultEffortFormat != null) [
-    "--effort-format" cfg.defaultEffortFormat
-  ];
-
   baseArgs = [
     "--host" cfg.host
     "--port" (toString cfg.port)
@@ -38,7 +29,6 @@ let
     "--session-store" sessionStore
   ]
   ++ acpArgs
-  ++ effortArgs
   ++ lib.optionals (cfg.defaultCwd != null) [
     "--default-cwd" (toString cfg.defaultCwd)
   ]
