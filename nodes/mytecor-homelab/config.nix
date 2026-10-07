@@ -450,9 +450,17 @@ in
     # root-shared config (same as pi-acp-daemon PI_CODING_AGENT_DIR) so agentrun
     # sessions reuse the node Pi identity. Sessions themselves stay under
     # /var/lib/agentrun-openai (stateDir), out of /root.
+    #
+    # PI_ACP_DIR is required: pi-acp default-writes its session-map into
+    # $HOME/.pi/pi-acp (= /root/.pi/pi-acp), but ProtectHome=read-only mounts
+    # /root read-only in the service namespace, so session/new fails with
+    # ENOENT `mkdir /root/.pi/pi-acp/session-map.json.d`. Point it at the
+    # writable, impermanence-persisted StateDirectory (mirrors
+    # modules/pi-acp-daemon which sets PI_ACP_DIR = stateDir/pi-acp).
     extraEnv = {
       PI_CODING_AGENT_DIR = "/root/.pi/agent";
       PI_CODING_AGENT_SESSION_DIR = "/var/lib/agentrun-openai/pi-sessions";
+      PI_ACP_DIR = "/var/lib/agentrun-openai/pi-acp";
     };
   };
 

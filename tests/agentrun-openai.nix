@@ -136,6 +136,14 @@ let
           protectHome = "read-only";
           path = [ pkgs.lattice.pi-acp ];
           backends.pi.command = "pi-acp";
+          # pi-acp writes its session-map under $HOME/.pi/pi-acp by default;
+          # with ProtectHome=read-only that path is read-only in the service
+          # namespace, so point PI_ACP_DIR at the writable StateDirectory
+          # (mirror modules/pi-acp-daemon).
+          extraEnv = {
+            PI_CODING_AGENT_DIR = "/root/.pi/agent";
+            PI_ACP_DIR = "/var/lib/agentrun-openai/pi-acp";
+          };
         };
       }
     ];
@@ -147,6 +155,14 @@ in
 assert rootUnit.serviceConfig.User == "root";
 assert rootUnit.serviceConfig.Group == "root";
 assert rootUnit.serviceConfig.ProtectHome == "read-only";
+# Root-mode + ProtectHome=read-only: pi-acp default-writes its session-map to
+# $HOME/.pi/pi-acp (= /root/.pi/pi-acp), which is read-only in the service
+# namespace, so session/new would fail with ENOENT mkdir .../session-map.json.d
+# unless PI_ACP_DIR points at a writable path under the StateDirectory.
+# Mirror modules/pi-acp-daemon which sets PI_ACP_DIR = stateDir/pi-acp.
+assert lib.elem "read-only" [ (toString rootUnit.serviceConfig.ProtectHome) ];
+assert rootConfig.lattice.agentrun-openai.extraEnv ? PI_ACP_DIR
+  || throw "root-mode pi-acp backend must set extraEnv.PI_ACP_DIR to a writable StateDirectory path (e.g. /var/lib/agentrun-openai/pi-acp) when ProtectHome=read-only";
 assert lib.elem "--acp" rootArgs;
 assert lib.elem "pi=pi-acp" rootArgs;
 assert !(lib.elem "--effort-format" rootArgs);

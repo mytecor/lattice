@@ -40,6 +40,14 @@ HTTP-шлюз над библиотекой `github.com/dmora/agentrun`
 `extraEnv.PI_CODING_AGENT_DIR = "/root/.pi/agent"`, сессии держите в stateDir
 (`PI_CODING_AGENT_SESSION_DIR`). См. `nodes/mytecor-homelab/config.nix`.
 
+При этом **обязательно** задайте `extraEnv.PI_ACP_DIR` на writable-путь под
+stateDir (например `/var/lib/agentrun-openai/pi-acp`): pi-acp по умолчанию
+пишет свой `session-map` в `$HOME/.pi/pi-acp` (= `/root/.pi/pi-acp` у root),
+а `ProtectHome = "read-only"` монтирует `/root` read-only в namespace
+сервиса — `session/new` падает с `ENOENT mkdir …/session-map.json.d`.
+Тот же приём, что в [`modules/pi-acp-daemon`](../../modules/pi-acp-daemon)
+(`PI_ACP_DIR = stateDir/pi-acp`).
+
 ## Секреты
 
 Bearer-ключ (если нужен) подаётся файлом через `apiKeyFile` → systemd
