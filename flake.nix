@@ -225,6 +225,7 @@
           hydra-acp = final.callPackage ./packages/hydra-acp/package.nix { };
           llm-gateway = final.callPackage ./packages/llm-gateway/package.nix { };
           agentrun-openai = final.callPackage ./packages/agentrun-openai/package.nix { };
+          codex-acp-fsless = final.callPackage ./packages/codex-acp/package.nix { };
           pi = final.callPackage ./packages/pi/package.nix { };
           pi-mcp-adapter = final.callPackage ./packages/pi-mcp-adapter/package.nix { };
           pi-retry = final.callPackage ./packages/pi-retry/package.nix { };
@@ -313,7 +314,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) acp-normalizer acp-web agent-image agentrun-openai git-cache-proxy hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
+          inherit (pkgs.lattice) codex-acp-fsless acp-normalizer acp-web agent-image agentrun-openai git-cache-proxy hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
         });

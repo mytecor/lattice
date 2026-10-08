@@ -63,6 +63,8 @@ in
     gatewayModule = self.nixosModules.llm-gateway;
   };
 
+  codex-acp = import ./codex-acp.nix { inherit pkgs; };
+
   agentrun-openai = import ./agentrun-openai.nix {
     inherit nixpkgs pkgs;
     agentrunModule = self.nixosModules.agentrun-openai;

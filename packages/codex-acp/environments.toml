@@ -1,0 +1,3 @@
+default = "none"
+# Keep the transport host available for stdio MCP; never attach it to the model.
+include_local = true

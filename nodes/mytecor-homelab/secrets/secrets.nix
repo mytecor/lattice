@@ -3,6 +3,8 @@ let
   node = "age1dyxfyhf8s5lj9k0pzkkjjte0dcg4yecwglh88kmv2udau0q33v0ssa4pd8";
 in
 {
+  # ChatGPT OAuth cache for the Codex ACP backend (complete auth.json).
+  "codex-auth.age".publicKeys = [ admin node ];
   "wifi-ssid.age".publicKeys = [ admin node ];
   "wifi-password.age".publicKeys = [ admin node ];
   "hotspot-password.age".publicKeys = [ admin node ];
