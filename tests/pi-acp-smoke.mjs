@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtemp } from 'node:fs/promises'
+import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -67,14 +67,42 @@ try {
   })
   assert.equal(prompt.stopReason, 'end_turn')
 
-  // Lattice patch (mcp-servers-accepted): a non-empty mcpServers list must be
-  // accepted, not rejected with MCP_SERVERS_UNSUPPORTED — pi bridges MCP inside
-  // itself via pi-mcp-adapter, so clients that cannot omit the field keep
-  // working. The requested servers are stored but not connected at this layer.
+  // The requested stdio MCP server must really be connected by the child Pi.
+  // A fake protocol peer records tools/list without invoking an LLM/provider.
+  const mcpLog = path.join(state, 'mcp-connected')
+  const server = `
+    const { createInterface } = await import('node:readline');
+    const { writeFileSync } = await import('node:fs');
+    createInterface({ input: process.stdin }).on('line', line => {
+      const request = JSON.parse(line);
+      if (request.id === undefined) return;
+      let result = {};
+      if (request.method === 'initialize') result = {
+        protocolVersion: request.params.protocolVersion,
+        capabilities: { tools: {} }, serverInfo: { name: 'probe', version: '1' }
+      };
+      if (request.method === 'tools/list') {
+        writeFileSync(process.env.PROBE_LOG, 'connected');
+        result = { tools: [{ name: 'probe', description: 'probe', inputSchema: { type: 'object' } }] };
+      }
+      console.log(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }));
+    });
+  `
   const sessionWithMcp = await request('session/new', {
     cwd: state,
-    mcpServers: [{ name: 'probe', command: 'true', args: [] }]
+    mcpServers: [{ name: 'probe', command: process.execPath,
+      args: ['--input-type=module', '-e', server],
+      env: [{ name: 'PROBE_LOG', value: mcpLog }] }]
   })
+  let connected = false
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (await readFile(mcpLog, 'utf8').catch(() => '') === 'connected') {
+      connected = true
+      break
+    }
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  assert.ok(connected, 'ACP MCP descriptor must reach Pi and complete tools/list')
   assert.ok(sessionWithMcp.sessionId)
   assert.notEqual(sessionWithMcp.sessionId, session.sessionId)
 
@@ -90,4 +118,4 @@ try {
   assert.equal(exitCode, 0)
 }
 
-console.log('Pi ACP smoke passed: initialize, session/new (+ non-empty mcpServers), built-in prompts')
+console.log('Pi ACP smoke passed: initialize, session/new, real stdio MCP connection, built-in prompts')

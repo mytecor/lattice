@@ -17,18 +17,21 @@ nix build .#packages.x86_64-linux.pi-acp
 Upstream пока не публикует этот fork в npm или ACP Registry, поэтому Hydra использует локальное
 agent definition с абсолютным store-путём, а не динамическую registry-установку.
 
-## Patch: `mcpServers` принимается (`mcp-servers-accepted.patch`)
+## MCP-серверы ACP-сессии
 
-Базовый `regadas/pi-acp` отклоняет любой `session/new`/`load`/`resume` с непустым `mcpServers`
-(`MCP_SERVERS_UNSUPPORTED`), потому что pi не умеет MCP «нативно». Исходный upstream
-([`svkozak/pi-acp`](https://github.com/svkozak/pi-acp)) принимает поле и хранит его в session
-state: MCP-инструменты в сессии даёт pi-mcp-adapter, настроенный на хосте — к ACP-транспорту это
-не относится.
+[Патч](./mcp-servers-accepted.patch) передаёт `mcpServers` из
+`session/new`, `session/load` и `session/resume` дочернему Pi через
+`--mcp-config` и закреплённый [pi-mcp-adapter](./../pi-mcp-adapter/README.md).
+Поддерживаются stdio (command/args/env), HTTP и SSE (url/headers).
 
-Патч приводит поведение к upstream-виду: `mcpServers` принимается, пишется warning (сервера из
-запроса не подключаются на этом слое), а capability `mcpCapabilities: { http, sse }` объявляется.
-Реальные MCP-сервера настраиваются на хосте (`lattice.pi.mcp` → `.mcp.json` /
-`~/.config/mcp/mcp.json` / `<pi agent dir>/mcp.json`) и попадают в сессию через pi-mcp-adapter.
+Каждый процесс получает отдельный временный каталог с правами `0700` и конфиг
+с правами `0600`; конфиг удаляется при завершении или ошибке запуска дочернего
+процесса. Дескрипторы с токенами не записываются в общий конфиг Pi или карту
+ACP-сессий. При восстановлении клиент должен передать актуальные `mcpServers`.
 
-Регрессия — в [`tests/pi-acp-smoke.mjs`](../../tests/pi-acp-smoke.mjs): `session/new` с непустым
-`mcpServers` должен проходить.
+`PI_ACP_DISABLE_BUILTIN_TOOLS=1` отключает встроенные инструменты внутреннего Pi.
+Нода задаёт его для `agentrun-openai`, чтобы клиентский `bash` вызывался через
+виртуальный MCP, а не подменялся локальным bash внутреннего агента.
+
+[Smoke-тест](./../../tests/pi-acp-smoke.mjs) проверяет реальное подключение
+переданного stdio MCP-сервера и запрос `tools/list` без обращения к LLM.

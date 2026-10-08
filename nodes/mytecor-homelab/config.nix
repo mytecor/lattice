@@ -430,8 +430,8 @@ in
   # root user's shared Pi config (/root/.pi/agent — same llm-gateway
   # credentials and extensions the daemon uses) and can resolve the `!cmd`
   # runtime secret reference in settings.json via `cat /run/agenix/...`;
-  # ProtectHome=read-only keeps /root readable for the gateway without writing
-  # into it. Backends are ACP adapters on the session PATH: pi-acp (adapter
+  # ProtectHome=read-only keeps /root read-only except for Pi's config directory,
+  # which needs writable lock files. Backends are ACP adapters on the session PATH: pi-acp (adapter
   # over the locally installed Pi) is the default test backend.
   lattice.agentrun-openai = {
     user = lib.mkDefault "root";
@@ -461,8 +461,15 @@ in
       PI_CODING_AGENT_DIR = "/root/.pi/agent";
       PI_CODING_AGENT_SESSION_DIR = "/var/lib/agentrun-openai/pi-sessions";
       PI_ACP_DIR = "/var/lib/agentrun-openai/pi-acp";
+      # OpenAI tools must execute on the client through the virtual MCP bridge.
+      PI_ACP_DISABLE_BUILTIN_TOOLS = "1";
     };
   };
+
+  # Pi locks settings/auth state beside the shared config even when reading it.
+  # Without this exception its model catalog is empty and ACP session/new fails
+  # with authRequired. Keep the rest of /root read-only and sessions in stateDir.
+  systemd.services.agentrun-openai.serviceConfig.ReadWritePaths = [ "/root/.pi/agent" ];
 
   # f9-02: repo-scoped authorization. The cache proxy is a shared reader whose
   # origin fetch (comin-source-sync) follows the public `mytecor/lattice` repo;

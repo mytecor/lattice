@@ -5,6 +5,7 @@
   makeWrapper,
   nodejs,
   pi,
+  pi-mcp-adapter,
   pnpm,
   pnpmConfigHook,
   runCommand,
@@ -26,10 +27,7 @@ let
     mkdir -p "$out"
     cp -R ${upstreamSource}/. "$out/"
     cp ${./pnpm-lock.yaml} "$out/pnpm-lock.yaml"
-    # Lattice patch: upstream svkozak/pi-acp accepts mcpServers (stores them, does
-    # not wire them to pi; MCP is provided inside pi by pi-mcp-adapter), but the
-    # maintained regadas fork rejects them with MCP_SERVERS_UNSUPPORTED, failing
-    # session/new for clients that cannot omit the field. Accept and warn instead.
+    # Connect ACP session MCP servers through an isolated Pi adapter config.
     chmod -R u+w "$out"
     (cd "$out" && patch -p1 < ${./mcp-servers-accepted.patch}) \
       || { echo "pi-acp: mcp-servers-accepted.patch did not apply" >&2; exit 1; }
@@ -74,7 +72,8 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     echo ${lib.escapeShellArg finalAttrs.pnpmDeps} > "$out/libexec/${pname}/pnpm-deps-store-path"
     makeWrapper ${lib.getExe nodejs} "$out/bin/pi-acp" \
       --add-flags "$out/libexec/${pname}/dist/index.js" \
-      --prefix PATH : ${lib.makeBinPath [ pi ]}
+      --prefix PATH : ${lib.makeBinPath [ pi ]} \
+      --set PI_ACP_MCP_EXTENSION ${pi-mcp-adapter}/extension
 
     runHook postInstall
   '';

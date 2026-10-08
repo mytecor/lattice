@@ -1,37 +1,63 @@
 diff --git a/src/acp/agent.ts b/src/acp/agent.ts
-index dda516a..37d166e 100644
+index dda516a..54c5a38 100644
 --- a/src/acp/agent.ts
 +++ b/src/acp/agent.ts
-@@ -53,18 +53,19 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
+@@ -1,3 +1,4 @@
++import type { McpServer } from '@agentclientprotocol/sdk'
+ import {
+   PROTOCOL_VERSION,
+   RequestError,
+@@ -52,21 +53,6 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
+ import { existsSync, readFileSync, realpathSync } from 'node:fs'
  import type { AvailableCommand } from '@agentclientprotocol/sdk'
- 
- /**
+
+-/**
 - * pi has no MCP support (an extension would be required to bridge MCP
 - * servers), so silently accepting `mcpServers` would hand the client a
 - * session that is missing its requested tools. Reject explicitly before any
 - * session side effects instead of degrading silently.
-+ * MCP is bridged by the pi-mcp-adapter extension inside pi (Lattice patch):
-+ * servers are configured on the host (.mcp.json / ~/.config/mcp/mcp.json /
-+ * <pi agent dir>/mcp.json) and exposed by the adapter, not connected at the
-+ * ACP transport layer. Rejecting `mcpServers` would fail every session/new
-+ * from clients that cannot omit the field, so accept it and log a notice
-+ * instead of degrading the session; MCP tools come from the adapter inside pi.
-  */
- function assertNoMcpServers(mcpServers: readonly unknown[] | undefined): void {
-   if (!mcpServers?.length) return
+- */
+-function assertNoMcpServers(mcpServers: readonly unknown[] | undefined): void {
+-  if (!mcpServers?.length) return
 -  throw RequestError.invalidParams(
 -    { reason: 'MCP_SERVERS_UNSUPPORTED' },
 -    `pi does not support MCP servers, so pi-acp cannot connect the ${mcpServers.length} requested MCP server(s). ` +
 -      'Remove mcpServers from the session request. To use MCP tools with pi, configure them through a pi extension ' +
 -      '(e.g. https://github.com/nicobailon/pi-mcp-adapter) instead.'
-+  console.warn(
-+    `pi-acp: MCP is bridged by the pi-mcp-adapter extension inside pi, not at the ACP layer; ` +
-+      `ignoring ${mcpServers.length} requested mcpServers for this session. Configure the servers on the host ` +
-+      `(.mcp.json / ~/.config/mcp/mcp.json / <pi agent dir>/mcp.json) to make them available to the model.`
-   )
- }
- 
-@@ -593,10 +594,11 @@ export class PiAcpAgent implements ACPAgent {
+-  )
+-}
+
+ function assertNoAdditionalDirectories(additionalDirectories: readonly string[] | undefined): void {
+   if (!additionalDirectories?.length) return
+@@ -400,7 +386,7 @@ export class PiAcpAgent implements ACPAgent {
+     throw RequestError.requestCancelled({}, `session is being deleted: ${sessionId}`)
+   }
+
+-  private async restoreSession(sessionId: string, opts?: { cwd?: string }): Promise<PiAcpSession> {
++  private async restoreSession(sessionId: string, opts?: { cwd?: string; mcpServers?: McpServer[] }): Promise<PiAcpSession> {
+     this.assertNotDeleting(sessionId)
+
+     const existing = this.sessions.maybeGet(sessionId)
+@@ -440,7 +426,8 @@ export class PiAcpAgent implements ACPAgent {
+         proc = await this.sessions.spawnOwned({
+           cwd,
+           sessionPath: stored.sessionFile,
+-          piCommand: process.env.PI_ACP_PI_COMMAND
++          piCommand: process.env.PI_ACP_PI_COMMAND,
++          mcpServers: opts?.mcpServers
+         })
+       } catch (e: unknown) {
+         if (e instanceof Error && e.name === 'PiRpcSpawnError') {
+@@ -542,7 +529,7 @@ export class PiAcpAgent implements ACPAgent {
+    * and then use (or restore) the surviving state. The load itself calls
+    * restoreSession directly and therefore never waits on itself.
+    */
+-  private async restoreSessionAwaitingLoads(sessionId: string, opts?: { cwd?: string }): Promise<PiAcpSession> {
++  private async restoreSessionAwaitingLoads(sessionId: string, opts?: { cwd?: string; mcpServers?: McpServer[] }): Promise<PiAcpSession> {
+     while (true) {
+       await this.waitForActiveLoads(sessionId)
+       const observedGeneration = this.loadGenerations.get(sessionId) ?? 0
+@@ -593,10 +580,8 @@ export class PiAcpAgent implements ACPAgent {
        // `createPiAcpAgentApp` (src/acp/app.ts): omitted capability = unsupported.
        agentCapabilities: {
          loadSession: true,
@@ -39,11 +65,201 @@ index dda516a..37d166e 100644
 -        // in session/new, session/load, and session/resume (see README
 -        // limitations), and no MCP transport capability is advertised.
 -        mcpCapabilities: { http: false, sse: false },
-+        // MCP transport works through the pi-mcp-adapter extension inside pi
-+        // (Lattice patch): the session gets MCP tools from the adapter, so the
-+        // capability is advertised and `mcpServers` is accepted (see
-+        // assertNoMcpServers).
++        // ACP servers are connected by the packaged Pi MCP adapter per child.
 +        mcpCapabilities: { http: true, sse: true },
          promptCapabilities: {
            image: true,
            audio: false,
+@@ -614,13 +599,13 @@ export class PiAcpAgent implements ACPAgent {
+
+   async newSession(params: NewSessionRequest) {
+     assertValidSessionCwd(params.cwd)
+-    assertNoMcpServers(params.mcpServers)
+     assertNoAdditionalDirectories(params.additionalDirectories)
+
+     const session = await this.sessions.create({
+       cwd: params.cwd,
+       conn: this.conn,
+       piCommand: process.env.PI_ACP_PI_COMMAND,
++      mcpServers: params.mcpServers,
+       supportsTerminalOutputMeta: this.supportsTerminalOutputMeta,
+       authMethods: this.authMethods,
+       supportsElicitationForm: this.supportsElicitationForm
+@@ -890,7 +875,6 @@ export class PiAcpAgent implements ACPAgent {
+
+   async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
+     assertValidSessionCwd(params.cwd)
+-    assertNoMcpServers(params.mcpServers)
+     assertNoAdditionalDirectories(params.additionalDirectories)
+
+     const cwd = params.cwd
+@@ -910,7 +894,7 @@ export class PiAcpAgent implements ACPAgent {
+         this.assertLoadActive(params.sessionId, generation)
+       }
+
+-      const session = await this.restoreSession(params.sessionId, { cwd })
++      const session = await this.restoreSession(params.sessionId, { cwd, mcpServers: params.mcpServers })
+       try {
+         this.assertLoadActive(params.sessionId, generation)
+         const proc = session.proc
+@@ -960,12 +944,13 @@ export class PiAcpAgent implements ACPAgent {
+
+   async resumeSession(params: ResumeSessionRequest): Promise<ResumeSessionResponse> {
+     assertValidSessionCwd(params.cwd)
+-    assertNoMcpServers(params.mcpServers)
+     assertNoAdditionalDirectories(params.additionalDirectories)
+
+     const cwd = params.cwd
+
+-    const session = await this.restoreSessionAwaitingLoads(params.sessionId, { cwd })
++    // Resume must replace the child so new session-scoped MCP credentials apply.
++    await this.closeSessionResources(params.sessionId)
++    const session = await this.restoreSessionAwaitingLoads(params.sessionId, { cwd, mcpServers: params.mcpServers })
+
+     // Unlike session/load, resume MUST NOT replay conversation history.
+     const configOptions = await getSessionConfiguration(session.proc)
+diff --git a/src/acp/app.ts b/src/acp/app.ts
+index de7eac0..4a30005 100644
+--- a/src/acp/app.ts
++++ b/src/acp/app.ts
+@@ -68,10 +68,10 @@ export function createPiAcpAgentApp(opts?: { onAgent?: (agent: PiAcpAgent | null
+       }
+     })
+     .onRequest(methods.agent.authenticate, ctx => getInitializedAgent().authenticate(ctx.params))
+-    .onRequest(methods.agent.session.new, ctx => getInitializedAgent().newSession(ctx.params))
+-    .onRequest(methods.agent.session.load, ctx => getInitializedAgent().loadSession(ctx.params))
++    .onRequest(methods.agent.session.new, (params: any) => params, ctx => getInitializedAgent().newSession(ctx.params))
++    .onRequest(methods.agent.session.load, (params: any) => params, ctx => getInitializedAgent().loadSession(ctx.params))
+     .onRequest(methods.agent.session.list, ctx => getInitializedAgent().listSessions(ctx.params))
+-    .onRequest(methods.agent.session.resume, ctx => getInitializedAgent().resumeSession(ctx.params))
++    .onRequest(methods.agent.session.resume, (params: any) => params, ctx => getInitializedAgent().resumeSession(ctx.params))
+     .onRequest(methods.agent.session.close, ctx => getInitializedAgent().closeSession(ctx.params))
+     .onRequest(methods.agent.session.delete, ctx => getInitializedAgent().deleteSession(ctx.params))
+     .onRequest(methods.agent.session.setConfigOption, ctx => getInitializedAgent().setSessionConfigOption(ctx.params))
+diff --git a/src/acp/session-manager.ts b/src/acp/session-manager.ts
+index 26880bb..2309846 100644
+--- a/src/acp/session-manager.ts
++++ b/src/acp/session-manager.ts
+@@ -1,4 +1,4 @@
+-import type { AuthMethod } from '@agentclientprotocol/sdk'
++import type { AuthMethod, McpServer } from '@agentclientprotocol/sdk'
+ import { RequestError } from '@agentclientprotocol/sdk'
+ import type { AcpClient } from './client.js'
+ import { mkdirSync } from 'node:fs'
+@@ -14,6 +14,7 @@ type SessionCreateParams = {
+   cwd: string
+   conn: AcpClient
+   piCommand?: string
++  mcpServers?: McpServer[]
+   /** Client negotiated Zed's `_meta.terminal_output` tool rendering convention. */
+   supportsTerminalOutputMeta?: boolean
+   /** Auth methods the owning agent advertised at initialize (for auth-required errors). */
+@@ -131,7 +132,7 @@ export class SessionManager {
+    * Every later path -- validation failure, registration race, teardown during
+    * the spawn -- is then covered by {@link disposeAllAndWait}.
+    */
+-  spawnOwned(params: { cwd: string; sessionPath?: string; piCommand?: string }): Promise<PiRpcProcess> {
++  spawnOwned(params: { cwd: string; sessionPath?: string; piCommand?: string; mcpServers?: McpServer[] }): Promise<PiRpcProcess> {
+     // Refuse before a child exists. A caller can reach this point long after
+     // teardown began -- a restore parked on {@link waitForRetiredProcesses} is
+     // registered nowhere -- and by then `disposeAllAndWait` may already have
+@@ -321,7 +322,8 @@ export class SessionManager {
+     try {
+       proc = await this.spawnOwned({
+         cwd: params.cwd,
+-        piCommand: params.piCommand
++        piCommand: params.piCommand,
++        mcpServers: params.mcpServers
+       })
+     } catch (e) {
+       if (e instanceof PiRpcSpawnError) {
+diff --git a/src/pi-rpc/mcp-config.ts b/src/pi-rpc/mcp-config.ts
+new file mode 100644
+index 0000000..810d238
+--- /dev/null
++++ b/src/pi-rpc/mcp-config.ts
+@@ -0,0 +1,30 @@
++import type { McpServer } from '@agentclientprotocol/sdk'
++import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
++
++// Each child owns its credentials/config. Never write ACP descriptors into the
++// shared Pi config or persist them in the ACP session map.
++export function prepareMcpConfig(servers: McpServer[] = []) {
++  if (!servers.length) return { args: [] as string[], cleanup: () => {} }
++  const extension = process.env.PI_ACP_MCP_EXTENSION
++  if (!extension) throw new Error('ACP MCP servers require PI_ACP_MCP_EXTENSION')
++  const mcpServers = Object.create(null)
++  for (const server of servers) {
++    if (Object.hasOwn(mcpServers, server.name)) throw new Error('Duplicate ACP MCP server name')
++    const connection = 'command' in server
++      ? { command: server.command, args: server.args, env: Object.fromEntries((server.env ?? []).map(e => [e.name, e.value])) }
++      : { url: server.url, transport: server.type === 'sse' ? 'sse' : 'http', headers: Object.fromEntries((server.headers ?? []).map(h => [h.name, h.value])) }
++    mcpServers[server.name] = { ...connection, lifecycle: 'eager', directTools: true }
++  }
++  const dir = mkdtempSync(join(tmpdir(), 'pi-acp-mcp-'))
++  const cleanup = () => rmSync(dir, { recursive: true, force: true })
++  try {
++    const config = join(dir, 'mcp.json')
++    writeFileSync(config, JSON.stringify({ mcpServers }), { mode: 0o600 })
++    return { args: ['--extension', extension, '--mcp-config', config], cleanup }
++  } catch (error) {
++    cleanup()
++    throw error
++  }
++}
+diff --git a/src/pi-rpc/process.ts b/src/pi-rpc/process.ts
+index 97772a1..2b5e549 100644
+--- a/src/pi-rpc/process.ts
++++ b/src/pi-rpc/process.ts
+@@ -1,3 +1,5 @@
++import type { McpServer } from '@agentclientprotocol/sdk'
++import { prepareMcpConfig } from './mcp-config.js'
+ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+ import { buildPiInvocation, getPiCommand } from './command.js'
+ import { LfLineDecoder } from './line-decoder.js'
+@@ -97,6 +99,7 @@ type SpawnParams = {
+   piCommand?: string
+   /** If set, pi will persist the session to this exact file (via `--session <path>`). */
+   sessionPath?: string
++  mcpServers?: McpServer[]
+   /** Cancels the version preflight before the RPC child is spawned. */
+   signal?: AbortSignal
+   /**
+@@ -344,15 +347,26 @@ export class PiRpcProcess {
+     const args = ['--mode', 'rpc', '--no-themes']
+     if (params.sessionPath) args.push('--session', params.sessionPath)
+
+-    const invocation = buildPiInvocation(cmd, args, { cwd: params.cwd })
+-    if (!invocation) throw piExecutableNotFoundError(cmd)
+-    const child = spawn(invocation.executable, invocation.args, {
+-      cwd: params.cwd,
+-      stdio: 'pipe',
+-      env: process.env,
+-      shell: false,
+-      windowsVerbatimArguments: invocation.windowsVerbatimArguments
+-    })
++    if (process.env.PI_ACP_DISABLE_BUILTIN_TOOLS === '1') args.push('--no-builtin-tools')
++    const mcp = prepareMcpConfig(params.mcpServers)
++    args.push(...mcp.args)
++    let child: ChildProcessWithoutNullStreams
++    try {
++      const invocation = buildPiInvocation(cmd, args, { cwd: params.cwd })
++      if (!invocation) throw piExecutableNotFoundError(cmd)
++      child = spawn(invocation.executable, invocation.args, {
++        cwd: params.cwd,
++        stdio: 'pipe',
++        env: process.env,
++        shell: false,
++        windowsVerbatimArguments: invocation.windowsVerbatimArguments
++      })
++    } catch (error) {
++      mcp.cleanup()
++      throw error
++    }
++    child.once('close', mcp.cleanup)
++    child.once('error', mcp.cleanup)
+     // Wire stdout/stderr and lifecycle listeners immediately. A child can exit
+     // directly after its `spawn` event; constructing only after awaiting that
+     // event creates a window where the terminal event is lost.

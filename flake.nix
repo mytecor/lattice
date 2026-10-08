@@ -231,6 +231,7 @@
           pi-retry = final.callPackage ./packages/pi-retry/package.nix { };
           pi-acp = final.callPackage ./packages/pi-acp/package.nix {
             pi = final.lattice.pi;
+            pi-mcp-adapter = final.lattice.pi-mcp-adapter;
           };
           git-cache-proxy = final.callPackage ./packages/git-cache-proxy/package.nix { };
           verdaccio = final.callPackage ./packages/verdaccio/package.nix { };
