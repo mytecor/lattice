@@ -364,20 +364,19 @@ in
           };
           compat = { supportsReasoningEffort = false; };
         };
-        # smart → gemini-3.8-flash through the independent Vertex and AI Studio
-        # quota pools. Bifrost maps OpenAI reasoning_effort to Gemini's native
-        # thinkingLevel; the current Gemini 3 fallback ladder is low/medium/high.
+        # smart → gemini-4-argon through Vertex AI.
+        # Thinking level is fixed to medium.
         smart = {
           reasoning = true;
           input = [ "text" "image" ];
           thinkingLevelMap = {
-            off = null;
-            minimal = "low";
-            low = "low";
+            off = "medium";
+            minimal = "medium";
+            low = "medium";
             medium = "medium";
-            high = "high";
-            xhigh = "high";
-            max = "high";
+            high = "medium";
+            xhigh = "medium";
+            max = "medium";
           };
           compat = { supportsReasoningEffort = true; };
         };
@@ -583,6 +582,8 @@ in
           vertex_project_id = "mytecor";
           vertex_region = "global";
           priority = 100;
+          strip_params = [ "thinking" "reasoning_effort" ];
+          set_params.reasoning_effort = "medium";
         }
       ] ++ lib.optionals hasGoogleAiStudioKey [{
         id = "google-ai-studio";
@@ -590,6 +591,8 @@ in
         inference_url = "https://generativelanguage.googleapis.com/v1beta";
         api_key = "env.LATTICE_LLM_PROVIDER_GOOGLE_AI_STUDIO_KEY";
         priority = 90;
+        strip_params = [ "thinking" "reasoning_effort" ];
+        set_params.reasoning_effort = "medium";
       }];
 
       routing_rules = [
@@ -653,8 +656,8 @@ in
         {
           route = "smart";
           action = "map";
-          providers = [ "google-vertex" ] ++ lib.optional hasGoogleAiStudioKey "google-ai-studio";
-          native = "gemini-3.8-flash";
+          providers = [ "google-vertex" ];
+          native = "gemini-4-argon";
           tier = 0;
         }
         {

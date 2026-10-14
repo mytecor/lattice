@@ -70,7 +70,7 @@ func TestBifrostExecutorRegistersVertexAsStandardProvider(t *testing.T) {
 	cfg.RoutingRules = []Rule{
 		filterModel("smart", "smart"),
 		filterProvider("smart", "google-vertex"),
-		mapRule("smart", "gemini-3.8-flash"),
+		mapRule("smart", "gemini-4-argon"),
 		rankRule("smart"),
 		raceRule("smart", 1),
 	}
@@ -88,7 +88,7 @@ func TestBifrostExecutorRegistersVertexAsStandardProvider(t *testing.T) {
 	}
 	request, callErr := executor.chatRequest(schemas.NewBifrostContext(context.Background(), schemas.NoDeadline), Target{
 		Provider: "google-vertex",
-		Model:    "gemini-3.8-flash",
+		Model:    "gemini-4-argon",
 	}, []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
 	if callErr != nil {
 		t.Fatal(callErr)
@@ -98,7 +98,7 @@ func TestBifrostExecutorRegistersVertexAsStandardProvider(t *testing.T) {
 	}
 	responsesRequest, callErr := executor.responsesRequest(schemas.NewBifrostContext(context.Background(), schemas.NoDeadline), Target{
 		Provider: "google-vertex",
-		Model:    "gemini-3.8-flash",
+		Model:    "gemini-4-argon",
 	}, []byte(`{"input":"hello"}`))
 	if callErr != nil {
 		t.Fatal(callErr)
