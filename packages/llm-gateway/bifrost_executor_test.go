@@ -448,3 +448,47 @@ func TestBifrostErrorClassification(t *testing.T) {
 		}
 	}
 }
+
+func TestSanitizeStreamChunkBackfillsReasoningFromDetails(t *testing.T) {
+	thought := "step-by-step thought"
+	chunk := &schemas.BifrostStreamChunk{
+		BifrostChatResponse: &schemas.BifrostChatResponse{
+			ID:     "chat-1",
+			Model:  "gemini-4-argon",
+			Object: "chat.completion.chunk",
+			Choices: []schemas.BifrostResponseChoice{{
+				Index: 0,
+				ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
+					Delta: &schemas.ChatStreamResponseChoiceDelta{
+						ReasoningDetails: []schemas.ChatReasoningDetails{{
+							Index: 0,
+							Type:  schemas.BifrostReasoningDetailsTypeText,
+							Text:  &thought,
+						}},
+					},
+				},
+			}},
+		},
+	}
+	data, _, meaningful, err := sanitizeStreamChunk(chunk, "gemini-4-argon")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !meaningful {
+		t.Fatalf("expected chunk with reasoning_details text to be meaningful: %s", string(data))
+	}
+	var decoded struct {
+		Choices []struct {
+			Delta struct {
+				Reasoning        string `json:"reasoning"`
+				ReasoningContent string `json:"reasoning_content"`
+			} `json:"delta"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Choices) != 1 || decoded.Choices[0].Delta.Reasoning != thought || decoded.Choices[0].Delta.ReasoningContent != thought {
+		t.Fatalf("expected reasoning and reasoning_content to be backfilled to %q, got %+v", thought, decoded.Choices)
+	}
+}

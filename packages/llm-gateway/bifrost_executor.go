@@ -210,6 +210,7 @@ func (e *BifrostExecutor) Do(ctx context.Context, target Target, request Execute
 		}
 		e.logUpstreamSuccess(ctx, target, request.Kind, started)
 		response.Model = target.Model
+		populateChatResponseReasoning(response)
 		return marshalSanitized(response, "")
 	case RequestResponses:
 		responsesRequest, callErr := e.responsesRequest(bfContext, target, request.Body)
@@ -535,6 +536,7 @@ func sanitizeStreamChunk(chunk *schemas.BifrostStreamChunk, nativeModel string) 
 	if chunk.BifrostResponsesStreamResponse != nil {
 		event = string(chunk.BifrostResponsesStreamResponse.Type)
 	}
+	populateChatResponseReasoning(chunk.BifrostChatResponse)
 	data, err := json.Marshal(chunk)
 	if err != nil {
 		return nil, "", false, err
@@ -544,6 +546,47 @@ func sanitizeStreamChunk(chunk *schemas.BifrostStreamChunk, nativeModel string) 
 		return nil, "", false, err
 	}
 	return data, event, meaningfulPayload(data, event), nil
+}
+
+// populateChatResponseReasoning backfills Reasoning (and therefore
+// reasoning_content on marshal) from ReasoningDetails entries of type
+// "reasoning.text" when a provider adapter (such as Bifrost's Gemini/Vertex
+// converter) populates only ReasoningDetails.
+func populateChatResponseReasoning(response *schemas.BifrostChatResponse) {
+	if response == nil {
+		return
+	}
+	for i := range response.Choices {
+		choice := &response.Choices[i]
+		if choice.ChatNonStreamResponseChoice != nil &&
+			choice.ChatNonStreamResponseChoice.Message != nil &&
+			choice.ChatNonStreamResponseChoice.Message.ChatAssistantMessage != nil {
+			msg := choice.ChatNonStreamResponseChoice.Message.ChatAssistantMessage
+			if msg.Reasoning == nil || *msg.Reasoning == "" {
+				if text := reasoningTextFromDetails(msg.ReasoningDetails); text != "" {
+					msg.Reasoning = &text
+				}
+			}
+		}
+		if choice.ChatStreamResponseChoice != nil && choice.ChatStreamResponseChoice.Delta != nil {
+			delta := choice.ChatStreamResponseChoice.Delta
+			if delta.Reasoning == nil || *delta.Reasoning == "" {
+				if text := reasoningTextFromDetails(delta.ReasoningDetails); text != "" {
+					delta.Reasoning = &text
+				}
+			}
+		}
+	}
+}
+
+func reasoningTextFromDetails(details []schemas.ChatReasoningDetails) string {
+	var builder strings.Builder
+	for _, detail := range details {
+		if detail.Type == schemas.BifrostReasoningDetailsTypeText && detail.Text != nil {
+			builder.WriteString(*detail.Text)
+		}
+	}
+	return builder.String()
 }
 
 func sanitizeJSON(data []byte, model string) ([]byte, error) {

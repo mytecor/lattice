@@ -365,20 +365,16 @@ in
           compat = { supportsReasoningEffort = false; };
         };
         # smart → gemini-4-argon through Vertex AI.
-        # Thinking level is fixed to medium.
+        # Reasoning level is controlled by llm-gateway (set_params.reasoning_effort = "medium"),
+        # so Pi keeps reasoning controls disabled on the client side.
         smart = {
           reasoning = true;
           input = [ "text" "image" ];
           thinkingLevelMap = {
-            off = "medium";
-            minimal = "medium";
-            low = "medium";
-            medium = "medium";
-            high = "medium";
-            xhigh = "medium";
-            max = "medium";
+            off = null; minimal = null; low = null; medium = null;
+            high = null; xhigh = null; max = null;
           };
-          compat = { supportsReasoningEffort = true; };
+          compat = { supportsReasoningEffort = false; };
         };
       };
     };
