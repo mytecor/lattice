@@ -229,6 +229,11 @@
           antigravity = final.callPackage ./packages/antigravity/package.nix { };
           antigravity-acp-fsless = final.callPackage ./packages/antigravity-acp/package.nix { };
           antigravity-acp = final.lattice.antigravity-acp-fsless.adapter;
+          gemini-cli = final.callPackage ./packages/gemini-cli/package.nix { };
+          gemini-acp-fsless = final.callPackage ./packages/gemini-acp/package.nix {
+            gemini-cli = final.lattice.gemini-cli;
+          };
+          gemini-acp = final.lattice.gemini-acp-fsless.adapter;
           pi = final.callPackage ./packages/pi/package.nix { };
           pi-mcp-adapter = final.callPackage ./packages/pi-mcp-adapter/package.nix { };
           pi-retry = final.callPackage ./packages/pi-retry/package.nix { };
@@ -325,7 +330,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) antigravity antigravity-acp antigravity-acp-fsless codex-acp-fsless acp-normalizer acp-web agent-image agentrun-openai git-cache-proxy hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
+          inherit (pkgs.lattice) antigravity antigravity-acp antigravity-acp-fsless gemini-cli gemini-acp gemini-acp-fsless codex-acp-fsless acp-normalizer acp-web agent-image agentrun-openai git-cache-proxy hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
         });

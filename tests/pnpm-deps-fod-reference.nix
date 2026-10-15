@@ -83,6 +83,8 @@ assert assertMsg (builtins.isAttrs pkgs.lattice.pi-mcp-adapter)
   "pkgs.lattice.pi-mcp-adapter must evaluate to a derivation";
 assert assertMsg (builtins.isAttrs pkgs.lattice.pi-retry)
   "pkgs.lattice.pi-retry must evaluate to a derivation";
+assert assertMsg (builtins.isAttrs pkgs.lattice.gemini-cli)
+  "pkgs.lattice.gemini-cli must evaluate to a derivation";
 pkgs.runCommand "pnpm-deps-fod-reference-check" { } ''
   # All contract assertions ran during evaluation (see the `let` above); this
   # trivially-buildable step exists only so `nix flake check` treats this as a

@@ -76,6 +76,8 @@ in
 
   antigravity-acp = import ./antigravity-acp.nix { inherit pkgs; };
 
+  gemini-acp = import ./gemini-acp.nix { inherit pkgs; };
+
   agentrun-openai = import ./agentrun-openai.nix {
     inherit nixpkgs pkgs;
     agentrunModule = self.nixosModules.agentrun-openai;

@@ -81,6 +81,19 @@ release `v0.1.1` внешнего репозитория (см. `package.nix`). 
 `antigravity-acp-fsless`, который изолирует рабочее окружение `$GEMINI_HOME` и отключает встроенные
 инструменты харнесса через потоковый JSON-RPC фильтр, гарантируя подключение только клиентских MCP-инструментов.
 
+## Gemini CLI
+
+[`gemini-cli`](./gemini-cli/README.md) — официальный CLI-дистрибутив Google Gemini CLI (`@google/gemini-cli` `0.64.0`),
+собранный через общий [`pnpm-cli-builder`](./pnpm-cli-builder/README.md). Устанавливает в `bin` исполняемый файл `gemini`.
+
+## Gemini ACP
+
+[`gemini-acp`](./gemini-acp/README.md) — запуск Gemini CLI в режиме Agent Client Protocol (ACP) по флагу `--acp`.
+Для интеграции со шлюзом [`agentrun-openai`](./agentrun-openai/README.md) пакет предоставляет враппер
+`gemini-acp-fsless`, отключающий локальную файловую систему, выполнение bash и все встроенные инструменты
+через Admin Policy Engine (`fsless.toml`), конфигурацию `tools.exclude` в `$GEMINI_CLI_HOME/.gemini/settings.json`
+и протокольный фильтр [`filter.mjs`](./gemini-acp/filter.mjs).
+
 ## Agent runtime OCI image
 
 [`packages/agent-image`](./agent-image/README.md) собирает воспроизводимый OCI-образ агентского
