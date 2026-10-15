@@ -19,5 +19,12 @@
   };
 
   nixpkgs.config.allowUnfreePredicate = package:
-    builtins.elem (lib.getName package) [ "rns-server" "rnsh" ];
+    builtins.elem (lib.getName package) [
+      "rns-server"
+      "rnsh"
+      "antigravity"
+      "antigravity-acp"
+      "antigravity-acp-server"
+      "antigravity-acp-fsless"
+    ];
 }

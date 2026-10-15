@@ -68,6 +68,19 @@ release `v0.1.1` внешнего репозитория (см. `package.nix`). 
 [`modules/agentrun-openai`](../modules/agentrun-openai/README.md), профиль —
 [`profiles/agentrun-openai`](../profiles/agentrun-openai/README.md).
 
+## Antigravity CLI
+
+[`antigravity`](./antigravity/README.md) — официальный бинарный дистрибутив Google Antigravity CLI (`1.3.5`).
+Устанавливает в `bin` исполняемый файл `antigravity` и симлинк `agy`.
+
+## Antigravity ACP
+
+[`antigravity-acp`](./antigravity-acp/README.md) — официальный Agent Client Protocol (ACP) сервер Google Antigravity (`1.4.0`),
+включающий бинарники `agy_acp_server.par` и `localharness_external`.
+Для работы со шлюзом [`agentrun-openai`](./agentrun-openai/README.md) пакет предоставляет враппер
+`antigravity-acp-fsless`, который изолирует рабочее окружение `$GEMINI_HOME` и отключает встроенные
+инструменты харнесса через потоковый JSON-RPC фильтр, гарантируя подключение только клиентских MCP-инструментов.
+
 ## Agent runtime OCI image
 
 [`packages/agent-image`](./agent-image/README.md) собирает воспроизводимый OCI-образ агентского

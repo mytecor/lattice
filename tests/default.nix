@@ -5,6 +5,15 @@ let
   pkgs = import nixpkgs {
     system = "x86_64-linux";
     overlays = [ overlay ];
+    config.allowUnfreePredicate = package:
+      builtins.elem (nixpkgs.lib.getName package) [
+        "rns-server"
+        "rnsh"
+        "antigravity"
+        "antigravity-acp"
+        "antigravity-acp-server"
+        "antigravity-acp-fsless"
+      ];
   };
   exampleConfig = self.nixosConfigurations.example.config;
   homelabConfig = self.nixosConfigurations.mytecor-homelab.config;
@@ -64,6 +73,8 @@ in
   };
 
   codex-acp = import ./codex-acp.nix { inherit pkgs; };
+
+  antigravity-acp = import ./antigravity-acp.nix { inherit pkgs; };
 
   agentrun-openai = import ./agentrun-openai.nix {
     inherit nixpkgs pkgs;

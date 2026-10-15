@@ -226,6 +226,9 @@
           llm-gateway = final.callPackage ./packages/llm-gateway/package.nix { };
           agentrun-openai = final.callPackage ./packages/agentrun-openai/package.nix { };
           codex-acp-fsless = final.callPackage ./packages/codex-acp/package.nix { };
+          antigravity = final.callPackage ./packages/antigravity/package.nix { };
+          antigravity-acp-fsless = final.callPackage ./packages/antigravity-acp/package.nix { };
+          antigravity-acp = final.lattice.antigravity-acp-fsless.adapter;
           pi = final.callPackage ./packages/pi/package.nix { };
           pi-mcp-adapter = final.callPackage ./packages/pi-mcp-adapter/package.nix { };
           pi-retry = final.callPackage ./packages/pi-retry/package.nix { };
@@ -311,11 +314,18 @@
             inherit system;
             overlays = [ overlay ];
             config.allowUnfreePredicate = package:
-              builtins.elem (nixpkgs.lib.getName package) [ "rns-server" "rnsh" ];
+              builtins.elem (nixpkgs.lib.getName package) [
+                "rns-server"
+                "rnsh"
+                "antigravity"
+                "antigravity-acp"
+                "antigravity-acp-server"
+                "antigravity-acp-fsless"
+              ];
           };
         in
         {
-          inherit (pkgs.lattice) codex-acp-fsless acp-normalizer acp-web agent-image agentrun-openai git-cache-proxy hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
+          inherit (pkgs.lattice) antigravity antigravity-acp antigravity-acp-fsless codex-acp-fsless acp-normalizer acp-web agent-image agentrun-openai git-cache-proxy hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
         });
@@ -326,7 +336,14 @@
             inherit system;
             overlays = [ overlay ];
             config.allowUnfreePredicate = package:
-              builtins.elem (nixpkgs.lib.getName package) [ "rns-server" "rnsh" ];
+              builtins.elem (nixpkgs.lib.getName package) [
+                "rns-server"
+                "rnsh"
+                "antigravity"
+                "antigravity-acp"
+                "antigravity-acp-server"
+                "antigravity-acp-fsless"
+              ];
           };
         in
         {
@@ -346,7 +363,14 @@
             inherit system;
             overlays = [ overlay ];
             config.allowUnfreePredicate = package:
-              builtins.elem (nixpkgs.lib.getName package) [ "rns-server" "rnsh" ];
+              builtins.elem (nixpkgs.lib.getName package) [
+                "rns-server"
+                "rnsh"
+                "antigravity"
+                "antigravity-acp"
+                "antigravity-acp-server"
+                "antigravity-acp-fsless"
+              ];
           };
         in
         {

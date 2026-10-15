@@ -5,6 +5,8 @@ in
 {
   # ChatGPT OAuth cache for the Codex ACP backend (complete auth.json).
   "codex-auth.age".publicKeys = [ admin node ];
+  # Antigravity auth cache / credentials for Antigravity ACP backend.
+  "antigravity-auth.age".publicKeys = [ admin node ];
   "wifi-ssid.age".publicKeys = [ admin node ];
   "wifi-password.age".publicKeys = [ admin node ];
   "hotspot-password.age".publicKeys = [ admin node ];

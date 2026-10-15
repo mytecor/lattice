@@ -3,5 +3,6 @@
     ./disko.nix
     ./config.nix
     ./codex.nix
+    ./antigravity.nix
   ];
 }
