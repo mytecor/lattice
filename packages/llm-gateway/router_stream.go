@@ -31,6 +31,9 @@ func (r *Runner) SelectStream(ctx context.Context, logical string, request Execu
 	if !ok {
 		return nil, &CallError{Class: ErrorInvalid, Status: 404, Scope: FailureScopeRequest}
 	}
+	if request.StreamIdleTimeout <= 0 {
+		request.StreamIdleTimeout = r.streamIdleTimeout(logical)
+	}
 	runtime := newRouteRuntime(entry)
 	release, admitErr := r.admit(ctx, logical, runtime)
 	if admitErr != nil {
@@ -72,6 +75,9 @@ func (r *Runner) ContinueStream(ctx context.Context, logical string, request Exe
 		return nil, &CallError{Class: ErrorInvalid, Status: 502, Cause: err}
 	}
 	request.Body = rewritten
+	if request.StreamIdleTimeout <= 0 {
+		request.StreamIdleTimeout = r.streamIdleTimeout(logical)
+	}
 	runtime := newRouteRuntime(entry)
 	// A continuation must never re-race a provider that is still cooling
 	// (it just broke): the strict policy disables the availability fail-open,
@@ -96,6 +102,24 @@ func (r *Runner) ContinueStream(ctx context.Context, logical string, request Exe
 	return outcome.selected, nil
 }
 
+// streamIdleTimeout returns the per-chunk idle timeout for a logical model's
+// relayed winner stream: explicit continue.idle wins, then the route's timeout
+// rule (idle or duration), and finally the config fallback.
+func (r *Runner) streamIdleTimeout(logical string) time.Duration {
+	if entry, ok := r.config.models[logical]; ok {
+		if entry.Continue.Enabled && entry.Continue.Idle > 0 {
+			return entry.Continue.Idle
+		}
+		if entry.StreamIdleTimeout > 0 {
+			return entry.StreamIdleTimeout
+		}
+		if entry.RouteTimeout > 0 {
+			return entry.RouteTimeout
+		}
+	}
+	return r.config.raw.StreamIdleTimeout.Duration
+}
+
 // continuePolicy reports the compiled in-gateway takeover policy (the
 // "continue" rule) of a logical model's entry route, and whether it is active.
 func (r *Runner) continuePolicy(logical string) (ContinueConfig, bool) {
@@ -107,12 +131,23 @@ func (r *Runner) continuePolicy(logical string) (ContinueConfig, bool) {
 		return entry.Continue, true
 	}
 	if entry.Retry.Internal && entry.Retry.Attempts > 0 {
+		idle := r.streamIdleTimeout(logical)
+		if idle <= 0 {
+			idle = 30 * time.Second
+		}
+		wait := entry.StreamIdleTimeout
+		if wait <= 0 {
+			wait = entry.RouteTimeout
+		}
+		if wait <= 0 {
+			wait = continueDefaultWait
+		}
 		return ContinueConfig{
 			Enabled: true,
-			Idle:    30 * time.Second,
+			Idle:    idle,
 			Reshare: "full",
 			Retries: entry.Retry.Attempts,
-			Wait:    30 * time.Second,
+			Wait:    wait,
 		}, true
 	}
 	return ContinueConfig{}, false

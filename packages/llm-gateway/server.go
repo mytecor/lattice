@@ -328,7 +328,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	// "continue" policy, its own idle threshold replaces the global one: the
 	// stall is then a takeover trigger rather than a terminal error.
 	continueCfg, continueEnabled := s.runner.continuePolicy(logical)
-	idleTimeout := s.config.raw.StreamIdleTimeout.Duration
+	idleTimeout := s.runner.streamIdleTimeout(logical)
 	if continueEnabled && continueCfg.Idle > 0 {
 		idleTimeout = continueCfg.Idle
 	}
@@ -547,8 +547,9 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	// continue relaying); false when the wait ended without a winner (the
 	// client disconnected, or the horizon expired and the caller must surface
 	// the terminal error as a last resort).
+	holdRecoveriesLeft := max(1, continueCfg.Retries)
 	holdForRecovery := func(broken *CallError) bool {
-		if !continueEnabled || executeRequest.Kind != RequestChat {
+		if !continueEnabled || executeRequest.Kind != RequestChat || holdRecoveriesLeft <= 0 {
 			return false
 		}
 		// A held stream must never be crossed over a tool-call boundary: the
@@ -562,6 +563,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 		if wait <= 0 {
 			return false
 		}
+		holdRecoveriesLeft--
 		horizon := time.NewTimer(wait)
 		defer horizon.Stop()
 		recheck := time.NewTicker(continueRecoveryRecheck)
@@ -669,8 +671,15 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 			return
 		}
 	}
+	clientKeepAlive := time.NewTicker(continueRecoveryKeepAlive)
+	defer clientKeepAlive.Stop()
 	for {
 		select {
+		case <-clientKeepAlive.C:
+			if _, err := io.WriteString(writer, ": ping\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
 		case <-request.Context().Done():
 			logEvent(request.Context(), s.logger, slog.LevelDebug, "request_cancelled",
 				"kind", executeRequest.Kind, "logical_model", logical, "stream", true,

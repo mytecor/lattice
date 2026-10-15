@@ -6,6 +6,7 @@ package main
 type TimeoutRule struct {
 	ruleBase
 	Duration Duration `json:"duration"`
+	Idle     Duration `json:"idle,omitempty"`
 }
 
 // apply validates the route timeout and stores it in the compiled entry route.
@@ -16,6 +17,17 @@ func (r *TimeoutRule) apply(ctx *stageContext) error {
 	if r.Duration.Duration <= 0 {
 		return ctx.errf("timeout duration must be positive")
 	}
+	if r.Idle.Duration < 0 {
+		return ctx.errf("timeout idle must not be negative")
+	}
+	if r.Idle.Duration > 0 && r.Idle.Duration < 1e9 {
+		return ctx.errf("timeout idle must be at least 1s")
+	}
 	ctx.plan.RouteTimeout = r.Duration.Duration
+	if r.Idle.Duration > 0 {
+		ctx.plan.StreamIdleTimeout = r.Idle.Duration
+	} else {
+		ctx.plan.StreamIdleTimeout = r.Duration.Duration
+	}
 	return nil
 }

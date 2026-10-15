@@ -46,7 +46,6 @@ providers, отсутствующие targets и циклы обнаружива
       metrics_port = 9209;
       log_level = "info";
       catalog_refresh_interval = "10m";
-      stream_idle_timeout = "5m";
       affinity_file = "/run/llm-gateway/affinity.json";
 
       client_api_keys = [

@@ -191,6 +191,58 @@ func TestServerHoldStopsOnClientDisconnect(t *testing.T) {
 	}
 }
 
+// TestServerHoldRecoveryBoundedWhenProviderRepeatedlyBreaks ensures a single
+// provider whose cooldown expires inside the hold window cannot loop forever
+// when it keeps emitting a partial and breaking on every recovered attempt.
+func TestServerHoldRecoveryBoundedWhenProviderRepeatedlyBreaks(t *testing.T) {
+	oldRecheck := continueRecoveryRecheck
+	oldKeepAlive := continueRecoveryKeepAlive
+	continueRecoveryRecheck = 5 * time.Millisecond
+	continueRecoveryKeepAlive = 5 * time.Millisecond
+	t.Cleanup(func() {
+		continueRecoveryRecheck = oldRecheck
+		continueRecoveryKeepAlive = oldKeepAlive
+	})
+
+	var calls int
+	executor := &fakeExecutor{stream: func(ctx context.Context, target Target, _ ExecuteRequest) (<-chan StreamEvent, *CallError) {
+		calls++
+		ch := make(chan StreamEvent, 2)
+		ch <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"reasoning":"thinking..."}}]}`), Meaningful: true}
+		close(ch)
+		return ch, nil
+	}}
+	cfg := testConfig()
+	cfg.Providers = cfg.Providers[:1]
+	cfg.Providers[0].Cooldown = Duration{Duration: 10 * time.Millisecond}
+	cfg.RoutingRules = []Rule{
+		filterModel("standard", "standard"),
+		filterProvider("standard", "a"),
+		mapRule("standard", "native-model"),
+		rankRule("standard"),
+		raceRule("standard", 1),
+		&RetryRule{ruleBase: ruleBase{Route: "standard", Action: ActionRetry}, Attempts: 2},
+		&TimeoutRule{
+			ruleBase: ruleBase{Route: "standard", Action: ActionTimeout},
+			Duration: Duration{Duration: time.Second},
+		},
+	}
+	compiled, err := compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api, _ := streamTestServer(t, compiled, executor)
+
+	body := readStreamBody(t, api.URL, 2*time.Second)
+
+	if !strings.Contains(body, "event: error") {
+		t.Fatalf("repeatedly breaking single provider must eventually surface error instead of looping forever: %s", body)
+	}
+	if calls != 3 {
+		t.Fatalf("expected 1 initial + 2 hold-recovery calls, got %d", calls)
+	}
+}
+
 // continueConfigWait is a continueConfigRetries variant with an explicit hold
 // horizon (wait) on the continue rule.
 func continueConfigWait(t *testing.T, retries int, wait time.Duration) *compiledConfig {

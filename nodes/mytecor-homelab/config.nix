@@ -533,7 +533,6 @@ in
 
     settings = {
       log_level = "debug";
-      stream_idle_timeout = "5m";
       client_api_keys = [
         { id = "node-pi"; key = "env.LATTICE_CLIENT_NODE_PI_KEY"; }
         { id = "mac"; key = "env.LATTICE_CLIENT_MAC_KEY"; }
@@ -614,7 +613,7 @@ in
         { route = "stupid"; action = "race"; count = 1; }
         { route = "stupid"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
         { route = "stupid"; action = "hedge"; after = "20s"; }
-        { route = "stupid"; action = "timeout"; duration = "60s"; }
+        { route = "stupid"; action = "timeout"; duration = "60s"; idle = "2m"; }
 
         # standard
         { route = "standard"; action = "filter"; where.model.eq = "standard"; }
@@ -645,7 +644,7 @@ in
         { route = "standard"; action = "race"; count = 1; }
         { route = "standard"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
         { route = "standard"; action = "hedge"; after = "20s"; }
-        { route = "standard"; action = "timeout"; duration = "60s"; }
+        { route = "standard"; action = "timeout"; duration = "60s"; idle = "2m"; }
 
         # smart
         { route = "smart"; action = "filter"; where.model.eq = "smart"; }
@@ -668,7 +667,7 @@ in
         { route = "smart"; action = "affinity"; sources = [ "responses.conversation" "responses.previous_response_id" ]; ttl = "24h"; on_missing = "ignore"; on_provider_failure = "fail-closed"; }
         { route = "smart"; action = "race"; count = 1; }
         { route = "smart"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
-        { route = "smart"; action = "timeout"; duration = "60s"; }
+        { route = "smart"; action = "timeout"; duration = "3m"; idle = "5m"; }
       ];
     };
   };

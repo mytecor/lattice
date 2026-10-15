@@ -13,7 +13,6 @@ in
       metrics_port = lib.mkDefault 9209;
       log_level = lib.mkDefault "silent";
       catalog_refresh_interval = lib.mkDefault "10m";
-      stream_idle_timeout = lib.mkDefault "5m";
       affinity_file = lib.mkDefault "/run/llm-gateway/affinity.json";
     };
   };

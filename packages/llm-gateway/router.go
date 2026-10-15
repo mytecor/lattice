@@ -58,8 +58,9 @@ const (
 )
 
 type ExecuteRequest struct {
-	Kind RequestKind
-	Body []byte
+	Kind              RequestKind
+	Body              []byte
+	StreamIdleTimeout time.Duration
 }
 
 type StreamEvent struct {

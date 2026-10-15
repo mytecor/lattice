@@ -187,6 +187,8 @@ type compiledRoute struct {
 	Repetition RepetitionConfig
 	// RouteTimeout bounds the entire route graph.
 	RouteTimeout time.Duration
+	// StreamIdleTimeout bounds per-chunk silence on the relayed winner stream.
+	StreamIdleTimeout time.Duration
 
 	// Resolved transitions (compile stage).
 	retryTarget    *compiledRoute
@@ -655,6 +657,17 @@ func compileConfig(cfg Config) (*compiledConfig, error) {
 	}
 	if len(result.models) == 0 {
 		return nil, errors.New("at least one logical model with an entry route is required")
+	}
+	for _, route := range result.routes {
+		if route.RouteTimeout <= 0 {
+			continue
+		}
+		for _, target := range route.Pool {
+			if p, ok := compiled.providers[target.Provider]; ok && p.RequestTimeout.Duration < route.RouteTimeout {
+				p.RequestTimeout.Duration = route.RouteTimeout
+				compiled.providers[target.Provider] = p
+			}
+		}
 	}
 	compiled.routes = result.routes
 	compiled.models = result.entries

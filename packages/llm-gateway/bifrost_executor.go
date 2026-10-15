@@ -235,6 +235,9 @@ func (e *BifrostExecutor) Do(ctx context.Context, target Target, request Execute
 func (e *BifrostExecutor) Stream(ctx context.Context, target Target, request ExecuteRequest) (<-chan StreamEvent, *CallError) {
 	started := time.Now()
 	bfContext := schemas.NewBifrostContext(ctx, schemas.NoDeadline)
+	if request.StreamIdleTimeout > 0 {
+		bfContext.SetValue(schemas.BifrostContextKeyStreamIdleTimeout, request.StreamIdleTimeout)
+	}
 	var source <-chan *schemas.BifrostStreamChunk
 	switch request.Kind {
 	case RequestChat:

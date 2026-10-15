@@ -318,7 +318,7 @@ func resolveRouteGraph(routes map[string]*compiledRoute) error {
 		if !route.Entry && !referenced[name] {
 			return fmt.Errorf("route %q is not an entry route and is not referenced by any transition (either add a filter where.model or reference it from a retry/fallback/hedge target)", name)
 		}
-		if !route.Entry && (route.Semaphore.MaxCalls != 0 || route.RouteTimeout != 0 || route.Admission.MaxInFlight != 0) {
+		if !route.Entry && (route.Semaphore.MaxCalls != 0 || route.RouteTimeout != 0 || route.StreamIdleTimeout != 0 || route.Admission.MaxInFlight != 0) {
 			return fmt.Errorf("route %q is a subroute and must not set semaphore/timeout/admission: both are request-wide and live on the entry route", name)
 		}
 	}
