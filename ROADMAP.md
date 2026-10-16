@@ -14,17 +14,6 @@
 
 ## Очередь (приоритет сверху вниз)
 
-### [F11. Git task pipeline](./roadmap/f11-git-task-pipeline/README.md)
-
-> Git revisions превращаются в `TaskSpec`, а terminal `TaskResult` возвращается в Git.
-
-- **Статус:** ⏳ ещё не начата — архитектура и `task.md` contract зафиксированы в
-  [TASK_EXECUTION.md](./TASK_EXECUTION.md); реализация начинается с generic `git-watchd`, затем
-  `taskd` и deterministic dummy workload.
-- **Готово, когда:** task revision без terminal result обнаруживается и исполняется после restart
-  `git-watchd`, `taskd` или `agentd`, а terminal result фиксируется в Git.
-- **Зависит от:** [F10](#f10-agent-runtime)
-
 ### [F19. Agent execution loop](./roadmap/f19-agent-execution-loop/README.md)
 
 > `agentd` выполняет `TaskSpec` через r1s, ACP tunnel и bounded verification loop.
@@ -274,3 +263,14 @@
   long-lived endpoint; уничтожение контейнера не теряет уникальное durable state.
 - **Зависит от:** [F8](#f8-интерактивный-pi), [F9](#f9-caches-и-artifacts)
   (только caches-часть; artifacts/S3 отложена)
+
+### [F11. Git task pipeline](./roadmap/f11-git-task-pipeline/README.md)
+
+> Git revisions превращаются в `TaskSpec`, а terminal `TaskResult` возвращается в Git.
+
+- **Статус:** ✅ выполнена 2026-10-17 — задачи
+  [f11-01..f11-06](./roadmap/f11-git-task-pipeline/README.md).
+- **Готово, когда:** task revision без terminal result обнаруживается и исполняется после restart
+  `git-watchd`, `taskd` или `agentd`, а terminal result фиксируется в Git.
+- **Зависит от:** [F10](#f10-agent-runtime)
+

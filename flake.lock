@@ -156,6 +156,18 @@
         "type": "github"
       }
     },
+    "module-agentd": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/agentd",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/agentd",
+        "type": "path"
+      },
+      "parent": []
+    },
     "module-agentrun-openai": {
       "flake": false,
       "locked": {
@@ -503,6 +515,7 @@
         "disko": "disko",
         "hardware-intel-n100": "hardware-intel-n100",
         "impermanence": "impermanence",
+        "module-agentd": "module-agentd",
         "module-agentrun-openai": "module-agentrun-openai",
         "module-authentik": "module-authentik",
         "module-ephemeral-root": "module-ephemeral-root",

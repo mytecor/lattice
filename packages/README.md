@@ -116,11 +116,17 @@ release `v0.1.1` внешнего репозитория (см. `package.nix`). 
 Пакет также включает CLI-валидатор `task-validate`.
 
 ## taskd
-
+ 
 [`taskd`](./taskd/README.md) — Git-reconciler между состоянием репозитория задач и слоем
 исполнения `agentd`
 ([`roadmap/f11-git-task-pipeline/f11-03-taskd.md`](../roadmap/f11-git-task-pipeline/f11-03-taskd.md)).
 Переводит неизменяемые спецификации задач `task.md` в `TaskSpec` и отправляет в `agentd` через Meshbus.
+
+## agentd
+
+[`agentd`](./agentd/README.md) — демон исполнения задач в Lattice
+([`roadmap/f11-git-task-pipeline/f11-04-dummy-pipeline.md`](../roadmap/f11-git-task-pipeline/f11-04-dummy-pipeline.md)).
+Слушает запросы `TaskSpec` по Meshbus, исполняет рабочую нагрузку (детерминированный dummy workload / r1s) и возвращает `TaskResult`.
 
 
 ## pnpm CLI

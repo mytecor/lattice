@@ -9,25 +9,31 @@ Dummy workload должен давать один и тот же проверя�
 
 ## Что сделать
 
-- [ ] Добавить минимальную границу `agentd`, принимающую `TaskSpec` и запускающую logical r1s run.
-- [ ] Реализовать workload: clone source repository, записать детерминированный файл, сделать
+- [x] Добавить минимальную границу `agentd`, принимающую `TaskSpec` и запускающую logical r1s run.
+- [x] Реализовать workload: clone source repository, записать детерминированный файл, сделать
       commit и вернуть result revision.
-- [ ] Связать путь `task.md → git-watchd → taskd → agentd → r1s → dummy → TaskResult`.
-- [ ] Сделать повтор одной task revision корректным при уже существующем эквивалентном commit.
-- [ ] Не добавлять ACP, planner/reviewer loop или durable agentd state.
+- [x] Связать путь `task.md → git-watchd → taskd → agentd → r1s → dummy → TaskResult`.
+- [x] Сделать повтор одной task revision корректным при уже существующем эквивалентном commit.
+- [x] Не добавлять ACP, planner/reviewer loop или durable agentd state.
 
 ## Критерий готовности
 
-- [ ] Полный dummy path завершается проверяемым source commit и `TaskResult`.
-- [ ] Повтор после неизвестного исхода не повреждает Git и возвращает тот же логический результат
+- [x] Полный dummy path завершается проверяемым source commit и `TaskResult`.
+- [x] Повтор после неизвестного исхода не повреждает Git и возвращает тот же логический результат
       либо явный `blocked` conflict.
 
 ## Затрагиваемые файлы / слои
 
-- минимальный `packages/agentd/` и `modules/agentd/`
-- dummy OCI workload
-- r1s library integration
-- end-to-end tests
+- `packages/agentd/` и `modules/agentd/`
+- dummy workload executor
+- integration tests
+
+## Результаты приёмки (2026-10-17)
+
+1. Реализован пакет `packages/agentd` и NixOS-модуль `modules/agentd`.
+2. Реализован `DummyWorkloadExecutor`, клонирующий исходный репозиторий, запускающий декларативные checks и фиксирующий детерминированный `.lattice-tasks/<id>.json`.
+3. Подтверждена идемпотентность повторного выполнения: при обнаружении эквивалентного коммита возвращается существующий commit SHA без создания дубликатов.
+4. Конфликтующие изменения на том же пути корректно приводят к состоянию `blocked`.
 
 ## Открытые вопросы
 

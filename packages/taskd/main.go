@@ -100,6 +100,7 @@ func main() {
 	gitWatcher := NewMeshbusGitWatcher(node, headSubject, watchSubject)
 	gitReader := NewGoGitReader()
 	agentCaller := NewMeshbusAgentCaller(node, agentSubject)
+	gitPublisher := NewGoGitPublisher()
 
 	reconciler, err := NewReconciler(ReconcilerConfig{
 		RepoPath:     taskRepo,
@@ -108,6 +109,9 @@ func main() {
 		GitReader:    gitReader,
 		AgentCaller:  agentCaller,
 		WatchTimeout: watchTimeout,
+		ResultHandler: func(ctx context.Context, spec *taskcontract.TaskSpec, result *taskcontract.TaskResult) error {
+			return gitPublisher.PublishResult(ctx, taskRepo, spec, result)
+		},
 	})
 	if err != nil {
 		log.Fatalf("failed to create reconciler: %v", err)

@@ -368,5 +368,10 @@ in
     inherit nixpkgs pkgs;
     taskdModule = self.nixosModules.taskd;
   };
+
+  agentd = import ./agentd.nix {
+    inherit nixpkgs pkgs;
+    agentdModule = self.nixosModules.agentd;
+  };
 }
 

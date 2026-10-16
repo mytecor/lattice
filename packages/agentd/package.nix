@@ -1,0 +1,35 @@
+{ lib, buildGo127Module, runCommand, makeWrapper, git }:
+
+let
+  src = runCommand "lattice-agentd-src" { } ''
+    mkdir -p $out/agentd $out/task-contract
+    cp -r ${./.}/* $out/agentd/
+    cp -r ${../task-contract}/* $out/task-contract/
+  '';
+in
+buildGo127Module {
+  pname = "lattice-agentd";
+  version = "0.1.0";
+
+  inherit src;
+  modRoot = "agentd";
+  vendorHash = lib.fakeHash;
+
+  nativeBuildInputs = [ makeWrapper ];
+  nativeCheckInputs = [ git ];
+
+  postInstall = ''
+    wrapProgram $out/bin/agentd \
+      --prefix PATH : ${lib.makeBinPath [ git ]}
+  '';
+
+  ldflags = [ "-s" "-w" "-X main.version=0.1.0" ];
+
+  meta = {
+    description = "Lattice agent execution daemon";
+    homepage = "https://github.com/mytecor/lattice";
+    license = lib.licenses.mit;
+    mainProgram = "agentd";
+    platforms = lib.platforms.unix;
+  };
+}

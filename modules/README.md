@@ -19,6 +19,7 @@
 - [`ipfs-registry-facade/`](./ipfs-registry-facade/README.md) - OCI Registry фасад поверх IPFS (Kubo + nerdctl registry serve) для распространения OCI-образов без центральных реестров (f10-04).
 - [`git-watchd/`](./git-watchd/README.md) - демон-адаптер между локальными Git-репозиториями и шиной Meshbus (f11-02).
 - [`taskd/`](./taskd/README.md) - Git task reconciler между Git и execution layer `agentd` (f11-03).
+- [`agentd/`](./agentd/README.md) - демон исполнения задач `agentd` по контракту TaskSpec/TaskResult (f11-04).
 
 
 ## Правило
