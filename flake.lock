@@ -216,6 +216,18 @@
       },
       "parent": []
     },
+    "module-git-watchd": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/git-watchd",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/git-watchd",
+        "type": "path"
+      },
+      "parent": []
+    },
     "module-grafana": {
       "flake": false,
       "locked": {
@@ -484,6 +496,7 @@
         "module-ephemeral-root": "module-ephemeral-root",
         "module-foxbridge-camoufox": "module-foxbridge-camoufox",
         "module-git-cache-proxy": "module-git-cache-proxy",
+        "module-git-watchd": "module-git-watchd",
         "module-grafana": "module-grafana",
         "module-hotspot-switch": "module-hotspot-switch",
         "module-ipfs-registry-facade": "module-ipfs-registry-facade",

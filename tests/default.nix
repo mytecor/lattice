@@ -353,4 +353,9 @@ in
     # SSH remains reachable through the firewall.
     assert builtins.elem 22 homelabConfig.networking.firewall.allowedTCPPorts;
     homelabConfig.system.build.toplevel;
+
+  git-watchd = import ./git-watchd.nix {
+    inherit nixpkgs pkgs;
+    gitWatchdModule = self.nixosModules.git-watchd;
+  };
 }

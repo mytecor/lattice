@@ -32,7 +32,7 @@ max_concurrency = 64
 # относятся к Lattice и не должны пассировать lychee при `lychee .` из корня.
 # Когда upstream чинит свои ссылки, срез обновляется целиком (`git archive`), и эта
 # ссылка уезжает вместе с ним.
-exclude_path = ["packages/acp-web/src/"]
+exclude_path = ["packages/acp-web/src/", "packages/git-watchd/vendor/"]
 
 # Быстрые повторные прогоны: кэш ответов (не коммитится, см. .gitignore).
 cache = true

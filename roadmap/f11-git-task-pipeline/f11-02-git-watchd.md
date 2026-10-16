@@ -10,20 +10,20 @@
 
 ## Что сделать
 
-- [ ] Добавить `packages/git-watchd/` и `modules/git-watchd/`.
-- [ ] Реализовать meshbus request `git.head { repo, ref } → { revision }`.
-- [ ] Реализовать long-poll `git.watch { repo, ref, after_revision }`.
-- [ ] При изменении возвращать `{ from, to, changed_paths[] }`, при server-side timeout —
+- [x] Добавить `packages/git-watchd/` и `modules/git-watchd/`.
+- [x] Реализовать meshbus request `git.head { repo, ref } → { revision }`.
+- [x] Реализовать long-poll `git.watch { repo, ref, after_revision }`.
+- [x] При изменении возвращать `{ from, to, changed_paths[] }`, при server-side timeout —
       `no_change`.
-- [ ] Обработать недоступный repository/ref, force update и повтор одного cursor явными ошибками
+- [x] Обработать недоступный repository/ref, force update и повтор одного cursor явными ошибками
       или детерминированным ответом.
-- [ ] Не добавлять event database, ack, replay queue, consumer offsets или exactly-once delivery.
+- [x] Не добавлять event database, ack, replay queue, consumer offsets или exactly-once delivery.
 
 ## Критерий готовности
 
-- [ ] Consumer получает head и следующий diff по revision cursor, а после `no_change` может
+- [x] Consumer получает head и следующий diff по revision cursor, а после `no_change` может
       безопасно повторить watch.
-- [ ] Пакет и модуль не импортируют task, ACP, agentd или r1s contracts.
+- [x] Пакет и модуль не импортируют task, ACP, agentd или r1s contracts.
 
 ## Затрагиваемые файлы / слои
 
