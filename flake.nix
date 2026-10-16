@@ -249,6 +249,7 @@
           };
           git-cache-proxy = final.callPackage ./packages/git-cache-proxy/package.nix { };
           git-watchd = final.callPackage ./packages/git-watchd/package.nix { };
+          task-contract = final.callPackage ./packages/task-contract/package.nix { };
           verdaccio = final.callPackage ./packages/verdaccio/package.nix { };
           # F18: browser runtime + agent stack.
           foxbridge = final.callPackage ./packages/foxbridge/package.nix { };
@@ -337,7 +338,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) antigravity antigravity-acp antigravity-acp-fsless gemini-cli gemini-acp gemini-acp-fsless codex-acp-fsless acp-normalizer acp-web agent-image agentrun-openai git-cache-proxy git-watchd hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
+          inherit (pkgs.lattice) antigravity antigravity-acp antigravity-acp-fsless gemini-cli gemini-acp gemini-acp-fsless codex-acp-fsless acp-normalizer acp-web agent-image agentrun-openai git-cache-proxy git-watchd task-contract hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
         });

@@ -144,7 +144,8 @@ result:
 
 Минимальный набор terminal states: `completed`, `failed`, `blocked`. Поля `state: running`,
 `worker`, `execution`, `attempt` и их аналоги запрещены: они смешивают durable task contract с
-эфемерным состоянием исполнения.
+эфемерным состоянием исполнения. Типизация, валидация и парсер контракта реализованы в
+[`packages/task-contract`](./packages/task-contract/README.md).
 
 ## Границы сервисов
 

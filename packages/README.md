@@ -102,6 +102,19 @@ release `v0.1.1` внешнего репозитория (см. `package.nix`). 
 Образ распространяется через локальный IPFS-фасад реестра (`lattice.ipfs-registry-facade`)
 и публикуется с помощью `publish-agent-image`.
 
+## git-watchd
+
+[`git-watchd`](./git-watchd/README.md) — generic-адаптер между локальными Git-репозиториями и шиной
+сообщений Meshbus ([`roadmap/f11-git-task-pipeline/f11-02-git-watchd.md`](../roadmap/f11-git-task-pipeline/f11-02-git-watchd.md)).
+Отслеживает изменения Git-ревизий и предоставляет сервисам `git.head` и `git.watch`.
+
+## task-contract
+
+[`task-contract`](./task-contract/README.md) — пакет неизменяемых типов (`TaskSpec`, `TaskResult`),
+парсера и валидатора контрактов задач `task.md` в Git для pipeline задач
+([`roadmap/f11-git-task-pipeline/f11-01-task-contract.md`](../roadmap/f11-git-task-pipeline/f11-01-task-contract.md)).
+Пакет также включает CLI-валидатор `task-validate`.
+
 ## pnpm CLI
 
 [`packages/pnpm-cli-builder`](./pnpm-cli-builder/README.md) предоставляет общий `buildPnpmCli`

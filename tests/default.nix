@@ -358,4 +358,9 @@ in
     inherit nixpkgs pkgs;
     gitWatchdModule = self.nixosModules.git-watchd;
   };
+
+  task-contract = import ./task-contract.nix {
+    inherit pkgs;
+    taskContract = pkgs.lattice.task-contract;
+  };
 }

@@ -11,24 +11,24 @@ Git commit; изменение Markdown создаёт новую immutable revi
 
 ## Что сделать
 
-- [ ] Реализовать parser/validation Markdown с YAML front matter для `id`, `source`, `runtime`,
+- [x] Реализовать parser/validation Markdown с YAML front matter для `id`, `source`, `runtime`,
       опциональных `checks` и textual Context/Requirements/Acceptance criteria.
-- [ ] Определить `TaskSpec` как immutable представление конкретной task revision.
-- [ ] Определить `TaskResult` с terminal states `completed`, `failed`, `blocked` и result revision.
-- [ ] Считать revision actionable до появления terminal `result`.
-- [ ] Запретить runtime-поля `state: running`, `worker`, `execution`, `attempt`, lease и аналоги.
-- [ ] Добавить contract/invariant tests, не привязанные к произвольным значениям конфигурации.
+- [x] Определить `TaskSpec` как immutable представление конкретной task revision.
+- [x] Определить `TaskResult` с terminal states `completed`, `failed`, `blocked` и result revision.
+- [x] Считать revision actionable до появления terminal `result`.
+- [x] Запретить runtime-поля `state: running`, `worker`, `execution`, `attempt`, lease и аналоги.
+- [x] Добавить contract/invariant tests, не привязанные к произвольным значениям конфигурации.
 
 ## Критерий готовности
 
-- [ ] Для task repository + path + commit однозначно строится один `TaskSpec`.
-- [ ] Parser различает actionable и terminal revision и отвергает runtime state в Git contract.
+- [x] Для task repository + path + commit однозначно строится один `TaskSpec`.
+- [x] Parser различает actionable и terminal revision и отвергает runtime state в Git contract.
 
 ## Затрагиваемые файлы / слои
 
-- task contract package
+- [`packages/task-contract`](../../packages/task-contract/README.md)
 - [TASK_EXECUTION.md](../../TASK_EXECUTION.md)
-- contract tests
+- contract tests (`packages/task-contract/contract_test.go`, [`tests/task-contract.nix`](../../tests/task-contract.nix))
 
 ## Открытые вопросы
 
