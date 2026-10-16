@@ -223,9 +223,10 @@ in
 
         # Strict by default. Execution tunnels additionally enter the task's
         # network namespace and bring up its loopback interface, which upstream
-        # r1s explicitly requires CAP_SYS_ADMIN + CAP_NET_ADMIN for.
-        AmbientCapabilities = lib.optionals cfg.tunnelEnabled [ "CAP_SYS_ADMIN" "CAP_NET_ADMIN" ];
-        CapabilityBoundingSet = lib.optionals cfg.tunnelEnabled [ "CAP_SYS_ADMIN" "CAP_NET_ADMIN" ];
+        # r1s explicitly requires CAP_SYS_ADMIN + CAP_NET_ADMIN for, and checks
+        # task liveness via pidfd_send_signal(pidfd, 0) which requires CAP_KILL.
+        AmbientCapabilities = lib.optionals cfg.tunnelEnabled [ "CAP_SYS_ADMIN" "CAP_NET_ADMIN" "CAP_KILL" ];
+        CapabilityBoundingSet = lib.optionals cfg.tunnelEnabled [ "CAP_SYS_ADMIN" "CAP_NET_ADMIN" "CAP_KILL" ];
         LockPersonality = true;
         NoNewPrivileges = true;
         PrivateDevices = true;
