@@ -247,7 +247,8 @@ filter → map (tier 0, 1...) → admission → balance → affinity → race �
 { route = "standard"; action = "race"; count = 1; }
 { route = "standard"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
 { route = "standard"; action = "hedge"; after = "20s"; }
-{ route = "standard"; action = "timeout"; duration = "60s"; }
+{ route = "standard"; action = "timeout"; duration = "60s"; idle = "2m"; }
+{ route = "standard"; action = "continue"; idle = "2m"; reshare = "full"; retries = 2; wait = "5m"; }
 ```
 
 Одна ветка, вернувшая ошибку при живой другой ветке, сама по себе не создаёт новый call: ранний

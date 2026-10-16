@@ -150,6 +150,7 @@ func TestAdmissionContinuationReleaseHandoverNoLeak(t *testing.T) {
 		raceRule("standard", 1),
 		&RetryRule{ruleBase: ruleBase{Route: "standard", Action: ActionRetry}, Attempts: 2},
 		&TimeoutRule{ruleBase: ruleBase{Route: "standard", Action: ActionTimeout}, Duration: Duration{Duration: 10 * time.Second}},
+		continueRule("standard", 10*time.Second, "full"),
 	}
 	compiled, err := compileConfig(cfg)
 	if err != nil {

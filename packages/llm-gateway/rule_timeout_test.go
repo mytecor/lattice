@@ -56,12 +56,29 @@ func TestTimeoutRuleExplicitIdleAndContinuePolicy(t *testing.T) {
 		t.Fatalf("provider request_timeout should inherit max route duration 3m, got %v", got)
 	}
 	runner := newRunner(compiled, newCatalog(compiled), &fakeExecutor{})
+	if _, enabled := runner.continuePolicy("smart"); enabled {
+		t.Fatal("continue policy must not be enabled implicitly by retry without an explicit continue rule")
+	}
+	if got := runner.streamIdleTimeout("smart"); got != 5*time.Minute {
+		t.Fatalf("streamIdleTimeout = %v, want 5m from timeout.idle", got)
+	}
+
+	cfg.RoutingRules = append(cfg.RoutingRules, &ContinueRule{
+		ruleBase: ruleBase{Route: "smart", Action: ActionContinue},
+		Retries:  2,
+		Wait:     Duration{Duration: 5 * time.Minute},
+	})
+	compiled, err = compileConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner = newRunner(compiled, newCatalog(compiled), &fakeExecutor{})
 	policy, enabled := runner.continuePolicy("smart")
 	if !enabled {
-		t.Fatal("continue policy must be enabled for internal retry")
+		t.Fatal("continue policy must be enabled when an explicit continue rule is declared")
 	}
 	if policy.Idle != 5*time.Minute {
-		t.Fatalf("continue policy idle = %v, want 5m", policy.Idle)
+		t.Fatalf("continue policy idle = %v, want 5m inherited from timeout.idle", policy.Idle)
 	}
 	if policy.Wait != 5*time.Minute {
 		t.Fatalf("continue policy wait = %v, want 5m", policy.Wait)

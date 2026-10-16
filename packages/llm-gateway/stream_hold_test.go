@@ -225,6 +225,12 @@ func TestServerHoldRecoveryBoundedWhenProviderRepeatedlyBreaks(t *testing.T) {
 		&TimeoutRule{
 			ruleBase: ruleBase{Route: "standard", Action: ActionTimeout},
 			Duration: Duration{Duration: time.Second},
+			Idle:     Duration{Duration: 5 * time.Second},
+		},
+		&ContinueRule{
+			ruleBase: ruleBase{Route: "standard", Action: ActionContinue},
+			Retries:  2,
+			Wait:     Duration{Duration: time.Second},
 		},
 	}
 	compiled, err := compileConfig(cfg)
@@ -240,6 +246,40 @@ func TestServerHoldRecoveryBoundedWhenProviderRepeatedlyBreaks(t *testing.T) {
 	}
 	if calls != 3 {
 		t.Fatalf("expected 1 initial + 2 hold-recovery calls, got %d", calls)
+	}
+}
+
+func TestServerEmitsParsedKeepAliveDeltasDuringSlowSelectAndToolGeneration(t *testing.T) {
+	oldKeepAlive := continueRecoveryKeepAlive
+	continueRecoveryKeepAlive = 10 * time.Millisecond
+	t.Cleanup(func() { continueRecoveryKeepAlive = oldKeepAlive })
+
+	executor := &fakeExecutor{stream: func(ctx context.Context, target Target, _ ExecuteRequest) (<-chan StreamEvent, *CallError) {
+		ch := make(chan StreamEvent, 4)
+		// Slow prefill before first chunk (triggers SelectStream keep-alive).
+		time.Sleep(25 * time.Millisecond)
+		ch <- StreamEvent{Data: []byte(`{"id":"chat-slow","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"bash","arguments":"{\"command\":\"ls\"}"}}]}}]}`), Meaningful: true}
+		go func() {
+			// Slow second phase after tool_calls (triggers mid-stream tool_calls keep-alive).
+			time.Sleep(25 * time.Millisecond)
+			ch <- StreamEvent{Data: []byte(`{"id":"chat-slow","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`), Meaningful: false}
+			close(ch)
+		}()
+		return ch, nil
+	}}
+	compiled := continueConfigWait(t, 1, time.Second)
+	api, _ := streamTestServer(t, compiled, executor)
+
+	body := readStreamBody(t, api.URL, 2*time.Second)
+
+	if !strings.Contains(body, `"reasoning_content":" "`) {
+		t.Fatalf("expected reasoning_content keep-alive chunk during slow pre-selection wait: %s", body)
+	}
+	if !strings.Contains(body, `"arguments":""`) {
+		t.Fatalf("expected empty tool_calls arguments keep-alive chunk during slow post-tool wait: %s", body)
+	}
+	if !strings.HasSuffix(strings.TrimSpace(body), "data: [DONE]") {
+		t.Fatalf("expected completed stream ending with [DONE]: %s", body)
 	}
 }
 

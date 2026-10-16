@@ -122,35 +122,14 @@ func (r *Runner) streamIdleTimeout(logical string) time.Duration {
 
 // continuePolicy reports the compiled in-gateway takeover policy (the
 // "continue" rule) of a logical model's entry route, and whether it is active.
+// Like repetitionPolicy, it is enabled only by an explicit "continue" rule on
+// the entry route, never implicitly by "retry".
 func (r *Runner) continuePolicy(logical string) (ContinueConfig, bool) {
 	entry, ok := r.config.models[logical]
 	if !ok {
 		return ContinueConfig{}, false
 	}
-	if entry.Continue.Enabled {
-		return entry.Continue, true
-	}
-	if entry.Retry.Internal && entry.Retry.Attempts > 0 {
-		idle := r.streamIdleTimeout(logical)
-		if idle <= 0 {
-			idle = 30 * time.Second
-		}
-		wait := entry.StreamIdleTimeout
-		if wait <= 0 {
-			wait = entry.RouteTimeout
-		}
-		if wait <= 0 {
-			wait = continueDefaultWait
-		}
-		return ContinueConfig{
-			Enabled: true,
-			Idle:    idle,
-			Reshare: "full",
-			Retries: entry.Retry.Attempts,
-			Wait:    wait,
-		}, true
-	}
-	return ContinueConfig{}, false
+	return entry.Continue, entry.Continue.Enabled
 }
 
 // repetitionPolicy reports the compiled in-gateway loop-guard policy (the

@@ -614,6 +614,7 @@ in
         { route = "stupid"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
         { route = "stupid"; action = "hedge"; after = "20s"; }
         { route = "stupid"; action = "timeout"; duration = "60s"; idle = "2m"; }
+        { route = "stupid"; action = "continue"; idle = "2m"; reshare = "full"; retries = 2; wait = "5m"; }
 
         # standard
         { route = "standard"; action = "filter"; where.model.eq = "standard"; }
@@ -645,6 +646,7 @@ in
         { route = "standard"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
         { route = "standard"; action = "hedge"; after = "20s"; }
         { route = "standard"; action = "timeout"; duration = "60s"; idle = "2m"; }
+        { route = "standard"; action = "continue"; idle = "2m"; reshare = "full"; retries = 2; wait = "5m"; }
 
         # smart
         { route = "smart"; action = "filter"; where.model.eq = "smart"; }
@@ -668,6 +670,7 @@ in
         { route = "smart"; action = "race"; count = 1; }
         { route = "smart"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
         { route = "smart"; action = "timeout"; duration = "3m"; idle = "5m"; }
+        { route = "smart"; action = "continue"; idle = "5m"; reshare = "full"; retries = 2; wait = "10m"; }
       ];
     };
   };

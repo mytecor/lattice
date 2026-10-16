@@ -262,13 +262,119 @@ func (s *Server) inference(writer http.ResponseWriter, request *http.Request, ki
 }
 
 func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logical string, executeRequest ExecuteRequest, started time.Time) {
-	selected, callErr := s.runner.SelectStream(request.Context(), logical, executeRequest)
+	flusher, ok := writer.(http.Flusher)
+	if !ok {
+		writeAPIError(writer, http.StatusInternalServerError, "streaming_not_supported")
+		return
+	}
+	requestID := requestIDFrom(request.Context())
+	headersFlushed := false
+	flushSSEHeaders := func() {
+		if headersFlushed {
+			return
+		}
+		headersFlushed = true
+		writer.Header().Set("Content-Type", "text/event-stream")
+		writer.Header().Set("Cache-Control", "no-cache")
+		writer.Header().Set("Connection", "keep-alive")
+		writer.WriteHeader(http.StatusOK)
+		flusher.Flush()
+	}
+	partial := &partialStreamOutput{}
+	// writeClientKeepAlive emits an SSE comment keep-alive plus, for chat
+	// streams that have not yet started plain text content, a no-op OpenAI
+	// delta chunk (an empty tool-call arguments delta once tool_calls started,
+	// or a single whitespace reasoning_content delta during prefill/thinking).
+	// OpenAI SDK SSE parsers strip ": ping" comments before yielding chunks, so
+	// client-side stall watchdogs (such as pi-retry's 90s message_update timer)
+	// only re-arm when a parsed SSE data chunk produces a stream event.
+	writeClientKeepAlive := func() bool {
+		flushSSEHeaders()
+		if _, err := io.WriteString(writer, ": ping\n\n"); err != nil {
+			return false
+		}
+		if executeRequest.Kind == RequestChat {
+			chunkID := partial.LastChunkID
+			if chunkID == "" {
+				chunkID = "chatcmpl-" + requestID
+			}
+			if partial.GotToolCalls && len(partial.ToolCalls) > 0 {
+				idx := partial.ToolCalls[len(partial.ToolCalls)-1].Index
+				keepAliveChunk, _ := json.Marshal(map[string]any{
+					"id":     chunkID,
+					"object": "chat.completion.chunk",
+					"model":  logical,
+					"choices": []map[string]any{{
+						"index": 0,
+						"delta": map[string]any{
+							"tool_calls": []map[string]any{{
+								"index":    idx,
+								"function": map[string]any{"arguments": ""},
+							}},
+						},
+					}},
+				})
+				if _, err := fmt.Fprintf(writer, "data: %s\n\n", keepAliveChunk); err != nil {
+					return false
+				}
+			} else if !partial.GotText {
+				keepAliveChunk, _ := json.Marshal(map[string]any{
+					"id":     chunkID,
+					"object": "chat.completion.chunk",
+					"model":  logical,
+					"choices": []map[string]any{{
+						"index": 0,
+						"delta": map[string]any{"reasoning_content": " "},
+					}},
+				})
+				if _, err := fmt.Fprintf(writer, "data: %s\n\n", keepAliveChunk); err != nil {
+					return false
+				}
+			}
+		}
+		flusher.Flush()
+		return true
+	}
+
+	type selectResult struct {
+		selected *SelectedStream
+		callErr  *CallError
+	}
+	selectCh := make(chan selectResult, 1)
+	go func() {
+		sel, err := s.runner.SelectStream(request.Context(), logical, executeRequest)
+		selectCh <- selectResult{selected: sel, callErr: err}
+	}()
+	selectKeepAlive := time.NewTicker(continueRecoveryKeepAlive)
+	var selected *SelectedStream
+	var callErr *CallError
+selectWait:
+	for {
+		select {
+		case res := <-selectCh:
+			selected = res.selected
+			callErr = res.callErr
+			break selectWait
+		case <-selectKeepAlive.C:
+			if !writeClientKeepAlive() {
+				selectKeepAlive.Stop()
+				return
+			}
+		}
+	}
+	selectKeepAlive.Stop()
+
 	if callErr != nil {
 		logEvent(request.Context(), s.logger, slog.LevelWarn, "request_failed",
 			"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
 			"status_code", callErrorStatus(callErr), "error_type", string(callErr.Class),
 			"duration_ms", time.Since(started).Milliseconds(),
 		)
+		if headersFlushed {
+			s.observeRequest(request, logical, "", "", "failed", time.Since(started))
+			writeStreamError(writer, flusher, callErr, requestID, s.runner.streamRetryable(logical, callErr))
+			return
+		}
 		writeCallError(writer, callErr)
 		return
 	}
@@ -280,15 +386,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 		}
 	}
 	defer func() { cancelCurrent() }()
-	flusher, ok := writer.(http.Flusher)
-	if !ok {
-		writeAPIError(writer, http.StatusInternalServerError, "streaming_not_supported")
-		return
-	}
-	writer.Header().Set("Content-Type", "text/event-stream")
-	writer.Header().Set("Cache-Control", "no-cache")
-	writer.Header().Set("Connection", "keep-alive")
-	writer.WriteHeader(http.StatusOK)
+	flushSSEHeaders()
 
 	// Bind the winning provider to the opaque response id as it appears in the
 	// winner's stream (response.created / response.completed events).
@@ -318,7 +416,6 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 			sawFinishReason = true
 		}
 	}
-	requestID := requestIDFrom(request.Context())
 	// The idle watchdog bounds a silently stalled winner stream: the route
 	// deadline only guards the selection phase, so without it a winner that
 	// stops emitting events hangs until the client gives up. Any event (not
@@ -375,7 +472,6 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	// The partial output accumulator feeds the "continue" rule: every relayed
 	// assistant delta (content and reasoning) is remembered so a takeover can
 	// reshape it into assistant context for the next provider.
-	partial := &partialStreamOutput{}
 	observePartial := func(data []byte) { accumulatePartial(data, partial) }
 	// The providers whose streams have broken during this request. Only genuine
 	// breaks accumulate here — providers that merely lost the original race
@@ -593,14 +689,14 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 				)
 				return false
 			case <-keepAlive.C:
-				// SSE comment keep-alive: no payload, no choice semantics, cheap;
-				// re-arms client-side watchdogs, and drains/re-arms the gateway's
-				// own idle timer so a stale watchdog value cannot spuriously
-				// fire the moment the stream hands back to the relay loop.
-				if _, err := io.WriteString(writer, ": ping\n\n"); err != nil {
+				// SSE comment + delta keep-alive: re-arms client-side watchdogs
+				// (including pi-retry's 90s message_update timer), and drains/
+				// re-arms the gateway's own idle timer so a stale watchdog value
+				// cannot spuriously fire the moment the stream hands back to the
+				// relay loop.
+				if !writeClientKeepAlive() {
 					return false
 				}
-				flusher.Flush()
 				rearmIdle()
 			case <-recheck.C:
 				// Re-attempt a continuation. Cooldown gates the just-broken
@@ -673,13 +769,63 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 	}
 	clientKeepAlive := time.NewTicker(continueRecoveryKeepAlive)
 	defer clientKeepAlive.Stop()
+	completeStreamSuccess := func() {
+		if executeRequest.Kind == RequestChat {
+			_, _ = io.WriteString(writer, "data: [DONE]\n\n")
+			flusher.Flush()
+		}
+		logEvent(request.Context(), s.logger, slog.LevelInfo, "request_completed",
+			"kind", executeRequest.Kind,
+			"route", s.routeOf(logical),
+			"logical_model", logical,
+			"provider", cur.Provider,
+			"native_model", cur.Model,
+			"stream", true,
+			"status_code", http.StatusOK,
+			"status", "success",
+			"duration_ms", time.Since(started).Milliseconds(),
+			"ttft_ms", cur.TTFT.Milliseconds(),
+			"input_tokens", inTokens,
+			"output_tokens", outTokens,
+			"cached_tokens", cachedTokens,
+			"has_usage", hasUsage,
+			"attempts", cur.Attempts,
+		)
+		s.observeRequest(request, logical, cur.Provider, cur.Model, "success", time.Since(started))
+	}
+	finalizeCompletedStream := func() bool {
+		if executeRequest.Kind != RequestChat {
+			return false
+		}
+		if sawFinishReason && (partial.GotText || partial.GotToolCalls) {
+			completeStreamSuccess()
+			return true
+		}
+		if continueEnabled && !sawFinishReason && partial.HasCompleteToolCalls() {
+			chunk := synthesizeToolCallFinishChunk(partial.LastChunkID, logical)
+			if !writeStreamEvent(writer, flusher, logical, executeRequest.Kind, StreamEvent{Data: chunk}) {
+				return true
+			}
+			sawFinishReason = true
+			s.metrics.ObserveContinue(cur.Provider, cur.Provider, "finalize_tool_calls")
+			logEvent(request.Context(), s.logger, slog.LevelInfo, "llm_continue",
+				"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
+				"from_provider", cur.Provider,
+				"to_provider", cur.Provider,
+				"reshare", "finalize_tool_calls",
+				"established_ms", time.Since(started).Milliseconds(),
+			)
+			completeStreamSuccess()
+			return true
+		}
+		return false
+	}
 	for {
 		select {
 		case <-clientKeepAlive.C:
-			if _, err := io.WriteString(writer, ": ping\n\n"); err != nil {
+			if !writeClientKeepAlive() {
 				return
 			}
-			flusher.Flush()
 		case <-request.Context().Done():
 			logEvent(request.Context(), s.logger, slog.LevelDebug, "request_cancelled",
 				"kind", executeRequest.Kind, "logical_model", logical, "stream", true,
@@ -701,6 +847,9 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 				"duration_ms", time.Since(started).Milliseconds(),
 			)
 			s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, cur.Model, stall)
+			if finalizeCompletedStream() {
+				return
+			}
 			if !sawFinishReason && (takeover(stall) || holdForRecovery(stall)) {
 				continue
 			}
@@ -732,6 +881,9 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 						"has_usage", hasUsage,
 					)
 					s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, cur.Model, broken)
+					if finalizeCompletedStream() {
+						return
+					}
 					if takeover(broken) || holdForRecovery(broken) {
 						continue
 					}
@@ -775,28 +927,7 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 					writeStreamError(writer, flusher, broken, requestID, s.runner.streamRetryable(logical, broken))
 					return
 				}
-				if executeRequest.Kind == RequestChat {
-					_, _ = io.WriteString(writer, "data: [DONE]\n\n")
-					flusher.Flush()
-				}
-				logEvent(request.Context(), s.logger, slog.LevelInfo, "request_completed",
-					"kind", executeRequest.Kind,
-					"route", s.routeOf(logical),
-					"logical_model", logical,
-					"provider", cur.Provider,
-					"native_model", cur.Model,
-					"stream", true,
-					"status_code", http.StatusOK,
-					"status", "success",
-					"duration_ms", time.Since(started).Milliseconds(),
-					"ttft_ms", cur.TTFT.Milliseconds(),
-					"input_tokens", inTokens,
-					"output_tokens", outTokens,
-					"cached_tokens", cachedTokens,
-					"has_usage", hasUsage,
-					"attempts", cur.Attempts,
-				)
-				s.observeRequest(request, logical, cur.Provider, cur.Model, "success", time.Since(started))
+				completeStreamSuccess()
 				return
 			}
 			if event.Err != nil {
@@ -816,6 +947,9 @@ func (s *Server) stream(writer http.ResponseWriter, request *http.Request, logic
 				// scheduler returned at selection, so without this the provider
 				// would stay "healthy" no matter how often it breaks streams.
 				s.runner.RecordStreamFailure(request.Context(), logical, cur.Provider, cur.Model, event.Err)
+				if finalizeCompletedStream() {
+					return
+				}
 				if !sawFinishReason && (takeover(event.Err) || holdForRecovery(event.Err)) {
 					continue
 				}

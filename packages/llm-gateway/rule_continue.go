@@ -45,10 +45,14 @@ func (r *ContinueRule) apply(ctx *stageContext) error {
 	if !ctx.st.entrySet {
 		return ctx.errf("continue must be declared on an entry route (the route needs a filter where.model) so the logical model and its relay policy are known")
 	}
-	if r.Idle.Duration <= 0 {
+	idle := r.Idle.Duration
+	if idle == 0 && ctx.plan.StreamIdleTimeout > 0 {
+		idle = ctx.plan.StreamIdleTimeout
+	}
+	if idle <= 0 {
 		return ctx.errf("continue idle must be a positive duration")
 	}
-	if r.Idle.Duration < 5*time.Second {
+	if idle < 5*time.Second {
 		return ctx.errf("continue idle must be at least 5s to avoid taking over genuinely slow reasoning streams")
 	}
 	reshare := r.Reshare
@@ -73,7 +77,7 @@ func (r *ContinueRule) apply(ctx *stageContext) error {
 	}
 	ctx.plan.Continue = ContinueConfig{
 		Enabled: true,
-		Idle:    r.Idle.Duration,
+		Idle:    idle,
 		Reshare: reshare,
 		Retries: r.Retries,
 		Wait:    wait,

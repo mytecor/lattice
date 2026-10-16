@@ -975,3 +975,88 @@ func TestRunnerContinuationFleesCoolingProviderUntilCooldownExpires(t *testing.T
 	}
 	recovered.Cancel()
 }
+
+func TestAppendPartialChatHistoryResharesReasoningOnly(t *testing.T) {
+	original := []byte(`{"model":"native","messages":[{"role":"user","content":"hi"}]}`)
+	partial := &partialStreamOutput{Reasoning: "step 1 thinking"}
+	rewritten, err := appendPartialChatHistory(original, partial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	if err := json.Unmarshal(rewritten, &body); err != nil {
+		t.Fatalf("rewritten body invalid: %v (%s)", err, rewritten)
+	}
+	if len(body.Messages) != 2 {
+		t.Fatalf("messages len = %d, want 2: %s", len(body.Messages), rewritten)
+	}
+	last := body.Messages[1]
+	if last["role"] != "assistant" || last["reasoning_content"] != "step 1 thinking" {
+		t.Fatalf("appended reasoning-only assistant message = %#v", last)
+	}
+}
+
+func TestServerContinueFinalizesCompleteToolCallOnPrematureClose(t *testing.T) {
+	compiled := continueConfig(t)
+	var bCalls int
+	executor := &fakeExecutor{
+		stream: func(ctx context.Context, target Target, request ExecuteRequest) (<-chan StreamEvent, *CallError) {
+			ch := make(chan StreamEvent, 4)
+			if target.Provider == "a" {
+				ch <- StreamEvent{Data: []byte(`{"id":"chatcmpl-vertex","choices":[{"index":0,"delta":{"reasoning_content":"thinking..."}}]}`), Meaningful: true}
+				ch <- StreamEvent{Data: []byte(`{"id":"chatcmpl-vertex","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"bash","arguments":"{\"command\":\"git status\"}"}}]}}]}`), Meaningful: true}
+				close(ch)
+				return ch, nil
+			}
+			bCalls++
+			go func() {
+				<-ctx.Done()
+				close(ch)
+			}()
+			return ch, nil
+		},
+	}
+	api, runner := streamTestServer(t, compiled, executor)
+
+	body := postStream(t, api.URL)
+
+	if strings.Contains(body, "event: error") || strings.Contains(body, "upstream stream failed") {
+		t.Fatalf("a complete tool-call stream under continue must finalize cleanly, not surface an error: %s", body)
+	}
+	if !strings.Contains(body, `"finish_reason":"tool_calls"`) {
+		t.Fatalf("a complete tool-call stream must emit synthetic finish_reason=tool_calls: %s", body)
+	}
+	if !strings.HasSuffix(strings.TrimSpace(body), "data: [DONE]") {
+		t.Fatalf("a finalized tool-call stream must end with [DONE]: %s", body)
+	}
+	if bCalls != 1 {
+		t.Fatalf("finalizing an already-complete tool call must not re-dispatch to provider b: calls=%d, want 1", bCalls)
+	}
+	if got := runner.availableTargets([]Target{{Provider: "a", Model: "native-model"}}); len(got) != 0 {
+		t.Fatalf("provider a must still cool down after dropping the stream before finish_reason, available: %#v", got)
+	}
+}
+
+func TestServerStreamErrorAfterFinishReasonCompletesCleanly(t *testing.T) {
+	compiled := singleProviderStreamConfig(t)
+	events := make(chan StreamEvent, 4)
+	events <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{"content":"done answer"}}]}`), Meaningful: true}
+	events <- StreamEvent{Data: []byte(`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`), Meaningful: false}
+	events <- StreamEvent{Err: &CallError{Class: ErrorConnection, Status: 502}}
+	close(events)
+	executor := &fakeExecutor{stream: func(context.Context, Target, ExecuteRequest) (<-chan StreamEvent, *CallError) {
+		return events, nil
+	}}
+	api, _ := streamTestServer(t, compiled, executor)
+
+	body := postStream(t, api.URL)
+
+	if strings.Contains(body, "event: error") {
+		t.Fatalf("stream error after finish_reason must not emit event: error: %s", body)
+	}
+	if !strings.HasSuffix(strings.TrimSpace(body), "data: [DONE]") {
+		t.Fatalf("stream error after finish_reason must end with [DONE]: %s", body)
+	}
+}
