@@ -85,6 +85,12 @@ in
 
     tunnelEnabled = mkEnableOption "execution tunnels for r1sd allocator (--tunnel-enabled)";
 
+    tunnelPeers = mkOption {
+      type = types.listOf types.str;
+      default = [ "tcp://127.0.0.1:9002" ];
+      description = "Bootstrap peer URIs for the tunnel edge (r1sd --tunnel-peer).";
+    };
+
     # --- containerd ----------------------------------------------------------
     containerdAddress = mkOption {
       type = types.str;

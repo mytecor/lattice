@@ -6,3 +6,6 @@
 # пакет @hydra-acp/cli существует и доступен через registry.npmjs.org). Это
 # блокировка, а не поломка: 403 — ожидаемый ответ на HEAD/GET от lychee.
 ^https://www\.npmjs\.com
+
+# Внешний репозиторий удалён/переименован upstream-автором после завершения аудита в f7-05.
+^https://github\.com/matdev83/go-llm-interactive-proxy

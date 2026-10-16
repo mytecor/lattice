@@ -11,16 +11,13 @@
   pname = "r1s";
   version = "0.5.1";
 
-  # v0.5.1 adds F25-01 deterministic allocator bootstrap destinations: a fresh
-  # run client reaches known allocator destinations immediately instead of
-  # waiting for the periodic 5m announce, fixing the non-deterministic discovery
-  # that blocked the f10-04 end-to-end smoke (`no usable offer` before the next
-  # announcement). go.mod/go.sum are unchanged from v0.5.0, so vendorHash stays.
+  # v0.5.1 adds F25-01 deterministic allocator bootstrap destinations and
+  # tunnel peering fixes (default peers and detached child argument order).
   src = fetchFromGitHub {
     owner = "mytecor";
     repo = "r1s";
-    rev = "3ea26dc7f039293f596d5aac19a13858d7193c65";
-    hash = "sha256-oAHiBmuZT+XP//ImUTm3wx30qX8WC81u5MfRm+GQfvo=";
+    rev = "a781bcf404bc5f310919d5dd145d4eca1c55b556";
+    hash = "sha256-rF5j9OhGmeI+nUfWCIqGUuLdqfOuPXUtnnQhbRR0Faw=";
   };
 
   vendorHash = "sha256-WArtt0x1GJXXWiFAMyBSDCuOSsgIkuVRcgmuq/KnbCE=";

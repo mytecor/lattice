@@ -66,6 +66,10 @@ in
   services.yggdrasil = {
     enable = true;
     settings = {
+      # Локальный listener для локальных r1s/r1sd tunnel edges.
+      Listen = [
+        "tcp://127.0.0.1:9002"
+      ];
       # Стабильные, проверенные публичные peers (несколько регионов для отказоустойчивости).
       Peers = [
         "tls://ygg5.mk16.de:1338"

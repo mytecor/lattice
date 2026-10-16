@@ -68,8 +68,13 @@ let
     [ "--containerd-snapshotter" cfg.containerdSnapshotter ]
   ++ lib.optionals (cfg.node != null)
     [ "--node" cfg.node ]
-  ++ lib.optionals cfg.tunnelEnabled
-    [ "--tunnel-enabled" ];
+  ++ lib.optionals cfg.tunnelEnabled (
+    [ "--tunnel-enabled" ]
+    ++ lib.optionals (cfg.tunnelPeers != [ ]) [
+      "--tunnel-peer"
+      (lib.concatStringsSep "," cfg.tunnelPeers)
+    ]
+  );
 
   # Allocator service dependencies: the shared RNS instance and containerd.
   # F22 r1s/r1sd attach as clients to an already-running shared RNS instance
