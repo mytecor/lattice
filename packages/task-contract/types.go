@@ -96,3 +96,21 @@ func (s *TaskSpec) IsActionable() bool {
 func (s *TaskSpec) RevisionKey() string {
 	return fmt.Sprintf("%s:%s@%s", s.TaskRepo, s.Path, s.Commit)
 }
+
+// DefaultSubjectAgentRun is the default Meshbus subject for dispatching tasks to agentd.
+const DefaultSubjectAgentRun = "agent.run"
+
+// RunTaskRequest represents a meshbus request to agentd to execute a TaskSpec.
+type RunTaskRequest struct {
+	ID      string   `json:"id"`
+	Spec    TaskSpec `json:"spec"`
+	ReplyTo string   `json:"reply_to"`
+}
+
+// RunTaskResponse represents the meshbus reply from agentd.
+type RunTaskResponse struct {
+	ID     string      `json:"id"`
+	Result *TaskResult `json:"result,omitempty"`
+	Error  string      `json:"error,omitempty"`
+}
+

@@ -17,6 +17,9 @@
 - [`git-cache-proxy/`](./git-cache-proxy/README.md) - read-only caching proxy для Git-репозиториев (f9-01): lazily клонирует bare mirror с origin и раздаёт дельту клиентам, cache на локальной POSIX FS не является source of truth.
 - [`worker-runtime/`](./worker-runtime/README.md) - r1sd-allocator (F10 disposable worker backend) поверх containerd и RNS shared instance (f10-02).
 - [`ipfs-registry-facade/`](./ipfs-registry-facade/README.md) - OCI Registry фасад поверх IPFS (Kubo + nerdctl registry serve) для распространения OCI-образов без центральных реестров (f10-04).
+- [`git-watchd/`](./git-watchd/README.md) - демон-адаптер между локальными Git-репозиториями и шиной Meshbus (f11-02).
+- [`taskd/`](./taskd/README.md) - Git task reconciler между Git и execution layer `agentd` (f11-03).
+
 
 ## Правило
 

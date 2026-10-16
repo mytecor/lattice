@@ -363,4 +363,10 @@ in
     inherit pkgs;
     taskContract = pkgs.lattice.task-contract;
   };
+
+  taskd = import ./taskd.nix {
+    inherit nixpkgs pkgs;
+    taskdModule = self.nixosModules.taskd;
+  };
 }
+

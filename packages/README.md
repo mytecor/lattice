@@ -115,6 +115,14 @@ release `v0.1.1` внешнего репозитория (см. `package.nix`). 
 ([`roadmap/f11-git-task-pipeline/f11-01-task-contract.md`](../roadmap/f11-git-task-pipeline/f11-01-task-contract.md)).
 Пакет также включает CLI-валидатор `task-validate`.
 
+## taskd
+
+[`taskd`](./taskd/README.md) — Git-reconciler между состоянием репозитория задач и слоем
+исполнения `agentd`
+([`roadmap/f11-git-task-pipeline/f11-03-taskd.md`](../roadmap/f11-git-task-pipeline/f11-03-taskd.md)).
+Переводит неизменяемые спецификации задач `task.md` в `TaskSpec` и отправляет в `agentd` через Meshbus.
+
+
 ## pnpm CLI
 
 [`packages/pnpm-cli-builder`](./pnpm-cli-builder/README.md) предоставляет общий `buildPnpmCli`

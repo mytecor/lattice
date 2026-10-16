@@ -100,6 +100,12 @@
       flake = false;
     };
 
+    module-taskd = {
+      url = "path:./modules/taskd";
+      flake = false;
+    };
+
+
     module-verdaccio = {
       url = "path:./modules/verdaccio";
       flake = false;
@@ -172,6 +178,7 @@
     module-hotspot-switch,
     module-git-cache-proxy,
     module-git-watchd,
+    module-taskd,
     module-verdaccio,
     module-authentik,
     module-observability-prometheus,
@@ -250,6 +257,7 @@
           git-cache-proxy = final.callPackage ./packages/git-cache-proxy/package.nix { };
           git-watchd = final.callPackage ./packages/git-watchd/package.nix { };
           task-contract = final.callPackage ./packages/task-contract/package.nix { };
+          taskd = final.callPackage ./packages/taskd/package.nix { };
           verdaccio = final.callPackage ./packages/verdaccio/package.nix { };
           # F18: browser runtime + agent stack.
           foxbridge = final.callPackage ./packages/foxbridge/package.nix { };
@@ -338,7 +346,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) antigravity antigravity-acp antigravity-acp-fsless gemini-cli gemini-acp gemini-acp-fsless codex-acp-fsless acp-normalizer acp-web agent-image agentrun-openai git-cache-proxy git-watchd task-contract hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
+          inherit (pkgs.lattice) antigravity antigravity-acp antigravity-acp-fsless gemini-cli gemini-acp gemini-acp-fsless codex-acp-fsless acp-normalizer acp-web agent-image agentrun-openai git-cache-proxy git-watchd task-contract taskd hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
         });
@@ -408,6 +416,7 @@
         hotspot-switch.imports = [ "${module-hotspot-switch}" ];
         git-cache-proxy.imports = [ "${module-git-cache-proxy}" ];
         git-watchd.imports = [ "${module-git-watchd}" ];
+        taskd.imports = [ "${module-taskd}" ];
         verdaccio.imports = [ "${module-verdaccio}" ];
         observability-prometheus.imports = [ "${module-observability-prometheus}" ];
         observability-loki.imports = [ "${module-observability-loki}" ];
@@ -431,6 +440,7 @@
           self.nixosModules.hotspot-switch
           self.nixosModules.git-cache-proxy
           self.nixosModules.git-watchd
+          self.nixosModules.taskd
           self.nixosModules.verdaccio
           self.nixosModules.observability-prometheus
           self.nixosModules.observability-loki
