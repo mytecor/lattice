@@ -14,21 +14,6 @@
 
 ## Очередь (приоритет сверху вниз)
 
-### [F10. Agent runtime](./roadmap/f10-disposable-worker/README.md)
-
-> Disposable OCI container предоставляет long-lived ACP endpoint внутри конкретного r1s run.
-
-- **Статус:** 🟡 начата — [f10-01](./roadmap/f10-disposable-worker/f10-01-package-r1s.md) (упаковка
-  execution backend r1s/r1sd) закрыта 2026-09-16; [f10-02](./roadmap/f10-disposable-worker/f10-02-deploy-r1sd.md)
-  (разворачивание `r1sd`-allocator на ноде) закрыта 2026-10-03 — `worker-runtime` активен на ноде,
-  allocator готов в mesh, `r1s`-клиент с ноды доходит до него. Следующим — OCI agent image с
-  `git`, Pi, `pi-acp`, workspace bootstrap и ACP listener (f10-04), затем credentials (f10-05) и
-  disposability acceptance (f10-06).
-- **Готово, когда:** r1s запускает одноразовый agent container, а ACP client подключается к его
-  long-lived endpoint; уничтожение контейнера не теряет уникальное durable state.
-- **Зависит от:** [F8](#f8-интерактивный-pi), [F9](#f9-caches-и-artifacts)
-  (только caches-часть; artifacts/S3 отложена)
-
 ### [F11. Git task pipeline](./roadmap/f11-git-task-pipeline/README.md)
 
 > Git revisions превращаются в `TaskSpec`, а terminal `TaskResult` возвращается в Git.
@@ -278,3 +263,14 @@
 - **Готово, когда:** из ACP-сессии на ноде коммит доезжает до Radicle и GitHub одним
   `git push publish main` и применяется нодой через comin; состояние переживает reboot.
 - **Зависит от:** [F4](#f4-полезная-нагрузка) (f4-01 выполнен), [F8](#f8-интерактивный-pi)
+
+### [F10. Agent runtime](./roadmap/f10-disposable-worker/README.md)
+
+> Disposable OCI container предоставляет long-lived ACP endpoint внутри конкретного r1s run.
+
+- **Статус:** ✅ выполнена 2026-10-16 — задачи
+  [f10-01..f10-06](./roadmap/f10-disposable-worker/README.md).
+- **Готово, когда:** r1s запускает одноразовый agent container, а ACP client подключается к его
+  long-lived endpoint; уничтожение контейнера не теряет уникальное durable state.
+- **Зависит от:** [F8](#f8-интерактивный-pi), [F9](#f9-caches-и-artifacts)
+  (только caches-часть; artifacts/S3 отложена)

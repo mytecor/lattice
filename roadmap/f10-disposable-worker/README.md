@@ -12,11 +12,9 @@ allocator, worker registry, heartbeat или execution leases. Полная гр
 [F9](../f9-cache-artifact-plane/README.md). Соответствует
 [вехе 10](../../ROADMAP.md#f10-agent-runtime).
 
-Задачи: [f10-01](./f10-01-package-r1s.md) и [f10-02](./f10-02-deploy-r1sd.md) закрыты и
-сохраняют историю подготовки r1s; открытая реализация —
-[f10-04](./f10-04-agent-runtime-acp.md),
-[f10-05](./f10-05-agent-credentials.md) и
-[f10-06](./f10-06-runtime-acceptance.md).
+Задачи: [f10-01](./f10-01-package-r1s.md), [f10-02](./f10-02-deploy-r1sd.md),
+[f10-04](./f10-04-agent-runtime-acp.md), [f10-05](./f10-05-agent-credentials.md) и
+[f10-06](./f10-06-runtime-acceptance.md) полностью закрыты и проверены на живой ноде.
 
 **Критерий готовности:** r1s запускает immutable agent image; контейнер создаёт workspace из
 явных source repository/revision и принимает ACP; клиент подключается через r1s tunnel;

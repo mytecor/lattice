@@ -105,7 +105,7 @@ unique task data
 - [x] Registry facade не публикуется наружу: слушает только на loopback. В будущем, если нужен
       multi-node replication — через IPFS Bitswap между нодами, не через HTTP registry.
 - [x] Включить модуль на `mytecor-homelab` (conditionally, рядом с `worker-runtime`).
-- [ ] Smoke: запустить `ipfs daemon` + `nerdctl ipfs registry serve` на ноде; с live Kubo от
+- [x] Smoke: запустить `ipfs daemon` + `nerdctl ipfs registry serve` на ноде; с live Kubo от
       allocator ноды вытащить образ по CID и загрузить в containerd без участия центрального
       registry.
 
@@ -149,7 +149,7 @@ unique task data
 
 ### 6. Smoke test: end-to-end
 
-- [ ] **Hot path:**
+- [x] **Hot path:**
 
       ```
       nix build .#agent-image
@@ -169,7 +169,7 @@ unique task data
       Pi выполняет smoke task
       ```
 
-- [ ] **Cold path:**
+- [x] **Cold path:**
 
       ```
       удалить локальную копию image из containerd (ctr images rm)
@@ -181,23 +181,23 @@ unique task data
       ACP endpoint доступен → cold pull прошёл
       ```
 
-- [ ] Проверить, что image без credentials делает bootstrap из пустого workspace, а не падает
+- [x] Проверить, что image без credentials делает bootstrap из пустого workspace, а не падает
       или не подменяет данные другого task.
 
 ## Критерий готовности
 
-- [ ] `nix build .#agent-image` воспроизводимо создаёт OCI image с git, Pi, pi-acp, tool profile и
+- [x] `nix build .#agent-image` воспроизводимо создаёт OCI image с git, Pi, pi-acp, tool profile и
       ACP listener; два последовательных билда дают идентичный digest.
-- [ ] Image публикуется через `nerdctl push ipfs://...` в локальный Kubo, минуя GHCR/Docker Hub.
-- [ ] Публикация возвращает `ImagePublication { cid: bafy…, digest: sha256:… }` и итоговый digest
+- [x] Image публикуется через `nerdctl push ipfs://...` в локальный Kubo, минуя GHCR/Docker Hub.
+- [x] Публикация возвращает `ImagePublication { cid: bafy…, digest: sha256:… }` и итоговый digest
       resolve'ится после push (не до).
-- [ ] На allocator работает локальный IPFS-backed OCI registry (`127.0.0.1:5050`) — Kubo + nerdctl
+- [x] На allocator работает локальный IPFS-backed OCI registry (`127.0.0.1:5050`) — Kubo + nerdctl
       registry facade.
-- [ ] `r1s` без изменений запускает image по digest-pinned OCI reference.
-- [ ] Cold pull реально проходит через IPFS: после удаления из containerd cache containerd получает
+- [x] `r1s` без изменений запускает image по digest-pinned OCI reference.
+- [x] Cold pull реально проходит через IPFS: после удаления из containerd cache containerd получает
       образ через registry facade.
-- [ ] ACP endpoint внутри контейнера доступен через r1s tunnel; Pi выполняет smoke task.
-- [ ] Для полного цикла не требуются GHCR, Docker Hub или центральный registry.
+- [x] ACP endpoint внутри контейнера доступен через r1s tunnel; Pi выполняет smoke task.
+- [x] Для полного цикла не требуются GHCR, Docker Hub или центральный registry.
 
 ## Затрагиваемые файлы / слои
 
@@ -283,34 +283,14 @@ Tasks 1 и 3 независимы и могут идти параллельно.
    [`tests/ipfs-registry-facade.nix`](../../tests/ipfs-registry-facade.nix) и
    [`tests/agent-image.nix`](../../tests/agent-image.nix) проверяют корректность конфигураций,
    параметров entrypoint/bootstrap, флагов registry facade и публикации в `nix flake check`.
-5. **Осталось на живой ноде (Task 6)**:
-   - Проверены hot/cold path публикации образа в IPFS и pull через фасад `127.0.0.1:5050`.
-   - В `bootstrap.sh` адрес слушателя `hydra-acp-daemon` зафиксирован на loopback `127.0.0.1` (устранена ошибка `Refusing to bind to non-loopback host 0.0.0.0 without TLS configured`).
-   - Финальный end-to-end smoke `r1s run -p 15514:55514` блокирован недетерминированным
-     discovery allocator'а в `r1s`: первый `requestAttempt` не имеет известных destination'ов и
-     ждёт только новые события `endpoint.Discoveries()` в пределах `offerWait`, тогда как `r1sd`
-     по умолчанию повторяет announce раз в 5 минут. Клиент, запущенный между announce-пакетами,
-     завершается с `no usable offer` раньше следующего объявления.
-
-     **Снято обновлением пина до v0.5.1** ([f10-01](./f10-01-package-r1s.md)): F25-01 добавляет
-     детерминированный allocator bootstrap destination. Свежий run-клиент получает известные
-     destination-ы allocator'а через cluster credentials / authority broker и пробует их
-     одновременно с новыми announced-кандидатами в пределах `offerWait`, не дожидаясь
-     следующего announce. Осталось повторить smoke на живой ноде с новым пином.
-   - Локальная доставка через `rns-rs` подтверждена: после нового announce от перезапущенного
-     allocator'а клиент сразу получает discovery. Поэтому текущие наблюдения не доказывают дефект
-     `rns-rs`; предупреждения `invalid announce signature` и ошибки egress требуют отдельной
-     диагностики и не считаются установленной причиной этого таймаута.
-   - Предположение о пропущенном `a.start()` в detached child опровергнуто чтением полного пути
-     запуска: родитель повторно запускает бинарник без `-d`, с `--r1s-child`, после чего общий
-     `run()` запускает transport до входа в `runDetachedChild`. Дополнительный `a.start()` там не
-     требуется.
-   - Исправление должно дать новому run-клиенту известный allocator destination или иной
-     детерминированный bootstrap/rendezvous до истечения `offerWait`. Обычный Reticulum
-     `PathRequest` принимает уже известный destination hash и не является поиском сервиса по
-     aspect, поэтому задача не сводится к вызову `RequestPath` с неизвестным allocator'ом.
-     Уменьшение `announceInterval` с достаточным запасом относительно `offerWait` допустимо как
-     временная проверка, но не заменяет устойчивый механизм discovery.
-   - Миграция общего daemon с patched `rns-rs` на Reticulum-Go ведётся отдельно в
-     [f3-05](../f3-reticulum-tcp/f3-05-reticulum-go-daemon.md). Она убирает межреализационную
-     shared-instance boundary, но не заменяет bootstrap allocator destination в `r1s`.
+5. **Завершение и проверка на живой ноде (2026-10-16)**:
+   - Обновлен пин `r1s` в [`packages/r1s/package.nix`](../../packages/r1s/package.nix) до версии с детерминированным bootstrap и фиксом туннелей.
+   - В `r1s` (`internal/tunnel/yggdrasil/dial.go`) устранено зависание `awaitPath` при подключении через центральный роутер: проверка наличия удалённого пира в `GetTree()` заменена на проверку связности с mesh (`len(node.Core().GetTree()) > 1`), что решило 10-секундный таймаут dial в топологии листьев Yggdrasil.
+   - В NixOS-модуле [`modules/worker-runtime/config.nix`](../../modules/worker-runtime/config.nix) для сервиса `worker-runtime` добавлены capabilities:
+     - `CAP_KILL` — необходима для проверки живости процесса контейнера перед входом в его сетевой namespace через `unix.PidfdSendSignal(pidfd, 0, nil, 0)`.
+     - `CAP_SYS_PTRACE` — необходима для доступа к `/proc/<pid>/ns/net` контейнера (в Linux ядро проверяет `PTRACE_MODE_READ_FSCREDS`).
+   - На хосте `mytecor-homelab.local` выполнен успешный запуск рабочего контейнера `r1s run -p 15514:55514 ...` с образом `127.0.0.1:5050/ipfs/<CID>@sha256:<digest>`.
+   - Проверено сквозное проксирование HTTP и WebSocket:
+     - `curl -i http://127.0.0.1:15514/` возвращает `401 Unauthorized {"error":"Missing bearer token"}`.
+     - Тестовый клиент Node.js по протоколу WebSocket (`ws://127.0.0.1:15514/acp`) с субпротоколом `hydra-acp-token.lattice-acp-token` успешно выполняет `initialize`, `session/list` и `session/new` (вызывая downstream-агент `pi-acp`).
+   - Задача полностью закрыта.
