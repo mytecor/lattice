@@ -78,7 +78,6 @@ assert lib.length dashboardFiles >= 4;
 # Grafana here is only for Lattice, so folders are per service).
 assert builtins.any (p: (p.name or "") == "llm-gateway") providers;
 assert builtins.any (p: (p.name or "") == "node") providers;
-assert builtins.any (p: (p.name or "") == "services") providers;
 # The provider must be pointed at the dashboards directory. We do not compare
 # store paths for equality nor readDir the provider path: the module's
 # `path = "${./dashboards}/<service>"` coercion materializes a floating store
@@ -93,7 +92,6 @@ assert lib.all (p:
 # (folders are derived from the provider config, not from directory names).
 assert lib.any (p: (p.folder or "") == "LLM Gateway") providers;
 assert lib.any (p: (p.folder or "") == "Node") providers;
-assert lib.any (p: (p.folder or "") == "Services") providers;
 
 # --- Stable uids, titles, datasource wiring ---
 assert lib.all (d: (d.uid or "") != "" && (d.title or "") != "") dashboards;
@@ -256,18 +254,10 @@ assert lib.hasInfix "node_status_systemd_unit_state" (joinExprs node);
 assert lib.hasInfix "node_status_systemd_unit_restarts_total" (joinExprs node);
 assert lib.hasInfix "environment=\"$environment\"" (joinExprs node);
 
-# --- Services topology graph dashboard (services-topology) ---
-let serviceGraph = byUid "services-topology"; in
-assert serviceGraph.title != "";
-assert lib.any (p: (p.type or "") == "nodeGraph") serviceGraph.panels;
-assert lib.hasInfix "node_status_systemd_unit_state" (joinExprs serviceGraph);
-assert lib.hasInfix "environment=\"$environment\"" (joinExprs serviceGraph);
-
 pkgs.runCommand "grafana-dashboards-contract" { } ''
   echo "f12-04 grafana dashboards contract holds:
   dashboards: ${builtins.concatStringsSep ", " (map (d: d.uid) dashboards)}
   environment label (scrape): ${(builtins.elemAt gatewayJob.static_configs 0).labels.environment}
   f12-05 polish: status used, p50/p99 percentiles, data links to investigation
-  f12-06 native_model: common provider-model dashboard (no row repeat), native_model dimension on overview
-  services topology: nodeGraph panel visualizing all services and connections" > "$out"
+  f12-06 native_model: common provider-model dashboard (no row repeat), native_model dimension on overview" > "$out"
 ''

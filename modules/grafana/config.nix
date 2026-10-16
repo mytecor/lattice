@@ -25,12 +25,6 @@ let
       uid = "loki";
       url = cfg.lokiUrl;
     }
-    {
-      name = "TestData";
-      type = "testdata";
-      access = "proxy";
-      uid = "testdata";
-    }
   ];
 
   # Dashboard providers: a provisioning "providers" entry per service, each
@@ -42,8 +36,7 @@ let
   # the default rather than appends to it: the repository is the single source
   # of truth and there is exactly one provider set (f12-04). The module ships
   # the gateway dashboards (LLM Gateway, provider models, runtime, Loki
-  # investigation), the node overview, and the services topology graph, each
-  # in its own Grafana folder.
+  # investigation) and the node overview, each in its own Grafana folder.
   #
   # A Grafana file-type dashboard provider is bound to exactly one folder and
   # one directory; one provider per service keeps each dashboard in its own
@@ -57,10 +50,6 @@ let
     {
       name = "node";
       folder = "Node";
-    }
-    {
-      name = "services";
-      folder = "Services";
     }
   ];
 
