@@ -27,9 +27,11 @@ admin-пароль — из agenix-секрета через file provider (не
 модели по провайдерам» (`gateway-providers.json`, динамический разрез `native_model` —
 один общий набор панелей без повтора строки, единственный дашборд с провайдерским/
 модельным срезом деталей), «Gateway runtime» (`gateway-runtime.json`), «Loki /
-Расследование» (`loki-investigation.json`); `node/` — «Node overview» (`node-overview.json`).
+Расследование» (`loki-investigation.json`); `node/` — «Node overview» (`node-overview.json`);
+`services/` — «Lattice: Карта связей сервисов» (`service-graph.json`, интерактивная
+схема связей всех сервисов через Grafana Node Graph и статус доступности systemd-юнитов).
 Провид provision объявляет по одному file-провайдеру на сервис: `name` = имя подпапки,
-каждый со своей Grafana-папкой (`LLM Gateway`, `Node`) — общая папка `Lattice` удалена,
+каждый со своей Grafana-папкой (`LLM Gateway`, `Node`, `Services`) — общая папка `Lattice` удалена,
 Grafana здесь только под Lattice, поэтому папки отражают сервисы (f12-10-03). Провайдеры
 подхватывают файлы при старте; definitions живут в репозитории, не в UI.
 `dashboardProviders` (если задан) заменяет дефолтный набор целиком — источник истины

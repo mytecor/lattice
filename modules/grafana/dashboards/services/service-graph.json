@@ -1,0 +1,289 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": { "type": "testdata", "uid": "testdata" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 20, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "edges": {},
+        "nodes": {},
+        "zoomMode": "cooperative"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "testdata", "uid": "testdata" },
+          "refId": "nodes",
+          "scenarioId": "csv_content",
+          "csvContent": "id,title,subTitle,mainStat,secondaryStat,color,detail__Layer,detail__Description\nclient,Client / Operator,External & LAN,User,Access,#73BF69,Access,Пользователи и операторы системы\ncaddy,Caddy Ingress,Reverse Proxy & Gateway,:80 / :443,HTTP / WS,#5794F2,Ingress,Единая точка входа HTTP и WS на ноде\nauthentik,Authentik SSO,Identity & Auth,:9220,OIDC / Auth,#FADE2A,Security,Центральный SSO-провайдер: OIDC и ForwardAuth\navahi,Avahi mDNS,ZeroConf Discovery,:5353,mDNS,#73BF69,Networking,Анонсирует service-specific хостнеймы *.local\nyggdrasil,Yggdrasil Mesh,End-to-End Encryption,200::/7,IPv6 Mesh,#FADE2A,Networking,Сквозная шифрованная mesh-сеть homelab.myt.su\nrns-server,Reticulum RNS,Mesh Network Stack,:4242,RNS Stack,#F2495C,Networking,Криптографический сетевой стек Reticulum\nrnsh,rnsh Daemon,RNS Remote Shell,rnsh,RNS Session,#F2495C,Management,Удалённый терминал администрирования поверх RNS\nmeshbus,MeshBus,Decentralized Pub/Sub,bus,RNS PubSub,#FF780A,Message Bus,Децентрализованная шина сообщений поверх RNS\nllm-gateway,LLM Gateway,Inference Proxy & Fallback,:9208,Bifrost Go,#B877D9,AI Inference,Маршрутизация LLM моделей балансировка и fallback\nagentrun-openai,agentrun-openai,OpenAI API Gateway,:8787,HTTP,#B877D9,AI Inference,OpenAI-совместимый шлюз для agentrun\nupstream-llm,Upstream Providers,Vertex / Gonka / Hyperfusion,Cloud,Upstream,#8AB8FF,External,Внешние провайдеры инференса (Google Vertex Gonka Dahl)\nhydra-acp,Hydra ACP Daemon,Interactive Pi Agent,:55514,ws:// acp.v1,#FF780A,Agent Plane,Интерактивный runtime агента Pi с WebSocket\nacp-web,ACP Web Client,SPA Dashboard UI,acp-ui,Browser SPA,#5794F2,Frontend,Веб-интерфейс для работы с ACP-агентом\ntaskd,taskd,Task Pipeline Reconciler,daemon,Reconciliation,#FF780A,Agent Plane,Reconciler задач: чтение task.md и запись TaskResult\ngit-watchd,git-watchd,Git Revision Change Watcher,daemon,Long Poll,#FF780A,Agent Plane,Отслеживает изменения Git-ревизий для MeshBus\nagentd,agentd,Autonomous Agent Runner,daemon,ACP Loop,#FF780A,Agent Plane,Исполняет TaskSpec в OCI контейнере r1s через ACP\nr1sd,r1s / r1sd,Distributed OCI Allocator,daemon,containerd,#E07A5F,Execution,Изолированное выполнение агентов в OCI контейнерах\nradicle-node,Radicle Node,P2P Git Seed & HTTP,:8776 / :8080,Git P2P,#5794F2,GitOps & Storage,P2P узел и хранилище репозиториев Radicle\ncomin,comin,GitOps Node Deployment,systemd,comin,#73BF69,GitOps,Автоматическое развёртывание конфигурации из Git\ncomin-source-sync,comin-source-sync,Git Normalizer & Sync,daemon,Git Normalizer,#73BF69,GitOps,Синхронизирует репозиторий из Radicle и GitHub\ngit-cache-proxy,Git Cache Proxy,HTTP Cache for Git Clones,:9211,HTTP Cache,#5794F2,Cache Plane,Локальное кэширование git clone и fetch\nverdaccio,Verdaccio,Private NPM Registry Cache,:9212,NPM Registry,#5794F2,Cache Plane,Локальный кэш пакетов npm для сборок\nfoxbridge,Foxbridge,Headless Camoufox Browser,:9222,CDP Browser,#3274D9,Browser Stack,Скрытный headless-браузер Camoufox с CDP\njev-ultrafast,Jev Ultrafast,Browser Automation Inspector,:8766,Web Inspector,#3274D9,Browser Stack,Инспектор и агент автоматизации через CDP\nprometheus,Prometheus,Metrics TSDB & Scraper,:9213,PromQL,#FF780A,Observability,Сбор и хранение числовых метрик\nloki,Loki,Log Aggregation Engine,:9214,LogQL,#FF780A,Observability,Хранение и поиск структурированных логов\nalloy,Grafana Alloy,Journald Log Shipper,:9216,Log Pipeline,#FF780A,Observability,Сбор логов journald и отправка в Loki\ngrafana,Grafana,Observability Dashboards,:9215,Web UI,#FADE2A,Observability,Визуализация метрик логов и топологии сервисов\nnode-status,Node Status,Host Status & System Metrics,:9217,HTTP / Exporter,#73BF69,Observability,Сбор системных метрик хоста для Prometheus"
+        },
+        {
+          "datasource": { "type": "testdata", "uid": "testdata" },
+          "refId": "edges",
+          "scenarioId": "csv_content",
+          "csvContent": "id,source,target,mainStat,thickness\ne1,client,caddy,HTTP/HTTPS,3\ne2,client,rnsh,RNS Admin Shell,2\ne3,avahi,client,mDNS Resolve,1\ne4,yggdrasil,caddy,IPv6 Mesh Route,2\ne5,caddy,grafana,reverse_proxy :9215,2\ne6,caddy,authentik,reverse_proxy :9220,2\ne7,caddy,hydra-acp,ws:// proxy :55514,2\ne8,caddy,acp-web,static SPA file_server,2\ne9,caddy,node-status,reverse_proxy :9217,2\ne10,caddy,llm-gateway,reverse_proxy :9208,2\ne11,caddy,git-cache-proxy,reverse_proxy :9211,2\ne12,caddy,verdaccio,reverse_proxy :9212,2\ne13,caddy,radicle-node,reverse_proxy :8080,2\ne14,caddy,authentik,ForwardAuth Check,2\ne15,grafana,authentik,OIDC Generic OAuth,2\ne16,grafana,prometheus,PromQL Queries :9213,2\ne17,grafana,loki,LogQL Queries :9214,2\ne18,prometheus,llm-gateway,scrape /metrics :9209,2\ne19,prometheus,node-status,scrape /metrics :9217,2\ne20,alloy,loki,push logs :9214,2\ne21,alloy,llm-gateway,journald structured events,1\ne22,alloy,caddy,journald logs,1\ne23,node-status,caddy,systemctl unit monitoring,1\ne24,hydra-acp,llm-gateway,completions :9208,2\ne25,agentrun-openai,llm-gateway,model inference :9208,2\ne26,jev-ultrafast,llm-gateway,vision & tool calls :9208,2\ne27,llm-gateway,upstream-llm,provider dispatch & race,3\ne28,acp-web,hydra-acp,ws:// connect,2\ne29,git-watchd,meshbus,git.watch changes,2\ne30,meshbus,taskd,actionable commits,2\ne31,taskd,meshbus,TaskSpec dispatch,2\ne32,meshbus,agentd,TaskSpec execution,2\ne33,agentd,r1sd,run OCI container,2\ne34,agentd,hydra-acp,ACP execution session,2\ne35,agentd,taskd,TaskResult callback,2\ne36,taskd,radicle-node,commit result to Git,2\ne37,meshbus,rns-server,RNS Native Packets,2\ne38,rnsh,rns-server,RNS Encrypted Channel,2\ne39,jev-ultrafast,foxbridge,CDP Browser Control :9222,2\ne40,radicle-node,comin-source-sync,local storage sync,2\ne41,comin-source-sync,comin,normalized git repo,2\ne42,comin,caddy,gitops deploy & switch,2"
+        }
+      ],
+      "title": "Схема связей всех сервисов Lattice (Node Graph)",
+      "type": "nodeGraph"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
+      "id": 100,
+      "panels": [],
+      "title": "Состояние сервисов (Systemd & Health)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 21 },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "expr": "min(node_status_systemd_unit_state{environment=\"$environment\",unit=~\"$unit\",state=\"active\"})",
+          "refId": "A"
+        }
+      ],
+      "title": "Сервисы активны (Prometheus)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 21 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(node_status_systemd_unit_restarts_total{environment=\"$environment\",unit=~\"$unit\"}[$__rate_interval]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Рестарты сервисов",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 10 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 21 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "expr": "sum(llm_requests_in_flight) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "title": "LLM Gateway In-Flight",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 21 },
+      "id": 5,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "expr": "node_status_up{environment=\"$environment\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Node Status Collector",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 25 },
+      "id": 6,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        {
+          "expr": "node_status_systemd_unit_state{environment=\"$environment\",unit=~\"$unit\"}",
+          "legendFormat": "{{unit}} ({{state}})",
+          "refId": "A"
+        }
+      ],
+      "title": "Состояние сервисов во времени (node-status)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["lattice", "services", "topology", "architecture"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "homelab", "value": "homelab" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(node_status_up, environment)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Environment",
+        "multi": false,
+        "name": "environment",
+        "options": [],
+        "query": { "query": "label_values(node_status_up, environment)", "refId": "PrometheusVariableQueryEditor-Environment" },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(node_status_systemd_unit_state{environment=\"$environment\"}, unit)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Unit",
+        "multi": true,
+        "name": "unit",
+        "options": [],
+        "query": { "query": "label_values(node_status_systemd_unit_state{environment=\"$environment\"}, unit)", "refId": "PrometheusVariableQueryEditor-Unit" },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Lattice: Карта связей сервисов",
+  "uid": "services-topology",
+  "version": 1,
+  "weekStart": ""
+}

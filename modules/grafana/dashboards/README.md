@@ -8,11 +8,11 @@ service's own Grafana folder (f12-10-03: the "Lattice" catch-all folder is
 gone — Grafana here is only for Lattice, so folders are per service).
 
 Structure: [`llm-gateway/`](./llm-gateway/) holds the four gateway dashboards,
-[`node/`](./node/) the node overview. Subdirectory name == provider name;
-Grafana folder is the display name set in [config.nix](../config.nix) (`LLM
-Gateway`, `Node`).
+[`node/`](./node/) the node overview, [`services/`](./services/) the service topology graph.
+Subdirectory name == provider name; Grafana folder is the display name set in
+[config.nix](../config.nix) (`LLM Gateway`, `Node`, `Services`).
 
-Fleet (rev. 2026-09-16, полная переработка):
+Fleet (rev. 2026-09-16, полная переработка; 2026-10-17: карта связей сервисов):
 
 - [`llm-gateway/llm-gateway.json`](./llm-gateway/llm-gateway.json) — «LLM Gateway»: обзор. Верхний ряд
   KPI отвечает «всё ли в порядке» за ~3 секунды: RPS, доля ошибок, p95
@@ -47,6 +47,10 @@ Fleet (rev. 2026-09-16, полная переработка):
 - [`node/node-overview.json`](./node/node-overview.json) — «Node overview»: CPU, load, RAM, root filesystem,
   uptime, disk/network throughput, температуры, ошибки сборщика и сети, состояния выбранных
   systemd-сервисов и прирост их рестартов. Переменные `environment`, `unit`, `device`, `disk`.
+- [`services/service-graph.json`](./services/service-graph.json) — «Lattice: Карта связей сервисов»:
+  интерактивная топология всех компонентов Lattice на панели Grafana Node Graph (ноды сервисов,
+  порты, роли и направленные рёбра взаимодействия), сопровождаемая статус-панелями активности
+  systemd-юнитов и историей состояний из Prometheus. Переменные `environment`, `unit`.
 
 ### Ревизия 2026-09-16 (переработка UX)
 
