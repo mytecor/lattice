@@ -71,7 +71,7 @@ func addCommit(t *testing.T, dir, filename, content, message string) {
 
 func TestValidateLocalRepo(t *testing.T) {
 	ctx := context.Background()
-	engine := NewLocalGitEngine("", "")
+	engine := NewGoGitEngine("")
 
 	// Empty repo
 	if err := engine.ValidateLocalRepo(ctx, ""); err == nil {
@@ -109,7 +109,7 @@ func TestValidateLocalRepo(t *testing.T) {
 	}
 
 	// Allowed prefix restrictions
-	restrictedEngine := NewLocalGitEngine("", gitDir)
+	restrictedEngine := NewGoGitEngine(gitDir)
 	if err := restrictedEngine.ValidateLocalRepo(ctx, gitDir); err != nil {
 		t.Errorf("allowed dir rejected: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestValidateLocalRepo(t *testing.T) {
 
 func TestResolveHead(t *testing.T) {
 	ctx := context.Background()
-	engine := NewLocalGitEngine("", "")
+	engine := NewGoGitEngine("")
 	dir := setupTestGitRepo(t)
 
 	// HEAD
@@ -151,7 +151,7 @@ func TestResolveHead(t *testing.T) {
 
 func TestDiffPaths(t *testing.T) {
 	ctx := context.Background()
-	engine := NewLocalGitEngine("", "")
+	engine := NewGoGitEngine("")
 	dir := setupTestGitRepo(t)
 
 	rev1, err := engine.ResolveHead(ctx, dir, "")

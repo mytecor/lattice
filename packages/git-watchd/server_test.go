@@ -160,7 +160,7 @@ func TestServerAndClientRPC(t *testing.T) {
 	serverNode, clientNode := setupTestMeshbusPair(t)
 	dir := setupTestGitRepo(t)
 
-	engine := NewLocalGitEngine("", "")
+	engine := NewGoGitEngine("")
 	watcher := NewWatcher(engine, 50*time.Millisecond)
 
 	server, err := NewServer(ServerConfig{

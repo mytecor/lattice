@@ -1,14 +1,16 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 var (
@@ -26,33 +28,28 @@ type GitEngine interface {
 	DiffPaths(ctx context.Context, repo, from, to string) ([]string, error)
 }
 
-// LocalGitEngine executes git CLI commands against local repositories.
-type LocalGitEngine struct {
-	GitBin        string
+// GoGitEngine executes git operations in-process using go-git.
+type GoGitEngine struct {
 	AllowedPrefix string
 }
 
-// NewLocalGitEngine creates a LocalGitEngine.
-func NewLocalGitEngine(gitBin, allowedPrefix string) *LocalGitEngine {
-	if gitBin == "" {
-		gitBin = "git"
-	}
+// NewGoGitEngine creates a GoGitEngine.
+func NewGoGitEngine(allowedPrefix string) *GoGitEngine {
 	if allowedPrefix != "" {
 		allowedPrefix = filepath.Clean(allowedPrefix)
 	}
-	return &LocalGitEngine{
-		GitBin:        gitBin,
+	return &GoGitEngine{
 		AllowedPrefix: allowedPrefix,
 	}
 }
 
-func (e *LocalGitEngine) ValidateLocalRepo(ctx context.Context, repo string) error {
+func (e *GoGitEngine) ValidateLocalRepo(ctx context.Context, repo string) error {
 	if repo == "" {
 		return errors.New("empty repository path")
 	}
 
 	// Reject remote URLs
-	if strings.Contains(repo, "://") || strings.HasPrefix(repo, "git@") || strings.Contains(repo, ":") && !strings.HasPrefix(repo, "/") && !strings.HasPrefix(repo, ".") {
+	if strings.Contains(repo, "://") || strings.HasPrefix(repo, "git@") || (strings.Contains(repo, ":") && !strings.HasPrefix(repo, "/") && !strings.HasPrefix(repo, ".")) {
 		return fmt.Errorf("%w: %q", ErrRemoteNotSupported, repo)
 	}
 
@@ -75,44 +72,68 @@ func (e *LocalGitEngine) ValidateLocalRepo(ctx context.Context, repo string) err
 		return fmt.Errorf("%w: %s is not a directory", ErrRepoNotFound, cleanPath)
 	}
 
-	cmd := exec.CommandContext(ctx, e.GitBin, "-C", cleanPath, "rev-parse", "--git-dir")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%w: %s (%s)", ErrNotGitRepo, cleanPath, strings.TrimSpace(string(out)))
+	_, err = git.PlainOpenWithOptions(cleanPath, &git.PlainOpenOptions{DetectDotGit: true})
+	if err != nil {
+		return fmt.Errorf("%w: %s (%v)", ErrNotGitRepo, cleanPath, err)
 	}
 
 	return nil
 }
 
-func (e *LocalGitEngine) ResolveHead(ctx context.Context, repo, ref string) (string, error) {
+func (e *GoGitEngine) ResolveHead(ctx context.Context, repo, ref string) (string, error) {
 	if err := e.ValidateLocalRepo(ctx, repo); err != nil {
 		return "", err
 	}
-	if ref == "" {
-		ref = "HEAD"
-	}
 
 	cleanPath := filepath.Clean(repo)
-	// Peel to commit so tags or HEAD resolve to the underlying commit hash
-	cmd := exec.CommandContext(ctx, e.GitBin, "-C", cleanPath, "rev-parse", "--verify", ref+"^{commit}")
-	out, err := cmd.CombinedOutput()
+	r, err := git.PlainOpenWithOptions(cleanPath, &git.PlainOpenOptions{DetectDotGit: true})
 	if err != nil {
-		// Fallback to rev-parse without peeling if it's a symbolic ref or standard ref
-		cmd2 := exec.CommandContext(ctx, e.GitBin, "-C", cleanPath, "rev-parse", "--verify", ref)
-		out2, err2 := cmd2.CombinedOutput()
-		if err2 != nil {
-			return "", fmt.Errorf("%w: ref %q in %s (%s)", ErrRefNotFound, ref, cleanPath, strings.TrimSpace(string(out)))
-		}
-		out = out2
+		return "", fmt.Errorf("%w: %s (%v)", ErrNotGitRepo, cleanPath, err)
 	}
 
-	rev := strings.TrimSpace(string(out))
-	if len(rev) < 7 {
-		return "", fmt.Errorf("unexpected git rev-parse output: %q", rev)
+	if ref == "" || ref == "HEAD" {
+		headRef, err := r.Head()
+		if err != nil {
+			return "", fmt.Errorf("%w: HEAD in %s (%v)", ErrRefNotFound, cleanPath, err)
+		}
+		return headRef.Hash().String(), nil
 	}
-	return rev, nil
+
+	// 1. Try ResolveRevision (handles full/short hashes, branches, tags, HEAD~N, etc.)
+	if hash, err := r.ResolveRevision(plumbing.Revision(ref)); err == nil {
+		// Verify object exists as commit or peel if tag
+		if commit, err := r.CommitObject(*hash); err == nil {
+			return commit.Hash.String(), nil
+		}
+		if tag, err := r.TagObject(*hash); err == nil {
+			return tag.Target.String(), nil
+		}
+	}
+
+	// 2. Try reference lookup (e.g. refs/heads/main, refs/tags/v1, or plain branch name)
+	candidates := []plumbing.ReferenceName{
+		plumbing.ReferenceName(ref),
+		plumbing.NewBranchReferenceName(ref),
+		plumbing.NewTagReferenceName(ref),
+		plumbing.NewRemoteReferenceName("origin", ref),
+	}
+	for _, candidate := range candidates {
+		refObj, err := r.Reference(candidate, true)
+		if err == nil {
+			hash := refObj.Hash()
+			if tag, err := r.TagObject(hash); err == nil {
+				hash = tag.Target
+			}
+			if _, err := r.CommitObject(hash); err == nil {
+				return hash.String(), nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("%w: ref %q in %s", ErrRefNotFound, ref, cleanPath)
 }
 
-func (e *LocalGitEngine) DiffPaths(ctx context.Context, repo, from, to string) ([]string, error) {
+func (e *GoGitEngine) DiffPaths(ctx context.Context, repo, from, to string) ([]string, error) {
 	if err := e.ValidateLocalRepo(ctx, repo); err != nil {
 		return nil, err
 	}
@@ -122,34 +143,61 @@ func (e *LocalGitEngine) DiffPaths(ctx context.Context, repo, from, to string) (
 		return nil, errors.New("target revision 'to' cannot be empty")
 	}
 
-	var cmd *exec.Cmd
-	if from == "" {
-		// Root diff for initial commit: list all paths in the tree
-		cmd = exec.CommandContext(ctx, e.GitBin, "-C", cleanPath, "diff-tree", "--root", "-r", "--no-commit-id", "--name-only", to)
-	} else {
-		// Check that 'from' object exists
-		checkCmd := exec.CommandContext(ctx, e.GitBin, "-C", cleanPath, "cat-file", "-e", from)
-		if checkOut, err := checkCmd.CombinedOutput(); err != nil {
-			return nil, fmt.Errorf("after_revision %q does not exist in repository: %s", from, strings.TrimSpace(string(checkOut)))
-		}
-
-		// diff-tree between from and to (handles ancestor, diverged history, or arbitrary commits)
-		cmd = exec.CommandContext(ctx, e.GitBin, "-C", cleanPath, "diff-tree", "-r", "--no-commit-id", "--name-only", from, to)
-	}
-
-	out, err := cmd.CombinedOutput()
+	r, err := git.PlainOpenWithOptions(cleanPath, &git.PlainOpenOptions{DetectDotGit: true})
 	if err != nil {
-		return nil, fmt.Errorf("git diff-tree failed: %w (%s)", err, strings.TrimSpace(string(out)))
+		return nil, fmt.Errorf("%w: %s (%v)", ErrNotGitRepo, cleanPath, err)
 	}
 
-	lines := bytes.Split(out, []byte{'\n'})
+	toCommit, err := r.CommitObject(plumbing.NewHash(to))
+	if err != nil {
+		return nil, fmt.Errorf("target revision %q not found in repository: %w", to, err)
+	}
+
+	toTree, err := toCommit.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("read target tree for %q: %w", to, err)
+	}
+
+	if from == "" {
+		// Root commit diff: list all files in the tree
+		var paths []string
+		err = toTree.Files().ForEach(func(f *object.File) error {
+			paths = append(paths, f.Name)
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("iterate target tree files: %w", err)
+		}
+		return paths, nil
+	}
+
+	fromCommit, err := r.CommitObject(plumbing.NewHash(from))
+	if err != nil {
+		return nil, fmt.Errorf("after_revision %q does not exist in repository: %w", from, err)
+	}
+
+	fromTree, err := fromCommit.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("read from tree for %q: %w", from, err)
+	}
+
+	changes, err := object.DiffTree(fromTree, toTree)
+	if err != nil {
+		return nil, fmt.Errorf("diff trees: %w", err)
+	}
+
 	var paths []string
 	seen := make(map[string]bool)
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(string(line))
-		if trimmed != "" && !seen[trimmed] {
-			seen[trimmed] = true
-			paths = append(paths, trimmed)
+	for _, c := range changes {
+		var name string
+		if c.To.Name != "" {
+			name = c.To.Name
+		} else {
+			name = c.From.Name
+		}
+		if name != "" && !seen[name] {
+			seen[name] = true
+			paths = append(paths, name)
 		}
 	}
 	if paths == nil {

@@ -9,7 +9,7 @@ import (
 func TestWatcher(t *testing.T) {
 	ctx := context.Background()
 	dir := setupTestGitRepo(t)
-	engine := NewLocalGitEngine("", "")
+	engine := NewGoGitEngine("")
 	watcher := NewWatcher(engine, 50*time.Millisecond)
 
 	rev1, err := engine.ResolveHead(ctx, dir, "")

@@ -90,7 +90,7 @@ func main() {
 	}
 	defer node.Close()
 
-	engine := NewLocalGitEngine(gitBin, allowedDir)
+	engine := NewGoGitEngine(allowedDir)
 	watcher := NewWatcher(engine, pollInterval)
 
 	server, err := NewServer(ServerConfig{
