@@ -78,6 +78,318 @@ valid interface combinations:
 - [profiles/](./profiles/README.md) - собирает повторяемые роли, сервисы и инфраструктурные дефолты сети
 - [nodes/](./nodes/README.md) - связывает выбранное железо, профили, модули, секреты и файлы в итоговую конфигурацию конкретного узла
 
+## Схема связей сервисов
+
+Диаграммы ниже визуализируют взаимодействие компонентов и сервисов Lattice без привязки
+к конкретным сетевым портам.
+
+При любых архитектурных изменениях (добавление, удаление сервиса или смена связей)
+агенты обязаны обновлять эти диаграммы в соответствии с инструкциями в [AGENTS.md](./AGENTS.md).
+
+### Общая карта сервисов
+
+```mermaid
+flowchart TD
+    subgraph Clients["Клиентский доступ"]
+        Client["Клиент / Оператор<br/>(Браузер, CLI, rnsh)"]
+    end
+
+    subgraph Ingress["Ингресс и безопасность"]
+        Caddy["Caddy<br/>(Единый reverse proxy)"]
+        Authentik["Authentik<br/>(SSO, OIDC и ForwardAuth)"]
+        Avahi["Avahi<br/>(mDNS анонсы)"]
+        Yggdrasil["Yggdrasil<br/>(IPv6 mesh-сеть)"]
+    end
+
+    subgraph Agents["Задачи и агенты"]
+        GitWatchd["git-watchd<br/>(Отслеживание ревизий Git)"]
+        Taskd["taskd<br/>(Реквайлер задач)"]
+        Agentd["agentd<br/>(Исполнитель задач)"]
+        R1s["r1s / r1sd<br/>(OCI контейнеры)"]
+        HydraACP["hydra-acp<br/>(ACP daemon агента Pi)"]
+        AcpWeb["acp-web<br/>(Web UI клиента ACP)"]
+    end
+
+    subgraph AI["Инференс LLM"]
+        LLMGateway["llm-gateway<br/>(Маршрутизация и fallback)"]
+        Agentrun["agentrun-openai<br/>(OpenAI-совместимый шлюз)"]
+        Upstream["Внешние LLM провайдеры<br/>(Vertex AI, Gonka, Hyperfusion)"]
+    end
+
+    subgraph Observability["Наблюдаемость"]
+        NodeStatus["node-status<br/>(Метрики хоста и systemd)"]
+        Prometheus["Prometheus<br/>(Метрики)"]
+        Alloy["Grafana Alloy<br/>(Сбор логов journald)"]
+        Loki["Loki<br/>(Хранилище логов)"]
+        Grafana["Grafana<br/>(Дашборды)"]
+    end
+
+    subgraph GitOps["GitOps и кэш"]
+        Radicle["Radicle<br/>(P2P Git хранилище)"]
+        CominSync["comin-source-sync<br/>(Нормализатор Git)"]
+        Comin["comin<br/>(GitOps развёртывание)"]
+        GitCache["git-cache-proxy<br/>(Кэш Git clone/fetch)"]
+        Verdaccio["Verdaccio<br/>(Кэш npm пакетов)"]
+    end
+
+    subgraph Transport["Транспорт и шина"]
+        RNS["Reticulum RNS<br/>(Сетевой стек)"]
+        Rnsh["rnsh<br/>(Удалённый шелл)"]
+        MeshBus["MeshBus<br/>(Pub/Sub шина сообщений)"]
+    end
+
+    Client --> Caddy
+    Client --> Rnsh
+    Avahi -.-> Client
+    Yggdrasil --> Caddy
+
+    Caddy --> Grafana
+    Caddy --> Authentik
+    Caddy --> HydraACP
+    Caddy --> AcpWeb
+    Caddy --> NodeStatus
+    Caddy --> LLMGateway
+    Caddy --> GitCache
+    Caddy --> Verdaccio
+    Caddy --> Radicle
+
+    Caddy -.-> Authentik
+    Grafana -.-> Authentik
+
+    Prometheus --> LLMGateway
+    Prometheus --> NodeStatus
+    Alloy --> Loki
+    Alloy -.-> LLMGateway
+    Alloy -.-> Caddy
+    Grafana --> Prometheus
+    Grafana --> Loki
+
+    HydraACP --> LLMGateway
+    Agentrun --> LLMGateway
+    LLMGateway --> Upstream
+
+    GitWatchd --> MeshBus
+    MeshBus --> Taskd
+    Taskd --> MeshBus
+    MeshBus --> Agentd
+    Agentd --> R1s
+    Agentd --> HydraACP
+    Agentd --> Taskd
+    Taskd --> Radicle
+
+    MeshBus --> RNS
+    Rnsh --> RNS
+
+    Radicle --> CominSync
+    CominSync --> Comin
+    Comin --> Caddy
+```
+
+### Флоу 1: Ингресс, доступ и безопасность
+
+Маршрутизация внешнего и локального трафика, завершение TLS, проверка авторизации
+через центральный SSO (Authentik ForwardAuth и OIDC).
+
+```mermaid
+flowchart TD
+    Client["Клиент / Оператор"]
+    Avahi["Avahi<br/>(mDNS discovery)"]
+    Yggdrasil["Yggdrasil<br/>(IPv6 mesh)"]
+    Caddy["Caddy<br/>(Reverse proxy ingress)"]
+    Authentik["Authentik<br/>(SSO & Auth)"]
+
+    subgraph Backends["Локальные сервисы"]
+        AcpUI["acp-web<br/>(Веб-интерфейс ACP)"]
+        GrafanaSvc["Grafana<br/>(Дашборды)"]
+        NodeStatusSvc["node-status<br/>(API статуса ноды)"]
+        LLMGatewaySvc["llm-gateway<br/>(API инференса)"]
+        HydraACPSvc["hydra-acp<br/>(WebSocket ACP)"]
+        OtherServices["Кэш и GitOps<br/>(Radicle, git-cache, Verdaccio)"]
+    end
+
+    Avahi -. "Анонсирует *.local" .-> Client
+    Client -- "LAN (*.local)" --> Caddy
+    Client -- "Mesh (*.homelab.myt.su)" --> Yggdrasil
+    Yggdrasil --> Caddy
+
+    Caddy -- "ForwardAuth проверка" --> Authentik
+    Authentik -. "Разрешение доступа" .-> Caddy
+
+    Caddy --> AcpUI
+    Caddy --> GrafanaSvc
+    Caddy --> NodeStatusSvc
+    Caddy --> LLMGatewaySvc
+    Caddy --> HydraACPSvc
+    Caddy --> OtherServices
+
+    GrafanaSvc -- "OIDC OAuth аутентификация" --> Authentik
+```
+
+### Флоу 2: Постановка и выполнение задач (Task Pipeline & Agent Loop)
+
+Декларативный контур выполнения задач по [TASK_EXECUTION.md](./TASK_EXECUTION.md):
+Git хранит `task.md` и результаты, `git-watchd` транслирует изменения в `MeshBus`,
+`taskd` выполняет сверку и постановку, а `agentd` запускает контейнер в `r1s` и
+управляет циклом исполнения через ACP.
+
+```mermaid
+flowchart TD
+    User["Планировщик / Разработчик"]
+    GitRepo["Git / Radicle<br/>(Хранилище task.md и TaskResult)"]
+    GitWatchd["git-watchd<br/>(Адаптер изменений ревизий Git)"]
+    MeshBus["MeshBus<br/>(Шина сообщений поверх Reticulum)"]
+    Taskd["taskd<br/>(Реквайлер задач)"]
+    Agentd["agentd<br/>(Исполнитель агента)"]
+    R1s["r1s / r1sd<br/>(OCI рантайм контейнеров)"]
+    Container["Агентский контейнер<br/>(Изолированное окружение)"]
+    HydraACP["hydra-acp<br/>(ACP протокол взаимодействия)"]
+
+    User -- "Создаёт или обновляет task.md" --> GitRepo
+    GitWatchd -- "Опрашивает изменения ревизий" --> GitRepo
+    GitWatchd -- "Событие изменения ревизии" --> MeshBus
+    MeshBus -- "Уведомление о коммите" --> Taskd
+
+    Taskd -- "Запрашивает актуальный TaskSpec" --> GitRepo
+    Taskd -- "Отправляет TaskSpec на выполнение" --> MeshBus
+    MeshBus --> Agentd
+
+    Agentd -- "Запускает OCI контейнер" --> R1s
+    R1s --> Container
+    Agentd -- "Открывает ACP сессию" --> HydraACP
+    HydraACP <--> Container
+
+    Agentd -- "Возвращает TaskResult" --> Taskd
+    Taskd -- "Фиксирует terminal result в Git" --> GitRepo
+```
+
+### Флоу 3: Инференс LLM (AI Inference Flow)
+
+Обработка запросов к моделям: логические классы (`stupid`, `standard`, `smart`),
+маршрутизация, спекулятивный parallel race, взвешенная балансировка с учётом health
+и fallback при сбоях апстримов.
+
+```mermaid
+flowchart TD
+    subgraph Consumers["Потребители моделей"]
+        HydraACP["hydra-acp<br/>(ACP агент Pi)"]
+        Agentrun["agentrun-openai<br/>(OpenAI-совместимый шлюз)"]
+        Jev["jev-ultrafast<br/>(Браузерный агент)"]
+        DirectClient["Внешние клиенты<br/>(С клиентскими ключами)"]
+    end
+
+    subgraph Gateway["LLM Gateway (Bifrost Go)"]
+        Router["Маршрутизатор моделей<br/>(stupid, standard, smart)"]
+        Balancer["Балансировщик и Health State<br/>(Учёт ошибок и латентности)"]
+        Engine["Движок исполнения<br/>(Speculative race, retry, fallback)"]
+    end
+
+    subgraph Upstream["Внешние провайдеры инференса"]
+        Vertex["Google Vertex AI<br/>(Класс smart: gemini)"]
+        AIStudio["Google AI Studio<br/>(Класс smart: gemini)"]
+        Gonka["Gonka / OpenBroker<br/>(Классы standard и stupid)"]
+        Hyperfusion["Hyperfusion<br/>(Primary и fallback модели)"]
+        Dahl["Dahl / GonkaRouter<br/>(Дополнительные ветки пула)"]
+    end
+
+    HydraACP --> Router
+    Agentrun --> Router
+    Jev --> Router
+    DirectClient --> Router
+
+    Router --> Balancer
+    Balancer --> Engine
+
+    Engine --> Vertex
+    Engine --> AIStudio
+    Engine --> Gonka
+    Engine --> Hyperfusion
+    Engine --> Dahl
+```
+
+### Флоу 4: Наблюдаемость (Observability Flow)
+
+Сбор числовых метрик и структурированных событий со всех сервисов и хоста
+без раскрытия внутренних компонентов наружу.
+
+```mermaid
+flowchart TD
+    subgraph Sources["Источники телеметрии"]
+        SystemdUnits["Systemd сервисы<br/>(caddy, llm-gateway, etc.)"]
+        LLMGateway["llm-gateway<br/>(Эндпоинт метрик и логи)"]
+        NodeStatus["node-status<br/>(Сборщик системных метрик)"]
+    end
+
+    subgraph Pipeline["Пайплайн сбора"]
+        Prometheus["Prometheus<br/>(Хранилище временных рядов)"]
+        Alloy["Grafana Alloy<br/>(Сборщик логов journald)"]
+        Loki["Loki<br/>(Хранилище логов с поиском по request_id)"]
+    end
+
+    subgraph Visualization["Визуализация и доступ"]
+        Grafana["Grafana<br/>(Дашборды сервисов и хоста)"]
+        Authentik["Authentik<br/>(SSO аутентификация через OIDC)"]
+        Operator["Оператор / Инженер"]
+    end
+
+    NodeStatus -- "Опрашивает статус юнитов" --> SystemdUnits
+    Prometheus -- "Скрейпит метрики" --> NodeStatus
+    Prometheus -- "Скрейпит метрики" --> LLMGateway
+
+    Alloy -- "Читает journald логи" --> SystemdUnits
+    Alloy -- "Извлекает structured events" --> LLMGateway
+    Alloy -- "Отправляет распарсенные логи" --> Loki
+
+    Grafana -- "PromQL запросы" --> Prometheus
+    Grafana -- "LogQL запросы" --> Loki
+    Grafana -- "Авторизация пользователей" --> Authentik
+
+    Operator --> Grafana
+```
+
+### Флоу 5: GitOps, кэширование и транспортная сеть
+
+Синхронизация конфигурации ноды из P2P сети Radicle и GitHub, нормализация истории
+в `comin`, локальные кэши пакетов и удалённое управление нодой через Reticulum.
+
+```mermaid
+flowchart TD
+    subgraph Remotes["Удалённые репозитории"]
+        RadicleRemote["Radicle Seed Network<br/>(P2P Git)"]
+        GitHubRemote["GitHub Mirror<br/>(Fallback)"]
+    end
+
+    subgraph NodeGitOps["GitOps ноды"]
+        RadicleNode["radicle-node<br/>(Локальное P2P хранилище)"]
+        CominSync["comin-source-sync<br/>(Нормализатор веток)"]
+        CominRepo["Локальный comin репозиторий<br/>(/var/lib/comin)"]
+        CominRunner["comin<br/>(Применение NixOS конфигурации)"]
+    end
+
+    subgraph CachePlane["Плоскость кэширования"]
+        GitCache["git-cache-proxy<br/>(Кэш HTTP git clone)"]
+        Verdaccio["Verdaccio<br/>(Кэш пакетов npm)"]
+    end
+
+    subgraph TransportNetwork["Транспортная сеть Reticulum"]
+        RNS["Reticulum Network Stack<br/>(TCP интерфейсы к публичным peers)"]
+        Rnsh["rnsh<br/>(Удалённый терминал администрирования)"]
+        MeshBus["MeshBus<br/>(Децентрализованная Pub/Sub шина)"]
+    end
+
+    RadicleRemote <--> RadicleNode
+    RadicleNode --> CominSync
+    GitHubRemote -. "Резервный источник" .-> CominSync
+    CominSync --> CominRepo
+    CominRepo --> CominRunner
+    CominRunner -- "Переключает систему" --> NodeGitOps
+
+    GitCache -. "Ускоряет клонирование" .-> CominRunner
+    Verdaccio -. "Ускоряет npm сборки" .-> CominRunner
+
+    Rnsh --> RNS
+    MeshBus --> RNS
+```
+
 ## Модель сборки
 
 В репозитории один flake и один lock-файл. Корневой [flake.nix](./flake.nix) выбирает `nixpkgs`,
