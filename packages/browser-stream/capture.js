@@ -22,3 +22,17 @@ export function captureScript() {
   if (source.split(anchor).length !== 2) throw new Error('PhantomStream snapshot patch needs review');
   return source.replace(anchor, `${anchor}\n      (${copyFormState.toString()})(orig, cl);`);
 }
+
+
+// Metadata only: never copy a field value into the focus side channel.
+export function readFocus(identity) {
+  let element = document.activeElement;
+  try {
+    while (element?.tagName === 'IFRAME' && element.contentDocument) element = element.contentDocument.activeElement;
+  } catch { /* cross-origin frame */ }
+  const editable = element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.isContentEditable);
+  return { ...identity, nid: editable ? window.__phantomStreamGetNodeId?.(element) || null : null,
+    start: editable && Number.isInteger(element.selectionStart) ? element.selectionStart : null,
+    end: editable && Number.isInteger(element.selectionEnd) ? element.selectionEnd : null,
+    direction: editable ? element.selectionDirection || 'none' : 'none' };
+}

@@ -9,17 +9,18 @@ const tick = () => new Promise(resolve => queueMicrotask(resolve));
 function viewerControl(frame) {
   let state, message;
   const events = new Map(), sent = [], errors = [];
-  const surface = { value: '', focus() {}, addEventListener: (name, callback) => events.set(name, callback) };
+  const surface = { value: '', focusCalls: 0, focus() { this.focusCalls++; }, addEventListener: (name, callback) => events.set(name, callback) };
   attachControl({
-    viewer: { on: (_, callback) => { state = callback; }, getViewportMapping: () => ({ scale: 1, viewport: { width: 1280, height: 720 } }) },
+    viewer: { resolveNode: nid => frame?.resolveNode?.(nid), on: (_, callback) => { state = callback; }, getViewportMapping: () => ({ scale: 1, viewport: { width: 1280, height: 720 } }) },
     transport: { onMessage: callback => { message = callback; }, send: (type, payload) => sent.push({ type, payload }) },
-    surface, container: { querySelector: () => frame, getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+    surface, container: { ownerDocument: frame?.hostDocument, querySelector: () => frame, getBoundingClientRect: () => ({ left: frame?.offset?.left || 0, top: frame?.offset?.top || 0, width: 1280, height: 720 }) },
     mapHostPointToViewport: p => ({ ...p, inside: true }), protocol, reportError: error => errors.push(error),
   });
   return { sent, errors, surface,
     state: value => state({ state: value }),
     snapshot: value => message(STREAM.SNAPSHOT, value),
     scroll: value => message(STREAM.SCROLL, value),
+    focus: value => message('lattice:focus', value),
     ack: (command, ok = true) => message('lattice:control-result', { commandId: command.payload.commandId, ok }),
     text(value, isComposing = false) { surface.value += value; events.get('input')({ isComposing }); },
     compositionend: () => events.get('compositionend')(),
@@ -190,4 +191,63 @@ test('pathological wheel overload does not poison a following click and typed in
   v.ack(v.sent[0]); await tick();
   assert.equal(v.sent[1].payload.text, 'kept');
   assert.deepEqual(v.errors, []);
+});
+
+
+function editableFrame() {
+  const events = new Map(), loads = new Map();
+  const doc = { addEventListener: (name, callback) => events.set(name, callback), querySelectorAll: () => [] };
+  const field = { tagName: 'INPUT', type: 'text', ownerDocument: doc, selectionStart: 0, selectionEnd: 0, selectionDirection: 'none',
+    closest() { return this; }, focus() { doc.activeElement = this; },
+    setSelectionRange(start, end, direction) { this.selectionStart = start; this.selectionEnd = end; this.selectionDirection = direction; },
+  };
+  doc.elementFromPoint = () => field;
+  const frame = { contentDocument: doc, addEventListener: (name, callback) => loads.set(name, callback),
+    resolveNode: () => ({ rect: { left: 10, top: 10, width: 200, height: 30 } }),
+    hostDocument: { body: {} },
+  };
+  return { frame, doc, field, events, loads };
+}
+
+test('editable clicks keep native caret focus; remote selection updates do not focus the hidden input', async () => {
+  const { frame, doc, field, events } = editableFrame();
+  frame.offset = { left: 100, top: 74 };
+  const v = viewerControl(frame); v.snapshot(snapshot); v.state('live');
+  events.get('click')({ target: field, clientX: 20, clientY: 20, preventDefault() {} });
+  await tick();
+  assert.equal(doc.activeElement, field);
+  assert.equal(v.surface.focusCalls, 0);
+  v.ack(v.sent[0]); await tick();
+  v.focus({ ...snapshot, nid: 'field', start: 4, end: 4, direction: 'none' });
+  assert.equal(field.selectionStart, 4);
+  events.get('keydown')({ key: 'ArrowLeft', preventDefault() {} }); await tick();
+  v.ack(v.sent[1]); await tick();
+  v.focus({ ...snapshot, nid: 'field', start: 3, end: 3, direction: 'none' });
+  assert.equal(field.selectionStart, 3);
+  assert.equal(doc.activeElement, field);
+  // Reading/editing the viewer URL must not be interrupted by focus updates.
+  frame.hostDocument.activeElement = {};
+  v.focus({ ...snapshot, nid: 'field', start: 1, end: 1, direction: 'none' });
+  assert.equal(field.selectionStart, 3);
+});
+
+test('focused mirrored fields commit IME once and forward paste without editing only the mirror', async () => {
+  const { frame, field, events } = editableFrame();
+  const v = viewerControl(frame); v.snapshot(snapshot); v.state('live');
+  events.get('click')({ target: field, clientX: 20, clientY: 20, preventDefault() {} }); await tick();
+  v.ack(v.sent[0]); await tick();
+  events.get('compositionstart')();
+  events.get('beforeinput')({ target: field, inputType: 'insertCompositionText', data: 'intermediate', isComposing: true });
+  assert.equal(v.sent.length, 1);
+  events.get('compositionend')({ target: field, data: 'привет' });
+  events.get('beforeinput')({ inputType: 'insertFromComposition', data: 'привет', preventDefault() {} });
+  await tick();
+  assert.equal(v.sent[1].payload.text, 'привет');
+  v.ack(v.sent[1]); await tick();
+  let prevented = false;
+  events.get('paste')({ clipboardData: { getData: () => 'pasted text' }, preventDefault() { prevented = true; } });
+  await tick();
+  assert.ok(prevented);
+  assert.equal(v.sent[2].payload.text, 'pasted text');
+  assert.equal(v.sent.length, 3);
 });

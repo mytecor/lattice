@@ -4,6 +4,9 @@ export function attachControl({ viewer, transport, surface, container, reportErr
   const { REMOTE_CONTROL, STREAM } = protocol;
   let identity;
   let sourceScroll;
+  let sourceFocus;
+  let controlling = false;
+  let composing = false;
   let live = false;
   let sequence = 0;
   let pending;
@@ -61,12 +64,18 @@ export function attachControl({ viewer, transport, surface, container, reportErr
         } else cancel('Открыта другая страница. Неотправленный ввод отменён.');
       }
       identity = { streamSessionId: payload.streamSessionId, snapshotId: payload.snapshotId, documentId: payload.documentId };
+      sourceFocus = undefined;
       sourceScroll = { x: payload.scrollX || 0, y: payload.scrollY || 0 };
       flush();
     }
     if (type === STREAM.SCROLL && payload.streamSessionId === identity?.streamSessionId && payload.snapshotId === identity?.snapshotId) {
       sourceScroll = { x: payload.scrollX || 0, y: payload.scrollY || 0 };
       syncScroll();
+    }
+    if (type === 'lattice:focus' && payload.documentId === identity?.documentId
+        && payload.streamSessionId === identity.streamSessionId && payload.snapshotId === identity.snapshotId) {
+      sourceFocus = payload;
+      syncFocus();
     }
     if (type === 'lattice:control-result' && pending?.id === payload.commandId) {
       pending = undefined;
@@ -116,7 +125,16 @@ export function attachControl({ viewer, transport, surface, container, reportErr
   function click(event, p) {
     event.preventDefault();
     if (p.inside) send(REMOTE_CONTROL.CLICK, { x: p.x, y: p.y, button: 'left', clickCount: event.detail || 1 });
-    surface.focus({ preventScroll: true });
+    controlling = true;
+    const field = editable(event.target);
+    if (field) field.focus({ preventScroll: true });
+    else surface.focus({ preventScroll: true });
+  }
+  function editable(target) {
+    const field = target?.closest?.('input, textarea, [contenteditable]');
+    if (!field || field.disabled) return null;
+    return field.tagName === 'TEXTAREA' || field.isContentEditable
+      || (field.tagName === 'INPUT' && !['button', 'submit', 'reset', 'checkbox', 'radio', 'range', 'file', 'hidden', 'color'].includes(field.type)) ? field : null;
   }
   function wheel(event, p) {
     event.preventDefault();
@@ -157,8 +175,40 @@ export function attachControl({ viewer, transport, surface, container, reportErr
       rootFrame.contentWindow.scrollTo({ left: sourceScroll.x, top: sourceScroll.y, behavior: 'instant' });
     }
   }
+  function syncFocus() {
+    if (!controlling || composing || pending || queue.length || !sourceFocus?.nid || !rootFrame?.contentDocument) return;
+    // Do not take focus back from the address bar or another host control.
+    const hostActive = container.ownerDocument?.activeElement;
+    if (hostActive && hostActive !== rootFrame && hostActive !== surface && hostActive !== container.ownerDocument.body) return;
+    const resolved = viewer.resolveNode?.(sourceFocus.nid);
+    if (!resolved?.rect) return;
+    const bounds = container.getBoundingClientRect(), rect = resolved.rect;
+    const left = Math.max(0, rect.left), top = Math.max(0, rect.top);
+    const right = Math.min(bounds.width, rect.left + rect.width);
+    const bottom = Math.min(bounds.height, rect.top + rect.height);
+    if (right <= left || bottom <= top) return;
+    const point = mapHostPointToViewport({ x: (left + right) / 2, y: (top + bottom) / 2 }, viewer.getViewportMapping().scale);
+    let doc = rootFrame.contentDocument, x = point.x, y = point.y, target = doc.elementFromPoint(x, y);
+    for (let depth = 0; depth < 8 && target?.tagName === 'IFRAME'; depth++) {
+      try {
+        const child = target.contentDocument;
+        if (!child) break;
+        const r = target.getBoundingClientRect();
+        x = (x - r.left) * target.clientWidth / r.width;
+        y = (y - r.top) * target.clientHeight / r.height;
+        doc = child; target = doc.elementFromPoint(x, y);
+      } catch { break; }
+    }
+    const field = editable(target);
+    if (!field) return;
+    if (doc.activeElement !== field) field.focus({ preventScroll: true });
+    if (Number.isInteger(sourceFocus.start) && Number.isInteger(sourceFocus.end)
+        && (field.selectionStart !== sourceFocus.start || field.selectionEnd !== sourceFocus.end || field.selectionDirection !== sourceFocus.direction)) {
+      try { field.setSelectionRange(sourceFocus.start, sourceFocus.end, sourceFocus.direction); } catch { /* non-text input */ }
+    }
+  }
   function bindFrame(frame) {
-    if (frame === rootFrame) syncScroll();
+    if (frame === rootFrame) { composing = false; syncScroll(); syncFocus(); }
     if (!boundFrames.has(frame)) {
       boundFrames.add(frame);
       frame.addEventListener('load', () => bindFrame(frame));
@@ -173,11 +223,24 @@ export function attachControl({ viewer, transport, surface, container, reportErr
     doc.addEventListener('submit', event => event.preventDefault(), true);
     doc.addEventListener('wheel', event => wheel(event, framePoint(event, frame)), { capture: true, passive: false });
     doc.addEventListener('keydown', keydown, true);
+    doc.addEventListener('compositionstart', () => { composing = true; }, true);
+    doc.addEventListener('compositionend', event => {
+      composing = false;
+      if (event.data) sendText(event.data);
+    }, true);
     doc.addEventListener('beforeinput', event => {
-      // Tab focus can enter a mirrored input without a pointer click. Never
-      // edit only the local copy; deliver its text to the source as well.
+      if (event.isComposing || composing || event.inputType === 'insertCompositionText') return;
       event.preventDefault();
-      if (event.data) send(REMOTE_CONTROL.TEXT, { text: event.data });
+      // Composition commits are forwarded once from compositionend.
+      if (event.inputType === 'insertFromComposition') return;
+      if (event.data) sendText(event.data);
+      else if (event.inputType === 'deleteContentBackward' || event.inputType === 'deleteContentForward') {
+        send(REMOTE_CONTROL.KEY, { key: event.inputType === 'deleteContentBackward' ? 'Backspace' : 'Delete', event: 'down' });
+      }
+    }, true);
+    doc.addEventListener('paste', event => {
+      event.preventDefault();
+      sendText(event.clipboardData?.getData('text/plain') || '');
     }, true);
     doc.addEventListener('load', event => {
       if (event.target.tagName === 'IFRAME') bindFrame(event.target);
@@ -188,6 +251,9 @@ export function attachControl({ viewer, transport, surface, container, reportErr
   function text() {
     const value = surface.value;
     surface.value = '';
+    sendText(value);
+  }
+  function sendText(value) {
     for (let offset = 0; offset < value.length;) {
       let end = Math.min(offset + 4096, value.length);
       if (end < value.length && /[\uD800-\uDBFF]/.test(value[end - 1])) end--;

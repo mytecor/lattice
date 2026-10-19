@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Script, runInNewContext } from 'node:vm';
 import { webcrypto } from 'node:crypto';
-import { copyFormState } from './capture.js';
+import { copyFormState, readFocus } from './capture.js';
 import { captureSource } from './streams.js';
 
 function clone(attributes = {}) {
@@ -53,4 +53,18 @@ test('snapshot never copies a file input path and the generated capture script p
   copyFormState({ tagName: 'INPUT', type: 'file', value: 'private-path', checked: false }, file);
   assert.equal('value' in file.attributes, false);
   assert.doesNotThrow(() => new Script(captureSource));
+});
+
+
+test('focus channel exposes caret positions and identity without reading field contents', () => {
+  const field = { tagName: 'INPUT', selectionStart: 2, selectionEnd: 5, selectionDirection: 'backward',
+    get value() { throw new Error('focus metadata must not read a value'); } };
+  const result = runInNewContext(`(${readFocus.toString()})({ documentId: 'doc', snapshotId: 1 })`, {
+    document: { activeElement: field }, window: { __phantomStreamGetNodeId: () => 'input-node' },
+  });
+  assert.equal(result.nid, 'input-node');
+  assert.equal(result.start, 2);
+  assert.equal(result.end, 5);
+  assert.equal(result.documentId, 'doc');
+  assert.equal('value' in result, false);
 });

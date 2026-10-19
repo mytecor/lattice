@@ -733,10 +733,12 @@ ForwardAuth для страницы и WebSocket. Backend выбирает су�
 полей с маскированием PhantomStream. Локальное зеркало
 инертно, поэтому навигация происходит в удалённой вкладке. Вкладки агента сохраняются после
 отключения зрителей.
+Фокус и позиции выделения передаются отдельно от содержимого полей: viewer сохраняет
+нативную каретку и восстанавливает её после обновления DOM-зеркала.
 
 ```mermaid
 flowchart LR
-    Viewer["Браузер зрителя<br/>(Sandbox DOM viewer)"]
+    Viewer["Браузер зрителя<br/>(DOM-зеркало, ввод и каретка)"]
     Caddy["Caddy<br/>(HTTP и WebSocket ingress)"]
     Authentik["Authentik<br/>(ForwardAuth)"]
     Stream["browser-stream<br/>(DOM и подтверждение ввода)"]

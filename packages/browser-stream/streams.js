@@ -1,4 +1,4 @@
-import { captureScript } from './capture.js';
+import { captureScript, readFocus } from './capture.js';
 import { dispatchControl } from './control.js';
 import { CONTROL, STREAM, isRemoteControlType } from '@full-self-browsing/phantom-stream/protocol';
 import { CDP } from './cdp.js';
@@ -82,7 +82,7 @@ const drain = `(() => {
   // is observable even when the document stops generating scroll events.
   return { frames: frames, url: location.href, scroll: queue.identity && Object.assign({}, queue.identity, {
     scrollX: window.scrollX, scrollY: window.scrollY
-  }) };
+  }), focus: queue.identity && (${readFocus.toString()})(queue.identity) };
 })()`;
 
 export class Streams {
@@ -212,6 +212,11 @@ export class Streams {
           && (scroll.scrollX !== stream.lastScroll?.scrollX || scroll.scrollY !== stream.lastScroll?.scrollY)) {
         frames.push(JSON.stringify({ type: STREAM.SCROLL, payload: scroll }));
         stream.lastScroll = scroll;
+      }
+      const focus = batch?.focus;
+      if (focus && focus.documentId === stream.identity?.documentId
+          && focus.streamSessionId === stream.identity.streamSessionId && focus.snapshotId === stream.identity.snapshotId) {
+        frames.push(JSON.stringify({ type: 'lattice:focus', payload: focus }));
       }
       if (batch?.url) stream.started = true;
       if (!stream.started && Date.now() - stream.startedAt > 30000) throw new Error('Page did not load');
