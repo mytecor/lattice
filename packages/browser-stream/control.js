@@ -3,21 +3,24 @@ import { validateRemoteControlMessage } from '@full-self-browsing/phantom-stream
 // Only the authenticated viewer's typed protocol is accepted, never arbitrary CDP.
 // Snapshot identity stops queued clicks from landing on a newly navigated page.
 export async function dispatchControl(stream, type, payload = {}) {
-  if (!stream.identity || payload.streamSessionId !== stream.identity.streamSessionId
-      || payload.snapshotId !== stream.identity.snapshotId) return;
+  if (!stream.identity || !payload.documentId || payload.documentId !== stream.identity.documentId) return false;
   const validated = validateRemoteControlMessage(type, payload);
-  if (!validated.ok) return;
-  if (!['click', 'text', 'key', 'scroll'].includes(validated.action.kind)) return;
-  if (['click', 'scroll'].includes(validated.action.kind) && (validated.action.x < 0 || validated.action.y < 0 || validated.action.x >= stream.width || validated.action.y >= stream.height)) return;
+  if (!validated.ok) return false;
+  if (!['click', 'text', 'key', 'scroll'].includes(validated.action.kind)) return false;
+  const coordinates = ['click', 'scroll'].includes(validated.action.kind);
+  if (coordinates && (payload.streamSessionId !== stream.identity.streamSessionId
+      || payload.snapshotId !== stream.identity.snapshotId)) return false;
+  if (coordinates && (validated.action.x < 0 || validated.action.y < 0 || validated.action.x >= stream.width || validated.action.y >= stream.height)) return false;
   const current = await stream.cdp.evaluate(stream.sessionId, `(() => {
     const identity = window.__latticePhantomQueue?.identity;
-    return identity?.streamSessionId === ${JSON.stringify(stream.identity.streamSessionId)} && identity?.snapshotId === ${JSON.stringify(stream.identity.snapshotId)};
+    return identity?.documentId === ${JSON.stringify(payload.documentId)}
+      ${coordinates ? `&& identity?.streamSessionId === ${JSON.stringify(payload.streamSessionId)} && identity?.snapshotId === ${JSON.stringify(payload.snapshotId)}` : ''};
   })()`);
-  if (!current) return;
+  if (!current) return false;
   const action = validated.action;
   const send = (method, params) => stream.cdp.send(method, params, stream.sessionId);
   if (action.kind === 'click' || action.kind === 'scroll') {
-    if (action.x < 0 || action.y < 0 || action.x >= stream.width || action.y >= stream.height) return;
+    if (action.x < 0 || action.y < 0 || action.x >= stream.width || action.y >= stream.height) return false;
     if (action.kind === 'scroll') {
       const wheel = { x: action.x, y: action.y,
         deltaX: Math.max(-4000, Math.min(4000, action.deltaX)), deltaY: Math.max(-4000, Math.min(4000, action.deltaY)) };
@@ -28,7 +31,7 @@ export async function dispatchControl(stream, type, payload = {}) {
         // remote document, preserving cancelable handlers and nested scrollers.
         await stream.cdp.evaluate(stream.sessionId, `(${remoteScroll.toString()})(${JSON.stringify(wheel)})`);
       }
-      return;
+      return true;
     }
     await stream.cdp.evaluate(stream.sessionId, 'window.__latticeRemoteClick = true');
     try {
@@ -42,18 +45,23 @@ export async function dispatchControl(stream, type, payload = {}) {
   } else if (action.kind === 'text') {
     await send('Input.insertText', { text: action.text });
   } else if (action.kind === 'key') {
-    if (action.key.length > 64) return;
+    if (action.key.length > 64) return false;
     const keyCode = { Enter: 13, Tab: 9, Backspace: 8, Delete: 46, Escape: 27,
       ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Home: 36, End: 35,
       PageUp: 33, PageDown: 34 }[action.key] || 0;
-    await send('Input.dispatchKeyEvent', {
+    const key = {
       type: action.event === 'down' ? 'keyDown' : 'keyUp', key: action.key,
       code: action.key.length === 1 ? `Key${action.key.toUpperCase()}` : action.key,
       windowsVirtualKeyCode: keyCode,
       // Foxbridge has a native editor-command path for selectAll.
       ...(payload.selectAll === true && action.key === 'a' ? { commands: ['selectAll'] } : {}),
-    });
+    };
+    await send('Input.dispatchKeyEvent', key);
+    // Keep press/release in the same acknowledged command, including Enter
+    // that navigates before the viewer receives the next snapshot.
+    if (action.event === 'down') await send('Input.dispatchKeyEvent', { ...key, type: 'keyUp', commands: undefined });
   }
+  return true;
 }
 
 function remoteScroll({ x, y, deltaX, deltaY }) {

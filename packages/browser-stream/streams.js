@@ -1,4 +1,4 @@
-import { getPlaywrightInjectSource } from '@full-self-browsing/phantom-stream/adapters/playwright';
+import { captureScript } from './capture.js';
 import { dispatchControl } from './control.js';
 import { CONTROL, STREAM, isRemoteControlType } from '@full-self-browsing/phantom-stream/protocol';
 import { CDP } from './cdp.js';
@@ -37,17 +37,33 @@ if (!window.__latticePhantomQueue) {
       return record.target === document.body || record.target === document.documentElement;
     })) window.__latticePhantomQueue.needsSnapshot = true;
   }).observe(document.documentElement, { childList: true, attributes: true, subtree: true });
-  window.__phantomStreamBridge = function (message) {
+}
+if (window.__latticePhantomQueue.version !== 2) {
+  // Existing agent tabs survive service upgrades. Stop the old capture and
+  // clear its injection guard so they also get the form-state fix.
+  window.__phantomStreamStop?.();
+  window.__phantomStreamInjected = false;
+  Object.assign(window.__latticePhantomQueue, { version: 2, frames: [], bytes: 0,
+    overflow: false, needsSnapshot: false, identity: null,
+    documentId: Array.from(crypto.getRandomValues(new Uint32Array(4)), function (n) { return n.toString(16); }).join('-') });
+}
+window.__phantomStreamBridge = function (message) {
     var queue = window.__latticePhantomQueue;
+    if (message.type === 'ext:dom-snapshot') {
+      message.payload.documentId = queue.documentId;
+      // Update atomically with capture, before the host's next poll. A text
+      // command can survive a resnapshot, but never a document navigation.
+      queue.identity = { documentId: queue.documentId,
+        streamSessionId: message.payload.streamSessionId, snapshotId: message.payload.snapshotId };
+    }
     var raw = JSON.stringify({ type: message.type, payload: message.payload });
     if (queue.bytes + raw.length * 2 > 2 * 1024 * 1024) {
       queue.frames = []; queue.bytes = 0; queue.overflow = true;
     }
     if (!queue.overflow) { queue.frames.push(raw); queue.bytes += raw.length * 2; }
-  };
-}
+};
 `;
-const captureSource = bootstrap + getPlaywrightInjectSource();
+export const captureSource = bootstrap + captureScript();
 const drain = `(() => {
   // Target.createTarget may return before its first navigation commits.
   // Never replace the shared link with about:blank or inject its empty body.
@@ -121,21 +137,24 @@ export class Streams {
         if (message.type === 'ping') {
           if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'pong' }));
         } else if (message.type === CONTROL.START) {
-          const now = Date.now();
-          if (!stream.lastRequest || now - stream.lastRequest > 1000) {
-            stream.lastRequest = now;
-            stream.resnapshot = true;
-          }
+          // Coalesce requests until the next poll; never drop a latched
+          // renderer resync request, which would leave it stale forever.
+          stream.resnapshot = true;
         }
         if (isRemoteControlType(message.type)) {
           // Serialize mouse/key sequences across all viewers. Bound the queue
           // so a stalled CDP cannot accumulate unlimited pending input.
-          if ((stream.pendingInput || 0) >= 64) return;
+          const result = ok => {
+            if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'lattice:control-result',
+              payload: { commandId: message.payload?.commandId, ok } }));
+          };
+          if ((stream.pendingInput || 0) >= 64) { result(false); return; }
           stream.pendingInput = (stream.pendingInput || 0) + 1;
           stream.input = (stream.input || Promise.resolve()).then(() => {
             if (!stream.stopped && socket.readyState === 1) return dispatchControl(stream, message.type, message.payload);
-          }).catch(() => {
-            if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'lattice:control-error', payload: {} }));
+            return false;
+          }).then(ok => result(ok === true)).catch(() => {
+            result(false);
           }).finally(() => { stream.pendingInput--; });
         }
       });
@@ -170,8 +189,8 @@ export class Streams {
       for (const raw of batch?.frames || []) {
         const frame = JSON.parse(raw);
         if (frame.type === STREAM.SNAPSHOT) {
-          stream.identity = { streamSessionId: frame.payload.streamSessionId, snapshotId: frame.payload.snapshotId };
-          await stream.cdp.evaluate(stream.sessionId, `if (window.__latticePhantomQueue) window.__latticePhantomQueue.identity = ${JSON.stringify(stream.identity)}`);
+          stream.identity = { documentId: frame.payload.documentId,
+            streamSessionId: frame.payload.streamSessionId, snapshotId: frame.payload.snapshotId };
           stream.width = frame.payload.viewportWidth || frame.payload.pageWidth;
           stream.height = frame.payload.viewportHeight || frame.payload.pageHeight;
         }

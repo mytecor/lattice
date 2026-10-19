@@ -1,5 +1,6 @@
 import { attachControl } from './control.js';
-import { createViewer } from '/phantom/renderer/index.js';
+import { createViewer, mapHostPointToViewport } from '/phantom/renderer/index.js';
+import * as protocol from '/phantom/protocol/messages.js';
 import { createWebSocketTransport } from '/phantom/transport/websocket.js';
 
 const input = document.querySelector('#url');
@@ -18,7 +19,7 @@ if (rawURL) {
     empty.querySelector('h1').textContent = 'Подключаем страницу…';
     const transport = createWebSocketTransport({ url: ws.href, role: 'viewer' });
     const viewer = createViewer({ container: document.querySelector('#mirror'), transport });
-    attachControl({ viewer, transport, surface: document.querySelector('#control'), container: document.querySelector('#mirror'), reportError: message => { status.textContent = message; } });
+    attachControl({ viewer, transport, surface: document.querySelector('#control'), container: document.querySelector('#mirror'), mapHostPointToViewport, protocol, reportError: message => { status.textContent = message; } });
     const states = { connecting: 'Подключение…', live: 'В эфире', stale: 'Ожидание обновлений', disconnected: 'Соединение прервано' };
     viewer.on('state', ({ state }) => {
       status.textContent = states[state] || state;

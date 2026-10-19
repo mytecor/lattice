@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Streams, pageURL } from './streams.js';
+import { REMOTE_CONTROL as RC, CONTROL } from '@full-self-browsing/phantom-stream/protocol';
 
 class Viewer extends EventEmitter {
   readyState = 1;
@@ -30,7 +31,10 @@ function browser(targetInfos = []) {
       calls.push(['evaluate', expression]);
       if (failed) throw new Error('disconnected');
       if (expression.includes('var queue = window.__latticePhantomQueue')) {
-        return { url: navigated ? 'https://example.org/next' : 'https://example.org/', frames: [JSON.stringify({ type: 'ext:dom-snapshot', payload: { html: '<p>Live</p>' } })] };
+        return { url: navigated ? 'https://example.org/next' : 'https://example.org/', frames: [JSON.stringify({ type: 'ext:dom-snapshot', payload: {
+          html: '<p>Live</p>', documentId: 'doc', streamSessionId: 'capture', snapshotId: 1,
+          viewportWidth: 1280, viewportHeight: 720,
+        } })] };
       }
       return true;
     },
@@ -45,6 +49,45 @@ test('query URL round-trips nested queries and fragments; rejects executable sch
   for (const invalid of [null, 'relative', 'javascript:alert(1)', 'file:///etc/passwd', 'https://user:secret@example.org']) {
     assert.throws(() => pageURL(invalid));
   }
+});
+
+test('control results acknowledge execution and report rejected commands', async () => {
+  const fake = browser();
+  const streams = new Streams({ connect: fake.connect });
+  const viewer = new Viewer();
+  try {
+    await streams.join('https://example.org/', viewer);
+    await delay(30);
+    viewer.emit('message', JSON.stringify({ type: RC.TEXT, payload: {
+      documentId: 'doc', streamSessionId: 'capture', snapshotId: 1, commandId: 1, text: 'whole query',
+    } }));
+    viewer.emit('message', JSON.stringify({ type: RC.TEXT, payload: {
+      documentId: 'old-doc', streamSessionId: 'capture', snapshotId: 1, commandId: 2, text: 'wrong page',
+    } }));
+    await streams.streams.get('new-tab').input;
+    assert.ok(fake.calls.some(([method, params]) => method === 'Input.insertText' && params.text === 'whole query'));
+    assert.ok(!fake.calls.some(([method, params]) => method === 'Input.insertText' && params.text === 'wrong page'));
+    assert.deepEqual(viewer.messages.filter(message => message.type === 'lattice:control-result').map(message => message.payload), [
+      { commandId: 1, ok: true }, { commandId: 2, ok: false },
+    ]);
+  } finally { await streams.close(); }
+});
+
+test('a resync request is serviced even immediately after the previous resync', async () => {
+  const fake = browser();
+  const streams = new Streams({ connect: fake.connect });
+  const viewer = new Viewer();
+  const starts = () => fake.calls.filter(([method, expression]) => method === 'evaluate' && expression === 'window.__phantomStreamStart()').length;
+  try {
+    await streams.join('https://example.org/', viewer);
+    await delay(30);
+    viewer.emit('message', JSON.stringify({ type: CONTROL.START }));
+    await delay(180);
+    const before = starts();
+    viewer.emit('message', JSON.stringify({ type: CONTROL.START }));
+    await delay(180);
+    assert.ok(starts() > before);
+  } finally { await streams.close(); }
 });
 
 test('concurrent viewers share existing target, receive a snapshot, and ignore unknown commands', async () => {

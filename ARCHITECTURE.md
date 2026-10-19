@@ -726,7 +726,11 @@ age-получателя не заменяет отзыв SSH/rnsh-доступ�
 `http://browser.<node>.local/?url=<encoded-http-url>`. Caddy проверяет Authentik
 ForwardAuth для страницы и WebSocket. Backend выбирает существующую вкладку Foxbridge
 по URL или создаёт новую; PhantomStream передаёт snapshot и последующие DOM-изменения.
-Клики, ввод и прокрутка проходят обратно через WebSocket и Foxbridge CDP; локальное зеркало
+Клики, ввод и прокрутка проходят обратно через WebSocket и Foxbridge CDP; сервис подтверждает
+выполнение каждой команды, а клиент сохраняет порядок ввода во время пересинхронизации.
+Текст и клавиши привязаны к документу, координатные команды — также к снимку; переход
+в другой документ отменяет неотправленный ввод. Полный снимок включает текущие значения
+полей с маскированием PhantomStream. Локальное зеркало
 инертно, поэтому навигация происходит в удалённой вкладке. Вкладки агента сохраняются после
 отключения зрителей.
 
@@ -735,7 +739,7 @@ flowchart LR
     Viewer["Браузер зрителя<br/>(Sandbox DOM viewer)"]
     Caddy["Caddy<br/>(HTTP и WebSocket ingress)"]
     Authentik["Authentik<br/>(ForwardAuth)"]
-    Stream["browser-stream<br/>(Capture и передача DOM)"]
+    Stream["browser-stream<br/>(DOM и подтверждение ввода)"]
     Foxbridge["Foxbridge<br/>(CDP-прокси)"]
     Camoufox["Camoufox<br/>(Вкладки браузера)"]
     Viewer <--> Caddy

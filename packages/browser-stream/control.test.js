@@ -6,11 +6,11 @@ import { REMOTE_CONTROL as RC } from '@full-self-browsing/phantom-stream/protoco
 function source() {
   const calls = [];
   return { calls, stream: {
-    identity: { streamSessionId: 'live', snapshotId: 3 }, width: 1280, height: 720, sessionId: 'remote-tab',
+    identity: { documentId: 'document', streamSessionId: 'live', snapshotId: 3 }, width: 1280, height: 720, sessionId: 'remote-tab',
     cdp: { send: async (...args) => { calls.push(args); }, evaluate: async (...args) => { calls.push(['evaluate', ...args]); return true; } },
   } };
 }
-const identity = { streamSessionId: 'live', snapshotId: 3 };
+const identity = { documentId: 'document', streamSessionId: 'live', snapshotId: 3 };
 test('authenticated input dispatches a complete mouse sequence, text, keys and wheel to the source session', async () => {
   const { stream, calls } = source();
   await dispatchControl(stream, RC.CLICK, { ...identity, x: 100, y: 50 });
@@ -30,6 +30,7 @@ test('stale snapshots, invalid input, out-of-viewport coordinates and arbitrary 
   const { stream, calls } = source();
   for (const [type, payload] of [
     [RC.CLICK, { ...identity, snapshotId: 2, x: 10, y: 10 }],
+    [RC.TEXT, { ...identity, documentId: 'previous-document', text: 'old input' }],
     [RC.CLICK, { ...identity, streamSessionId: 'previous', x: 10, y: 10 }],
     [RC.CLICK, { ...identity, x: -1, y: 10 }],
     [RC.CLICK, { ...identity, x: 1281, y: 10 }],
@@ -38,6 +39,16 @@ test('stale snapshots, invalid input, out-of-viewport coordinates and arbitrary 
     ['Runtime.evaluate', { ...identity, expression: 'alert(1)' }],
   ]) await dispatchControl(stream, type, payload);
   assert.equal(calls.length, 0);
+});
+
+test('text and keyboard survive a new snapshot of the same document, while coordinates do not', async () => {
+  const { stream, calls } = source();
+  const previous = { ...identity, streamSessionId: 'previous-capture', snapshotId: 1 };
+  assert.equal(await dispatchControl(stream, RC.TEXT, { ...previous, text: 'still focused' }), true);
+  assert.equal(await dispatchControl(stream, RC.KEY, { ...previous, key: 'Enter', event: 'down' }), true);
+  assert.equal(await dispatchControl(stream, RC.CLICK, { ...previous, x: 10, y: 10 }), false);
+  assert.equal(calls.filter(([method]) => method.startsWith('Input.')).length, 3);
+  assert.deepEqual(calls.filter(([method]) => method === 'Input.dispatchKeyEvent').map(([, params]) => params.type), ['keyDown', 'keyUp']);
 });
 
 test('a source navigation invalidates input even before the host has polled the next snapshot', async () => {
