@@ -24,6 +24,7 @@ function viewerControl(frame) {
     text(value, isComposing = false) { surface.value += value; events.get('input')({ isComposing }); },
     compositionend: () => events.get('compositionend')(),
     key: key => events.get('keydown')({ key, preventDefault() {} }),
+    wheel: (deltaY, target) => events.get('wheel')({ clientX: 10, clientY: 10, deltaX: 0, deltaY, deltaMode: 0, target, preventDefault() {} }),
     click: () => events.get('click')({ clientX: 10, clientY: 10, detail: 1, preventDefault() {} }),
   };
 }
@@ -152,4 +153,41 @@ test('final source position is applied instantly and survives a snapshot iframe 
   const count = positions.length;
   v.scroll({ ...snapshot, streamSessionId: 'old', scrollY: 200 });
   assert.equal(positions.length, count);
+});
+
+
+test('a fast trackpad gesture coalesces while awaiting acknowledgements without losing text or distance', async () => {
+  const v = viewerControl(); v.snapshot(snapshot); v.state('live');
+  v.wheel(10); await tick();
+  for (let i = 0; i < 1000; i++) v.wheel(10);
+  v.click(); v.text('after scrolling');
+  v.ack(v.sent[0]); await tick();
+  assert.equal(v.sent[1].payload.deltaY, 10000);
+  v.ack(v.sent[1]); await tick();
+  assert.equal(v.sent[2].type, RC.CLICK);
+  v.ack(v.sent[2]); await tick();
+  assert.equal(v.sent[3].payload.text, 'after scrolling');
+  assert.deepEqual(v.errors, []);
+});
+
+test('wheel coalescing preserves reversals, nested targets, and position across capture resyncs', async () => {
+  const v = viewerControl(); v.snapshot(snapshot); v.state('stale');
+  const outer = { ownerDocument: {} }, inner = { ownerDocument: {} };
+  v.wheel(10, outer); v.wheel(20, outer); v.wheel(-15, outer); v.wheel(-25, inner);
+  v.snapshot({ ...snapshot, streamSessionId: 'new-capture', snapshotId: 2 }); v.state('live'); await tick();
+  assert.equal(v.sent[0].payload.deltaY, 30);
+  assert.equal(v.sent[0].payload.snapshotId, 2);
+  v.ack(v.sent[0]); await tick(); assert.equal(v.sent[1].payload.deltaY, -15);
+  v.ack(v.sent[1]); await tick(); assert.equal(v.sent[2].payload.deltaY, -25);
+  assert.deepEqual(v.errors, []);
+});
+
+test('pathological wheel overload does not poison a following click and typed input', async () => {
+  const v = viewerControl(); v.snapshot(snapshot); v.state('stale');
+  for (let i = 0; i < 200; i++) v.wheel(i % 2 ? 10 : -10);
+  v.click(); v.text('kept'); v.state('live'); await tick();
+  assert.equal(v.sent[0].type, RC.CLICK);
+  v.ack(v.sent[0]); await tick();
+  assert.equal(v.sent[1].payload.text, 'kept');
+  assert.deepEqual(v.errors, []);
 });

@@ -1,3 +1,5 @@
+import { MAX_SCROLL_DELTA } from './input-limits.js';
+
 export function attachControl({ viewer, transport, surface, container, reportError, mapHostPointToViewport, protocol }) {
   const { REMOTE_CONTROL, STREAM } = protocol;
   let identity;
@@ -23,7 +25,7 @@ export function attachControl({ viewer, transport, surface, container, reportErr
       scheduled = false;
       if (!live || !identity || pending || !queue.length) return;
       const command = queue.shift();
-      const coordinates = [REMOTE_CONTROL.CLICK, REMOTE_CONTROL.SCROLL].includes(command.type);
+      const coordinates = command.type === REMOTE_CONTROL.CLICK;
       if (command.identity.documentId !== identity.documentId
           || (coordinates && (command.identity.streamSessionId !== identity.streamSessionId
             || command.identity.snapshotId !== identity.snapshotId))) {
@@ -72,18 +74,39 @@ export function attachControl({ viewer, transport, surface, container, reportErr
       else flush();
     }
   });
-  function send(type, payload) {
+  function send(type, payload, scrollTarget) {
     if (type === REMOTE_CONTROL.CLICK) blocked = false;
     if (blocked) return;
     if (!identity?.documentId) {
       reportError('Дождитесь подключения страницы и повторите ввод.');
       return;
     }
+    const scrolling = type === REMOTE_CONTROL.SCROLL;
+    const tail = queue.at(-1);
+    if (scrolling && tail?.type === type && tail.scrollTarget === scrollTarget
+        && tail.identity.documentId === identity.documentId
+        && Math.sign(tail.payload.deltaX) === Math.sign(payload.deltaX)
+        && Math.sign(tail.payload.deltaY) === Math.sign(payload.deltaY)
+        && Math.abs(tail.payload.deltaX + payload.deltaX) <= MAX_SCROLL_DELTA
+        && Math.abs(tail.payload.deltaY + payload.deltaY) <= MAX_SCROLL_DELTA) {
+      // One queued command represents the gesture while its predecessor waits
+      // for acknowledgement. Preserve distance, direction and scroll target.
+      tail.payload = { ...payload, deltaX: tail.payload.deltaX + payload.deltaX,
+        deltaY: tail.payload.deltaY + payload.deltaY };
+      flush();
+      return;
+    }
+    if (queue.length >= 64) {
+      // Wheel overload must never cancel typed text or lock all subsequent
+      // input. Drop excess wheel samples; reserve room for deliberate actions.
+      if (scrolling) return;
+      queue = queue.filter(command => command.type !== REMOTE_CONTROL.SCROLL);
+    }
     if (queue.length >= 64 || queue.reduce((size, command) => size + (command.payload.text?.length || 0), 0) + (payload.text?.length || 0) > 65536) {
       cancel('Очередь ввода переполнена. Повторите клик и ввод.');
       return;
     }
-    queue.push({ id: ++sequence, type, payload, identity });
+    queue.push({ id: ++sequence, type, payload, identity, scrollTarget });
     flush();
   }
   function point(event) {
@@ -98,7 +121,15 @@ export function attachControl({ viewer, transport, surface, container, reportErr
   function wheel(event, p) {
     event.preventDefault();
     const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewer.getViewportMapping().viewport.height : 1;
-    if (p.inside) send(REMOTE_CONTROL.SCROLL, { x: p.x, y: p.y, deltaX: event.deltaX * unit, deltaY: event.deltaY * unit });
+    let target = event.target?.ownerDocument;
+    for (let element = event.target; element?.nodeType === 1; element = element.parentElement) {
+      if (element.scrollHeight <= element.clientHeight && element.scrollWidth <= element.clientWidth) continue;
+      const style = element.ownerDocument.defaultView.getComputedStyle(element);
+      if (/auto|scroll|overlay/.test(style.overflowX + ' ' + style.overflowY)) { target = element; break; }
+    }
+    if (p.inside) send(REMOTE_CONTROL.SCROLL, { x: p.x, y: p.y,
+      deltaX: Math.max(-MAX_SCROLL_DELTA, Math.min(MAX_SCROLL_DELTA, event.deltaX * unit)),
+      deltaY: Math.max(-MAX_SCROLL_DELTA, Math.min(MAX_SCROLL_DELTA, event.deltaY * unit)) }, target);
   }
   surface.addEventListener('click', event => click(event, point(event)));
   surface.addEventListener('wheel', event => wheel(event, point(event)), { passive: false });

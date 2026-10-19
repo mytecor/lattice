@@ -1,3 +1,4 @@
+import { MAX_SCROLL_DELTA } from './public/input-limits.js';
 import { validateRemoteControlMessage } from '@full-self-browsing/phantom-stream/protocol';
 
 // Only the authenticated viewer's typed protocol is accepted, never arbitrary CDP.
@@ -8,13 +9,13 @@ export async function dispatchControl(stream, type, payload = {}) {
   if (!validated.ok) return false;
   if (!['click', 'text', 'key', 'scroll'].includes(validated.action.kind)) return false;
   const coordinates = ['click', 'scroll'].includes(validated.action.kind);
-  if (coordinates && (payload.streamSessionId !== stream.identity.streamSessionId
+  if (validated.action.kind === 'click' && (payload.streamSessionId !== stream.identity.streamSessionId
       || payload.snapshotId !== stream.identity.snapshotId)) return false;
   if (coordinates && (validated.action.x < 0 || validated.action.y < 0 || validated.action.x >= stream.width || validated.action.y >= stream.height)) return false;
   const current = await stream.cdp.evaluate(stream.sessionId, `(() => {
     const identity = window.__latticePhantomQueue?.identity;
     return identity?.documentId === ${JSON.stringify(payload.documentId)}
-      ${coordinates ? `&& identity?.streamSessionId === ${JSON.stringify(payload.streamSessionId)} && identity?.snapshotId === ${JSON.stringify(payload.snapshotId)}` : ''};
+      ${validated.action.kind === 'click' ? `&& identity?.streamSessionId === ${JSON.stringify(payload.streamSessionId)} && identity?.snapshotId === ${JSON.stringify(payload.snapshotId)}` : ''};
   })()`);
   if (!current) return false;
   const action = validated.action;
@@ -23,7 +24,7 @@ export async function dispatchControl(stream, type, payload = {}) {
     if (action.x < 0 || action.y < 0 || action.x >= stream.width || action.y >= stream.height) return false;
     if (action.kind === 'scroll') {
       const wheel = { x: action.x, y: action.y,
-        deltaX: Math.max(-4000, Math.min(4000, action.deltaX)), deltaY: Math.max(-4000, Math.min(4000, action.deltaY)) };
+        deltaX: Math.max(-MAX_SCROLL_DELTA, Math.min(MAX_SCROLL_DELTA, action.deltaX)), deltaY: Math.max(-MAX_SCROLL_DELTA, Math.min(MAX_SCROLL_DELTA, action.deltaY)) };
       try {
         await send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...wheel });
       } catch {

@@ -41,13 +41,15 @@ test('stale snapshots, invalid input, out-of-viewport coordinates and arbitrary 
   assert.equal(calls.length, 0);
 });
 
-test('text and keyboard survive a new snapshot of the same document, while coordinates do not', async () => {
+test('text, keys and scrolling survive capture resyncs, while clicks do not', async () => {
   const { stream, calls } = source();
   const previous = { ...identity, streamSessionId: 'previous-capture', snapshotId: 1 };
   assert.equal(await dispatchControl(stream, RC.TEXT, { ...previous, text: 'still focused' }), true);
   assert.equal(await dispatchControl(stream, RC.KEY, { ...previous, key: 'Enter', event: 'down' }), true);
   assert.equal(await dispatchControl(stream, RC.CLICK, { ...previous, x: 10, y: 10 }), false);
-  assert.equal(calls.filter(([method]) => method.startsWith('Input.')).length, 3);
+  assert.equal(await dispatchControl(stream, RC.SCROLL, { ...previous, x: 10, y: 10, deltaX: 0, deltaY: 10000 }), true);
+  assert.ok(calls.some(([method, params]) => method === 'Input.dispatchMouseEvent' && params.deltaY === 10000));
+  assert.equal(calls.filter(([method]) => method.startsWith('Input.')).length, 4);
   assert.deepEqual(calls.filter(([method]) => method === 'Input.dispatchKeyEvent').map(([, params]) => params.type), ['keyDown', 'keyUp']);
 });
 
