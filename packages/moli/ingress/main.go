@@ -1,0 +1,113 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"flag"
+	"io"
+	"log"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"strings"
+	"time"
+)
+
+// Only protocol endpoint fields are rewritten. A page's URL/title/content must
+// never change just because it contains the upstream's address.
+func rewriteDiscovery(value any, host, scheme string) {
+	switch v := value.(type) {
+	case []any:
+		for _, item := range v {
+			rewriteDiscovery(item, host, scheme)
+		}
+	case map[string]any:
+		for key, item := range v {
+			raw, ok := item.(string)
+			if !ok {
+				continue
+			}
+			endpoint, err := url.Parse(raw)
+			if err != nil {
+				continue
+			}
+			switch key {
+			case "webSocketDebuggerUrl":
+				endpoint.Host, endpoint.Scheme = host, scheme
+				v[key] = endpoint.String()
+			case "devtoolsFrontendUrl":
+				// Moli advertises a relative Chromium frontend path but does
+				// not ship that frontend. Use Chrome's bundled inspector.
+				if endpoint.Host == "" && endpoint.Path == "/devtools/inspector.html" {
+					endpoint.Scheme, endpoint.Host, endpoint.Path = "devtools", "devtools", "/bundled/inspector.html"
+				}
+				query := endpoint.Query()
+				for _, kind := range []string{"ws", "wss"} {
+					if target := query.Get(kind); target != "" {
+						_, path, found := strings.Cut(target, "/")
+						if found {
+							query.Del(kind)
+							query.Set(scheme, host+"/"+path)
+						}
+					}
+				}
+				endpoint.RawQuery = query.Encode()
+				v[key] = endpoint.String()
+			}
+		}
+	}
+}
+
+func proxyHandler(upstream *url.URL) http.Handler {
+	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	director := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		director(r)
+		r.Header.Set("Accept-Encoding", "identity")
+	}
+	proxy.ModifyResponse = func(r *http.Response) error {
+		if r.StatusCode != http.StatusOK || !strings.HasPrefix(r.Request.URL.Path, "/json") ||
+			!strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+			return nil
+		}
+		defer r.Body.Close()
+		var value any
+		if err := json.NewDecoder(r.Body).Decode(&value); err != nil {
+			return err
+		}
+		scheme := "ws"
+		// Only the loopback Caddy ingress can reach this listener.
+		if r.Request.Header.Get("X-Forwarded-Proto") == "https" {
+			scheme = "wss"
+		}
+		rewriteDiscovery(value, r.Request.Host, scheme)
+		body, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		r.ContentLength = int64(len(body))
+		r.Header.Del("Content-Length")
+		r.Header.Del("ETag")
+		return nil
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.Redirect(w, r, "/json/list", http.StatusTemporaryRedirect)
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	})
+}
+
+func main() {
+	listen := flag.String("listen", "127.0.0.1:9224", "loopback ingress address")
+	backend := flag.String("upstream", "http://127.0.0.1:9223", "Moli address")
+	flag.Parse()
+	upstream, err := url.Parse(*backend)
+	if err != nil {
+		log.Fatal(err)
+	}
+	server := &http.Server{Addr: *listen, Handler: proxyHandler(upstream), ReadHeaderTimeout: 10 * time.Second}
+	log.Fatal(server.ListenAndServe())
+}

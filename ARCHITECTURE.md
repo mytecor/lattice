@@ -111,7 +111,8 @@ flowchart TD
     end
 
     subgraph Browser["Браузерный стек"]
-        BrowserStream["browser-stream<br/>(PhantomStream DOM viewer)"]
+        MoliIngress["moli-ingress<br/>(CDP discovery и WebSocket proxy)"]
+        Moli["Moli<br/>(Браузер удалённой отладки)"]
         Foxbridge["Foxbridge<br/>(CDP-прокси)"]
         Camoufox["Camoufox<br/>(Браузер агента)"]
     end
@@ -153,8 +154,8 @@ flowchart TD
     Caddy --> Authentik
     Caddy --> HydraACP
     Caddy --> AcpWeb
-    Caddy <--> BrowserStream
-    BrowserStream <--> Foxbridge
+    Caddy <--> MoliIngress
+    MoliIngress <--> Moli
     Foxbridge --> Camoufox
     Caddy --> NodeStatus
     Caddy --> LLMGateway
@@ -209,7 +210,8 @@ flowchart TD
 
     subgraph Backends["Локальные сервисы"]
         AcpUI["acp-web<br/>(Веб-интерфейс ACP)"]
-        BrowserUI["browser-stream<br/>(PhantomStream DOM viewer)"]
+        BrowserIngress["moli-ingress<br/>(CDP discovery и WebSocket proxy)"]
+        MoliBrowser["Moli<br/>(Браузер удалённой отладки)"]
         GrafanaSvc["Grafana<br/>(Дашборды)"]
         NodeStatusSvc["node-status<br/>(API статуса ноды)"]
         LLMGatewaySvc["llm-gateway<br/>(API инференса)"]
@@ -226,7 +228,8 @@ flowchart TD
     Authentik -. "Разрешение доступа" .-> Caddy
 
     Caddy --> AcpUI
-    Caddy <--> BrowserUI
+    Caddy <--> BrowserIngress
+    BrowserIngress <--> MoliBrowser
     Caddy --> GrafanaSvc
     Caddy --> NodeStatusSvc
     Caddy --> LLMGatewaySvc
@@ -720,33 +723,26 @@ age-получателя не заменяет отзыв SSH/rnsh-доступ�
 Команды, проверки, порядок публикации через `comin`, особенности Wi-Fi-only homelab и границы
 ещё не развёрнутых сервисов описаны в [KEY_MANAGEMENT.md](./KEY_MANAGEMENT.md).
 
-## Просмотр браузера через PhantomStream
+## Удалённая отладка браузера через Moli
 
-[Профиль browser-stream](./profiles/browser-stream/README.md) публикует страницу
-`http://browser.<node>.local/?url=<encoded-http-url>`. Caddy проверяет Authentik
-ForwardAuth для страницы и WebSocket. Backend выбирает существующую вкладку Foxbridge
-по URL или создаёт новую; PhantomStream передаёт snapshot и последующие DOM-изменения.
-Клики, ввод и прокрутка проходят обратно через WebSocket и Foxbridge CDP; сервис подтверждает
-выполнение каждой команды, а клиент сохраняет порядок ввода во время пересинхронизации.
-Текст и клавиши привязаны к документу, координатные команды — также к снимку; переход
-в другой документ отменяет неотправленный ввод. Полный снимок включает текущие значения
-полей с маскированием PhantomStream. Локальное зеркало
-инертно, поэтому навигация происходит в удалённой вкладке. Вкладки агента сохраняются после
-отключения зрителей.
-Фокус и позиции выделения передаются отдельно от содержимого полей: viewer сохраняет
-нативную каретку и восстанавливает её после обновления DOM-зеркала.
+[Профиль Moli](./profiles/moli/README.md) публикует отдельный headless-браузер
+по `http://browser.<node>.local/`. Moli запускается с `--layout --resource`,
+чтобы DevTools мог получать геометрию, скриншоты и screencast. Caddy проверяет
+Authentik ForwardAuth для HTTP discovery и WebSocket; клиенты SDK передают cookie
+авторизованной сессии. Loopback-only ingress переписывает endpoint-поля discovery
+на адрес внешнего сайта с правильной схемой `ws`/`wss` и проксирует CDP upgrade.
+Корневой адрес ведёт на `/json/list`. Вкладки и cookies временные.
+Jev отдельно продолжает обращаться к Foxbridge/Camoufox.
 
 ```mermaid
 flowchart LR
-    Viewer["Браузер зрителя<br/>(DOM-зеркало, ввод и каретка)"]
+    Debugger["DevTools / CDP-клиент<br/>(Удалённая отладка)"]
     Caddy["Caddy<br/>(HTTP и WebSocket ingress)"]
     Authentik["Authentik<br/>(ForwardAuth)"]
-    Stream["browser-stream<br/>(DOM и подтверждение ввода)"]
-    Foxbridge["Foxbridge<br/>(CDP-прокси)"]
-    Camoufox["Camoufox<br/>(Вкладки браузера)"]
-    Viewer <--> Caddy
+    Ingress["moli-ingress<br/>(CDP discovery и WebSocket proxy)"]
+    Moli["Moli<br/>(DOM, JavaScript и рендеринг)"]
+    Debugger <--> Caddy
     Caddy --> Authentik
-    Caddy <--> Stream
-    Stream <--> Foxbridge
-    Foxbridge <--> Camoufox
+    Caddy <--> Ingress
+    Ingress <--> Moli
 ```

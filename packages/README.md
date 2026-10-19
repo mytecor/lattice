@@ -143,7 +143,7 @@ package-specific lock и описание сборки в собственном
 Для release snapshot `3ddb784b1920` этот путь повторно проверяется F10 live smoke: обновление
 содержит upstream shared-client fixes для path request, one-hop routing и transport headers.
 
-## Browser stream
+## Moli
 
-[browser-stream](./browser-stream/README.md) — PhantomStream viewer существующих вкладок
-Foxbridge/Camoufox, с URL страницы в query-параметре.
+[Moli](./moli/README.md) — headless-браузер с CDP, реальным layout и скриншотами;
+внешние discovery-адреса адаптирует небольшой ingress proxy.

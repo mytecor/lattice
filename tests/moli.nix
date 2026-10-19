@@ -4,15 +4,13 @@ let
   config = (lib.nixosSystem {
     modules = [
       self.nixosModules.authentik
-      self.nixosModules.foxbridge-camoufox
       "${profiles}/sso/config.nix"
       "${profiles}/app-services/config.nix"
-      "${profiles}/browser-stream/config.nix"
+      "${profiles}/moli/config.nix"
       {
         nixpkgs.pkgs = pkgs;
         networking.hostName = "viewer-test";
         system.stateVersion = "26.05";
-        lattice.foxbridge-camoufox = { enable = true; port = 19444; };
         lattice.authentik = {
           enable = true;
           secretKeyFile = "/run/test-secret";
@@ -26,10 +24,10 @@ let
       }
     ];
   }).config;
-  unit = config.systemd.services.browser-stream;
+  unit = config.systemd.services.moli-ingress;
   lan = config.services.caddy.virtualHosts."http://browser.viewer-test.local".extraConfig;
   mesh = config.services.caddy.virtualHosts."http://browser.mesh.example.org".extraConfig;
-  caddyfile = pkgs.writeText "browser-stream.Caddyfile" ''
+  caddyfile = pkgs.writeText "moli.Caddyfile" ''
     http://browser.viewer-test.local {
       ${lan}
     }
@@ -38,18 +36,30 @@ let
     }
   '';
 in
-# Generated artifacts: custom CDP port flows to the runtime, loopback listener
-# stays private, SSO covers the entire proxy (including WS), mDNS is published.
-assert unit.environment.BROWSER_CDP_URL == "http://127.0.0.1:19444";
-assert !(lib.elem (lib.toInt unit.environment.BROWSER_STREAM_PORT) config.networking.firewall.allowedTCPPorts);
+# Generated ingress keeps discovery and upgrades under the same SSO gate.
 assert unit.serviceConfig.DynamicUser;
+assert lib.hasInfix "--host 127.0.0.1" config.systemd.services.moli.serviceConfig.ExecStart;
 assert lib.hasInfix "browser.viewer-test.local" config.systemd.services.browser-mdns.script;
+assert lib.all (port: !(lib.elem port config.networking.firewall.allowedTCPPorts)) [
+  (import ../profiles/networking/ports.nix).moli-cdp
+  (import ../profiles/networking/ports.nix).moli-ingress
+];
 assert lib.all (site:
   lib.hasInfix "forward_auth" site
   && lib.hasInfix "/outpost.goauthentik.io/auth/caddy" site
-  && lib.hasInfix "reverse_proxy 127.0.0.1:${unit.environment.BROWSER_STREAM_PORT}" site
+  && lib.hasInfix "reverse_proxy 127.0.0.1:" site
   && !(lib.hasInfix "@" site)
 ) [ lan mesh ];
-pkgs.runCommand "browser-stream-ingress" { nativeBuildInputs = [ pkgs.caddy ]; } ''
+pkgs.runCommand "moli-ingress" {
+  nativeBuildInputs = [ pkgs.caddy pkgs.lattice.moli pkgs.lattice.moli-ingress
+    (pkgs.python3.withPackages (ps: [ ps.websockets ])) ];
+} ''
   caddy adapt --config ${caddyfile} --adapter caddyfile --validate > "$out"
+  export HOME="$TMPDIR"
+  moli serve --host 127.0.0.1 --port 19223 --layout --resource > moli.log 2>&1 &
+  browser_pid=$!
+  moli-ingress --listen 127.0.0.1:19224 --upstream http://127.0.0.1:19223 > ingress.log 2>&1 &
+  ingress_pid=$!
+  trap 'kill "$browser_pid" "$ingress_pid" 2>/dev/null || true' EXIT
+  python ${./moli-smoke.py} || { cat moli.log ingress.log; exit 1; }
 ''

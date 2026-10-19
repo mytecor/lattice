@@ -56,8 +56,9 @@ in
     rnsProfile = "${profiles}/rns-server/config.nix";
   };
 
-  browser-stream = pkgs.lattice.browser-stream;
-  browser-stream-ingress = import ./browser-stream.nix {
+  moli = pkgs.lattice.moli;
+  moli-proxy = pkgs.lattice.moli-ingress;
+  moli-ingress = import ./moli.nix {
     inherit nixpkgs pkgs self profiles;
   };
 

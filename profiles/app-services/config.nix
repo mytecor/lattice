@@ -6,9 +6,9 @@ let
   latticePorts = import ../networking/ports.nix;
   statusAddress = "127.0.0.1";
   statusPort = latticePorts.node-status;
-  browserEnabled = config.lattice.browser-stream.enable;
+  browserEnabled = config.lattice.moli.enable;
   browserHost = "browser.${hostName}.local";
-  browserSiteConfig = "reverse_proxy 127.0.0.1:${toString latticePorts.browser-stream}";
+  browserSiteConfig = "reverse_proxy 127.0.0.1:${toString latticePorts.moli-ingress}";
 
   # f4-05: mesh (внешний) доступ к status — параллельно LAN-контракту. Читаем те же
   # опции, что задаёт профиль tcp-gateway: meshDomain и cloudflareToken. Без токена
@@ -145,7 +145,7 @@ in
 {
   imports = [ ../tcp-gateway/config.nix ];
 
-  options.lattice.browser-stream.enable = lib.mkEnableOption "PhantomStream viewer for Foxbridge/Camoufox";
+  options.lattice.moli.enable = lib.mkEnableOption "Moli remote debugging browser";
 
   config = {
     services.caddy.virtualHosts = {

@@ -19,7 +19,8 @@
   authentik = 9220;
   # F18: browser agent stack (loopback-only).
   foxbridge-cdp = 9222;
-  browser-stream = 9223;
+  moli-cdp = 9223;
+  moli-ingress = 9224;
   jev-inspector = 8766;
   # agentrun-openai: OpenAI-compatible gateway over agentrun (loopback-only).
   agentrun-openai = 8787;
