@@ -19,6 +19,7 @@ function viewerControl(frame) {
   return { sent, errors, surface,
     state: value => state({ state: value }),
     snapshot: value => message(STREAM.SNAPSHOT, value),
+    scroll: value => message(STREAM.SCROLL, value),
     ack: (command, ok = true) => message('lattice:control-result', { commandId: command.payload.commandId, ok }),
     text(value, isComposing = false) { surface.value += value; events.get('input')({ isComposing }); },
     compositionend: () => events.get('compositionend')(),
@@ -132,4 +133,23 @@ test('native mirror clicks are forwarded and local navigation is cancelled after
   await tick();
   assert.equal(v.sent.length, 2);
   assert.equal(v.sent[1].payload.x, 20);
+});
+
+
+test('final source position is applied instantly and survives a snapshot iframe load', () => {
+  const positions = [], events = new Map();
+  const frame = { contentWindow: { scrollTo: value => positions.push(value) }, contentDocument: null,
+    addEventListener: (name, callback) => events.set(name, callback) };
+  const v = viewerControl(frame); v.snapshot(snapshot); v.state('live');
+  v.scroll({ ...snapshot, scrollX: 0, scrollY: 9000 });
+  assert.deepEqual(positions.at(-1), { left: 0, top: 9000, behavior: 'instant' });
+  // The SDK restores the initial snapshot offset on load; our listener must
+  // restore the newer scroll event rather than losing the final position.
+  events.get('load')();
+  assert.deepEqual(positions.at(-1), { left: 0, top: 9000, behavior: 'instant' });
+  v.scroll({ ...snapshot, scrollX: 0, scrollY: 0 });
+  assert.equal(positions.at(-1).top, 0);
+  const count = positions.length;
+  v.scroll({ ...snapshot, streamSessionId: 'old', scrollY: 200 });
+  assert.equal(positions.length, count);
 });

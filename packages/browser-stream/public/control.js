@@ -1,6 +1,7 @@
 export function attachControl({ viewer, transport, surface, container, reportError, mapHostPointToViewport, protocol }) {
   const { REMOTE_CONTROL, STREAM } = protocol;
   let identity;
+  let sourceScroll;
   let live = false;
   let sequence = 0;
   let pending;
@@ -58,7 +59,12 @@ export function attachControl({ viewer, transport, surface, container, reportErr
         } else cancel('Открыта другая страница. Неотправленный ввод отменён.');
       }
       identity = { streamSessionId: payload.streamSessionId, snapshotId: payload.snapshotId, documentId: payload.documentId };
+      sourceScroll = { x: payload.scrollX || 0, y: payload.scrollY || 0 };
       flush();
+    }
+    if (type === STREAM.SCROLL && payload.streamSessionId === identity?.streamSessionId && payload.snapshotId === identity?.snapshotId) {
+      sourceScroll = { x: payload.scrollX || 0, y: payload.scrollY || 0 };
+      syncScroll();
     }
     if (type === 'lattice:control-result' && pending?.id === payload.commandId) {
       pending = undefined;
@@ -113,7 +119,15 @@ export function attachControl({ viewer, transport, surface, container, reportErr
     const { width, height } = viewer.getViewportMapping().viewport;
     return { x, y, inside: x >= 0 && y >= 0 && x < width && y < height };
   }
+  function syncScroll() {
+    if (rootFrame?.contentWindow && sourceScroll) {
+      // The SDK defaults to smooth follow, which trails rapid wheel gestures.
+      // The mirror must show the source's exact final position immediately.
+      rootFrame.contentWindow.scrollTo({ left: sourceScroll.x, top: sourceScroll.y, behavior: 'instant' });
+    }
+  }
   function bindFrame(frame) {
+    if (frame === rootFrame) syncScroll();
     if (!boundFrames.has(frame)) {
       boundFrames.add(frame);
       frame.addEventListener('load', () => bindFrame(frame));

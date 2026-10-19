@@ -137,3 +137,35 @@ test('failed attach closes a newly created tab', async () => {
   assert.ok(fake.calls.some(([method]) => method === 'Target.closeTarget'));
   await streams.close();
 });
+
+test('quiet final scroll positions at both page edges are delivered without a capture scroll event', async () => {
+  const fake = browser();
+  let position = 0, first = true;
+  const streams = new Streams({ connect: async () => {
+    const cdp = await fake.connect();
+    const evaluate = cdp.evaluate;
+    cdp.evaluate = async (session, expression) => {
+      if (expression === 'window.__phantomStreamStart()') first = true;
+      const value = await evaluate(session, expression);
+      if (expression.includes('var frames = queue.frames')) {
+        value.frames = first ? value.frames : [];
+        first = false;
+        value.scroll = { documentId: 'doc', streamSessionId: 'capture', snapshotId: 1, scrollX: 0, scrollY: position };
+      }
+      return value;
+    };
+    return cdp;
+  } });
+  const viewer = new Viewer();
+  try {
+    await streams.join('https://example.org/', viewer);
+    await delay(30);
+    position = 10000;
+    await delay(200);
+    assert.equal(viewer.messages.filter(message => message.type === 'ext:dom-scroll').at(-1).payload.scrollY, 10000);
+    position = 0;
+    await delay(200);
+    assert.equal(viewer.messages.filter(message => message.type === 'ext:dom-scroll').at(-1).payload.scrollY, 0);
+    assert.equal(viewer.messages.filter(message => message.type === 'ext:dom-snapshot').length, 1);
+  } finally { await streams.close(); }
+});

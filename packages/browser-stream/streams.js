@@ -77,7 +77,12 @@ const drain = `(() => {
     window.__phantomStreamStart();
   }
   var frames = queue.frames; queue.frames = []; queue.bytes = 0;
-  return { frames: frames, url: location.href };
+  // Upstream's leading-only 200ms throttle can drop the final scroll event.
+  // Poll the current position alongside the DOM drain so reaching either edge
+  // is observable even when the document stops generating scroll events.
+  return { frames: frames, url: location.href, scroll: queue.identity && Object.assign({}, queue.identity, {
+    scrollX: window.scrollX, scrollY: window.scrollY
+  }) };
 })()`;
 
 export class Streams {
@@ -186,6 +191,7 @@ export class Streams {
         await stream.cdp.evaluate(stream.sessionId, 'window.__phantomStreamStart()');
         batch = await stream.cdp.evaluate(stream.sessionId, drain);
       }
+      const frames = [];
       for (const raw of batch?.frames || []) {
         const frame = JSON.parse(raw);
         if (frame.type === STREAM.SNAPSHOT) {
@@ -193,7 +199,19 @@ export class Streams {
             streamSessionId: frame.payload.streamSessionId, snapshotId: frame.payload.snapshotId };
           stream.width = frame.payload.viewportWidth || frame.payload.pageWidth;
           stream.height = frame.payload.viewportHeight || frame.payload.pageHeight;
+          stream.lastScroll = undefined;
         }
+        // Use the authoritative sampled position rather than the capture's
+        // potentially stale leading-edge scroll event.
+        if (frame.type !== STREAM.SCROLL) frames.push(raw);
+      }
+      const scroll = batch?.scroll;
+      if (scroll && scroll.documentId === stream.identity?.documentId
+          && scroll.streamSessionId === stream.identity.streamSessionId
+          && scroll.snapshotId === stream.identity.snapshotId
+          && (scroll.scrollX !== stream.lastScroll?.scrollX || scroll.scrollY !== stream.lastScroll?.scrollY)) {
+        frames.push(JSON.stringify({ type: STREAM.SCROLL, payload: scroll }));
+        stream.lastScroll = scroll;
       }
       if (batch?.url) stream.started = true;
       if (!stream.started && Date.now() - stream.startedAt > 30000) throw new Error('Page did not load');
@@ -204,7 +222,7 @@ export class Streams {
           continue;
         }
         if (batch?.url) socket.send(JSON.stringify({ type: 'lattice:page', payload: { url: batch.url } }));
-        for (const frame of batch?.frames || []) socket.send(frame);
+        for (const frame of frames) socket.send(frame);
       }
       stream.failures = 0;
     } catch {
