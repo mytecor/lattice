@@ -55,5 +55,11 @@ in
       default = null;
       description = "Directory for temporary worktrees during workload execution.";
     };
+
+    maxIterations = mkOption {
+      type = types.int;
+      default = 5;
+      description = "Default maximum iterations for agent execution loop.";
+    };
   };
 }

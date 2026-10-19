@@ -12,22 +12,27 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/mytecor/lattice/agentd/internal/acp"
+	"github.com/mytecor/lattice/agentd/internal/loop"
+	"github.com/mytecor/lattice/agentd/internal/runtime"
+	"github.com/mytecor/lattice/agentd/internal/verifier"
 	taskcontract "github.com/mytecor/lattice/task-contract"
 	"github.com/mytecor/meshbus/core"
 	"github.com/mytecor/meshbus/security/realm"
 	meshrns "github.com/mytecor/meshbus/transport/rns"
 )
 
-var version = "0.1.0"
+var version = "0.2.0"
 
 func main() {
 	var (
-		realmKeyFile string
-		realmKeyHex  string
-		identityPath string
-		agentSubject string
-		workDir      string
-		showVersion  bool
+		realmKeyFile  string
+		realmKeyHex   string
+		identityPath  string
+		agentSubject  string
+		workDir       string
+		maxIterations int
+		showVersion   bool
 	)
 
 	flag.StringVar(&realmKeyFile, "realm-key-file", os.Getenv("MESHBUS_REALM_KEY_FILE"), "Path to 32-byte realm key file")
@@ -35,6 +40,7 @@ func main() {
 	flag.StringVar(&identityPath, "identity-file", os.Getenv("MESHBUS_IDENTITY"), "Path to RNS identity file")
 	flag.StringVar(&agentSubject, "agent-subject", taskcontract.DefaultSubjectAgentRun, "Meshbus subject for agent.run")
 	flag.StringVar(&workDir, "work-dir", os.Getenv("AGENTD_WORK_DIR"), "Directory for temporary execution worktrees")
+	flag.IntVar(&maxIterations, "max-iterations", 5, "Default maximum iterations for agent execution loop")
 	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
 	flag.Parse()
 
@@ -91,11 +97,23 @@ func main() {
 	defer node.Close()
 
 	bus := &nodeBus{node: node}
-	executor := NewDummyWorkloadExecutor(workDir)
+	rt := runtime.NewDummyRuntime(workDir)
+	acpClient := acp.NewDummyClient()
+	ver := verifier.NewCommandVerifier()
+	execLoop, err := loop.New(loop.Config{
+		Runtime:              rt,
+		ACPClient:            acpClient,
+		Verifier:             ver,
+		DefaultMaxIterations: maxIterations,
+	})
+	if err != nil {
+		log.Fatalf("failed to create execution loop: %v", err)
+	}
+
 	server, err := NewServer(ServerConfig{
 		Bus:          bus,
 		AgentSubject: agentSubject,
-		Executor:     executor,
+		Executor:     execLoop,
 	})
 	if err != nil {
 		log.Fatalf("failed to create agentd server: %v", err)
@@ -108,8 +126,8 @@ func main() {
 		log.Fatalf("failed to start meshbus node: %v", err)
 	}
 
-	log.Printf("agentd %s started (meshbus peer %s, subject %s, workDir %s)",
-		version, node.Identity(), agentSubject, workDir)
+	log.Printf("agentd %s started (meshbus peer %s, subject %s, workDir %s, maxIterations %d)",
+		version, node.Identity(), agentSubject, workDir, maxIterations)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -139,4 +157,3 @@ func (b *nodeBus) Publish(ctx context.Context, topic string, payload []byte, opt
 	_, err := b.node.Publish(ctx, topic, payload, opts)
 	return err
 }
-

@@ -31,6 +31,7 @@ assert cfg.enable;
 assert cfg.realmKeyFile == keyFile;
 assert cfg.agentSubject == "agent.run";
 assert cfg.workDir == "/var/lib/agentd-work";
+assert cfg.maxIterations == 5;
 
 # Service wiring and lifecycle
 assert lib.elem "multi-user.target" unit.wantedBy;

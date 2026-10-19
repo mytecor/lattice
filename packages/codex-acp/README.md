@@ -43,7 +43,7 @@ Codex по-прежнему читает свой конфиг, обновляе
 
 Нужен полный файл `auth.json`, созданный Codex CLI после входа через ChatGPT,
 с access token и refresh token. Логин, пароль и browser cookie не нужны.
-[Официальная документация](https://developers.openai.com/codex/auth/)
+[Официальная документация](https://learn.chatgpt.com/docs/auth)
 описывает file storage и перенос auth cache на headless-машину.
 
 Вход выполняется непосредственно на ноде, в сохраняемый каталог

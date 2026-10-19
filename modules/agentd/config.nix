@@ -10,6 +10,7 @@ let
     "--identity-file" identityPath
     "--agent-subject" cfg.agentSubject
     "--work-dir" workDirPath
+    "--max-iterations" (toString cfg.maxIterations)
   ];
 
   execScript = pkgs.writeShellScript "agentd-start" ''
