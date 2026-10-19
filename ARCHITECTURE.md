@@ -110,6 +110,12 @@ flowchart TD
         AcpWeb["acp-web<br/>(Web UI клиента ACP)"]
     end
 
+    subgraph Browser["Браузерный стек"]
+        BrowserStream["browser-stream<br/>(PhantomStream DOM viewer)"]
+        Foxbridge["Foxbridge<br/>(CDP-прокси)"]
+        Camoufox["Camoufox<br/>(Браузер агента)"]
+    end
+
     subgraph AI["Инференс LLM"]
         LLMGateway["llm-gateway<br/>(Маршрутизация и fallback)"]
         Agentrun["agentrun-openai<br/>(OpenAI-совместимый шлюз)"]
@@ -147,6 +153,9 @@ flowchart TD
     Caddy --> Authentik
     Caddy --> HydraACP
     Caddy --> AcpWeb
+    Caddy --> BrowserStream
+    BrowserStream --> Foxbridge
+    Foxbridge --> Camoufox
     Caddy --> NodeStatus
     Caddy --> LLMGateway
     Caddy --> GitCache
@@ -200,6 +209,7 @@ flowchart TD
 
     subgraph Backends["Локальные сервисы"]
         AcpUI["acp-web<br/>(Веб-интерфейс ACP)"]
+        BrowserUI["browser-stream<br/>(PhantomStream DOM viewer)"]
         GrafanaSvc["Grafana<br/>(Дашборды)"]
         NodeStatusSvc["node-status<br/>(API статуса ноды)"]
         LLMGatewaySvc["llm-gateway<br/>(API инференса)"]
@@ -216,6 +226,7 @@ flowchart TD
     Authentik -. "Разрешение доступа" .-> Caddy
 
     Caddy --> AcpUI
+    Caddy --> BrowserUI
     Caddy --> GrafanaSvc
     Caddy --> NodeStatusSvc
     Caddy --> LLMGatewaySvc
@@ -708,3 +719,26 @@ age-получателя не заменяет отзыв SSH/rnsh-доступ�
 
 Команды, проверки, порядок публикации через `comin`, особенности Wi-Fi-only homelab и границы
 ещё не развёрнутых сервисов описаны в [KEY_MANAGEMENT.md](./KEY_MANAGEMENT.md).
+
+## Просмотр браузера через PhantomStream
+
+[Профиль browser-stream](./profiles/browser-stream/README.md) публикует страницу
+`http://browser.<node>.local/?url=<encoded-http-url>`. Caddy проверяет Authentik
+ForwardAuth для страницы и WebSocket. Backend выбирает существующую вкладку Foxbridge
+по URL или создаёт новую; PhantomStream передаёт snapshot и последующие DOM-изменения.
+Вкладки агента сохраняются после отключения зрителей.
+
+```mermaid
+flowchart LR
+    Viewer["Браузер зрителя<br/>(Sandbox DOM viewer)"]
+    Caddy["Caddy<br/>(HTTP и WebSocket ingress)"]
+    Authentik["Authentik<br/>(ForwardAuth)"]
+    Stream["browser-stream<br/>(Capture и передача DOM)"]
+    Foxbridge["Foxbridge<br/>(CDP-прокси)"]
+    Camoufox["Camoufox<br/>(Вкладки браузера)"]
+    Viewer <--> Caddy
+    Caddy --> Authentik
+    Caddy <--> Stream
+    Stream <--> Foxbridge
+    Foxbridge <--> Camoufox
+```

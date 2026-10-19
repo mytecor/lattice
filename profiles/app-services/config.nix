@@ -6,6 +6,9 @@ let
   latticePorts = import ../networking/ports.nix;
   statusAddress = "127.0.0.1";
   statusPort = latticePorts.node-status;
+  browserEnabled = config.lattice.browser-stream.enable;
+  browserHost = "browser.${hostName}.local";
+  browserSiteConfig = "reverse_proxy 127.0.0.1:${toString latticePorts.browser-stream}";
 
   # f4-05: mesh (внешний) доступ к status — параллельно LAN-контракту. Читаем те же
   # опции, что задаёт профиль tcp-gateway: meshDomain и cloudflareToken. Без токена
@@ -142,12 +145,18 @@ in
 {
   imports = [ ../tcp-gateway/config.nix ];
 
+  options.lattice.browser-stream.enable = lib.mkEnableOption "PhantomStream viewer for Foxbridge/Camoufox";
+
   config = {
     services.caddy.virtualHosts = {
       "http://${statusHost}".extraConfig = statusSiteConfig;
       # f13-01: static SPA acp-web на LAN-имени acp-ui.<node>.local.
       # f14: acp-ui может быть защищён Authentik ForwardAuth (см. wrapForwardAuth).
       "http://${acpUiHost}".extraConfig = wrapForwardAuth "acp-ui" authLanHost acpUiSiteConfig;
+    } // lib.optionalAttrs browserEnabled {
+      "http://${browserHost}".extraConfig = wrapForwardAuth "browser" authLanHost browserSiteConfig;
+    } // lib.optionalAttrs (browserEnabled && meshDomain != null && !(lib.elem "browser" config.lattice.tcp-gateway.meshExclude)) {
+      "${meshScheme}://browser.${meshDomain}".extraConfig = wrapForwardAuth "browser" authMeshHost browserSiteConfig;
     } // lib.optionalAttrs (statusMeshHost != null) {
       "${statusMeshHost}".extraConfig = statusSiteConfig;
     } // lib.optionalAttrs (acpUiMeshHost != null) {
@@ -199,6 +208,7 @@ in
       };
     };
 
+    systemd.services.browser-mdns = lib.mkIf browserEnabled (mdnsPublishService browserHost);
     systemd.services.node-status-mdns = mdnsPublishService statusHost;
     # f13-01: alias для web-клиента ACP. Отдельный юнит: статус-сайт и acp-ui
     # живут независимо, и падение одного alias не роняет другой.

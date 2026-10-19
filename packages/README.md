@@ -142,3 +142,8 @@ package-specific lock и описание сборки в собственном
 применяет обычный процесс развёртывания через `comin` после публикации в `main`.
 Для release snapshot `3ddb784b1920` этот путь повторно проверяется F10 live smoke: обновление
 содержит upstream shared-client fixes для path request, one-hop routing и transport headers.
+
+## Browser stream
+
+[browser-stream](./browser-stream/README.md) — PhantomStream viewer существующих вкладок
+Foxbridge/Camoufox, с URL страницы в query-параметре.

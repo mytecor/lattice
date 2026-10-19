@@ -8,3 +8,5 @@
 
 # lychee response cache (см. lychee.toml: cache = true)
 /.lycheecache
+
+/packages/browser-stream/node_modules/

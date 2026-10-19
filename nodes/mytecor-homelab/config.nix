@@ -712,6 +712,9 @@ in
       {
         service = "acp-ui";
       }
+      {
+        service = "browser";
+      }
     ];
     oidcApplications = [
       {

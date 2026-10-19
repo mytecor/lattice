@@ -239,6 +239,7 @@
           acp-normalizer = final.callPackage ./packages/acp-normalizer/package.nix { };
           # f13-01: web client for ACP — acp-components workbench as a static SPA.
           acp-web = final.callPackage ./packages/acp-web/package.nix { };
+          browser-stream = final.callPackage ./packages/browser-stream/package.nix { };
           rns-server = final.callPackage "${rns-rs}/package.nix" { bin = "rns-server"; };
           rnsh = final.callPackage "${rns-rs}/package.nix" { bin = "rnsh"; };
           hydra-acp = final.callPackage ./packages/hydra-acp/package.nix { };
@@ -353,7 +354,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) antigravity antigravity-acp antigravity-acp-fsless gemini-cli gemini-acp gemini-acp-fsless codex-acp-fsless acp-normalizer acp-web agent-image agentrun-openai git-cache-proxy git-watchd task-contract taskd agentd hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
+          inherit (pkgs.lattice) antigravity antigravity-acp antigravity-acp-fsless gemini-cli gemini-acp gemini-acp-fsless codex-acp-fsless acp-normalizer acp-web browser-stream agent-image agentrun-openai git-cache-proxy git-watchd task-contract taskd agentd hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
         });
@@ -478,6 +479,7 @@
           "${profiles}/rnsh/config.nix"
           "${profiles}/sso/config.nix"
           "${profiles}/browser-agent-stack/config.nix"
+          "${profiles}/browser-stream/config.nix"
           "${profiles}/node-dev/config.nix"
         ];
       };

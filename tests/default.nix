@@ -56,6 +56,11 @@ in
     rnsProfile = "${profiles}/rns-server/config.nix";
   };
 
+  browser-stream = pkgs.lattice.browser-stream;
+  browser-stream-ingress = import ./browser-stream.nix {
+    inherit nixpkgs pkgs self profiles;
+  };
+
   app-services = import ./app-services.nix {
     inherit nixpkgs pkgs;
     appServicesProfile = "${profiles}/app-services/config.nix";

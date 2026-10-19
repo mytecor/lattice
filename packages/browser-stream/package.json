@@ -1,0 +1,11 @@
+{
+  "name": "lattice-browser-stream",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.js", "test": "node --test *.test.js" },
+  "dependencies": {
+    "@full-self-browsing/phantom-stream": "0.2.1",
+    "ws": "8.21.0"
+  }
+}
