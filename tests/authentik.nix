@@ -188,6 +188,15 @@ assert lib.hasInfix
 # provider could never match).
 assert !(lib.hasInfix "X-Forwarded-Host"
   config.services.caddy.virtualHosts."https://acp-ui.homelab.myt.su".extraConfig);
+# Redirect 302 from Authentik outpost targets 127.0.0.1:9220 (authentik_host);
+# Caddy's deferred header rewrite maps it to auth.<node>.local on LAN and
+# auth.<meshDomain> on mesh so clients are not redirected to client-side localhost.
+assert lib.hasInfix
+  "Location \"http://127.0.0.1:9220\" \"http://auth.${hostName}.local\""
+  config.services.caddy.virtualHosts."http://acp-ui.${hostName}.local".extraConfig;
+assert lib.hasInfix
+  "Location \"http://127.0.0.1:9220\" \"https://auth.homelab.myt.su\""
+  config.services.caddy.virtualHosts."https://acp-ui.homelab.myt.su".extraConfig;
 # Provider/application/outpost state is a native Authentik Blueprint generated
 # by NixOS. It is applied after migrations and before server/worker, then
 # remains in Authentik's discovery directory for periodic reconciliation.

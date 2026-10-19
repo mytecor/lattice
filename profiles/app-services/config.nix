@@ -20,6 +20,8 @@ let
   # у Caddy не было ни сайта, ни сертификата — TLS-хендшейк падал ("SSL не работает").
   # Без токена (meshCloudflare) mesh-сайт обслуживается по plain HTTP через тот же :80.
   acpUiMeshHost = if meshDomain != null then "${meshScheme}://acp-ui.${meshDomain}" else null;
+  authLanHost = "http://auth.${hostName}.local";
+  authMeshHost = if meshDomain != null then "${meshScheme}://auth.${meshDomain}" else null;
 
   # LAN и mesh проксируют один loopback-only Go backend.
   statusSiteConfig = ''
@@ -63,7 +65,7 @@ let
     lib.findFirst (e: e.service == service) null (authentikCfg.forwardAuth or [ ]);
   # Wrap a site's extraConfig with Authentik forward_auth when the service is
   # listed in lattice.authentik.forwardAuth; otherwise return it unchanged.
-  wrapForwardAuth = service: baseConfig:
+  wrapForwardAuth = service: authTarget: baseConfig:
     let
       # F14: Authentik's forward-auth subrequest path. The loopback server's
       # embedded outpost serves it at /outpost.goauthentik.io/auth/caddy (it
@@ -74,12 +76,20 @@ let
       # Authentik (2026.5.6). A node may override per service via uri.
       entry = forwardAuthEntry service;
       uri = entry.uri or "/outpost.goauthentik.io/auth/caddy";
+      loopbackOrigin = "http://${authentikCfg.listenAddress}:${toString authentikCfg.port}";
     in
     if entry == null || !authentikCfg.enable then
       baseConfig
     else
       ''
         # F14: Authentik SSO gate (browser UI only). 401/302 → Authentik login.
+        # The embedded outpost generates 302 redirects pointing to authentik_host
+        # (127.0.0.1:9220). Defer rewriting Location header replaces the loopback
+        # address with the appropriate LAN or mesh auth host for the client.
+        header {
+            Location "${loopbackOrigin}" "${authTarget}"
+            defer
+        }
         forward_auth ${authentikCfg.listenAddress}:${toString authentikCfg.port} {
             uri ${uri}
         }
@@ -137,13 +147,13 @@ in
       "http://${statusHost}".extraConfig = statusSiteConfig;
       # f13-01: static SPA acp-web на LAN-имени acp-ui.<node>.local.
       # f14: acp-ui может быть защищён Authentik ForwardAuth (см. wrapForwardAuth).
-      "http://${acpUiHost}".extraConfig = wrapForwardAuth "acp-ui" acpUiSiteConfig;
+      "http://${acpUiHost}".extraConfig = wrapForwardAuth "acp-ui" authLanHost acpUiSiteConfig;
     } // lib.optionalAttrs (statusMeshHost != null) {
       "${statusMeshHost}".extraConfig = statusSiteConfig;
     } // lib.optionalAttrs (acpUiMeshHost != null) {
       # f13-01 (mesh): внешний HTTPS-доступ к acp-ui на mesh-домене — тот же
       # статический SPA-контент, что и на LAN.
-      "${acpUiMeshHost}".extraConfig = wrapForwardAuth "acp-ui" acpUiSiteConfig;
+      "${acpUiMeshHost}".extraConfig = wrapForwardAuth "acp-ui" authMeshHost acpUiSiteConfig;
     };
 
     systemd.services.lattice-node-status = {
