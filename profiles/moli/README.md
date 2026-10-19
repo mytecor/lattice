@@ -12,10 +12,10 @@ CDP targets `/json/list`; прежнего PhantomStream viewer больше н�
 доступен на `https://browser.<mesh-domain>/`.
 
 Moli и ingress слушают только loopback, backend-порты закрыты firewall.
-Ingress исправляет `webSocketDebuggerUrl` и параметр `ws`/`wss` в
-`devtoolsFrontendUrl` в discovery-ответах Moli: клиент получает адрес внешнего
-сайта вместо loopback. Для frontend используется встроенный inspector Chrome
-(`devtools://devtools/bundled/inspector.html`), поскольку Moli не поставляет web UI. Обычные данные страницы не переписываются.
+Ingress исправляет `webSocketDebuggerUrl` в discovery-ответах Moli: SDK получает
+адрес внешнего сайта вместо loopback. Поле `devtoolsFrontendUrl` удаляется:
+Moli не поставляет web frontend, а ручной URL встроенного Chrome DevTools
+блокирует удалённый WebSocket через CSP. Обычные данные страницы не переписываются.
 
 Профиль требует Authentik и запись `service = "browser"` в `forwardAuth`.
 Авторизация защищает discovery и WebSocket handshake. Сначала войдите через
@@ -36,12 +36,35 @@ await page.goto("https://example.org");
 console.log(await page.title());
 ```
 
-Для Chrome DevTools после входа откройте `devtoolsFrontendUrl` нужной вкладки
-из `/json/list` в том же Chrome-профиле. Вкладки создаются через CDP
-`Target.createTarget` или HTTP `PUT /json/new?<url>` с той же cookie.
-Клиенты без cookie получат перенаправление на вход вместо CDP JSON/upgrade.
+## Подключение из Chrome
+
+Используйте SSH-туннель и штатное обнаружение targets в Chrome. SSH авторизует
+доступ к loopback ingress; cookie Authentik для этого пути не нужна.
+
+На своей машине запустите и оставьте работающим:
+
+```sh
+ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
+  -L 127.0.0.1:19222:127.0.0.1:9224 root@mytecor-homelab.local
+```
+
+1. Откройте `chrome://inspect/#devices`.
+2. Включите **Discover network targets**, нажмите **Configure…** и добавьте
+   `127.0.0.1:19222`.
+3. Под **Remote Target → 127.0.0.1:19222** найдите вкладку Moli и нажмите
+   **inspect fallback**. Chrome откроет свой встроенный DevTools через нативное
+   соединение; копировать `devtools://…?ws=…` вручную не нужно.
+4. В Console можно выполнить `location.href = "https://example.org"` для перехода.
+
+Остановить туннель можно через Ctrl+C в терминале. Локальный порт доступен только
+на loopback вашей машины. Подключение через Chrome проверено с реальным Moli:
+DevTools создаёт target и выполняет JavaScript.
+
+Вкладки также создаются через CDP `Target.createTarget` или HTTP
+`PUT /json/new?<url>`. Для SDK по внешнему сайту нужна cookie Authentik;
+без неё сервер перенаправляет на вход вместо CDP JSON/upgrade.
 Для машин вне LAN используйте mesh-имя: `.local` обнаруживается через mDNS
-в локальной сети.
+в локальной сети. Для SSH-туннеля в этом случае укажите доступное SSH-имя ноды.
 
 Состояние Moli в этой конфигурации временное: cookies и вкладки браузера
 не сохраняются после перезапуска сервиса.

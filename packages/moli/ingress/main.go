@@ -22,37 +22,15 @@ func rewriteDiscovery(value any, host, scheme string) {
 			rewriteDiscovery(item, host, scheme)
 		}
 	case map[string]any:
-		for key, item := range v {
-			raw, ok := item.(string)
-			if !ok {
-				continue
-			}
-			endpoint, err := url.Parse(raw)
-			if err != nil {
-				continue
-			}
-			switch key {
-			case "webSocketDebuggerUrl":
+		// Moli does not ship a DevTools web frontend. Chrome's bundled
+		// inspector also rejects arbitrary remote WebSockets through CSP.
+		// Do not advertise a link that cannot connect; use chrome://inspect
+		// through an SSH tunnel and its native "inspect fallback" action.
+		delete(v, "devtoolsFrontendUrl")
+		if raw, ok := v["webSocketDebuggerUrl"].(string); ok {
+			if endpoint, err := url.Parse(raw); err == nil {
 				endpoint.Host, endpoint.Scheme = host, scheme
-				v[key] = endpoint.String()
-			case "devtoolsFrontendUrl":
-				// Moli advertises a relative Chromium frontend path but does
-				// not ship that frontend. Use Chrome's bundled inspector.
-				if endpoint.Host == "" && endpoint.Path == "/devtools/inspector.html" {
-					endpoint.Scheme, endpoint.Host, endpoint.Path = "devtools", "devtools", "/bundled/inspector.html"
-				}
-				query := endpoint.Query()
-				for _, kind := range []string{"ws", "wss"} {
-					if target := query.Get(kind); target != "" {
-						_, path, found := strings.Cut(target, "/")
-						if found {
-							query.Del(kind)
-							query.Set(scheme, host+"/"+path)
-						}
-					}
-				}
-				endpoint.RawQuery = query.Encode()
-				v[key] = endpoint.String()
+				v["webSocketDebuggerUrl"] = endpoint.String()
 			}
 		}
 	}

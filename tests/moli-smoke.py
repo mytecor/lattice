@@ -29,6 +29,7 @@ assert version["webSocketDebuggerUrl"].startswith("ws://browser.test/")
 assert discover("/json/version", "https")["webSocketDebuggerUrl"].startswith("wss://browser.test/")
 targets = discover("/json/list")
 assert targets and all(t["webSocketDebuggerUrl"].startswith("ws://browser.test/") for t in targets)
+assert all("devtoolsFrontendUrl" not in target for target in targets)
 
 
 async def smoke():

@@ -111,6 +111,7 @@ flowchart TD
     end
 
     subgraph Browser["Браузерный стек"]
+        BrowserSSH["SSH<br/>(Туннель для Chrome DevTools)"]
         MoliIngress["moli-ingress<br/>(CDP discovery и WebSocket proxy)"]
         Moli["Moli<br/>(Браузер удалённой отладки)"]
         Foxbridge["Foxbridge<br/>(CDP-прокси)"]
@@ -154,6 +155,8 @@ flowchart TD
     Caddy --> Authentik
     Caddy --> HydraACP
     Caddy --> AcpWeb
+    Client <--> BrowserSSH
+    BrowserSSH <--> MoliIngress
     Caddy <--> MoliIngress
     MoliIngress <--> Moli
     Foxbridge --> Camoufox
@@ -210,6 +213,7 @@ flowchart TD
 
     subgraph Backends["Локальные сервисы"]
         AcpUI["acp-web<br/>(Веб-интерфейс ACP)"]
+        BrowserSSH["SSH<br/>(Туннель для Chrome DevTools)"]
         BrowserIngress["moli-ingress<br/>(CDP discovery и WebSocket proxy)"]
         MoliBrowser["Moli<br/>(Браузер удалённой отладки)"]
         GrafanaSvc["Grafana<br/>(Дашборды)"]
@@ -228,6 +232,8 @@ flowchart TD
     Authentik -. "Разрешение доступа" .-> Caddy
 
     Caddy --> AcpUI
+    Client <--> BrowserSSH
+    BrowserSSH <--> BrowserIngress
     Caddy <--> BrowserIngress
     BrowserIngress <--> MoliBrowser
     Caddy --> GrafanaSvc
@@ -732,16 +738,24 @@ Authentik ForwardAuth для HTTP discovery и WebSocket; клиенты SDK п�
 авторизованной сессии. Loopback-only ingress переписывает endpoint-поля discovery
 на адрес внешнего сайта с правильной схемой `ws`/`wss` и проксирует CDP upgrade.
 Корневой адрес ведёт на `/json/list`. Вкладки и cookies временные.
-Jev отдельно продолжает обращаться к Foxbridge/Camoufox.
+Chrome DevTools подключается через SSH-туннель к loopback ingress и штатную
+страницу `chrome://inspect/#devices` с действием **inspect fallback**. Ручной
+URL `devtools://…?ws=<remote-host>` блокируется политикой CSP Chrome, поэтому
+недоступный frontend URL не публикуется в discovery. Для туннеля доступ
+авторизуется SSH-ключом. Jev отдельно продолжает обращаться к Foxbridge/Camoufox.
 
 ```mermaid
 flowchart LR
-    Debugger["DevTools / CDP-клиент<br/>(Удалённая отладка)"]
+    Debugger["Chrome DevTools<br/>(Удалённая отладка)"]
+    SDK["CDP SDK<br/>(Автоматизация)"]
+    SSH["SSH<br/>(Авторизованный туннель)"]
     Caddy["Caddy<br/>(HTTP и WebSocket ingress)"]
     Authentik["Authentik<br/>(ForwardAuth)"]
     Ingress["moli-ingress<br/>(CDP discovery и WebSocket proxy)"]
     Moli["Moli<br/>(DOM, JavaScript и рендеринг)"]
-    Debugger <--> Caddy
+    SDK <--> Caddy
+    Debugger <--> SSH
+    SSH <--> Ingress
     Caddy --> Authentik
     Caddy <--> Ingress
     Ingress <--> Moli
