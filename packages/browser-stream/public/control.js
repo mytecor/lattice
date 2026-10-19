@@ -84,20 +84,62 @@ export function attachControl({ viewer, transport, surface, container, reportErr
     const rect = container.getBoundingClientRect();
     return mapHostPointToViewport({ x: event.clientX - rect.left, y: event.clientY - rect.top }, viewer.getViewportMapping().scale);
   }
-  surface.addEventListener('click', event => {
+  function click(event, p) {
     event.preventDefault();
-    const p = point(event);
     if (p.inside) send(REMOTE_CONTROL.CLICK, { x: p.x, y: p.y, button: 'left', clickCount: event.detail || 1 });
     surface.focus({ preventScroll: true });
-  });
-  surface.addEventListener('auxclick', event => event.preventDefault());
-  surface.addEventListener('contextmenu', event => event.preventDefault());
-  surface.addEventListener('wheel', event => {
+  }
+  function wheel(event, p) {
     event.preventDefault();
-    const p = point(event);
     const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewer.getViewportMapping().viewport.height : 1;
     if (p.inside) send(REMOTE_CONTROL.SCROLL, { x: p.x, y: p.y, deltaX: event.deltaX * unit, deltaY: event.deltaY * unit });
-  }, { passive: false });
+  }
+  surface.addEventListener('click', event => click(event, point(event)));
+  surface.addEventListener('wheel', event => wheel(event, point(event)), { passive: false });
+
+  // Listen on the rendered document itself. An invisible full-page textarea
+  // hides normal hit targets from native browser interaction/accessibility.
+  // Keep the textarea only as an off-screen keyboard/IME input sink.
+  const rootFrame = container.querySelector?.('iframe');
+  const boundDocuments = new WeakSet();
+  const boundFrames = new WeakSet();
+  function framePoint(event, frame) {
+    let x = event.clientX, y = event.clientY;
+    for (let current = frame; current && current !== rootFrame; current = current.ownerDocument.defaultView.frameElement) {
+      const rect = current.getBoundingClientRect();
+      x = rect.left + x * rect.width / current.clientWidth;
+      y = rect.top + y * rect.height / current.clientHeight;
+    }
+    const { width, height } = viewer.getViewportMapping().viewport;
+    return { x, y, inside: x >= 0 && y >= 0 && x < width && y < height };
+  }
+  function bindFrame(frame) {
+    if (!boundFrames.has(frame)) {
+      boundFrames.add(frame);
+      frame.addEventListener('load', () => bindFrame(frame));
+    }
+    let doc;
+    try { doc = frame.contentDocument; } catch { return; }
+    if (!doc || boundDocuments.has(doc)) return;
+    boundDocuments.add(doc);
+    doc.addEventListener('click', event => click(event, framePoint(event, frame)), true);
+    doc.addEventListener('auxclick', event => event.preventDefault(), true);
+    doc.addEventListener('contextmenu', event => event.preventDefault(), true);
+    doc.addEventListener('submit', event => event.preventDefault(), true);
+    doc.addEventListener('wheel', event => wheel(event, framePoint(event, frame)), { capture: true, passive: false });
+    doc.addEventListener('keydown', keydown, true);
+    doc.addEventListener('beforeinput', event => {
+      // Tab focus can enter a mirrored input without a pointer click. Never
+      // edit only the local copy; deliver its text to the source as well.
+      event.preventDefault();
+      if (event.data) send(REMOTE_CONTROL.TEXT, { text: event.data });
+    }, true);
+    doc.addEventListener('load', event => {
+      if (event.target.tagName === 'IFRAME') bindFrame(event.target);
+    }, true);
+    for (const child of doc.querySelectorAll('iframe')) bindFrame(child);
+  }
+  if (rootFrame) bindFrame(rootFrame);
   function text() {
     const value = surface.value;
     surface.value = '';
@@ -110,7 +152,7 @@ export function attachControl({ viewer, transport, surface, container, reportErr
   }
   surface.addEventListener('input', event => { if (!event.isComposing) text(); });
   surface.addEventListener('compositionend', text);
-  surface.addEventListener('keydown', event => {
+  function keydown(event) {
     if (event.isComposing) return;
     // Printable text, paste, and IME pass through the local textarea solely
     // as an input method; their text is sent to the remote focused element.
@@ -121,5 +163,6 @@ export function attachControl({ viewer, transport, surface, container, reportErr
     event.preventDefault();
     const key = selectAll ? 'a' : event.key;
     send(REMOTE_CONTROL.KEY, { key, event: 'down', selectAll });
-  });
+  }
+  surface.addEventListener('keydown', keydown);
 }

@@ -6,14 +6,14 @@ import * as protocol from '@full-self-browsing/phantom-stream/protocol';
 const { REMOTE_CONTROL: RC, STREAM } = protocol;
 const snapshot = { documentId: 'doc', streamSessionId: 'capture', snapshotId: 1 };
 const tick = () => new Promise(resolve => queueMicrotask(resolve));
-function viewerControl() {
+function viewerControl(frame) {
   let state, message;
   const events = new Map(), sent = [], errors = [];
   const surface = { value: '', focus() {}, addEventListener: (name, callback) => events.set(name, callback) };
   attachControl({
-    viewer: { on: (_, callback) => { state = callback; }, getViewportMapping: () => ({ scale: 1 }) },
+    viewer: { on: (_, callback) => { state = callback; }, getViewportMapping: () => ({ scale: 1, viewport: { width: 1280, height: 720 } }) },
     transport: { onMessage: callback => { message = callback; }, send: (type, payload) => sent.push({ type, payload }) },
-    surface, container: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+    surface, container: { querySelector: () => frame, getBoundingClientRect: () => ({ left: 0, top: 0 }) },
     mapHostPointToViewport: p => ({ ...p, inside: true }), protocol, reportError: error => errors.push(error),
   });
   return { sent, errors, surface,
@@ -104,4 +104,32 @@ test('queue overflow reports cancellation rather than submitting a truncated que
   v.key('Enter'); v.state('live'); await tick();
   assert.equal(v.sent.length, 0);
   assert.equal(v.errors.length, 1);
+});
+
+
+test('native mirror clicks are forwarded and local navigation is cancelled after each snapshot reload', async () => {
+  function target() {
+    const events = new Map();
+    return { events, addEventListener: (name, listener) => events.set(name, listener), querySelectorAll: () => [] };
+  }
+  const first = target();
+  const frame = { ...target(), contentDocument: first };
+  const v = viewerControl(frame); v.snapshot(snapshot); v.state('live');
+  let prevented = false;
+  first.events.get('click')({ clientX: 210, clientY: 90, detail: 1, preventDefault() { prevented = true; } });
+  await tick();
+  assert.equal(prevented, true);
+  assert.equal(v.sent[0].type, RC.CLICK);
+  assert.equal(v.sent[0].payload.x, 210);
+  assert.equal(v.sent[0].payload.y, 90);
+  v.ack(v.sent[0]); await tick();
+  const next = target(); frame.contentDocument = next;
+  frame.events.get('load')();
+  let submitted = false;
+  next.events.get('submit')({ preventDefault() { submitted = true; } });
+  assert.ok(submitted);
+  next.events.get('click')({ clientX: 20, clientY: 30, preventDefault() {} });
+  await tick();
+  assert.equal(v.sent.length, 2);
+  assert.equal(v.sent[1].payload.x, 20);
 });
