@@ -47,7 +47,7 @@ test('query URL round-trips nested queries and fragments; rejects executable sch
   }
 });
 
-test('concurrent viewers share existing target, receive a snapshot, and cannot control it', async () => {
+test('concurrent viewers share existing target, receive a snapshot, and ignore unknown commands', async () => {
   const fake = browser([{ type: 'page', targetId: 'agent-tab', url: 'https://example.org/' }]);
   const streams = new Streams({ connect: fake.connect, idleMs: 5 });
   const first = new Viewer();

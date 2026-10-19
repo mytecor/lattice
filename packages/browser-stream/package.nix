@@ -27,7 +27,7 @@ in stdenvNoCC.mkDerivation {
   '';
   installPhase = ''
     mkdir -p "$out/libexec/browser-stream" "$out/bin"
-    cp server.js streams.js cdp.js package.json "$out/libexec/browser-stream/"
+    cp server.js streams.js cdp.js control.js package.json "$out/libexec/browser-stream/"
     cp -r public node_modules "$out/libexec/browser-stream/"
     makeWrapper ${lib.getExe nodejs} "$out/bin/lattice-browser-stream" \
       --add-flags "$out/libexec/browser-stream/server.js"

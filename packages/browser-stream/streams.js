@@ -1,5 +1,6 @@
 import { getPlaywrightInjectSource } from '@full-self-browsing/phantom-stream/adapters/playwright';
-import { CONTROL } from '@full-self-browsing/phantom-stream/protocol';
+import { dispatchControl } from './control.js';
+import { CONTROL, STREAM, isRemoteControlType } from '@full-self-browsing/phantom-stream/protocol';
 import { CDP } from './cdp.js';
 
 export function pageURL(value) {
@@ -13,6 +14,20 @@ export function pageURL(value) {
 }
 
 const bootstrap = `
+if (!window.__latticeControlInstalled) {
+  window.__latticeControlInstalled = true;
+  // Keep target=_blank links inside the controlled remote tab. This applies
+  // only during viewer-dispatched clicks, leaving agent clicks untouched.
+  document.addEventListener('click', function (event) {
+    if (!window.__latticeRemoteClick) return;
+    var link = event.target.closest && event.target.closest('a[href]');
+    if (link && link.target && link.target !== '_self') {
+      var target = link.getAttribute('target');
+      link.setAttribute('target', '_self');
+      setTimeout(function () { link.setAttribute('target', target); }, 0);
+    }
+  }, true);
+}
 if (!window.__latticePhantomQueue) {
   window.__latticePhantomQueue = { frames: [], bytes: 0, overflow: false, needsSnapshot: false };
   // Upstream assigns IDs to body descendants, not the body/html shells.
@@ -40,7 +55,7 @@ const drain = `(() => {
     return { frames: [], url: null };
   }
   var queue = window.__latticePhantomQueue;
-  if (!queue) return null;
+  if (!queue || !window.__phantomStreamInjected) return null;
   if (queue.overflow || queue.needsSnapshot) {
     queue.frames = []; queue.bytes = 0; queue.overflow = false; queue.needsSnapshot = false;
     window.__phantomStreamStart();
@@ -77,7 +92,7 @@ export class Streams {
         cdp.close();
       } else {
         if (this.streams.size >= this.maxStreams) throw new Error('Слишком много активных страниц');
-        stream = { cdp, viewers: new Set(), owned: !target, stopped: false, failures: 0, startedAt: Date.now() };
+        stream = { cdp, viewers: new Set(), owned: !target, stopped: false, failures: 0, bootstrap: true, startedAt: Date.now() };
         if (!target) target = await cdp.send('Target.createTarget', { url });
         stream.targetId = target.targetId;
         const { sessionId } = await cdp.send('Target.attachToTarget', { targetId: target.targetId, flatten: true });
@@ -112,7 +127,17 @@ export class Streams {
             stream.resnapshot = true;
           }
         }
-        // Streaming is read-only. Never forward remote-control frames to CDP.
+        if (isRemoteControlType(message.type)) {
+          // Serialize mouse/key sequences across all viewers. Bound the queue
+          // so a stalled CDP cannot accumulate unlimited pending input.
+          if ((stream.pendingInput || 0) >= 64) return;
+          stream.pendingInput = (stream.pendingInput || 0) + 1;
+          stream.input = (stream.input || Promise.resolve()).then(() => {
+            if (!stream.stopped && socket.readyState === 1) return dispatchControl(stream, message.type, message.payload);
+          }).catch(() => {
+            if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'lattice:control-error', payload: {} }));
+          }).finally(() => { stream.pendingInput--; });
+        }
       });
       if (!stream.polling) {
         stream.polling = true;
@@ -128,6 +153,10 @@ export class Streams {
   async poll(stream) {
     if (stream.stopped) return;
     try {
+      if (stream.bootstrap) {
+        await stream.cdp.evaluate(stream.sessionId, bootstrap);
+        stream.bootstrap = false;
+      }
       let batch = await stream.cdp.evaluate(stream.sessionId, drain);
       if (!batch) {
         await stream.cdp.evaluate(stream.sessionId, captureSource);
@@ -137,6 +166,15 @@ export class Streams {
         stream.resnapshot = false;
         await stream.cdp.evaluate(stream.sessionId, 'window.__phantomStreamStart()');
         batch = await stream.cdp.evaluate(stream.sessionId, drain);
+      }
+      for (const raw of batch?.frames || []) {
+        const frame = JSON.parse(raw);
+        if (frame.type === STREAM.SNAPSHOT) {
+          stream.identity = { streamSessionId: frame.payload.streamSessionId, snapshotId: frame.payload.snapshotId };
+          await stream.cdp.evaluate(stream.sessionId, `if (window.__latticePhantomQueue) window.__latticePhantomQueue.identity = ${JSON.stringify(stream.identity)}`);
+          stream.width = frame.payload.viewportWidth || frame.payload.pageWidth;
+          stream.height = frame.payload.viewportHeight || frame.payload.pageHeight;
+        }
       }
       if (batch?.url) stream.started = true;
       if (!stream.started && Date.now() - stream.startedAt > 30000) throw new Error('Page did not load');

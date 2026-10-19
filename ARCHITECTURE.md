@@ -153,8 +153,8 @@ flowchart TD
     Caddy --> Authentik
     Caddy --> HydraACP
     Caddy --> AcpWeb
-    Caddy --> BrowserStream
-    BrowserStream --> Foxbridge
+    Caddy <--> BrowserStream
+    BrowserStream <--> Foxbridge
     Foxbridge --> Camoufox
     Caddy --> NodeStatus
     Caddy --> LLMGateway
@@ -226,7 +226,7 @@ flowchart TD
     Authentik -. "Разрешение доступа" .-> Caddy
 
     Caddy --> AcpUI
-    Caddy --> BrowserUI
+    Caddy <--> BrowserUI
     Caddy --> GrafanaSvc
     Caddy --> NodeStatusSvc
     Caddy --> LLMGatewaySvc
@@ -726,7 +726,9 @@ age-получателя не заменяет отзыв SSH/rnsh-доступ�
 `http://browser.<node>.local/?url=<encoded-http-url>`. Caddy проверяет Authentik
 ForwardAuth для страницы и WebSocket. Backend выбирает существующую вкладку Foxbridge
 по URL или создаёт новую; PhantomStream передаёт snapshot и последующие DOM-изменения.
-Вкладки агента сохраняются после отключения зрителей.
+Клики, ввод и прокрутка проходят обратно через WebSocket и Foxbridge CDP; локальное зеркало
+инертно, поэтому навигация происходит в удалённой вкладке. Вкладки агента сохраняются после
+отключения зрителей.
 
 ```mermaid
 flowchart LR
