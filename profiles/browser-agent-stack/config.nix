@@ -17,7 +17,8 @@ in
     listenAddress = lib.mkDefault "127.0.0.1";
     port = lib.mkDefault latticePorts.foxbridge-cdp;
     camoufox = {
-      headless = lib.mkDefault true;
+      headless = lib.mkDefault false;
+      virtualDisplay = lib.mkDefault true;
       humanize = lib.mkDefault true;
     };
   };

@@ -57,6 +57,22 @@ let
     ];
   }).config;
 
+  modeConfig = mode: (lib.nixosSystem {
+    modules = [
+      foxbridgeModule
+      {
+        nixpkgs.pkgs = pkgs;
+        system.stateVersion = "26.05";
+        lattice.foxbridge-camoufox = { enable = true; camoufox = mode; };
+      }
+    ];
+  }).config;
+  headlessConfig = modeConfig { headless = true; virtualDisplay = false; };
+  virtualConfig = modeConfig { headless = false; virtualDisplay = true; };
+  invalidConfig = modeConfig { headless = true; virtualDisplay = true; };
+  headlessUnit = headlessConfig.systemd.services.foxbridge-camoufox;
+  virtualUnit = virtualConfig.systemd.services.foxbridge-camoufox;
+
   fb = config.lattice.foxbridge-camoufox;
   jev = config.lattice.jev-ultrafast;
   fbUnit = config.systemd.services.foxbridge-camoufox;
@@ -65,6 +81,18 @@ let
   execStart = builtins.toString (jevUnit.serviceConfig.ExecStart or "");
   execStartPre = builtins.toString (jevUnit.serviceConfig.ExecStartPre or "");
 in
+# Generated commands must implement the chosen display mode; the old module
+# always passed --headless regardless of the public option.
+assert lib.hasInfix "--headless" headlessUnit.serviceConfig.ExecStart;
+assert !(lib.hasInfix "xvfb-run" headlessUnit.serviceConfig.ExecStart);
+assert lib.hasInfix "xvfb-run" virtualUnit.serviceConfig.ExecStart;
+assert !(lib.hasInfix "--headless" virtualUnit.serviceConfig.ExecStart);
+assert lib.hasInfix "-nolisten tcp" virtualUnit.serviceConfig.ExecStart;
+assert lib.elem "LIBGL_ALWAYS_SOFTWARE=1" virtualUnit.serviceConfig.Environment;
+assert virtualUnit.serviceConfig.PrivateDevices;
+assert virtualUnit.serviceConfig.KillMode == "control-group";
+assert lib.any (a: lib.hasInfix "virtualDisplay" a.message && !a.assertion) invalidConfig.assertions;
+
 assert jev.enable;
 assert fb.enable;
 # --- 1. lifecycle coupling (f18-09) ---

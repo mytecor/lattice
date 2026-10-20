@@ -2,6 +2,11 @@
 
 let
   cfg = config.lattice.foxbridge-camoufox;
+  browserCommand = lib.concatStringsSep " " [
+    (lib.getExe cfg.package)
+    "--port ${toString cfg.port}"
+    "--binary ${lib.getExe cfg.camoufoxPackage}"
+  ] + lib.optionalString cfg.camoufox.headless " --headless";
 in
 {
   config = lib.mkIf cfg.enable {
@@ -19,6 +24,9 @@ in
         construction and exposes no flag to change it; the CDP endpoint is
         never published outside the host (f18-07 verified externally-closed).
       '';
+    } {
+      assertion = !cfg.camoufox.virtualDisplay || !cfg.camoufox.headless;
+      message = "Camoufox virtualDisplay requires headless = false (Xvfb provides the display).";
     }];
 
     users.groups.${cfg.group} = { };
@@ -64,12 +72,9 @@ in
         # node validation: pointing it at the /run tmpfs (wiped by
         # RuntimeDirectory on every start) or anywhere else makes the Juggler
         # Browser.enable handshake stall (timeout / client closed).
-        ExecStart = lib.concatStringsSep " " [
-          (lib.getExe cfg.package)
-          "--port ${toString cfg.port}"
-          "--binary ${lib.getExe cfg.camoufoxPackage}"
-          "--headless"
-        ];
+        ExecStart = if cfg.camoufox.virtualDisplay then
+          "${lib.getExe pkgs.xvfb-run} -a -s '-screen 0 1920x1080x24 -nolisten tcp' ${browserCommand}"
+        else browserCommand;
         # f18-07: Camoufox content-processes under a strict systemd sandbox
         # SEGV (forkserver coredump → Juggler never delivers frameId). Disable
         # the content sandbox — a headless anti-detect browser in the homelab,
@@ -77,7 +82,8 @@ in
         Environment = [
           "HOME=${cfg.stateDir}"
           "MOZ_DISABLE_CONTENT_SANDBOX=1"
-        ] ++ lib.optionals cfg.camoufox.humanize [
+        ] ++ lib.optional cfg.camoufox.virtualDisplay "LIBGL_ALWAYS_SOFTWARE=1"
+        ++ lib.optionals cfg.camoufox.humanize [
           # f18-06: humanize is delivered to the browser as an env config
           # chunk. A tiny {"humanize":true} fits CAMOU_CONFIG_1 alone.
           "CAMOU_CONFIG_1=${builtins.toJSON { humanize = true; }}"
@@ -86,11 +92,12 @@ in
         Restart = "on-failure";
         RestartSec = 3;
         TimeoutStartSec = 60;
-        KillMode = "mixed";
+        # Stop the Xvfb wrapper and its browser children together.
+        KillMode = if cfg.camoufox.virtualDisplay then "control-group" else "mixed";
         GuessMainPID = true;
 
         # Hardening: the browser runtime reaches the network for the agent's
-        # tasks. No privileged caps, no elevation; profile is a tmpfs dir.
+        # tasks. No privileged caps or elevation; profile stays in stateDir.
         AmbientCapabilities = "";
         CapabilityBoundingSet = "";
         NoNewPrivileges = true;
