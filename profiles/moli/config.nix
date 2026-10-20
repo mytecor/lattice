@@ -41,7 +41,7 @@ in {
         after = [ "moli.service" ];
         wants = [ "moli.service" ];
         serviceConfig = sandbox // {
-          ExecStart = "${lib.getExe pkgs.lattice.moli-ingress} --listen 127.0.0.1:${toString ports.moli-ingress} --upstream http://127.0.0.1:${toString ports.moli-cdp}";
+          ExecStart = "${lib.getExe pkgs.lattice.moli-ingress} --listen 127.0.0.1:${toString ports.moli-ingress} --upstream http://127.0.0.1:${toString ports.moli-cdp} --frontend ${pkgs.lattice.devtools-frontend}";
           MemoryDenyWriteExecute = true;
         };
       };

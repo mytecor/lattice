@@ -58,7 +58,7 @@ pkgs.runCommand "moli-ingress" {
   export HOME="$TMPDIR"
   moli serve --host 127.0.0.1 --port 19223 --layout --resource > moli.log 2>&1 &
   browser_pid=$!
-  moli-ingress --listen 127.0.0.1:19224 --upstream http://127.0.0.1:19223 > ingress.log 2>&1 &
+  moli-ingress --listen 127.0.0.1:19224 --upstream http://127.0.0.1:19223 --frontend ${pkgs.lattice.devtools-frontend} > ingress.log 2>&1 &
   ingress_pid=$!
   trap 'kill "$browser_pid" "$ingress_pid" 2>/dev/null || true' EXIT
   python ${./moli-smoke.py} || { cat moli.log ingress.log; exit 1; }

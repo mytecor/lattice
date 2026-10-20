@@ -3,6 +3,7 @@ import asyncio
 import json
 import time
 import urllib.request
+from urllib.parse import urlsplit, parse_qs
 
 from websockets.asyncio.client import connect
 
@@ -29,7 +30,15 @@ assert version["webSocketDebuggerUrl"].startswith("ws://browser.test/")
 assert discover("/json/version", "https")["webSocketDebuggerUrl"].startswith("wss://browser.test/")
 targets = discover("/json/list")
 assert targets and all(t["webSocketDebuggerUrl"].startswith("ws://browser.test/") for t in targets)
-assert all(target.get("devtoolsFrontendUrl") == "devtools://devtools/bundled/inspector.html" for target in targets)
+for target in targets:
+    frontend = urlsplit(target["devtoolsFrontendUrl"])
+    assert frontend.path == "/devtools/frontend/inspector.html"
+    assert parse_qs(frontend.query)["ws"][0].startswith("browser.test/")
+
+for path in ["/devtools/frontend/inspector.html", "/devtools/frontend/entrypoints/inspector/inspector.js"]:
+    with urllib.request.urlopen("http://127.0.0.1:19224" + path, timeout=2) as response:
+        assert response.status == 200
+        assert response.read()
 
 
 async def smoke():

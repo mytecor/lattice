@@ -111,8 +111,7 @@ flowchart TD
     end
 
     subgraph Browser["Браузерный стек"]
-        BrowserSSH["SSH<br/>(Туннель для Chrome DevTools)"]
-        MoliIngress["moli-ingress<br/>(CDP discovery и WebSocket proxy)"]
+        MoliIngress["moli-ingress<br/>(DevTools frontend и CDP proxy)"]
         Moli["Moli<br/>(Браузер удалённой отладки)"]
         Foxbridge["Foxbridge<br/>(CDP-прокси)"]
         Camoufox["Camoufox<br/>(Браузер агента)"]
@@ -155,8 +154,6 @@ flowchart TD
     Caddy --> Authentik
     Caddy --> HydraACP
     Caddy --> AcpWeb
-    Client <--> BrowserSSH
-    BrowserSSH <--> MoliIngress
     Caddy <--> MoliIngress
     MoliIngress <--> Moli
     Foxbridge --> Camoufox
@@ -213,8 +210,7 @@ flowchart TD
 
     subgraph Backends["Локальные сервисы"]
         AcpUI["acp-web<br/>(Веб-интерфейс ACP)"]
-        BrowserSSH["SSH<br/>(Туннель для Chrome DevTools)"]
-        BrowserIngress["moli-ingress<br/>(CDP discovery и WebSocket proxy)"]
+        BrowserIngress["moli-ingress<br/>(DevTools frontend и CDP proxy)"]
         MoliBrowser["Moli<br/>(Браузер удалённой отладки)"]
         GrafanaSvc["Grafana<br/>(Дашборды)"]
         NodeStatusSvc["node-status<br/>(API статуса ноды)"]
@@ -232,8 +228,6 @@ flowchart TD
     Authentik -. "Разрешение доступа" .-> Caddy
 
     Caddy --> AcpUI
-    Client <--> BrowserSSH
-    BrowserSSH <--> BrowserIngress
     Caddy <--> BrowserIngress
     BrowserIngress <--> MoliBrowser
     Caddy --> GrafanaSvc
@@ -737,25 +731,23 @@ age-получателя не заменяет отзыв SSH/rnsh-доступ�
 Authentik ForwardAuth для HTTP discovery и WebSocket; клиенты SDK передают cookie
 авторизованной сессии. Loopback-only ingress переписывает endpoint-поля discovery
 на адрес внешнего сайта с правильной схемой `ws`/`wss` и проксирует CDP upgrade.
-Корневой адрес ведёт на `/json/list`. Вкладки и cookies временные.
-Chrome DevTools подключается через SSH-туннель к loopback ingress и штатную
-страницу `chrome://inspect/#devices` с действием **inspect fallback**. Ручной
-URL `devtools://…?ws=<remote-host>` блокируется политикой CSP Chrome, поэтому
-discovery содержит идентификатор frontend без параметра WebSocket. Для туннеля доступ
-авторизуется SSH-ключом. Jev отдельно продолжает обращаться к Foxbridge/Camoufox.
+Корневой адрес через discovery выбирает существующий page и открывает стандартный
+[Chrome DevTools frontend](./packages/devtools-frontend/README.md) на том же сайте.
+Frontend обслуживается ingress как статические ресурсы; его WebSocket использует
+тот же origin и ту же сессию Authentik. Для Chrome не нужны SSH-туннель и ручной
+URL `devtools://…?ws=…`. Список targets остаётся доступен на `/json/list`.
+Вкладки и cookies временные. Jev отдельно обращается к Foxbridge/Camoufox.
 
 ```mermaid
 flowchart LR
     Debugger["Chrome DevTools<br/>(Удалённая отладка)"]
     SDK["CDP SDK<br/>(Автоматизация)"]
-    SSH["SSH<br/>(Авторизованный туннель)"]
     Caddy["Caddy<br/>(HTTP и WebSocket ingress)"]
     Authentik["Authentik<br/>(ForwardAuth)"]
-    Ingress["moli-ingress<br/>(CDP discovery и WebSocket proxy)"]
+    Ingress["moli-ingress<br/>(DevTools frontend и CDP proxy)"]
     Moli["Moli<br/>(DOM, JavaScript и рендеринг)"]
     SDK <--> Caddy
-    Debugger <--> SSH
-    SSH <--> Ingress
+    Debugger <--> Caddy
     Caddy --> Authentik
     Caddy <--> Ingress
     Ingress <--> Moli

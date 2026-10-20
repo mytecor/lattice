@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 func TestDiscovery(t *testing.T) {
@@ -25,7 +26,7 @@ func TestDiscovery(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://browser.example/json/list?ignored=true", nil)
 			req.Header.Set("X-Forwarded-Proto", scheme)
 			res := httptest.NewRecorder()
-			proxyHandler(upstream).ServeHTTP(res, req)
+			proxyHandler(upstream, http.Dir(t.TempDir())).ServeHTTP(res, req)
 			if res.Code != 200 {
 				t.Fatal(res.Code, res.Body.String())
 			}
@@ -42,8 +43,8 @@ func TestDiscovery(t *testing.T) {
 				t.Fatal(target)
 			}
 			frontend, err := url.Parse(target["devtoolsFrontendUrl"])
-			if err != nil || frontend.Scheme != "devtools" || frontend.Host != "devtools" || frontend.Path != "/bundled/inspector.html" || frontend.RawQuery != "" {
-				t.Fatal("native inspection requires a frontend identifier without a blocked remote transport", target)
+			if err != nil || frontend.Host != "" || frontend.Path != "/devtools/frontend/inspector.html" || frontend.Query().Get(ws) != "browser.example/devtools/page/42" {
+				t.Fatal("hosted inspection must use the same external WebSocket endpoint", target)
 			}
 			if target["url"] != "http://127.0.0.1:9223/keep" || target["title"] != "127.0.0.1:9223" {
 				t.Fatal("page data mutated", target)
@@ -63,8 +64,50 @@ func TestPassThrough(t *testing.T) {
 	defer backend.Close()
 	upstream, _ := url.Parse(backend.URL)
 	res := httptest.NewRecorder()
-	proxyHandler(upstream).ServeHTTP(res, httptest.NewRequest("PUT", "http://browser.example/json/new?https://example.org", strings.NewReader("payload")))
+	proxyHandler(upstream, http.Dir(t.TempDir())).ServeHTTP(res, httptest.NewRequest("PUT", "http://browser.example/json/new?https://example.org", strings.NewReader("payload")))
 	if res.Code != http.StatusCreated || res.Body.String() != "payload" {
 		t.Fatal(res)
+	}
+}
+
+// An inspector link must load real assets and point its socket at the same
+// public site. CDP paths must remain proxy routes, not static-file routes.
+func TestHostedInspector(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/json/list" {
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[{"type":"page","webSocketDebuggerUrl":"ws://127.0.0.1:9223/devtools/page/dynamic-id"}]`)
+			return
+		}
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer backend.Close()
+	upstream, _ := url.Parse(backend.URL)
+	frontend := http.FS(fstest.MapFS{"inspector.html": {Data: []byte("official inspector")}})
+	handler := proxyHandler(upstream, frontend)
+	for _, scheme := range []string{"http", "https"} {
+		request := httptest.NewRequest("GET", "http://browser.example/", nil)
+		request.Header.Set("X-Forwarded-Proto", scheme)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusTemporaryRedirect {
+			t.Fatal(response.Code, response.Body)
+		}
+		link, err := url.Parse(response.Header().Get("Location"))
+		ws := "ws"
+		if scheme == "https" {
+			ws = "wss"
+		}
+		if err != nil || link.Host != "" || link.Path != "/devtools/frontend/inspector.html" || link.Query().Get(ws) != "browser.example/devtools/page/dynamic-id" {
+			t.Fatal("invalid inspector redirect", link)
+		}
+	}
+	for _, path := range []string{"/devtools/frontend/inspector.html", "/devtools/frontend/missing.js", "/devtools/page/dynamic-id"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest("GET", "http://browser.example"+path, nil))
+		expected := map[string]int{"/devtools/frontend/inspector.html": 200, "/devtools/frontend/missing.js": 404, "/devtools/page/dynamic-id": 418}[path]
+		if response.Code != expected {
+			t.Fatal(path, response.Code, response.Body)
+		}
 	}
 }
