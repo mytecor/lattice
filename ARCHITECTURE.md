@@ -115,6 +115,7 @@ flowchart TD
         Moli["Moli<br/>(Браузер удалённой отладки)"]
         Foxbridge["Foxbridge<br/>(CDP-прокси)"]
         Camoufox["Camoufox<br/>(Браузер агента)"]
+        Xvfb["Xvfb<br/>(Программный дисплей)"]
     end
 
     subgraph AI["Инференс LLM"]
@@ -161,6 +162,7 @@ flowchart TD
     MoliIngress <--> Moli
     MoliIngress <--> Foxbridge
     Foxbridge --> Camoufox
+    Camoufox --> Xvfb
     Caddy --> NodeStatus
     Caddy --> LLMGateway
     Caddy --> GitCache
@@ -220,6 +222,7 @@ flowchart TD
         BrowserIngress["moli-ingress<br/>(DevTools frontend и CDP proxy)"]
         MoliBrowser["Moli<br/>(Браузер удалённой отладки)"]
         FoxBrowser["Foxbridge / Camoufox<br/>(Тест Firefox CDP)"]
+        VirtualDisplay["Xvfb<br/>(Программный дисплей)"]
         GrafanaSvc["Grafana<br/>(Дашборды)"]
         NodeStatusSvc["node-status<br/>(API статуса ноды)"]
         LLMGatewaySvc["llm-gateway<br/>(API инференса)"]
@@ -239,6 +242,7 @@ flowchart TD
     Caddy <--> BrowserIngress
     BrowserIngress <--> MoliBrowser
     BrowserIngress <--> FoxBrowser
+    FoxBrowser --> VirtualDisplay
     Caddy --> GrafanaSvc
     Caddy --> NodeStatusSvc
     Caddy --> LLMGatewaySvc
@@ -757,7 +761,10 @@ HTTP discovery и WebSocket проксируются в Foxbridge с отдел�
 под тем же Authentik. Page WebSocket Foxbridge привязан к CDP-сессии вкладки;
 корневые сообщения передаются как стандартные JSON text frames.
 Поддержка панелей ограничена реализацией Foxbridge; маршрут не означает
-полную совместимость Chrome DevTools.
+полную совместимость Chrome DevTools. Профиль запускает Camoufox в headed-режиме
+под Xvfb с программным Mesa: WebGL доступен без доступа к физическому GPU.
+FFmpeg подключён к shared libraries браузера для декодирования MP4; отдельный
+TCP-ingress для дисплея не создаётся.
 
 ```mermaid
 flowchart LR
@@ -769,6 +776,7 @@ flowchart LR
     Moli["Moli<br/>(DOM, JavaScript и рендеринг)"]
     Foxbridge["Foxbridge<br/>(Тестовый CDP-прокси)"]
     Camoufox["Camoufox<br/>(Firefox браузер)"]
+    Xvfb["Xvfb<br/>(Программный дисплей)"]
     SDK <--> Caddy
     Debugger <--> Caddy
     Caddy --> Authentik
@@ -776,4 +784,5 @@ flowchart LR
     Ingress <--> Moli
     Ingress <--> Foxbridge
     Foxbridge <--> Camoufox
+    Camoufox --> Xvfb
 ```

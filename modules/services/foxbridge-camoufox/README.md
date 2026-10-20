@@ -9,6 +9,9 @@ runtime: **Camoufox** (антидетект-сборка Firefox) под упр�
 
 ```text
 Jev agent ── BU_CDP_URL ──▶ Foxbridge ── Juggler ──▶ Camoufox ──▶ Web
+                                                       │ X11 (virtualDisplay)
+                                                       ▼
+                                                      Xvfb
                               ▲ CDP (loopback)
 ```
 
@@ -32,7 +35,13 @@ Jev agent ── BU_CDP_URL ──▶ Foxbridge ── Juggler ──▶ Camoufo
 - `lattice.foxbridge-camoufox.port` — TCP-порт CDP endpoint (по умолчанию
   `9222`).
 - `lattice.foxbridge-camoufox.camoufox.headless` — headless-режим
-  (по умолчанию `true`).
+  (по умолчанию `true`). В [профиле стека](./../../../profiles/browser-agent-stack/README.md)
+  используется `false` вместе с виртуальным дисплеем.
+- `lattice.foxbridge-camoufox.camoufox.virtualDisplay` — запустить headed Camoufox
+  под Xvfb с программным Mesa (`LIBGL_ALWAYS_SOFTWARE=1`); по умолчанию `false`.
+  Требует `headless = false`, что проверяется assertion модуля. Xvfb запускается
+  в том же systemd-сервисе, не слушает TCP и завершается вместе с браузером.
+  `PrivateDevices` сохраняется: физический GPU сервису не открывается.
 - `lattice.foxbridge-camoufox.camoufox.humanize` — режим `humanize` (естественные
   траектории курсора и задержки), доставляется как `CAMOU_CONFIG_1='{"humanize":true}'`
   (f18-06). По умолчанию `true`.
@@ -76,3 +85,16 @@ systemd-hardening Camoufox падает, когда его HOME лежит на 
 снимает эту обёртку с ответов и событий и использует JSON text frames.
 Browser-level CDP и явные дочерние session IDs сохраняют свой контракт.
 Ограничения покрытия CDP Foxbridge при этом остаются.
+
+## Видео и WebGL
+
+[Пакет Camoufox](./../../../packages/camoufox/README.md) добавляет FFmpeg 8,
+libglvnd и Mesa в RUNPATH shared libraries, включая `libxul.so`. Путей только на
+launcher недостаточно для `dlopen`. Это устраняет ошибку декодирования H.264 MP4.
+
+Штатный Python launcher задаёт WebGL preferences; при запуске сырого бинарника
+их задаёт пакет. Для программного WebGL без GPU профиль использует headed
+режим под Xvfb, аналогичный
+[virtual display](https://camoufox.com/python/virtual-display/) upstream.
+Нативный headless остаётся доступен как отдельный режим, но WebGL в нём
+не гарантирован. CSP сайта и политики origin не отключаются.

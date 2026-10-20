@@ -67,6 +67,12 @@ stdenv.mkDerivation {
     runHook preInstall
     mkdir -p "$out/lib/camoufox-${version}"
     unzip -qq "$src" -d "$out/lib/camoufox-${version}"
+    # The Python launcher normally enables WebGL explicitly. Raw binary
+    # launches through Foxbridge need the same defaults for software Mesa.
+    cat >> "$out/lib/camoufox-${version}/camoufox.cfg" <<'PREFS'
+    defaultPref("webgl.force-enabled", true);
+    defaultPref("webgl.enable-webgl2", true);
+    PREFS
     runHook postInstall
   '';
 
