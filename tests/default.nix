@@ -9,6 +9,7 @@ let
       builtins.elem (nixpkgs.lib.getName package) [
         "rns-server"
         "rnsh"
+        "muse"
         "antigravity"
         "antigravity-acp"
         "antigravity-acp-server"
@@ -83,6 +84,8 @@ in
   antigravity-acp = import ./antigravity-acp.nix { inherit pkgs; };
 
   gemini-acp = import ./gemini-acp.nix { inherit pkgs; };
+
+  muse-acp = import ./muse-acp.nix { inherit pkgs; };
 
   agentrun-openai = import ./agentrun-openai.nix {
     inherit nixpkgs pkgs;

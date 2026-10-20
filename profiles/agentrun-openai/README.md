@@ -25,3 +25,12 @@ llm-gateway (`/run/agenix/llm-gateway-client-node-pi`) — отдельная
 Он использует отдельный сохраняемый `CODEX_HOME` и отключённое локальное
 окружение. Подготовка авторизации и ограничения описаны в
 [инструкции Codex ACP](./../../packages/codex-acp/README.md).
+
+### Muse Code
+
+На homelab [конфигурация Muse](./../../nodes/mytecor-homelab/muse.nix)
+добавляет backend `muse` через `muse-acp-fsless`. Встроенные инструменты
+отключены; модель получает только MCP-функции клиента. Авторизация и сессии
+сохраняются в `/var/lib/agentrun-openai/muse`. После применения конфигурации
+нужно выполнить `muse-agentrun login` на ноде; подробности — в
+[инструкции Muse ACP](./../../packages/muse-acp/README.md).

@@ -68,6 +68,12 @@ release `v0.1.1` внешнего репозитория (см. `package.nix`). 
 [`modules/agentrun-openai`](../modules/agentrun-openai/README.md), профиль —
 [`profiles/agentrun-openai`](../profiles/agentrun-openai/README.md).
 
+## Muse Code
+
+[Muse Code](./muse/README.md) — официальный закреплённый Linux CLI Meta.
+[Muse ACP](./muse-acp/README.md) подключает его к agentrun-openai через
+MSP/ACP с отключёнными встроенными инструментами и отдельным persistent state.
+
 ## Antigravity CLI
 
 [`antigravity`](./antigravity/README.md) — официальный бинарный дистрибутив Google Antigravity CLI (`1.3.5`).

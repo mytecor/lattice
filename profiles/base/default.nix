@@ -22,6 +22,7 @@
     builtins.elem (lib.getName package) [
       "rns-server"
       "rnsh"
+      "muse"
       "antigravity"
       "antigravity-acp"
       "antigravity-acp-server"

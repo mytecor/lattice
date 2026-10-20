@@ -248,6 +248,13 @@
           llm-gateway = final.callPackage ./packages/llm-gateway/package.nix { };
           agentrun-openai = final.callPackage ./packages/agentrun-openai/package.nix { };
           codex-acp-fsless = final.callPackage ./packages/codex-acp/package.nix { };
+          muse = final.callPackage ./packages/muse/package.nix { };
+          muse-acp = final.callPackage ./packages/muse-acp/package.nix {
+            muse = final.lattice.muse;
+          };
+          muse-acp-fsless = final.callPackage ./packages/muse-acp/fsless.nix {
+            inherit (final.lattice) muse muse-acp;
+          };
           antigravity = final.callPackage ./packages/antigravity/package.nix { };
           antigravity-acp-fsless = final.callPackage ./packages/antigravity-acp/package.nix { };
           antigravity-acp = final.lattice.antigravity-acp-fsless.adapter;
@@ -348,6 +355,7 @@
               builtins.elem (nixpkgs.lib.getName package) [
                 "rns-server"
                 "rnsh"
+                "muse"
                 "antigravity"
                 "antigravity-acp"
                 "antigravity-acp-server"
@@ -356,7 +364,7 @@
           };
         in
         {
-          inherit (pkgs.lattice) antigravity antigravity-acp antigravity-acp-fsless gemini-cli gemini-acp gemini-acp-fsless codex-acp-fsless acp-normalizer acp-web devtools-frontend moli moli-ingress agent-image agentrun-openai git-cache-proxy git-watchd task-contract taskd agentd hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
+          inherit (pkgs.lattice) muse muse-acp muse-acp-fsless antigravity antigravity-acp antigravity-acp-fsless gemini-cli gemini-acp gemini-acp-fsless codex-acp-fsless acp-normalizer acp-web devtools-frontend moli moli-ingress agent-image agentrun-openai git-cache-proxy git-watchd task-contract taskd agentd hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
         });
@@ -370,6 +378,7 @@
               builtins.elem (nixpkgs.lib.getName package) [
                 "rns-server"
                 "rnsh"
+                "muse"
                 "antigravity"
                 "antigravity-acp"
                 "antigravity-acp-server"
@@ -397,6 +406,7 @@
               builtins.elem (nixpkgs.lib.getName package) [
                 "rns-server"
                 "rnsh"
+                "muse"
                 "antigravity"
                 "antigravity-acp"
                 "antigravity-acp-server"

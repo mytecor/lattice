@@ -120,6 +120,9 @@ flowchart TD
     subgraph AI["Инференс LLM"]
         LLMGateway["llm-gateway<br/>(Маршрутизация и fallback)"]
         Agentrun["agentrun-openai<br/>(OpenAI-совместимый шлюз)"]
+        MuseACP["muse-acp<br/>(Адаптер ACP / MSP)"]
+        Muse["Muse Code<br/>(Агент с клиентскими MCP-инструментами)"]
+        Meta["Meta AI<br/>(Провайдер Muse)"]
         Upstream["Внешние LLM провайдеры<br/>(Vertex AI, Gonka, Hyperfusion)"]
     end
 
@@ -176,6 +179,9 @@ flowchart TD
     Grafana --> Loki
 
     HydraACP --> LLMGateway
+    Agentrun --> MuseACP
+    MuseACP --> Muse
+    Muse --> Meta
     Agentrun --> LLMGateway
     LLMGateway --> Upstream
 
@@ -290,6 +296,9 @@ flowchart TD
     subgraph Consumers["Потребители моделей"]
         HydraACP["hydra-acp<br/>(ACP агент Pi)"]
         Agentrun["agentrun-openai<br/>(OpenAI-совместимый шлюз)"]
+        MuseACP["muse-acp<br/>(Адаптер ACP / MSP)"]
+        Muse["Muse Code<br/>(Агент с клиентскими MCP-инструментами)"]
+        Meta["Meta AI<br/>(Провайдер Muse)"]
         Jev["jev-ultrafast<br/>(Браузерный агент)"]
         DirectClient["Внешние клиенты<br/>(С клиентскими ключами)"]
     end
@@ -309,6 +318,9 @@ flowchart TD
     end
 
     HydraACP --> Router
+    Agentrun --> MuseACP
+    MuseACP --> Muse
+    Muse --> Meta
     Agentrun --> Router
     Jev --> Router
     DirectClient --> Router

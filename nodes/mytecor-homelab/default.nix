@@ -5,5 +5,6 @@
     ./codex.nix
     ./antigravity.nix
     ./gemini.nix
+    ./muse.nix
   ];
 }
