@@ -30,6 +30,7 @@ buildGo127Module rec {
     ./runtime.go.patch
     ./devtools-page-socket.patch
     ./devtools-screencast.patch
+    ./devtools-wheel.patch
   ];
 
   # ./cmd/foxbridge is the CDP server; upstream also ships ./cmd/bridge and
@@ -39,7 +40,7 @@ buildGo127Module rec {
   # Exercise page-endpoint session binding and standard JSON text framing.
   postCheck = ''
     go test ./pkg/cdp
-    go test ./pkg/bridge -run "^TestScreencastProtocol"
+    go test ./pkg/bridge -run "^Test(ScreencastProtocol|WheelProtocol)"
   '';
 
   # Computed from the upstream go.mod (google/uuid v1.6.0, gorilla/websocket
