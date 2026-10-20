@@ -134,6 +134,13 @@ in
           };
         }
         // lib.optionalAttrs oauthEnabled {
+          # Homelab single-tenant SSO: allow Grafana to link OAuth identities by
+          # email if the IdP user/database was recreated and the OAuth subject
+          # hash changed, preventing "Login failed / User sync failed" conflicts.
+          auth = {
+            oauth_allow_insecure_email_lookup = true;
+          };
+
           # F14: native OIDC sign-in through the central Authentik — the single
           # entry point. client_secret read via the file provider ($__file{...})
           # from an agenix path, never in the store. The admin role is mapped

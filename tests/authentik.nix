@@ -251,6 +251,7 @@ assert !(builtins.elem "authentik-invalidate-apps-cache.service"
 assert lib.hasSuffix "/lattice/applications.yaml" blueprintPath;
 assert config.systemd.services.authentik-worker.environment.AUTHENTIK_BLUEPRINTS_DIR or "" != "";
 # Grafana native OIDC config is present when oauth is enabled (F14 step 7).
+assert grafanaSettings.auth.oauth_allow_insecure_email_lookup or false;
 assert grafanaSettings."auth.generic_oauth".enabled or false;
 assert grafanaSettings."auth.generic_oauth".client_id or "" == "grafana";
 assert grafanaSettings."auth.generic_oauth".auth_style or "" == "InHeader";
