@@ -90,6 +90,8 @@ assert !(lib.hasInfix "--headless" virtualUnit.serviceConfig.ExecStart);
 assert lib.hasInfix "-nolisten tcp" virtualUnit.serviceConfig.ExecStart;
 assert lib.elem "LIBGL_ALWAYS_SOFTWARE=1" virtualUnit.serviceConfig.Environment;
 assert virtualUnit.serviceConfig.PrivateDevices;
+assert lib.all (call: lib.elem call virtualUnit.serviceConfig.SystemCallFilter) [ "setresuid" "setuid" ];
+assert virtualUnit.serviceConfig.NoNewPrivileges;
 assert virtualUnit.serviceConfig.KillMode == "control-group";
 assert lib.any (a: lib.hasInfix "virtualDisplay" a.message && !a.assertion) invalidConfig.assertions;
 

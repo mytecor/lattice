@@ -129,7 +129,11 @@ in
         SystemCallFilter = [
           "@system-service"
           "~@privileged"
-        ];
+        ] ++ lib.optionals cfg.camoufox.virtualDisplay [ "setresuid" "setuid" ];
+        # Xvfb checks its UID via seteuid (setresuid on Linux), and its
+        # helpers reset to their existing UID with setuid.
+        # As this unprivileged user with no capabilities it still returns
+        # EPERM for uid 0; allow the check instead of killing the X server.
       };
     };
   };
