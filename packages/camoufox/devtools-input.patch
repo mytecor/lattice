@@ -1,0 +1,204 @@
+--- a/protocol/PageHandler.js
++++ b/protocol/PageHandler.js
+@@ -8,13 +8,29 @@
+ const {NetUtil} = ChromeUtils.importESModule('resource://gre/modules/NetUtil.sys.mjs');
+ const {NetworkObserver, PageNetwork} = ChromeUtils.importESModule('chrome://juggler/content/NetworkObserver.js');
+ const {PageTarget} = ChromeUtils.importESModule('chrome://juggler/content/TargetRegistry.js');
+-const {setTimeout} = ChromeUtils.importESModule('resource://gre/modules/Timer.sys.mjs');
++const {setTimeout, clearTimeout} = ChromeUtils.importESModule('resource://gre/modules/Timer.sys.mjs');
+
+ const Cc = Components.classes;
+ const Ci = Components.interfaces;
+ const Cu = Components.utils;
+ const XUL_NS = 'http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul';
+ const helper = new Helper();
++
++// Register before flushing: APZ can acknowledge synchronously. A missing
++// compositor notification must not hold the shared input activation queue.
++async function flushInputRepaints(win) {
++  let removeObserver, timer;
++  const flushed = new Promise(resolve => {
++    removeObserver = helper.addObserver(resolve, 'apz-repaints-flushed');
++  });
++  try {
++    if (win.windowUtils.flushApzRepaints())
++      await Promise.race([flushed, new Promise(resolve => { timer = setTimeout(resolve, 1000); })]);
++  } finally {
++    removeObserver();
++    clearTimeout(timer);
++  }
++}
+
+ function hashConsoleMessage(params) {
+   return params.location.lineNumber + ':' + params.location.columnNumber + ':' + params.location.url;
+@@ -520,21 +536,28 @@
+     const sendEvents = async (types) => {
+       // 1. Scroll element to the desired location first; the coordinates are relative to the element.
+       this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(x, y, 0, 0);
+-      // 2. Get element's bounding box in the browser after the scroll is completed.
++      // Measure after the compositor flush: browser chrome can resize meanwhile.
++      await flushInputRepaints(win);
+       const boundingBox = this._pageTarget._linkedBrowser.getBoundingClientRect();
+-      // 3. Make sure compositor is flushed after scrolling.
+-      if (win.windowUtils.flushApzRepaints())
+-        await helper.awaitTopic('apz-repaints-flushed');
+
+       const watcher = new EventWatcher(this._pageEventSink, types, this._pendingEventWatchers);
+       // Dispatch a single synthesized mouse event to the renderer and return a
+       // promise that resolves once the renderer acks it.
+-      const sendOne = (eventType, eventX, eventY) => {
++      let lastPoint = this._lastTrackedPos;
++      const sendOne = async (eventType, eventX, eventY) => {
++        // Gecko coalesces moves to the same device pixel. Such a move has no
++        // renderer ack, including repeated points inside a humanized trajectory.
++        const scale = win.devicePixelRatio;
++        const samePixel = (a, b) => Math.round(a * scale) === Math.round(b * scale);
++        if (eventType === 'mousemove' &&
++            samePixel(lastPoint.x, eventX) && samePixel(lastPoint.y, eventY))
++          return;
++        lastPoint = {x: eventX, y: eventY};
+         // This dispatches to the renderer synchronously.
+         const jugglerEventId = win.windowUtils.jugglerSendMouseEvent(
+           eventType,
+-          eventX + boundingBox.left,
+-          eventY + boundingBox.top,
++          Math.min(Math.max(eventX + boundingBox.left, Math.ceil(boundingBox.left)), Math.ceil(boundingBox.right ?? boundingBox.left + boundingBox.width) - 1),
++          Math.min(Math.max(eventY + boundingBox.top, Math.ceil(boundingBox.top)), Math.ceil(boundingBox.bottom ?? boundingBox.top + boundingBox.height) - 1),
+           button,
+           clickCount,
+           modifiers,
+@@ -547,9 +570,21 @@
+           win.windowUtils.DEFAULT_MOUSE_POINTER_ID /* pointerIdentifier */,
+           false /* disablePointerEvent */
+         );
+-        return watcher.ensureEvent(eventType, eventObject => eventObject.jugglerEventId === jugglerEventId);
++        // A lost renderer ack must release activateAndRun's shared input queue.
++        let timer;
++        try {
++          await Promise.race([
++            watcher.ensureEvent(eventType, eventObject => eventObject.jugglerEventId === jugglerEventId),
++            new Promise((_, reject) => {
++              timer = setTimeout(() => reject(new Error('Mouse renderer acknowledgement timed out')), 2000);
++            }),
++          ]);
++        } finally {
++          clearTimeout(timer);
++        }
+       };
+
++      try {
+       const promises = [];
+       for (const type of types) {
+         // Camoufox: when humanize is enabled, expand a direct mousemove into a
+@@ -567,7 +602,8 @@
+             // below (>=, not >): a point at exactly x==width or y==height fires as
+             // an exit event instead of eMouseMove, so the hit-renderer ack never
+             // arrives and every later input event hangs behind it forever.
+-            if (currentX < 0 || currentY < 0 || currentX >= boundingBox.width || currentY >= boundingBox.height)
++            if (!Number.isFinite(currentX) || !Number.isFinite(currentY) ||
++                currentX < 0 || currentY < 0 || currentX >= boundingBox.width || currentY >= boundingBox.height)
+               continue;
+             await sendOne('mousemove', currentX, currentY);
+             await new Promise(resolve => setTimeout(resolve, 10));
+@@ -579,7 +615,9 @@
+         }
+       }
+       await Promise.all(promises);
+-      await watcher.dispose();
++      } finally {
++        watcher.dispose();
++      }
+     };
+
+     // We must switch to proper tab in the tabbed browser so that
+@@ -704,8 +742,7 @@
+
+       const win = this._pageTarget._window;
+       // 3. Make sure compositor is flushed after scrolling.
+-      if (win.windowUtils.flushApzRepaints())
+-        await helper.awaitTopic('apz-repaints-flushed');
++      await flushInputRepaints(win);
+
+       win.windowUtils.sendWheelEvent(
+         x + boundingBox.left,
+--- a/TargetRegistry.js
++++ b/TargetRegistry.js
+@@ -948,10 +948,13 @@
+       if (!windowGlobal)
+         return;
+
+-      const viewport = this._viewportSize || this._browserContext.defaultViewportSize;
+-      const rect = viewport
+-        ? new DOMRect(0, 0, viewport.width, viewport.height)
+-        : this.linkedBrowser().getBoundingClientRect();
++      let geometry;
++      try {
++        geometry = await this._channel.connect('').send('viewportGeometry', {});
++      } catch (e) {
++        return; // Navigation can replace the content channel between frames.
++      }
++      const rect = geometry;
+       if (!rect.width || !rect.height)
+         return;
+
+@@ -964,8 +967,11 @@
+       // navigation is in flight. Drop that frame rather than ending the video.
+       let snapshot;
+       try {
++        // A null rect captures the visible viewport, including fixed elements.
++        // An explicit (0,0) rect is document-relative and moves the captured
++        // page in the opposite direction when the document is scrolled.
+         snapshot = await windowGlobal.drawSnapshot(
+-          new DOMRect(0, 0, rect.width, rect.height), scale, 'rgb(255,255,255)');
++          null, scale, 'rgb(255,255,255)');
+       } catch (e) {
+         return;
+       }
+@@ -978,7 +984,7 @@
+       const canvas = doc.createElementNS('http://www.w3.org/1999/xhtml', 'canvas');
+       canvas.width = frameWidth;
+       canvas.height = frameHeight;
+-      canvas.getContext('2d').drawImage(snapshot, 0, 0);
++      canvas.getContext('2d').drawImage(snapshot, 0, 0, frameWidth, frameHeight);
+       snapshot.close();
+
+       const dataURL = canvas.toDataURL('image/jpeg', jpegQuality);
+@@ -987,6 +993,11 @@
+         data: dataURL.substring(dataURL.indexOf(',') + 1),
+         deviceWidth: frameWidth,
+         deviceHeight: frameHeight,
++        // Encoded frames can be downscaled; input coordinates use CSS pixels.
++        viewportWidth: geometry.width,
++        viewportHeight: geometry.height,
++        scrollOffsetX: geometry.scrollX,
++        scrollOffsetY: geometry.scrollY,
+         timestamp: Date.now() / 1000,
+       });
+     };
+--- a/protocol/Protocol.js
++++ b/protocol/Protocol.js
+@@ -777,6 +777,10 @@
+       data: t.String,
+       deviceWidth: t.Number,
+       deviceHeight: t.Number,
++      viewportWidth: t.Optional(t.Number),
++      viewportHeight: t.Optional(t.Number),
++      scrollOffsetX: t.Optional(t.Number),
++      scrollOffsetY: t.Optional(t.Number),
+       // Seconds. Playwright's Firefox delegate does `event.timestamp * 1e3` with
+       // no fallback (unlike its WebKit path, which defaults to Date.now()), and
+       // feeds the result to VideoRecorder.writeFrame() as the frame's wall time.
+--- a/content/main.js
++++ b/content/main.js
+@@ -109,6 +109,11 @@
+       return data.failedToOverrideTimezone;
+     },
+
++    viewportGeometry() {
++      const win = docShell.domWindow;
++      return {width: win.innerWidth, height: win.innerHeight, scrollX: win.scrollX, scrollY: win.scrollY};
++    },
++
+     async awaitViewportDimensions({width, height}) {
+       await new Promise(resolve => {
+         const listeners = [];

@@ -9,7 +9,7 @@
 # Version pinned to 152.0.4-beta.30 (verified in f18-01..f18-07 smoke runs on
 # mytecor-homelab). The zip sha256 comes from the Camoufox GitHub release
 # assets (repo_cache.json in the working /root/.cache/camoufox).
-{ lib, stdenv, fetchurl, unzip, autoPatchelfHook, patchelfUnstable, alsa-lib, curl, dbus-glib, gtk3, libxtst, libva, pciutils, pipewire, ffmpeg_8, libglvnd, mesa }:
+{ lib, stdenv, fetchurl, unzip, autoPatchelfHook, patchelfUnstable, alsa-lib, curl, dbus-glib, gtk3, libxtst, libva, pciutils, pipewire, ffmpeg_8, libglvnd, mesa, python3, nodejs }:
 
 let
   version = "152.0.4-beta.30";
@@ -23,7 +23,7 @@ stdenv.mkDerivation {
     sha256 = "sha256-VyDUW4lM4XcFQ94CTG8Q1RSzi+Vg+i3DIms9hYbK9nI=";
   };
 
-  nativeBuildInputs = [ unzip autoPatchelfHook patchelfUnstable ];
+  nativeBuildInputs = [ unzip autoPatchelfHook patchelfUnstable python3 ];
   # Firefox uses "relrhack" — it manually processes relocations from a fixed
   # offset during startup. autoPatchelf must not clobber the old sections when
   # rewriting the interpreter/rpath, or NSPR init SEGVs. Exact same flag + 
@@ -67,6 +67,15 @@ stdenv.mkDerivation {
     runHook preInstall
     mkdir -p "$out/lib/camoufox-${version}"
     unzip -qq "$src" -d "$out/lib/camoufox-${version}"
+    python ${./patch-omni.py} "$out/lib/camoufox-${version}/omni.ja" ${./devtools-input.patch}
+    python - "$out/lib/camoufox-${version}/omni.ja" <<'PYTEST'
+    import sys, zipfile
+    with zipfile.ZipFile(sys.argv[1]) as archive:
+        open('PageHandler.test.js', 'wb').write(archive.read('chrome/juggler/content/protocol/PageHandler.js'))
+        open('TargetRegistry.test.js', 'wb').write(archive.read('chrome/juggler/content/TargetRegistry.js'))
+    PYTEST
+    ${lib.getExe nodejs} ${./input.test.cjs} PageHandler.test.js
+    ${lib.getExe nodejs} ${./screencast.test.cjs} TargetRegistry.test.js
     # The Python launcher normally enables WebGL explicitly. Raw binary
     # launches through Foxbridge need the same defaults for software Mesa.
     cat >> "$out/lib/camoufox-${version}/camoufox.cfg" <<'PREFS'

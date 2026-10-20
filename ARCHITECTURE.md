@@ -161,7 +161,7 @@ flowchart TD
     Caddy <--> MoliIngress
     MoliIngress <--> Moli
     MoliIngress <--> Foxbridge
-    Foxbridge --> Camoufox
+    Foxbridge <-->|Juggler: ввод и screencast| Camoufox
     Camoufox --> Xvfb
     Caddy --> NodeStatus
     Caddy --> LLMGateway
@@ -764,7 +764,12 @@ HTTP discovery и WebSocket проксируются в Foxbridge с отдел�
 полную совместимость Chrome DevTools. Профиль запускает Camoufox в headed-режиме
 под Xvfb с программным Mesa: WebGL доступен без доступа к физическому GPU.
 FFmpeg подключён к shared libraries браузера для декодирования MP4; отдельный
-TCP-ingress для дисплея не создаётся.
+TCP-ingress для дисплея не создаётся. В Juggler screencast размер CSS viewport
+передаётся отдельно от размера JPEG; Foxbridge использует его для CDP metadata,
+чтобы уменьшение изображения не смещало ввод. Кадр снимается с видимого viewport,
+включая fixed elements, а не с начала документа независимо от прокрутки.
+Повторные точки движения в одном
+пикселе пропускаются, а потеря renderer ack освобождает очередь ввода с ошибкой.
 
 ```mermaid
 flowchart LR
@@ -783,6 +788,6 @@ flowchart LR
     Caddy <--> Ingress
     Ingress <--> Moli
     Ingress <--> Foxbridge
-    Foxbridge <--> Camoufox
+    Foxbridge <-->|Juggler: ввод и screencast| Camoufox
     Camoufox --> Xvfb
 ```
