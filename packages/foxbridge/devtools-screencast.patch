@@ -1,0 +1,142 @@
+--- a/pkg/bridge/events.go
++++ b/pkg/bridge/events.go
+@@ -860 +860,6 @@
+-		b.emitEventRaw("Page.screencastFrame", params, cdpSessionID)
++        frame, err := translateScreencastFrame(params)
++        if err != nil {
++            log.Printf("[screencast] invalid frame metadata: %v", err)
++            return
++        }
++        b.emitEventRaw("Page.screencastFrame", frame, cdpSessionID)
+--- a/pkg/bridge/bridge.go
++++ b/pkg/bridge/bridge.go
+@@ -21,0 +22 @@
++	screencastIDs sync.Map // CDP page session -> Juggler stream id
+--- a/pkg/bridge/page.go
++++ b/pkg/bridge/page.go
+@@ -808 +808,5 @@
+-		return result, nil
++        var stream struct { ID string `json:"screencastId"` }
++        if json.Unmarshal(result, &stream) == nil && stream.ID != "" {
++            b.screencastIDs.Store(msg.SessionID, stream.ID)
++        }
++        return result, nil
+@@ -810,0 +815 @@
++		b.screencastIDs.Delete(msg.SessionID)
+@@ -815 +820,7 @@
+-		b.callJuggler(msg.SessionID, "Page.screencastFrameAck", msg.Params)
++        // CDP acknowledges an integer frame id; Juggler expects the stream
++        // string returned by startScreencast, not CDP's sessionId parameter.
++        if stream, found := b.screencastIDs.Load(msg.SessionID); found {
++            if _, err := b.callJuggler(msg.SessionID, "Page.screencastFrameAck", map[string]any{"screencastId": stream}); err != nil {
++                return nil, &cdp.Error{Code: -32000, Message: err.Error()}
++            }
++        }
+--- /dev/null
++++ b/pkg/bridge/screencast.go
+@@ -0,0 +1,36 @@
++package bridge
++
++import (
++	"encoding/json"
++	"fmt"
++	"sync/atomic"
++)
++
++var screencastFrameSequence atomic.Int64
++
++// Juggler sends viewport geometry at the top level. CDP requires a metadata
++// object and an integer frame sessionId; passing the payload through leaves
++// Chrome's screencast canvas at 0x0 even though JPEG frames arrive.
++func translateScreencastFrame(params json.RawMessage) (json.RawMessage, error) {
++	var frame struct {
++		Data         string  `json:"data"`
++		DeviceWidth  float64 `json:"deviceWidth"`
++		DeviceHeight float64 `json:"deviceHeight"`
++		Timestamp    float64 `json:"timestamp"`
++	}
++	if err := json.Unmarshal(params, &frame); err != nil {
++		return nil, err
++	}
++	if frame.Data == "" || frame.DeviceWidth <= 0 || frame.DeviceHeight <= 0 {
++		return nil, fmt.Errorf("screencast frame is missing image or viewport geometry")
++	}
++	return json.Marshal(map[string]any{
++		"data":      frame.Data,
++		"sessionId": screencastFrameSequence.Add(1),
++		"metadata": map[string]any{
++			"deviceWidth": frame.DeviceWidth, "deviceHeight": frame.DeviceHeight,
++			"pageScaleFactor": 1, "offsetTop": 0, "scrollOffsetX": 0, "scrollOffsetY": 0,
++			"timestamp": frame.Timestamp,
++		},
++	})
++}
+--- /dev/null
++++ b/pkg/bridge/screencast_test.go
+@@ -0,0 +1,66 @@
++package bridge
++
++import (
++	"encoding/json"
++	"testing"
++
++	"github.com/VulpineOS/foxbridge/pkg/cdp"
++)
++
++func TestScreencastProtocolGeometry(t *testing.T) {
++	input := json.RawMessage(`{"data":"encoded-jpeg","deviceWidth":1824,"deviceHeight":1336,"timestamp":123.5}`)
++	var last float64
++	for i := 0; i < 2; i++ {
++		result, err := translateScreencastFrame(input)
++		if err != nil {
++			t.Fatal(err)
++		}
++		var event struct {
++			Data      string
++			SessionID float64 `json:"sessionId"`
++			Metadata  map[string]float64
++		}
++		if err := json.Unmarshal(result, &event); err != nil {
++			t.Fatal(err)
++		}
++		if event.Data != "encoded-jpeg" || event.SessionID <= last {
++			t.Fatal("image or ack id lost", event)
++		}
++		last = event.SessionID
++		if event.Metadata["deviceWidth"] != 1824 || event.Metadata["deviceHeight"] != 1336 || event.Metadata["timestamp"] != 123.5 || event.Metadata["pageScaleFactor"] != 1 {
++			t.Fatal("CDP geometry missing", event.Metadata)
++		}
++	}
++	if _, err := translateScreencastFrame(json.RawMessage(`{"data":"jpeg"}`)); err == nil {
++		t.Fatal("zero-size frame accepted")
++	}
++}
++
++func TestScreencastProtocolAckUsesJugglerStreamID(t *testing.T) {
++	b, mb := newTestBridge()
++	for _, name := range []string{"a", "b"} {
++		b.sessions.Add(&cdp.SessionInfo{SessionID: "cdp-" + name, JugglerSessionID: "jug-" + name, TargetID: name, Type: "page"})
++		mb.SetResponse("jug-"+name, "Page.startScreencast", json.RawMessage(`{"screencastId":"stream-`+name+`"}`), nil)
++		if _, err := b.handlePage(nil, &cdp.Message{ID: 1, SessionID: "cdp-" + name, Method: "Page.startScreencast", Params: json.RawMessage(`{}`)}); err != nil {
++			t.Fatal(err)
++		}
++	}
++	for _, name := range []string{"a", "b"} {
++		if _, err := b.handlePage(nil, &cdp.Message{ID: 2, SessionID: "cdp-" + name, Method: "Page.screencastFrameAck", Params: json.RawMessage(`{"sessionId":99}`)}); err != nil {
++			t.Fatal(err)
++		}
++	}
++	calls := mb.CallsForMethod("Page.screencastFrameAck")
++	if len(calls) != 2 {
++		t.Fatal("missing stream acknowledgements", len(calls))
++	}
++	for i, name := range []string{"a", "b"} {
++		var params map[string]any
++		if err := json.Unmarshal(calls[i].Params, &params); err != nil {
++			t.Fatal(err)
++		}
++		if len(params) != 1 || params["screencastId"] != "stream-"+name {
++			t.Fatal("CDP frame id leaked into Juggler ack", params)
++		}
++	}
++}

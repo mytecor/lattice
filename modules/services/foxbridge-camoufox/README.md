@@ -100,3 +100,9 @@ launcher недостаточно для `dlopen`. Это устраняет о�
 [virtual display](https://camoufox.com/python/virtual-display/) upstream.
 Нативный headless остаётся доступен как отдельный режим, но WebGL в нём
 не гарантирован. CSP сайта и политики origin не отключаются.
+
+Screencast переводится [отдельным патчем](./../../../packages/foxbridge/devtools-screencast.patch):
+геометрия JPEG помещается в CDP `metadata`, а подтверждения кадров переводятся
+из числового CDP frame ID в строковый Juggler stream ID. Для проверки live-view
+недостаточно считать полученные кадры: canvas DevTools должен иметь ненулевые
+размеры и показывать изображение.
