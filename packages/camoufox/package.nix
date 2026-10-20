@@ -9,7 +9,7 @@
 # Version pinned to 152.0.4-beta.30 (verified in f18-01..f18-07 smoke runs on
 # mytecor-homelab). The zip sha256 comes from the Camoufox GitHub release
 # assets (repo_cache.json in the working /root/.cache/camoufox).
-{ lib, stdenv, fetchurl, unzip, autoPatchelfHook, patchelfUnstable, alsa-lib, curl, dbus-glib, gtk3, libxtst, libva, pciutils, pipewire }:
+{ lib, stdenv, fetchurl, unzip, autoPatchelfHook, patchelfUnstable, alsa-lib, curl, dbus-glib, gtk3, libxtst, libva, pciutils, pipewire, ffmpeg_8, libglvnd, mesa }:
 
 let
   version = "152.0.4-beta.30";
@@ -41,7 +41,16 @@ stdenv.mkDerivation {
     pciutils
     libva.out
   ];
-  appendRunpaths = [ "${pipewire}/lib" ];
+  # dlopen is called from libxul, not just the launcher. DT_RUNPATH on the
+  # executable is not inherited by shared-library callers, so these paths
+  # must also be present on the browser's shared objects.
+  # Firefox 152 supports libavcodec 62 (FFmpeg 8), not an arbitrary newer ABI.
+  appendRunpaths = map (package: "${package}/lib") [
+    pipewire
+    (lib.getLib ffmpeg_8)
+    libglvnd
+    mesa
+  ];
 
   dontConfigure = true;
   dontBuild = true;
