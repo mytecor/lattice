@@ -15,4 +15,9 @@ ELF-зависимости к NixOS и задаёт системный CA bundle
 запускает настоящий Moli, загружает frontend, подключается по WebSocket,
 выполняет JavaScript и получает PNG.
 
+Необязательный аргумент `--foxbridge` задаёт фиксированный loopback upstream
+для тестового маршрута `/foxbridge/`. Discovery и WebSocket сохраняют этот
+префикс; статический frontend используется общий. Привязка page-сессии и JSON
+text framing обеспечиваются [патчем Foxbridge](./../foxbridge/devtools-page-socket.patch).
+
 Развёртывание и подключение описаны в [профиле](./../../profiles/moli/README.md).

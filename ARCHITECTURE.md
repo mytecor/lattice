@@ -156,6 +156,7 @@ flowchart TD
     Caddy --> AcpWeb
     Caddy <--> MoliIngress
     MoliIngress <--> Moli
+    MoliIngress <--> Foxbridge
     Foxbridge --> Camoufox
     Caddy --> NodeStatus
     Caddy --> LLMGateway
@@ -212,6 +213,7 @@ flowchart TD
         AcpUI["acp-web<br/>(Веб-интерфейс ACP)"]
         BrowserIngress["moli-ingress<br/>(DevTools frontend и CDP proxy)"]
         MoliBrowser["Moli<br/>(Браузер удалённой отладки)"]
+        FoxBrowser["Foxbridge / Camoufox<br/>(Тест Firefox CDP)"]
         GrafanaSvc["Grafana<br/>(Дашборды)"]
         NodeStatusSvc["node-status<br/>(API статуса ноды)"]
         LLMGatewaySvc["llm-gateway<br/>(API инференса)"]
@@ -230,6 +232,7 @@ flowchart TD
     Caddy --> AcpUI
     Caddy <--> BrowserIngress
     BrowserIngress <--> MoliBrowser
+    BrowserIngress <--> FoxBrowser
     Caddy --> GrafanaSvc
     Caddy --> NodeStatusSvc
     Caddy --> LLMGatewaySvc
@@ -736,7 +739,13 @@ Authentik ForwardAuth для HTTP discovery и WebSocket; клиенты SDK п�
 Frontend обслуживается ingress как статические ресурсы; его WebSocket использует
 тот же origin и ту же сессию Authentik. Для Chrome не нужны SSH-туннель и ручной
 URL `devtools://…?ws=…`. Список targets остаётся доступен на `/json/list`.
-Вкладки и cookies временные. Jev отдельно обращается к Foxbridge/Camoufox.
+Вкладки и cookies Moli временные. Jev обращается к Foxbridge/Camoufox.
+Тестовый маршрут `/foxbridge/` открывает тот же frontend для Camoufox:
+HTTP discovery и WebSocket проксируются в Foxbridge с отдельным префиксом,
+под тем же Authentik. Page WebSocket Foxbridge привязан к CDP-сессии вкладки;
+корневые сообщения передаются как стандартные JSON text frames.
+Поддержка панелей ограничена реализацией Foxbridge; маршрут не означает
+полную совместимость Chrome DevTools.
 
 ```mermaid
 flowchart LR
@@ -746,9 +755,13 @@ flowchart LR
     Authentik["Authentik<br/>(ForwardAuth)"]
     Ingress["moli-ingress<br/>(DevTools frontend и CDP proxy)"]
     Moli["Moli<br/>(DOM, JavaScript и рендеринг)"]
+    Foxbridge["Foxbridge<br/>(Тестовый CDP-прокси)"]
+    Camoufox["Camoufox<br/>(Firefox браузер)"]
     SDK <--> Caddy
     Debugger <--> Caddy
     Caddy --> Authentik
     Caddy <--> Ingress
     Ingress <--> Moli
+    Ingress <--> Foxbridge
+    Foxbridge <--> Camoufox
 ```

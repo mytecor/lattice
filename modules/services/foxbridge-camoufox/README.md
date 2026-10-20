@@ -12,8 +12,8 @@ Jev agent ── BU_CDP_URL ──▶ Foxbridge ── Juggler ──▶ Camoufo
                               ▲ CDP (loopback)
 ```
 
-- Foxbridge — бинарь из `packages/foxbridge` (upstream + 4 F18-патча
-  совместимости), CDP-сервер на **127.0.0.1** (bind жёстко зашит в
+- Foxbridge — бинарь из `packages/foxbridge` (upstream + F18-патчи
+  совместимости и патч page WebSocket для DevTools), CDP-сервер на **127.0.0.1** (bind жёстко зашит в
   `pkg/cdp/server.go`, флага нет — см. `listenAddress` ниже).
 - Camoufox — из `packages/camoufox`, официальный релизный zip (плоская
   раскладка: ELF-бинарь и `.so` в корне), авто-патчится под store.
@@ -66,3 +66,13 @@ systemd-hardening Camoufox падает, когда его HOME лежит на 
   полным hardening убивает процесс, Juggler `Browser.enable` не завершается
   (`context deadline exceeded` / `client closed`). HOME — строго персистентная
   директория `/var/lib/foxbridge-camoufox` (`stateDir`).
+
+## Тест через Chrome DevTools
+
+[Профиль Moli](./../../../profiles/moli/README.md) может публиковать Foxbridge
+под `/foxbridge/` на общем browser-сайте с Authentik. Его
+[page WebSocket patch](./../../../packages/foxbridge/devtools-page-socket.patch)
+привязывает команды без `sessionId` к существующей сессии выбранной вкладки,
+снимает эту обёртку с ответов и событий и использует JSON text frames.
+Browser-level CDP и явные дочерние session IDs сохраняют свой контракт.
+Ограничения покрытия CDP Foxbridge при этом остаются.

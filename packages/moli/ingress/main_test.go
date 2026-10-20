@@ -26,7 +26,7 @@ func TestDiscovery(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://browser.example/json/list?ignored=true", nil)
 			req.Header.Set("X-Forwarded-Proto", scheme)
 			res := httptest.NewRecorder()
-			proxyHandler(upstream, http.Dir(t.TempDir())).ServeHTTP(res, req)
+			proxyHandler(upstream, http.Dir(t.TempDir()), "").ServeHTTP(res, req)
 			if res.Code != 200 {
 				t.Fatal(res.Code, res.Body.String())
 			}
@@ -64,7 +64,7 @@ func TestPassThrough(t *testing.T) {
 	defer backend.Close()
 	upstream, _ := url.Parse(backend.URL)
 	res := httptest.NewRecorder()
-	proxyHandler(upstream, http.Dir(t.TempDir())).ServeHTTP(res, httptest.NewRequest("PUT", "http://browser.example/json/new?https://example.org", strings.NewReader("payload")))
+	proxyHandler(upstream, http.Dir(t.TempDir()), "").ServeHTTP(res, httptest.NewRequest("PUT", "http://browser.example/json/new?https://example.org", strings.NewReader("payload")))
 	if res.Code != http.StatusCreated || res.Body.String() != "payload" {
 		t.Fatal(res)
 	}
@@ -84,7 +84,7 @@ func TestHostedInspector(t *testing.T) {
 	defer backend.Close()
 	upstream, _ := url.Parse(backend.URL)
 	frontend := http.FS(fstest.MapFS{"inspector.html": {Data: []byte("official inspector")}})
-	handler := proxyHandler(upstream, frontend)
+	handler := proxyHandler(upstream, frontend, "")
 	for _, scheme := range []string{"http", "https"} {
 		request := httptest.NewRequest("GET", "http://browser.example/", nil)
 		request.Header.Set("X-Forwarded-Proto", scheme)
@@ -108,6 +108,60 @@ func TestHostedInspector(t *testing.T) {
 		expected := map[string]int{"/devtools/frontend/inspector.html": 200, "/devtools/frontend/missing.js": 404, "/devtools/page/dynamic-id": 418}[path]
 		if response.Code != expected {
 			t.Fatal(path, response.Code, response.Body)
+		}
+	}
+}
+
+func TestFoxbridgeRouteKeepsDiscoveryOnSelectedBackend(t *testing.T) {
+	moli := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) }))
+	defer moli.Close()
+	fox := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/json/list" {
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[{"type":"page","devtoolsFrontendUrl":"","webSocketDebuggerUrl":"ws://127.0.0.1:9222/devtools/page/fox-target"}]`)
+			return
+		}
+		if r.URL.Path == "/devtools/page/fox-target" {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer fox.Close()
+	upstream, _ := url.Parse(moli.URL)
+	handler := browserHandler(upstream, fox.URL, http.FS(fstest.MapFS{}))
+	for _, scheme := range []string{"http", "https"} {
+		request := httptest.NewRequest("GET", "http://browser.example/foxbridge/json/list", nil)
+		request.Header.Set("X-Forwarded-Proto", scheme)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		var targets []map[string]string
+		if err := json.Unmarshal(response.Body.Bytes(), &targets); err != nil {
+			t.Fatal(response.Code, response.Body)
+		}
+		ws := "ws"
+		if scheme == "https" {
+			ws = "wss"
+		}
+		if targets[0]["webSocketDebuggerUrl"] != ws+"://browser.example/foxbridge/devtools/page/fox-target" {
+			t.Fatal(targets)
+		}
+		link, _ := url.Parse(targets[0]["devtoolsFrontendUrl"])
+		if link.Query().Get(ws) != "browser.example/foxbridge/devtools/page/fox-target" {
+			t.Fatal(link)
+		}
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest("GET", "http://browser.example/foxbridge/", nil))
+	link, _ := url.Parse(response.Header().Get("Location"))
+	if response.Code != 307 || link.Query().Get("ws") != "browser.example/foxbridge/devtools/page/fox-target" {
+		t.Fatal(response.Code, link)
+	}
+	for path, status := range map[string]int{"/foxbridge/devtools/page/fox-target": 202, "/devtools/page/fox-target": 418} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest("GET", "http://browser.example"+path, nil))
+		if response.Code != status {
+			t.Fatal(path, response.Code)
 		}
 	}
 }

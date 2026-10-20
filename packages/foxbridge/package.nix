@@ -1,5 +1,5 @@
 # F18: Foxbridge — CDP↔Firefox protocol proxy (Juggler). Upstream
-# github.com/VulpineOS/foxbridge plus the four F18 compatibility patches
+# github.com/VulpineOS/foxbridge plus the F18 compatibility patches
 # that make the original browser-use/jev-ultrafast work end-to-end over
 # Camoufox (see roadmap/f18-browser-agent-stack/f18-02..f18-06).
 #
@@ -28,11 +28,17 @@ buildGo127Module rec {
     ./input.go.patch
     ./page.go.patch
     ./runtime.go.patch
+    ./devtools-page-socket.patch
   ];
 
   # ./cmd/foxbridge is the CDP server; upstream also ships ./cmd/bridge and
   # ./cmd/doctor. Build the server only — it is what the Jev stack uses.
   subPackages = [ "./cmd/foxbridge" ];
+
+  # Exercise page-endpoint session binding and standard JSON text framing.
+  postCheck = ''
+    go test ./pkg/cdp
+  '';
 
   # Computed from the upstream go.mod (google/uuid v1.6.0, gorilla/websocket
   # v1.5.3): `go mod vendor` on the pinned source, then

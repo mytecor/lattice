@@ -1,0 +1,109 @@
+--- a/pkg/cdp/server.go
++++ b/pkg/cdp/server.go
+@@ -13,0 +14 @@
++	"strings"
+@@ -35,0 +37 @@
++	pageSessionID string
+@@ -50,0 +53,7 @@
++    // A page endpoint exposes its bound session as the protocol root. Copy
++    // the message: broadcast callers may reuse it for browser-level clients.
++    if c.pageSessionID != "" && msg.SessionID == c.pageSessionID {
++        rootMessage := *msg
++        rootMessage.SessionID = ""
++        msg = &rootMessage
++    }
+@@ -64,2 +73,2 @@
+-	// Option 1: Binary framing (more efficient than text)
+-	msgType := websocket.BinaryMessage
++	// Standard DevTools consumes JSON text frames.
++	msgType := websocket.TextMessage
+@@ -356,0 +366,14 @@
++    pageSessionID := ""
++    if strings.HasPrefix(r.URL.Path, "/devtools/page/") {
++        targetID := strings.TrimPrefix(r.URL.Path, "/devtools/page/")
++        if s.sessions == nil {
++            http.NotFound(w, r)
++            return
++        }
++        info, found := s.sessions.GetByTarget(targetID)
++        if !found || info.Type != "page" {
++            http.NotFound(w, r)
++            return
++        }
++        pageSessionID = info.SessionID
++    }
+@@ -363 +386 @@
+-	conn := &Connection{ws: ws, recorder: s.recorder}
++	conn := &Connection{ws: ws, recorder: s.recorder, pageSessionID: pageSessionID}
+@@ -385,0 +409,3 @@
++		if msg.SessionID == "" {
++			msg.SessionID = pageSessionID
++		}
+--- /dev/null
++++ b/pkg/cdp/page_socket_test.go
+@@ -0,0 +1,65 @@
++package cdp
++
++import (
++	"encoding/json"
++	"net/http/httptest"
++	"strings"
++	"testing"
++
++	"github.com/gorilla/websocket"
++)
++
++func TestPageSocketBindsSessionAndUsesTextFrames(t *testing.T) {
++	sessions := NewSessionManager()
++	sessions.Add(&SessionInfo{SessionID: "page-session", TargetID: "page-target", Type: "page"})
++	server := NewServer(9222, func(conn *Connection, msg *Message) {
++		if msg.SessionID != "page-session" {
++			t.Errorf("missing page session: %q", msg.SessionID)
++		}
++		conn.Send(&Message{ID: msg.ID, SessionID: msg.SessionID, Result: json.RawMessage(`{"value":42}`)})
++		event := &Message{Method: "Runtime.executionContextCreated", SessionID: msg.SessionID, Params: json.RawMessage(`{}`)}
++		conn.Send(event)
++		if event.SessionID != "page-session" {
++			t.Error("Send mutated shared broadcast event")
++		}
++	}, sessions)
++	httpServer := httptest.NewServer(server.mux())
++	defer httpServer.Close()
++	socket, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(httpServer.URL, "http")+"/devtools/page/page-target", nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer socket.Close()
++	if err := socket.WriteJSON(map[string]any{"id": 1, "method": "Runtime.evaluate", "params": map[string]any{"expression": "6*7"}}); err != nil {
++		t.Fatal(err)
++	}
++	for i := 0; i < 2; i++ {
++		kind, data, err := socket.ReadMessage()
++		if err != nil {
++			t.Fatal(err)
++		}
++		if kind != websocket.TextMessage {
++			t.Fatalf("DevTools expects JSON text, got frame %d", kind)
++		}
++		var message map[string]any
++		if err := json.Unmarshal(data, &message); err != nil {
++			t.Fatal(err)
++		}
++		if _, found := message["sessionId"]; found {
++			t.Fatal("page-root message leaked transport session", message)
++		}
++	}
++}
++
++func TestUnknownPageSocketIsRejected(t *testing.T) {
++	server := NewServer(9222, nil, NewSessionManager())
++	httpServer := httptest.NewServer(server.mux())
++	defer httpServer.Close()
++	socket, response, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(httpServer.URL, "http")+"/devtools/page/missing", nil)
++	if socket != nil {
++		socket.Close()
++	}
++	if err == nil || response == nil || response.StatusCode != 404 {
++		t.Fatal("unknown target accepted", err, response)
++	}
++}

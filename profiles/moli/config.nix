@@ -1,6 +1,7 @@
 { config, lib, pkgs, ... }:
 let
   ports = import ../networking/ports.nix;
+  foxbridge = config.lattice.foxbridge-camoufox or { enable = false; };
   sandbox = {
     Restart = "on-failure";
     RestartSec = 3;
@@ -38,10 +39,11 @@ in {
       systemd.services.moli-ingress = {
         description = "Moli CDP discovery and WebSocket proxy";
         wantedBy = [ "multi-user.target" ];
-        after = [ "moli.service" ];
-        wants = [ "moli.service" ];
+        after = [ "moli.service" ] ++ lib.optional foxbridge.enable "foxbridge-camoufox.service";
+        wants = [ "moli.service" ] ++ lib.optional foxbridge.enable "foxbridge-camoufox.service";
         serviceConfig = sandbox // {
-          ExecStart = "${lib.getExe pkgs.lattice.moli-ingress} --listen 127.0.0.1:${toString ports.moli-ingress} --upstream http://127.0.0.1:${toString ports.moli-cdp} --frontend ${pkgs.lattice.devtools-frontend}";
+          ExecStart = "${lib.getExe pkgs.lattice.moli-ingress} --listen 127.0.0.1:${toString ports.moli-ingress} --upstream http://127.0.0.1:${toString ports.moli-cdp} --frontend ${pkgs.lattice.devtools-frontend}"
+            + lib.optionalString foxbridge.enable " --foxbridge http://127.0.0.1:${toString foxbridge.port}";
           MemoryDenyWriteExecute = true;
         };
       };

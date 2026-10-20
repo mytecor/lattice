@@ -15,16 +15,18 @@ import (
 
 // Only protocol endpoint fields are rewritten. A page's URL/title/content must
 // never change just because it contains the upstream's address.
-func rewriteDiscovery(value any, host, scheme string) {
+func rewriteDiscovery(value any, host, scheme, prefix string) {
 	switch v := value.(type) {
 	case []any:
 		for _, item := range v {
-			rewriteDiscovery(item, host, scheme)
+			rewriteDiscovery(item, host, scheme, prefix)
 		}
 	case map[string]any:
 		if raw, ok := v["webSocketDebuggerUrl"].(string); ok {
 			if endpoint, err := url.Parse(raw); err == nil {
 				endpoint.Host, endpoint.Scheme = host, scheme
+				endpoint.Path = prefix + endpoint.Path
+				endpoint.RawPath = ""
 				v["webSocketDebuggerUrl"] = endpoint.String()
 				if _, target := v["devtoolsFrontendUrl"]; target {
 					v["devtoolsFrontendUrl"] = frontendURL(endpoint)
@@ -41,7 +43,7 @@ func frontendURL(socket *url.URL) string {
 	return "/devtools/frontend/inspector.html?" + query.Encode()
 }
 
-func proxyHandler(upstream *url.URL, frontend http.FileSystem) http.Handler {
+func proxyHandler(upstream *url.URL, frontend http.FileSystem, prefix string) http.Handler {
 	proxy := httputil.NewSingleHostReverseProxy(upstream)
 	director := proxy.Director
 	proxy.Director = func(r *http.Request) {
@@ -63,7 +65,7 @@ func proxyHandler(upstream *url.URL, frontend http.FileSystem) http.Handler {
 		if r.Request.Header.Get("X-Forwarded-Proto") == "https" {
 			scheme = "wss"
 		}
-		rewriteDiscovery(value, r.Request.Host, scheme)
+		rewriteDiscovery(value, r.Request.Host, scheme, prefix)
 		body, err := json.Marshal(value)
 		if err != nil {
 			return err
@@ -87,7 +89,7 @@ func proxyHandler(upstream *url.URL, frontend http.FileSystem) http.Handler {
 			endpoint := upstream.ResolveReference(&url.URL{Path: "/json/list"})
 			response, err := client.Get(endpoint.String())
 			if err != nil {
-				http.Error(w, "Moli discovery unavailable", http.StatusBadGateway)
+				http.Error(w, "Browser discovery unavailable", http.StatusBadGateway)
 				return
 			}
 			defer response.Body.Close()
@@ -96,7 +98,7 @@ func proxyHandler(upstream *url.URL, frontend http.FileSystem) http.Handler {
 				Socket string `json:"webSocketDebuggerUrl"`
 			}
 			if response.StatusCode != http.StatusOK || json.NewDecoder(response.Body).Decode(&targets) != nil {
-				http.Error(w, "Invalid Moli discovery", http.StatusBadGateway)
+				http.Error(w, "Invalid browser discovery", http.StatusBadGateway)
 				return
 			}
 			for _, target := range targets {
@@ -108,23 +110,42 @@ func proxyHandler(upstream *url.URL, frontend http.FileSystem) http.Handler {
 					continue
 				}
 				socket.Host, socket.Scheme = r.Host, "ws"
+				socket.Path = prefix + socket.Path
+				socket.RawPath = ""
 				if r.Header.Get("X-Forwarded-Proto") == "https" {
 					socket.Scheme = "wss"
 				}
 				http.Redirect(w, r, frontendURL(socket), http.StatusTemporaryRedirect)
 				return
 			}
-			http.Error(w, "No Moli page targets", http.StatusServiceUnavailable)
+			http.Error(w, "No browser page targets", http.StatusServiceUnavailable)
 			return
 		}
 		proxy.ServeHTTP(w, r)
 	})
 }
 
+// Both backends share one authenticated site and the same hosted frontend.
+// The public prefix is removed only when forwarding to the fixed loopback
+// backend, and retained in discovery so clients never fall through to Moli.
+func browserHandler(moli *url.URL, foxbridge string, frontend http.FileSystem) http.Handler {
+	mux := http.NewServeMux()
+	if foxbridge != "" {
+		upstream, err := url.Parse(foxbridge)
+		if err != nil {
+			panic(err)
+		}
+		mux.Handle("/foxbridge/", http.StripPrefix("/foxbridge", proxyHandler(upstream, frontend, "/foxbridge")))
+	}
+	mux.Handle("/", proxyHandler(moli, frontend, ""))
+	return mux
+}
+
 func main() {
 	listen := flag.String("listen", "127.0.0.1:9224", "loopback ingress address")
 	backend := flag.String("upstream", "http://127.0.0.1:9223", "Moli address")
 	frontend := flag.String("frontend", "", "hosted DevTools frontend directory")
+	foxbridge := flag.String("foxbridge", "", "optional Foxbridge HTTP upstream")
 	flag.Parse()
 	if *frontend == "" {
 		log.Fatal("--frontend is required")
@@ -133,6 +154,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	server := &http.Server{Addr: *listen, Handler: proxyHandler(upstream, http.Dir(*frontend)), ReadHeaderTimeout: 10 * time.Second}
+	handler := browserHandler(upstream, *foxbridge, http.Dir(*frontend))
+	server := &http.Server{Addr: *listen, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	log.Fatal(server.ListenAndServe())
 }

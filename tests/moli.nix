@@ -4,12 +4,14 @@ let
   config = (lib.nixosSystem {
     modules = [
       self.nixosModules.authentik
+      self.nixosModules.foxbridge-camoufox
       "${profiles}/sso/config.nix"
       "${profiles}/app-services/config.nix"
       "${profiles}/moli/config.nix"
       {
         nixpkgs.pkgs = pkgs;
         networking.hostName = "viewer-test";
+        lattice.foxbridge-camoufox = { enable = true; port = 19444; };
         system.stateVersion = "26.05";
         lattice.authentik = {
           enable = true;
@@ -38,11 +40,13 @@ let
 in
 # Generated ingress keeps discovery and upgrades under the same SSO gate.
 assert unit.serviceConfig.DynamicUser;
+assert lib.hasInfix "--foxbridge http://127.0.0.1:${toString config.lattice.foxbridge-camoufox.port}" unit.serviceConfig.ExecStart;
 assert lib.hasInfix "--host 127.0.0.1" config.systemd.services.moli.serviceConfig.ExecStart;
 assert lib.hasInfix "browser.viewer-test.local" config.systemd.services.browser-mdns.script;
 assert lib.all (port: !(lib.elem port config.networking.firewall.allowedTCPPorts)) [
   (import ../profiles/networking/ports.nix).moli-cdp
   (import ../profiles/networking/ports.nix).moli-ingress
+  config.lattice.foxbridge-camoufox.port
 ];
 assert lib.all (site:
   lib.hasInfix "forward_auth" site
