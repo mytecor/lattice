@@ -106,3 +106,7 @@ Screencast переводится [отдельным патчем](./../../../p
 из числового CDP frame ID в строковый Juggler stream ID. Для проверки live-view
 недостаточно считать полученные кадры: canvas DevTools должен иметь ненулевые
 размеры и показывать изображение.
+
+[Wheel patch](./../../../packages/foxbridge/devtools-wheel.patch) направляет
+`Input.dispatchMouseEvent(type=mouseWheel)` в отдельный Juggler
+`Page.dispatchWheelEvent`, сохраняя координаты, модификаторы и нулевые delta fields.

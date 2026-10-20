@@ -1,0 +1,51 @@
+--- a/pkg/bridge/input.go
++++ b/pkg/bridge/input.go
+@@ -29 +29,13 @@
+-		// CDP uses camelCase event types, Juggler uses lowercase
++        // Wheel is a distinct Juggler command with required delta fields,
++        // not a Page.dispatchMouseEvent of type "wheel".
++        if params.Type == "mouseWheel" {
++            _, err := b.callJuggler(msg.SessionID, "Page.dispatchWheelEvent", map[string]interface{}{
++                "x": params.X, "y": params.Y,
++                "deltaX": params.DeltaX, "deltaY": params.DeltaY, "deltaZ": 0,
++                "modifiers": params.Modifiers,
++            })
++            if err != nil { return nil, &cdp.Error{Code: -32000, Message: err.Error()} }
++            return json.RawMessage(`{}`), nil
++        }
++
++        // CDP uses camelCase event types, Juggler uses lowercase
+--- /dev/null
++++ b/pkg/bridge/wheel_protocol_test.go
+@@ -0,0 +1,31 @@
++package bridge
++
++import (
++	"encoding/json"
++	"github.com/VulpineOS/foxbridge/pkg/cdp"
++	"testing"
++)
++
++func TestWheelProtocolUsesDedicatedJugglerCommand(t *testing.T) {
++	b, mb := newTestBridge()
++	b.sessions.Add(&cdp.SessionInfo{SessionID: "cdp-wheel", JugglerSessionID: "jug-wheel", Type: "page"})
++	mb.SetResponse("jug-wheel", "Page.dispatchWheelEvent", json.RawMessage(`{}`), nil)
++	_, err := b.handleInput(nil, &cdp.Message{ID: 1, SessionID: "cdp-wheel", Method: "Input.dispatchMouseEvent", Params: json.RawMessage(`{"type":"mouseWheel","x":100,"y":150,"deltaX":0,"deltaY":900,"modifiers":2}`)})
++	if err != nil {
++		t.Fatal(err)
++	}
++	calls := mb.CallsForMethod("Page.dispatchWheelEvent")
++	if len(calls) != 1 || len(mb.CallsForMethod("Page.dispatchMouseEvent")) != 0 {
++		t.Fatal("wheel routed as a pointer event")
++	}
++	var payload map[string]float64
++	if err := json.Unmarshal(calls[0].Params, &payload); err != nil {
++		t.Fatal(err)
++	}
++	for key, want := range map[string]float64{"x": 100, "y": 150, "deltaX": 0, "deltaY": 900, "deltaZ": 0, "modifiers": 2} {
++		got, exists := payload[key]
++		if !exists || got != want {
++			t.Fatal(key, payload)
++		}
++	}
++}
