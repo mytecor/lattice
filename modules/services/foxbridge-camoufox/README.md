@@ -42,6 +42,8 @@ Jev agent ── BU_CDP_URL ──▶ Foxbridge ── Juggler ──▶ Camoufo
   Требует `headless = false`, что проверяется assertion модуля. Xvfb запускается
   в том же systemd-сервисе, не слушает TCP и завершается вместе с браузером.
   `PrivateDevices` сохраняется: физический GPU сервису не открывается.
+  Seccomp допускает `setresuid` и `setuid` для проверки и сброса UID в Xvfb; User,
+  NoNewPrivileges и пустой CapabilityBoundingSet по-прежнему запрещают повышение прав.
 - `lattice.foxbridge-camoufox.camoufox.humanize` — режим `humanize` (естественные
   траектории курсора и задержки), доставляется как `CAMOU_CONFIG_1='{"humanize":true}'`
   (f18-06). По умолчанию `true`.
