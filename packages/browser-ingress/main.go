@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
@@ -130,6 +131,7 @@ func proxyHandler(upstream *url.URL, frontend http.FileSystem, prefix string) ht
 // backend, and retained in discovery so clients never fall through to Moli.
 func browserHandler(moli *url.URL, foxbridge string, frontend http.FileSystem) http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("/moli/", http.StripPrefix("/moli", proxyHandler(moli, frontend, "/moli")))
 	if foxbridge != "" {
 		upstream, err := url.Parse(foxbridge)
 		if err != nil {
@@ -137,9 +139,37 @@ func browserHandler(moli *url.URL, foxbridge string, frontend http.FileSystem) h
 		}
 		mux.Handle("/foxbridge/", http.StripPrefix("/foxbridge", proxyHandler(upstream, frontend, "/foxbridge")))
 	}
-	mux.Handle("/", proxyHandler(moli, frontend, ""))
+	mux.Handle("/devtools/frontend/", http.StripPrefix("/devtools/frontend/", http.FileServer(frontend)))
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := browserIndex.Execute(w, foxbridge != ""); err != nil {
+			log.Printf("render browser index: %v", err)
+		}
+	}))
 	return mux
 }
+
+var browserIndex = template.Must(template.New("index").Parse(`<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Браузеры</title>
+<style>
+body { font: 18px system-ui, sans-serif; max-width: 42rem; margin: 10vh auto; padding: 0 1.5rem; color: #1f2937; background: #f8fafc; }
+li { margin: 1rem 0; }
+a { color: #1d4ed8; }
+</style>
+<h1>Браузеры</h1>
+<p>Выберите браузер, чтобы открыть DevTools.</p>
+<ul>
+<li><a href="/moli/">Moli</a></li>
+{{if .}}<li><a href="/foxbridge/">Foxbridge / Camoufox</a></li>{{end}}
+</ul>
+</html>`))
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:9224", "loopback ingress address")

@@ -36,13 +36,13 @@ in {
           # V8 needs executable memory; do not set MemoryDenyWriteExecute.
         };
       };
-      systemd.services.moli-ingress = {
-        description = "Moli CDP discovery and WebSocket proxy";
+      systemd.services.browser-ingress = {
+        description = "Shared browser DevTools and CDP proxy";
         wantedBy = [ "multi-user.target" ];
         after = [ "moli.service" ] ++ lib.optional foxbridge.enable "foxbridge-camoufox.service";
         wants = [ "moli.service" ] ++ lib.optional foxbridge.enable "foxbridge-camoufox.service";
         serviceConfig = sandbox // {
-          ExecStart = "${lib.getExe pkgs.lattice.moli-ingress} --listen 127.0.0.1:${toString ports.moli-ingress} --upstream http://127.0.0.1:${toString ports.moli-cdp} --frontend ${pkgs.lattice.devtools-frontend}"
+          ExecStart = "${lib.getExe pkgs.lattice.browser-ingress} --listen 127.0.0.1:${toString ports.browser-ingress} --upstream http://127.0.0.1:${toString ports.moli-cdp} --frontend ${pkgs.lattice.devtools-frontend}"
             + lib.optionalString foxbridge.enable " --foxbridge http://127.0.0.1:${toString foxbridge.port}";
           MemoryDenyWriteExecute = true;
         };

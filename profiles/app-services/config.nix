@@ -8,7 +8,7 @@ let
   statusPort = latticePorts.node-status;
   browserEnabled = config.lattice.moli.enable;
   browserHost = "browser.${hostName}.local";
-  browserSiteConfig = "reverse_proxy 127.0.0.1:${toString latticePorts.moli-ingress}";
+  browserSiteConfig = "reverse_proxy 127.0.0.1:${toString latticePorts.browser-ingress}";
 
   # f4-05: mesh (внешний) доступ к status — параллельно LAN-контракту. Читаем те же
   # опции, что задаёт профиль tcp-gateway: meshDomain и cloudflareToken. Без токена

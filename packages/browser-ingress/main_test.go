@@ -112,56 +112,115 @@ func TestHostedInspector(t *testing.T) {
 	}
 }
 
-func TestFoxbridgeRouteKeepsDiscoveryOnSelectedBackend(t *testing.T) {
-	moli := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) }))
-	defer moli.Close()
-	fox := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/json/list" {
-			w.Header().Set("Content-Type", "application/json")
-			io.WriteString(w, `[{"type":"page","devtoolsFrontendUrl":"","webSocketDebuggerUrl":"ws://127.0.0.1:9222/devtools/page/fox-target"}]`)
-			return
-		}
-		if r.URL.Path == "/devtools/page/fox-target" {
-			w.WriteHeader(http.StatusAccepted)
-			return
-		}
-		http.NotFound(w, r)
+func TestBackendRouteKeepsDiscoveryOnSelectedBackend(t *testing.T) {
+	for _, prefix := range []string{"/moli", "/foxbridge"} {
+		t.Run(prefix, func(t *testing.T) {
+			moli := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) }))
+			defer moli.Close()
+			fox := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/json/list" {
+					w.Header().Set("Content-Type", "application/json")
+					io.WriteString(w, `[{"type":"page","devtoolsFrontendUrl":"","webSocketDebuggerUrl":"ws://127.0.0.1:9222/devtools/page/fox-target"}]`)
+					return
+				}
+				if r.URL.Path == "/devtools/page/fox-target" {
+					w.WriteHeader(http.StatusAccepted)
+					return
+				}
+				http.NotFound(w, r)
+			}))
+			defer fox.Close()
+			upstream, _ := url.Parse(moli.URL)
+			var handler http.Handler
+			if prefix == "/moli" {
+				selected, _ := url.Parse(fox.URL)
+				handler = browserHandler(selected, moli.URL, http.FS(fstest.MapFS{}))
+			} else {
+				handler = browserHandler(upstream, fox.URL, http.FS(fstest.MapFS{}))
+			}
+			alias := httptest.NewRecorder()
+			handler.ServeHTTP(alias, httptest.NewRequest("GET", "http://browser.example"+prefix, nil))
+			if alias.Code < 300 || alias.Code >= 400 || alias.Header().Get("Location") != prefix+"/" {
+				t.Fatal("invalid backend alias", alias.Code, alias.Header())
+			}
+			for _, scheme := range []string{"http", "https"} {
+				request := httptest.NewRequest("GET", "http://browser.example"+prefix+"/json/list", nil)
+				request.Header.Set("X-Forwarded-Proto", scheme)
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, request)
+				var targets []map[string]string
+				if err := json.Unmarshal(response.Body.Bytes(), &targets); err != nil {
+					t.Fatal(response.Code, response.Body)
+				}
+				ws := "ws"
+				if scheme == "https" {
+					ws = "wss"
+				}
+				if targets[0]["webSocketDebuggerUrl"] != ws+"://browser.example"+prefix+"/devtools/page/fox-target" {
+					t.Fatal(targets)
+				}
+				link, _ := url.Parse(targets[0]["devtoolsFrontendUrl"])
+				if link.Query().Get(ws) != "browser.example"+prefix+"/devtools/page/fox-target" {
+					t.Fatal(link)
+				}
+			}
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest("GET", "http://browser.example"+prefix+"/", nil))
+			link, _ := url.Parse(response.Header().Get("Location"))
+			if response.Code != 307 || link.Query().Get("ws") != "browser.example"+prefix+"/devtools/page/fox-target" {
+				t.Fatal(response.Code, link)
+			}
+			for path, status := range map[string]int{prefix + "/devtools/page/fox-target": 202} {
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, httptest.NewRequest("GET", "http://browser.example"+path, nil))
+				if response.Code != status {
+					t.Fatal(path, response.Code)
+				}
+			}
+		})
+	}
+}
+
+func TestBrowserIndexDoesNotContactBackends(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("index contacted a browser", r.URL)
+		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
-	defer fox.Close()
-	upstream, _ := url.Parse(moli.URL)
-	handler := browserHandler(upstream, fox.URL, http.FS(fstest.MapFS{}))
-	for _, scheme := range []string{"http", "https"} {
-		request := httptest.NewRequest("GET", "http://browser.example/foxbridge/json/list", nil)
-		request.Header.Set("X-Forwarded-Proto", scheme)
+	defer backend.Close()
+	upstream, _ := url.Parse(backend.URL)
+	for _, foxbridge := range []string{"", backend.URL} {
+		handler := browserHandler(upstream, foxbridge, http.FS(fstest.MapFS{}))
 		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
-		var targets []map[string]string
-		if err := json.Unmarshal(response.Body.Bytes(), &targets); err != nil {
-			t.Fatal(response.Code, response.Body)
+		handler.ServeHTTP(response, httptest.NewRequest("GET", "http://browser.example/", nil))
+		body := response.Body.String()
+		if response.Code != http.StatusOK || response.Header().Get("Location") != "" || !strings.Contains(body, `href="/moli/"`) {
+			t.Fatal(response.Code, response.Header(), body)
 		}
-		ws := "ws"
-		if scheme == "https" {
-			ws = "wss"
+		if strings.Contains(body, `href="/foxbridge/"`) != (foxbridge != "") {
+			t.Fatal("index must only offer configured browsers", body)
 		}
-		if targets[0]["webSocketDebuggerUrl"] != ws+"://browser.example/foxbridge/devtools/page/fox-target" {
-			t.Fatal(targets)
-		}
-		link, _ := url.Parse(targets[0]["devtoolsFrontendUrl"])
-		if link.Query().Get(ws) != "browser.example/foxbridge/devtools/page/fox-target" {
-			t.Fatal(link)
+	}
+}
+
+func TestUnprefixedEndpointsAreNotProxied(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("unprefixed request reached backend", r.URL)
+	}))
+	defer backend.Close()
+	upstream, _ := url.Parse(backend.URL)
+	handler := browserHandler(upstream, backend.URL, http.FS(fstest.MapFS{
+		"inspector.html": {Data: []byte("official inspector")},
+	}))
+	for _, path := range []string{"/json", "/json/list", "/json/version", "/json/new?about:blank", "/devtools/page/target", "/devtools/browser/target", "/unknown"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest("GET", "http://browser.example"+path, nil))
+		if response.Code != http.StatusNotFound {
+			t.Fatal(path, response.Code)
 		}
 	}
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest("GET", "http://browser.example/foxbridge/", nil))
-	link, _ := url.Parse(response.Header().Get("Location"))
-	if response.Code != 307 || link.Query().Get("ws") != "browser.example/foxbridge/devtools/page/fox-target" {
-		t.Fatal(response.Code, link)
-	}
-	for path, status := range map[string]int{"/foxbridge/devtools/page/fox-target": 202, "/devtools/page/fox-target": 418} {
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, httptest.NewRequest("GET", "http://browser.example"+path, nil))
-		if response.Code != status {
-			t.Fatal(path, response.Code)
-		}
+	handler.ServeHTTP(response, httptest.NewRequest("GET", "http://browser.example/devtools/frontend/inspector.html", nil))
+	if response.Code != http.StatusOK || response.Body.String() != "official inspector" {
+		t.Fatal("shared frontend unavailable", response.Code, response.Body)
 	}
 }

@@ -1,13 +1,13 @@
 { lib, buildGoModule }:
 buildGoModule {
-  pname = "moli-ingress";
+  pname = "browser-ingress";
   version = "0.1.0";
   src = ./.;
   vendorHash = null;
   meta = {
-    description = "CDP discovery and WebSocket reverse proxy for Moli";
+    description = "Shared DevTools frontend and CDP reverse proxy for Moli and Foxbridge";
     license = lib.licenses.mit;
-    mainProgram = "moli-ingress";
+    mainProgram = "browser-ingress";
     platforms = lib.platforms.linux;
   };
 }

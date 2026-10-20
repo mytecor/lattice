@@ -58,8 +58,8 @@ in
   };
 
   moli = pkgs.lattice.moli;
-  moli-proxy = pkgs.lattice.moli-ingress;
-  moli-ingress = import ./moli.nix {
+  browser-proxy = pkgs.lattice.browser-ingress;
+  browser-ingress = import ./moli.nix {
     inherit nixpkgs pkgs self profiles;
   };
 

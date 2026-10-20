@@ -152,4 +152,5 @@ package-specific lock и описание сборки в собственном
 ## Moli
 
 [Moli](./moli/README.md) — headless-браузер с CDP, реальным layout и скриншотами;
-внешние discovery-адреса адаптирует небольшой ingress proxy.
+внешние discovery-адреса адаптирует общий [browser-ingress](./browser-ingress/README.md),
+который также обслуживает Foxbridge и страницу выбора браузера.

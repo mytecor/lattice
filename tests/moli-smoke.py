@@ -19,17 +19,17 @@ def discover(path, scheme="http"):
 
 for attempt in range(100):
     try:
-        version = discover("/json/version")
+        version = discover("/moli/json/version")
         break
     except OSError:
         time.sleep(0.1)
 else:
     raise RuntimeError("Moli did not become ready")
 
-assert version["webSocketDebuggerUrl"].startswith("ws://browser.test/")
-assert discover("/json/version", "https")["webSocketDebuggerUrl"].startswith("wss://browser.test/")
-targets = discover("/json/list")
-assert targets and all(t["webSocketDebuggerUrl"].startswith("ws://browser.test/") for t in targets)
+assert version["webSocketDebuggerUrl"].startswith("ws://browser.test/moli/")
+assert discover("/moli/json/version", "https")["webSocketDebuggerUrl"].startswith("wss://browser.test/moli/")
+targets = discover("/moli/json/list")
+assert targets and all(t["webSocketDebuggerUrl"].startswith("ws://browser.test/moli/") for t in targets)
 for target in targets:
     frontend = urlsplit(target["devtoolsFrontendUrl"])
     assert frontend.path == "/devtools/frontend/inspector.html"

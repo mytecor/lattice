@@ -111,7 +111,7 @@ flowchart TD
     end
 
     subgraph Browser["Браузерный стек"]
-        MoliIngress["moli-ingress<br/>(DevTools frontend и CDP proxy)"]
+        BrowserIngress["browser-ingress<br/>(Выбор браузера, DevTools и CDP proxy)"]
         Moli["Moli<br/>(Браузер удалённой отладки)"]
         Foxbridge["Foxbridge<br/>(CDP-прокси)"]
         Camoufox["Camoufox<br/>(Браузер агента)"]
@@ -158,9 +158,9 @@ flowchart TD
     Caddy --> Authentik
     Caddy --> HydraACP
     Caddy --> AcpWeb
-    Caddy <--> MoliIngress
-    MoliIngress <--> Moli
-    MoliIngress <--> Foxbridge
+    Caddy <--> BrowserIngress
+    BrowserIngress <--> Moli
+    BrowserIngress <--> Foxbridge
     Foxbridge <-->|Juggler: ввод и screencast| Camoufox
     Camoufox --> Xvfb
     Caddy --> NodeStatus
@@ -219,7 +219,7 @@ flowchart TD
 
     subgraph Backends["Локальные сервисы"]
         AcpUI["acp-web<br/>(Веб-интерфейс ACP)"]
-        BrowserIngress["moli-ingress<br/>(DevTools frontend и CDP proxy)"]
+        BrowserIngress["browser-ingress<br/>(Выбор браузера, DevTools и CDP proxy)"]
         MoliBrowser["Moli<br/>(Браузер удалённой отладки)"]
         FoxBrowser["Foxbridge / Camoufox<br/>(Тест Firefox CDP)"]
         VirtualDisplay["Xvfb<br/>(Программный дисплей)"]
@@ -750,11 +750,15 @@ age-получателя не заменяет отзыв SSH/rnsh-доступ�
 Authentik ForwardAuth для HTTP discovery и WebSocket; клиенты SDK передают cookie
 авторизованной сессии. Loopback-only ingress переписывает endpoint-поля discovery
 на адрес внешнего сайта с правильной схемой `ws`/`wss` и проксирует CDP upgrade.
-Корневой адрес через discovery выбирает существующий page и открывает стандартный
+Общий [browser-ingress](./packages/browser-ingress/README.md) собирается отдельно
+от пакета Moli и обслуживает оба браузера.
+Корневой адрес показывает выбор браузера без обращения к backend.
+Маршрут `/moli/` через discovery выбирает существующий page и открывает стандартный
 [Chrome DevTools frontend](./packages/devtools-frontend/README.md) на том же сайте.
 Frontend обслуживается ingress как статические ресурсы; его WebSocket использует
 тот же origin и ту же сессию Authentik. Для Chrome не нужны SSH-туннель и ручной
-URL `devtools://…?ws=…`. Список targets остаётся доступен на `/json/list`.
+URL `devtools://…?ws=…`. Discovery и WebSocket Moli используют префикс `/moli`;
+CDP endpoints без префикса недоступны.
 Вкладки и cookies Moli временные. Jev обращается к Foxbridge/Camoufox.
 Тестовый маршрут `/foxbridge/` открывает тот же frontend для Camoufox:
 HTTP discovery и WebSocket проксируются в Foxbridge с отдельным префиксом,
@@ -777,7 +781,7 @@ flowchart LR
     SDK["CDP SDK<br/>(Автоматизация)"]
     Caddy["Caddy<br/>(HTTP и WebSocket ingress)"]
     Authentik["Authentik<br/>(ForwardAuth)"]
-    Ingress["moli-ingress<br/>(DevTools frontend и CDP proxy)"]
+    Ingress["browser-ingress<br/>(Выбор браузера, DevTools и CDP proxy)"]
     Moli["Moli<br/>(DOM, JavaScript и рендеринг)"]
     Foxbridge["Foxbridge<br/>(Тестовый CDP-прокси)"]
     Camoufox["Camoufox<br/>(Firefox браузер)"]
