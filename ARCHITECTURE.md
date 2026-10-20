@@ -741,7 +741,7 @@ Authentik ForwardAuth для HTTP discovery и WebSocket; клиенты SDK п�
 Chrome DevTools подключается через SSH-туннель к loopback ingress и штатную
 страницу `chrome://inspect/#devices` с действием **inspect fallback**. Ручной
 URL `devtools://…?ws=<remote-host>` блокируется политикой CSP Chrome, поэтому
-недоступный frontend URL не публикуется в discovery. Для туннеля доступ
+discovery содержит идентификатор frontend без параметра WebSocket. Для туннеля доступ
 авторизуется SSH-ключом. Jev отдельно продолжает обращаться к Foxbridge/Camoufox.
 
 ```mermaid

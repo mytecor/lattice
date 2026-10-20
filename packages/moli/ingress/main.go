@@ -22,11 +22,12 @@ func rewriteDiscovery(value any, host, scheme string) {
 			rewriteDiscovery(item, host, scheme)
 		}
 	case map[string]any:
-		// Moli does not ship a DevTools web frontend. Chrome's bundled
-		// inspector also rejects arbitrary remote WebSockets through CSP.
-		// Do not advertise a link that cannot connect; use chrome://inspect
-		// through an SSH tunnel and its native "inspect fallback" action.
-		delete(v, "devtoolsFrontendUrl")
+		// Native Chrome discovery needs a nonempty frontend identifier even
+		// for "inspect fallback". It supplies its own transport; a manual
+		// ?ws=<remote-host> URL would be blocked by the bundled inspector CSP.
+		if _, target := v["devtoolsFrontendUrl"]; target {
+			v["devtoolsFrontendUrl"] = "devtools://devtools/bundled/inspector.html"
+		}
 		if raw, ok := v["webSocketDebuggerUrl"].(string); ok {
 			if endpoint, err := url.Parse(raw); err == nil {
 				endpoint.Host, endpoint.Scheme = host, scheme

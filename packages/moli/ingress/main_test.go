@@ -41,8 +41,9 @@ func TestDiscovery(t *testing.T) {
 			if target["webSocketDebuggerUrl"] != ws+"://browser.example/devtools/page/42" {
 				t.Fatal(target)
 			}
-			if _, advertised := target["devtoolsFrontendUrl"]; advertised {
-				t.Fatal("unavailable DevTools frontend advertised", target)
+			frontend, err := url.Parse(target["devtoolsFrontendUrl"])
+			if err != nil || frontend.Scheme != "devtools" || frontend.Host != "devtools" || frontend.Path != "/bundled/inspector.html" || frontend.RawQuery != "" {
+				t.Fatal("native inspection requires a frontend identifier without a blocked remote transport", target)
 			}
 			if target["url"] != "http://127.0.0.1:9223/keep" || target["title"] != "127.0.0.1:9223" {
 				t.Fatal("page data mutated", target)

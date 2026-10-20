@@ -13,9 +13,11 @@ CDP targets `/json/list`; прежнего PhantomStream viewer больше н�
 
 Moli и ingress слушают только loopback, backend-порты закрыты firewall.
 Ingress исправляет `webSocketDebuggerUrl` в discovery-ответах Moli: SDK получает
-адрес внешнего сайта вместо loopback. Поле `devtoolsFrontendUrl` удаляется:
+адрес внешнего сайта вместо loopback. Поле `devtoolsFrontendUrl` содержит только
+идентификатор встроенного frontend Chrome без параметра `ws`: Chrome требует
+его для штатного действия **inspect fallback** и сам подключает транспорт.
 Moli не поставляет web frontend, а ручной URL встроенного Chrome DevTools
-блокирует удалённый WebSocket через CSP. Обычные данные страницы не переписываются.
+с удалённым WebSocket блокируется через CSP. Обычные данные страницы не переписываются.
 
 Профиль требует Authentik и запись `service = "browser"` в `forwardAuth`.
 Авторизация защищает discovery и WebSocket handshake. Сначала войдите через
