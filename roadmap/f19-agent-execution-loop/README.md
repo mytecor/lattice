@@ -11,12 +11,17 @@ session, отправляет `TaskSpec`, запускает verifier и воз�
 
 ## Текущий статус
 
-Сверка с реализацией 2026-10-25: [f19-01](./f19-01-agentd-components.md) выполнена
-(коммит `8f2f90f`). В [agentd](../../packages/agentd/main.go) подключены dummy runtime и
-ACP client; реальные r1s run и ACP tunnel ещё не подключены. Базовый verification loop
-уже реализован, но recovery и полная single-agent приёмка остаются открытыми.
+Сверка с реализацией 2026-10-25: [f19-01](./f19-01-agentd-components.md) и
+[f19-02](./f19-02-r1s-acp-tunnel.md) выполнены. В [agentd](../../packages/agentd/main.go)
+доступны `dummy` (по умолчанию) и `r1s` backends. Public r1s API, tunnel и реальный ACP turn
+в Pi/hydra image подтверждены live-тестом с локальным LLM fixture; замена session при
+переназначении execution покрыта integration-тестом.
 
-Следующий шаг — [f19-02](./f19-02-r1s-acp-tunnel.md).
+Следующий шаг — [f19-03](./f19-03-verification-recovery.md): удалённые checks, source result,
+ограничение attempts и полное восстановление task context. Сейчас remote backend после turn
+возвращает явную ошибку верификации. У рабочего allocator homelab обнаружена проблема прав
+на execution metadata, а у disposable namespace отсутствует внешняя сеть; production
+single-agent path требует устранения этих ограничений перед f19-04.
 
 Задачи:
 

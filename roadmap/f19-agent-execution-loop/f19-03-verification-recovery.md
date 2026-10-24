@@ -7,9 +7,10 @@
 Частично реализована в ходе [f19-01](./f19-01-agentd-components.md) (коммит `8f2f90f`).
 [ExecutionLoop](../../packages/agentd/internal/loop/loop.go) и
 [CommandVerifier](../../packages/agentd/internal/verifier/command.go) выполняют checks,
-возвращают feedback в ту же session и ограничивают число итераций. Сейчас
-[сервис](../../packages/agentd/main.go) использует dummy runtime/ACP; это ещё не приёмка
-реального agent container. Task timeout задаётся в [server.go](../../packages/agentd/server.go),
+возвращают feedback в ту же session и ограничивают число итераций. [Сервис](../../packages/agentd/main.go) по умолчанию использует dummy runtime/ACP;
+[f19-02](./f19-02-r1s-acp-tunnel.md) добавляет реальный r1s/ACP backend, но его
+remote verifier пока возвращает явную ошибку. Локальный `CommandVerifier` не применяется
+к контейнеру. Task timeout задаётся в [server.go](../../packages/agentd/server.go),
 но `max_attempts` и recovery с новой ACP session не реализованы.
 
 ## Что сделать

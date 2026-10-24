@@ -19,9 +19,11 @@
 > `agentd` выполняет `TaskSpec` через r1s, ACP tunnel и bounded verification loop.
 
 - **Статус:** 🟡 начата — [f19-01](./roadmap/f19-agent-execution-loop/f19-01-agentd-components.md)
-  выполнена; базовый verification loop реализован на dummy runtime/ACP. Следующий шаг —
-  [f19-02](./roadmap/f19-agent-execution-loop/f19-02-r1s-acp-tunnel.md): реальный r1s run и ACP tunnel;
-  recovery и полная приёмка остаются в f19-03/f19-04.
+  и [f19-02](./roadmap/f19-agent-execution-loop/f19-02-r1s-acp-tunnel.md) выполнены: public r1s API,
+  ACP tunnel, свежая session при переназначении и живой Pi turn с локальным LLM fixture.
+  Следующий шаг — [f19-03](./roadmap/f19-agent-execution-loop/f19-03-verification-recovery.md):
+  remote verification, source result и recovery. Production-путь требует исправить права
+  allocator на metadata и обеспечить внешние Git/LLM capabilities контейнера.
 - **Готово, когда:** disposable agent меняет source repository, проверки проходят или возвращают
   ACP feedback, а `agentd` выдаёт terminal `TaskResult` и восстанавливается без durable local state.
 - **Зависит от:** [F10](#f10-agent-runtime), [F11](#f11-git-task-pipeline)

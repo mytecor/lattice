@@ -57,9 +57,12 @@ runtime» и «Loki / Расследование»; конкретный зап�
 [F10](./roadmap/f10-disposable-worker/README.md) (disposable ACP runtime) и
 [F11](./roadmap/f11-git-task-pipeline/README.md) (dummy Git task pipeline).
 [F19](./roadmap/f19-agent-execution-loop/README.md) начата: `agentd` разделён на компоненты,
-базовый verification loop работает с dummy runtime/ACP. Следующий шаг —
-[f19-02](./roadmap/f19-agent-execution-loop/f19-02-r1s-acp-tunnel.md), реальный r1s run и ACP tunnel;
-затем recovery, полная приёмка и [F20](./roadmap/f20-planning-loop/README.md) (planning agent).
+базовый verification loop работает с dummy runtime/ACP, а
+[f19-02](./roadmap/f19-agent-execution-loop/f19-02-r1s-acp-tunnel.md) подключает реальный r1s run
+и ACP tunnel (live Pi turn подтверждён с локальным LLM fixture). Следующий шаг —
+[f19-03](./roadmap/f19-agent-execution-loop/f19-03-verification-recovery.md): удалённая верификация,
+source result и recovery; затем полная приёмка и
+[F20](./roadmap/f20-planning-loop/README.md) (planning agent).
 Задачи f9-01..f9-03 (caches) закрыты, artifacts/S3-часть F9 отложена и не блокирует эту вертикаль.
 Остатки F4 (drill без GitHub, bootstrap новой ноды, f4-05) тоже отложены на потом
 и не блокируют продолжение F19→F20.

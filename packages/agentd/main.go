@@ -3,14 +3,17 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
+	r1s "github.com/mytecor/r1s/client"
 	"io"
 	"log"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/mytecor/lattice/agentd/internal/acp"
 	"github.com/mytecor/lattice/agentd/internal/loop"
@@ -22,17 +25,20 @@ import (
 	meshrns "github.com/mytecor/meshbus/transport/rns"
 )
 
-var version = "0.2.0"
+var version = "0.3.0"
 
 func main() {
 	var (
-		realmKeyFile  string
-		realmKeyHex   string
-		identityPath  string
-		agentSubject  string
-		workDir       string
-		maxIterations int
-		showVersion   bool
+		realmKeyFile                                                                    string
+		realmKeyHex                                                                     string
+		identityPath                                                                    string
+		agentSubject                                                                    string
+		workDir                                                                         string
+		maxIterations                                                                   int
+		showVersion                                                                     bool
+		backend, clusterKeyFile, bootstrap, tunnelPeers, environmentFile, resourceClass string
+		acpPort                                                                         uint
+		offerWait                                                                       time.Duration
 	)
 
 	flag.StringVar(&realmKeyFile, "realm-key-file", os.Getenv("MESHBUS_REALM_KEY_FILE"), "Path to 32-byte realm key file")
@@ -42,6 +48,14 @@ func main() {
 	flag.StringVar(&workDir, "work-dir", os.Getenv("AGENTD_WORK_DIR"), "Directory for temporary execution worktrees")
 	flag.IntVar(&maxIterations, "max-iterations", 5, "Default maximum iterations for agent execution loop")
 	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
+	flag.StringVar(&backend, "runtime", "dummy", "Execution runtime: dummy or r1s")
+	flag.StringVar(&clusterKeyFile, "r1s-cluster-key-file", "", "Path to raw 32-byte or hex r1s cluster key (separate from Meshbus realm)")
+	flag.StringVar(&bootstrap, "r1s-bootstrap-destinations", "", "Comma-separated public allocator destinations")
+	flag.StringVar(&tunnelPeers, "r1s-tunnel-peers", "", "Comma-separated tunnel bootstrap peer URIs")
+	flag.StringVar(&environmentFile, "agent-environment-file", "", "Runtime JSON object with scoped agent environment (never logged)")
+	flag.StringVar(&resourceClass, "r1s-resource-class", "default", "r1s resource class")
+	flag.UintVar(&acpPort, "acp-port", 55514, "Container ACP port")
+	flag.DurationVar(&offerWait, "r1s-offer-wait", 10*time.Second, "Allocator offer collection window")
 	flag.Parse()
 
 	if showVersion {
@@ -97,9 +111,42 @@ func main() {
 	defer node.Close()
 
 	bus := &nodeBus{node: node}
-	rt := runtime.NewDummyRuntime(workDir)
-	acpClient := acp.NewDummyClient()
-	ver := verifier.NewCommandVerifier()
+	var rt runtime.Runtime = runtime.NewDummyRuntime(workDir)
+	var acpClient acp.Client = acp.NewDummyClient()
+	var ver verifier.Verifier = verifier.NewCommandVerifier()
+	switch backend {
+	case "dummy":
+	case "r1s":
+		if acpPort == 0 || acpPort > 65535 {
+			log.Fatal("acp-port must be in 1..65535")
+		}
+		key, err := readClusterKey(clusterKeyFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		environment := map[string]string{}
+		if environmentFile != "" {
+			data, err := os.ReadFile(environmentFile)
+			if err != nil {
+				log.Fatal("cannot read agent environment file")
+			}
+			if json.Unmarshal(data, &environment) != nil {
+				log.Fatal("agent environment file must be a JSON string map")
+			}
+		}
+		remote, err := runtime.NewR1SRuntime(runtime.R1SConfig{
+			Client:  r1s.Config{ClusterKey: key, BootstrapDestinations: splitList(bootstrap), TunnelPeers: splitList(tunnelPeers)},
+			ACPPort: uint16(acpPort), ResourceClass: resourceClass, Environment: environment, OfferWait: offerWait,
+		})
+		if err != nil {
+			log.Fatalf("configure r1s runtime: %v", err)
+		}
+		rt = remote
+		acpClient = &acp.WebSocketClient{Dial: remote.DialACP}
+		ver = verifier.PendingRemote{}
+	default:
+		log.Fatal("runtime must be dummy or r1s")
+	}
 	execLoop, err := loop.New(loop.Config{
 		Runtime:              rt,
 		ACPClient:            acpClient,
@@ -156,4 +203,29 @@ func (b *nodeBus) Subscribe(pattern string, handler func(ctx context.Context, ev
 func (b *nodeBus) Publish(ctx context.Context, topic string, payload []byte, opts core.PublishOptions) error {
 	_, err := b.node.Publish(ctx, topic, payload, opts)
 	return err
+}
+
+func splitList(value string) []string {
+	var result []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func readClusterKey(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read r1s cluster key file")
+	}
+	if len(data) == 32 {
+		return data, nil
+	}
+	key, err := hex.DecodeString(strings.TrimSpace(string(data)))
+	if err != nil || len(key) != 32 {
+		return nil, fmt.Errorf("r1s cluster key must be 32 raw bytes or 64 hex characters")
+	}
+	return key, nil
 }

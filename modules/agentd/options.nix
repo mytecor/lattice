@@ -56,6 +56,50 @@ in
       description = "Directory for temporary worktrees during workload execution.";
     };
 
+    runtime = mkOption {
+      type = types.enum [ "dummy" "r1s" ];
+      default = "dummy";
+      description = "Execution backend. r1s uses disposable ACP agents; full remote verification follows in f19-03.";
+    };
+
+    r1s = {
+      clusterKeyFile = mkOption {
+        type = types.nullOr types.path;
+        default = null;
+        description = "Runtime file containing the r1s cluster membership key (32 raw bytes or 64 hex characters), separate from the Meshbus realm key.";
+      };
+      bootstrapDestinations = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        description = "Public allocator destination hashes used for deterministic bootstrap.";
+      };
+      tunnelPeers = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        description = "Bootstrap peer URIs for the run-owned tunnel edge; empty uses r1s defaults.";
+      };
+      resourceClass = mkOption {
+        type = types.str;
+        default = "default";
+        description = "Allocator resource class requested for the agent workload.";
+      };
+      acpPort = mkOption {
+        type = types.port;
+        default = 55514;
+        description = "ACP port inside the container, accessible only through the r1s tunnel.";
+      };
+      offerWait = mkOption {
+        type = types.ints.positive;
+        default = 10;
+        description = "Offer collection window in seconds.";
+      };
+      agentEnvironmentFile = mkOption {
+        type = types.nullOr types.path;
+        default = null;
+        description = "Runtime JSON string map with scoped agent environment. Passed only to workloads, never read into the Nix store.";
+      };
+    };
+
     maxIterations = mkOption {
       type = types.int;
       default = 5;

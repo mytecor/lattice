@@ -9,11 +9,11 @@ let
 in
 buildGo127Module {
   pname = "lattice-agentd";
-  version = "0.1.0";
+  version = "0.3.0";
 
   inherit src;
   modRoot = "agentd";
-  vendorHash = lib.fakeHash;
+  vendorHash = "sha256-nJ1ZXmEHQtRV6xXWZcP9FlFjOpQvDR9UrZs6ewB6FI8=";
 
   nativeBuildInputs = [ makeWrapper ];
   nativeCheckInputs = [ git ];
@@ -23,7 +23,7 @@ buildGo127Module {
       --prefix PATH : ${lib.makeBinPath [ git ]}
   '';
 
-  ldflags = [ "-s" "-w" "-X main.version=0.1.0" ];
+  ldflags = [ "-s" "-w" "-X main.version=0.3.0" ];
 
   meta = {
     description = "Lattice agent execution daemon";

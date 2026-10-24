@@ -18,3 +18,30 @@ NixOS-модуль для запуска демона исполнения за�
   };
 }
 ```
+
+## Disposable ACP backend (f19-02)
+
+```nix
+lattice.agentd = {
+  enable = true;
+  realmKeyFile = "/run/agenix/meshbus-realm";
+  runtime = "r1s";
+  r1s = {
+    clusterKeyFile = "/run/agenix/r1s-cluster-key";
+    bootstrapDestinations = [ "<public allocator destination hash>" ];
+    # Optional runtime JSON string map with scoped agent environment:
+    # agentEnvironmentFile = "/run/agenix/agent-environment";
+  };
+};
+```
+
+Cluster key — 32 raw bytes или 64 hex characters, отдельный от Meshbus realm key.
+Он и optional environment file загружаются через `LoadCredential`; значения не читаются Nix
+и не помещаются в store или argv. Контейнер получает только agent environment и source/ACP inputs.
+Настройки `tunnelPeers`, `resourceClass`, `acpPort`, `offerWait` управляют run/tunnel без
+публикации backend-порта в firewall.
+
+По умолчанию остаётся `runtime = "dummy"`. Backend `r1s` реализует ACP turn и замену session
+при переназначении execution, но удалённая верификация и source result collection остаются в
+[f19-03](../../roadmap/f19-agent-execution-loop/f19-03-verification-recovery.md).
+До её реализации после turn возвращается явная ошибка верификации; checks не исполняются на хосте.

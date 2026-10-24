@@ -189,8 +189,8 @@ flowchart TD
     MeshBus --> Taskd
     Taskd --> MeshBus
     MeshBus --> Agentd
-    Agentd --> R1s
-    Agentd --> HydraACP
+    Agentd -->|Public run API| R1s
+    Agentd -->|ACP over r1s tunnel| HydraACP
     Agentd --> Taskd
     Taskd --> Radicle
 
@@ -253,7 +253,12 @@ flowchart TD
 Декларативный контур выполнения задач по [TASK_EXECUTION.md](./TASK_EXECUTION.md):
 Git хранит `task.md` и результаты, `git-watchd` транслирует изменения в `MeshBus`,
 `taskd` выполняет сверку и постановку, а `agentd` запускает контейнер в `r1s` и
-управляет циклом исполнения через ACP.
+управляет циклом исполнения через ACP. Реализация f19-02 использует public library API r1s:
+на каждую задачу создаётся ephemeral client с logical run и tunnel. При переназначении execution
+старый stream закрывается, создаётся новая ACP session с исходным task context. Полное
+восстановление Git/verifier context и удалённая верификация остаются в f19-03;
+режим `r1s` пока возвращает явную ошибку верификации после turn, не запускает checks на хосте
+и не объявляет задачу выполненной. Режим `dummy` сохранён для deterministic pipeline.
 
 ```mermaid
 flowchart TD
@@ -276,9 +281,9 @@ flowchart TD
     Taskd -- "Отправляет TaskSpec на выполнение" --> MeshBus
     MeshBus --> Agentd
 
-    Agentd -- "Запускает OCI контейнер" --> R1s
+    Agentd -- "Public API: logical run" --> R1s
     R1s --> Container
-    Agentd -- "Открывает ACP сессию" --> HydraACP
+    Agentd -- "ACP WebSocket через r1s tunnel" --> HydraACP
     HydraACP <--> Container
 
     Agentd -- "Возвращает TaskResult" --> Taskd

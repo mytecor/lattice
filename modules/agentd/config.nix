@@ -11,6 +11,13 @@ let
     "--agent-subject" cfg.agentSubject
     "--work-dir" workDirPath
     "--max-iterations" (toString cfg.maxIterations)
+    "--runtime" cfg.runtime
+  ] ++ lib.optionals (cfg.runtime == "r1s") [
+    "--r1s-bootstrap-destinations" (lib.concatStringsSep "," cfg.r1s.bootstrapDestinations)
+    "--r1s-tunnel-peers" (lib.concatStringsSep "," cfg.r1s.tunnelPeers)
+    "--r1s-resource-class" cfg.r1s.resourceClass
+    "--acp-port" (toString cfg.r1s.acpPort)
+    "--r1s-offer-wait" "${toString cfg.r1s.offerWait}s"
   ];
 
   execScript = pkgs.writeShellScript "agentd-start" ''
@@ -28,7 +35,13 @@ let
     fi
 
     mkdir -p "${workDirPath}"
-    exec ${lib.getExe cfg.package} --realm-key-file "$key_file" ${lib.escapeShellArgs args}
+    ${lib.optionalString (cfg.runtime == "r1s") ''
+      set -- --r1s-cluster-key-file "$CREDENTIALS_DIRECTORY/r1s-cluster-key"
+      ${lib.optionalString (cfg.r1s.agentEnvironmentFile != null) ''
+        set -- "$@" --agent-environment-file "$CREDENTIALS_DIRECTORY/agent-environment"
+      ''}
+    ''}
+    exec ${lib.getExe cfg.package} --realm-key-file "$key_file" ${lib.escapeShellArgs args} "$@"
   '';
 in
 {
@@ -37,6 +50,10 @@ in
       {
         assertion = cfg.realmKeyFile != null;
         message = "lattice.agentd: realmKeyFile must be set.";
+      }
+      {
+        assertion = cfg.runtime != "r1s" || cfg.r1s.clusterKeyFile != null;
+        message = "lattice.agentd: r1s.clusterKeyFile must be set for the r1s runtime.";
       }
     ];
 
@@ -63,7 +80,11 @@ in
         Restart = "always";
         RestartSec = "5s";
 
-        LoadCredential = lib.optional (cfg.realmKeyFile != null) "realm-key:${toString cfg.realmKeyFile}";
+        LoadCredential = lib.optional (cfg.realmKeyFile != null) "realm-key:${toString cfg.realmKeyFile}"
+          ++ lib.optionals (cfg.runtime == "r1s") (
+            lib.optional (cfg.r1s.clusterKeyFile != null) "r1s-cluster-key:${toString cfg.r1s.clusterKeyFile}"
+            ++ lib.optional (cfg.r1s.agentEnvironmentFile != null) "agent-environment:${toString cfg.r1s.agentEnvironmentFile}"
+          );
 
         ExecStart = "${execScript}";
 
