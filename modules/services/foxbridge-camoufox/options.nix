@@ -79,22 +79,6 @@ in
     };
 
     camoufox = {
-      headless = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Run Camoufox headless (no X display).";
-      };
-
-      virtualDisplay = mkOption {
-        type = types.bool;
-        default = false;
-        description = ''
-          Run a headed Camoufox inside a private Xvfb display with software
-          Mesa rendering. Requires headless = false; no physical GPU access
-          or externally listening X server is needed.
-        '';
-      };
-
       humanize = mkOption {
         type = types.bool;
         default = true;

@@ -9,10 +9,9 @@ runtime: **Camoufox** (антидетект-сборка Firefox) под упр�
 
 ```text
 Jev agent ── BU_CDP_URL ──▶ Foxbridge ── Juggler ──▶ Camoufox ──▶ Web
-                                                       │ X11 (virtualDisplay)
-                                                       ▼
-                                                      Xvfb
-                              ▲ CDP (loopback)
+                              ▲ CDP (loopback)         │
+                                                       ▼ EGL / VA-API
+                                                  /dev/dri/renderD128
 ```
 
 - Foxbridge — бинарь из `packages/foxbridge` (upstream + F18-патчи
@@ -33,17 +32,8 @@ Jev agent ── BU_CDP_URL ──▶ Foxbridge ── Juggler ──▶ Camoufo
   так слушает `127.0.0.1` по построению, поэтому любое не-loopback значение
   отклоняется assertion'ом. CDP наружу не публикуется (проверено f18-07).
 - `lattice.foxbridge-camoufox.port` — TCP-порт CDP endpoint (по умолчанию
-  `9222`).
-- `lattice.foxbridge-camoufox.camoufox.headless` — headless-режим
-  (по умолчанию `true`). В [профиле стека](./../../../profiles/browser-agent-stack/README.md)
-  используется `false` вместе с виртуальным дисплеем.
-- `lattice.foxbridge-camoufox.camoufox.virtualDisplay` — запустить headed Camoufox
-  под Xvfb с программным Mesa (`LIBGL_ALWAYS_SOFTWARE=1`); по умолчанию `false`.
-  Требует `headless = false`, что проверяется assertion модуля. Xvfb запускается
-  в том же systemd-сервисе, не слушает TCP и завершается вместе с браузером.
-  `PrivateDevices` сохраняется: физический GPU сервису не открывается.
-  Seccomp допускает `setresuid` и `setuid` для проверки и сброса UID в Xvfb; User,
-  NoNewPrivileges и пустой CapabilityBoundingSet по-прежнему запрещают повышение прав.
+  `9222`). Сервис запускает Camoufox в headless-режиме с прямым доступом к аппаратной ноде
+  GPU (`/dev/dri/renderD128`) через группы `render` и `video` для Headless EGL и VA-API.
 - `lattice.foxbridge-camoufox.camoufox.humanize` — режим `humanize` (естественные
   траектории курсора и задержки), доставляется как `CAMOU_CONFIG_1='{"humanize":true}'`
   (f18-06). По умолчанию `true`.
@@ -95,11 +85,9 @@ libglvnd и Mesa в RUNPATH shared libraries, включая `libxul.so`. Пут
 launcher недостаточно для `dlopen`. Это устраняет ошибку декодирования H.264 MP4.
 
 Штатный Python launcher задаёт WebGL preferences; при запуске сырого бинарника
-их задаёт пакет. Для программного WebGL без GPU профиль использует headed
-режим под Xvfb, аналогичный
-[virtual display](https://camoufox.com/python/virtual-display/) upstream.
-Нативный headless остаётся доступен как отдельный режим, но WebGL в нём
-не гарантирован. CSP сайта и политики origin не отключаются.
+их задаёт пакет. Для WebGL и аппаратного декодирования видео (VA-API) модуль открывает
+доступ к DRM-ноде GPU (`/dev/dri/renderD128`), обеспечивая Headless EGL без X11/Xvfb.
+CSP сайта и политики origin не отключаются.
 
 Screencast переводится [отдельным патчем](./../../../packages/foxbridge/devtools-screencast.patch):
 геометрия CSS viewport помещается в CDP `metadata` независимо от размера JPEG, а подтверждения кадров переводятся

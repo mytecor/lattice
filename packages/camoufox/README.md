@@ -12,9 +12,9 @@ shared library: RUNPATH только на launcher не наследуется �
 
 В конфигурацию браузера добавлены defaults `webgl.force-enabled` и
 `webgl.enable-webgl2`, которые обычно задаёт Python launcher Camoufox.
-Для WebGL без GPU [профиль стека](./../../profiles/browser-agent-stack/README.md)
-запускает headed-браузер под Xvfb с программным Mesa; сам нативный headless
-не обеспечивает этот контракт. CSP и same-origin policy не отключаются.
+В [профиле стека](./../../profiles/browser-agent-stack/README.md)
+браузер запускается в headless-режиме с доступом к GPU (`/dev/dri/renderD128`)
+через Headless EGL и VA-API. CSP и same-origin policy не отключаются.
 
 Runtime-проверка на homelab: декодирование GitHub H.264 MP4 до видеокадра
 `2496×1416` и WebGL clear/readPixels с ожидаемым RGBA `[0,255,0,255]`.

@@ -2,11 +2,7 @@
 
 let
   cfg = config.lattice.foxbridge-camoufox;
-  browserCommand = lib.concatStringsSep " " [
-    (lib.getExe cfg.package)
-    "--port ${toString cfg.port}"
-    "--binary ${lib.getExe cfg.camoufoxPackage}"
-  ] + lib.optionalString cfg.camoufox.headless " --headless";
+  browserCommand = "${lib.getExe cfg.package} --port ${toString cfg.port} --binary ${lib.getExe cfg.camoufoxPackage} --headless";
 in
 {
   config = lib.mkIf cfg.enable {
@@ -24,15 +20,13 @@ in
         construction and exposes no flag to change it; the CDP endpoint is
         never published outside the host (f18-07 verified externally-closed).
       '';
-    } {
-      assertion = !cfg.camoufox.virtualDisplay || !cfg.camoufox.headless;
-      message = "Camoufox virtualDisplay requires headless = false (Xvfb provides the display).";
     }];
 
     users.groups.${cfg.group} = { };
     users.users.${cfg.user} = {
       isSystemUser = true;
       group = cfg.group;
+      extraGroups = [ "render" "video" ];
       # Foxbridge launches Camoufox as a child; it needs no shell login.
       shell = "${pkgs.bash}/bin/bash";
       home = "/var/empty";
@@ -63,18 +57,8 @@ in
         # Persistent home on /var/lib, NOT /run tmpfs (see tmpfiles note).
         WorkingDirectory = cfg.stateDir;
 
-        # f18-08: drop the fragile f18-07 LD_LIBRARY_PATH glob — the Nix
-        # camoufox derivation is auto-patched, so the binary self-contains its
-        # store deps. ExecStart runs Foxbridge directly.
-        #
-        # No --profile flag: Camoufox derives its default profile from
-        # $HOME/.cache/camoufox. A custom --profile path is fatal — f18-08
-        # node validation: pointing it at the /run tmpfs (wiped by
-        # RuntimeDirectory on every start) or anywhere else makes the Juggler
-        # Browser.enable handshake stall (timeout / client closed).
-        ExecStart = if cfg.camoufox.virtualDisplay then
-          "${lib.getExe pkgs.xvfb-run} -a -s '-screen 0 1920x1080x24 -nolisten tcp' ${browserCommand}"
-        else browserCommand;
+        ExecStart = browserCommand;
+
         # f18-07: Camoufox content-processes under a strict systemd sandbox
         # SEGV (forkserver coredump → Juggler never delivers frameId). Disable
         # the content sandbox — a headless anti-detect browser in the homelab,
@@ -82,8 +66,7 @@ in
         Environment = [
           "HOME=${cfg.stateDir}"
           "MOZ_DISABLE_CONTENT_SANDBOX=1"
-        ] ++ lib.optional cfg.camoufox.virtualDisplay "LIBGL_ALWAYS_SOFTWARE=1"
-        ++ lib.optionals cfg.camoufox.humanize [
+        ] ++ lib.optionals cfg.camoufox.humanize [
           # f18-06: humanize is delivered to the browser as an env config
           # chunk. A tiny {"humanize":true} fits CAMOU_CONFIG_1 alone.
           "CAMOU_CONFIG_1=${builtins.toJSON { humanize = true; }}"
@@ -92,16 +75,22 @@ in
         Restart = "on-failure";
         RestartSec = 3;
         TimeoutStartSec = 60;
-        # Stop the Xvfb wrapper and its browser children together.
-        KillMode = if cfg.camoufox.virtualDisplay then "control-group" else "mixed";
+        KillMode = "mixed";
         GuessMainPID = true;
+
+        # GPU acceleration: access to render node for EGL / WebRender and VA-API
+        DevicePolicy = "closed";
+        DeviceAllow = [
+          "/dev/dri/renderD128 rw"
+          "/dev/dri/card0 rw"
+        ];
+        PrivateDevices = false;
 
         # Hardening: the browser runtime reaches the network for the agent's
         # tasks. No privileged caps or elevation; profile stays in stateDir.
         AmbientCapabilities = "";
         CapabilityBoundingSet = "";
         NoNewPrivileges = true;
-        PrivateDevices = true;
         PrivateTmp = true;
         ProtectClock = true;
         ProtectControlGroups = true;
@@ -118,22 +107,10 @@ in
         RestrictRealtime = true;
         RestrictSUIDSGID = true;
         SystemCallArchitectures = "native";
-        # f18-08 validation: ~@resources must NOT reach Firefox. Camoufox
-        # calls setpriority (syscall 141) on startup; the seccomp filter then
-        # kills the process with SIGSYS/31, and foxbridge-camoufox endlessly
-        # crash-cycles (dmesg: sig=31 syscall=141, Restart=on-failure). The
-        # f18-07 manual PoC ran un-sandboxed so this never surfaced. Kept:
-        # @system-service allow-list + ~@privileged + the full capability/
-        # namespaces/fs hardening. Same tradeoff class as verdaccio dropping
-        # MemoryDenyWriteExecute for V8 (see modules/verdaccio/README.md).
         SystemCallFilter = [
           "@system-service"
           "~@privileged"
-        ] ++ lib.optionals cfg.camoufox.virtualDisplay [ "setresuid" "setuid" ];
-        # Xvfb checks its UID via seteuid (setresuid on Linux), and its
-        # helpers reset to their existing UID with setuid.
-        # As this unprivileged user with no capabilities it still returns
-        # EPERM for uid 0; allow the check instead of killing the X server.
+        ];
       };
     };
   };

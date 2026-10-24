@@ -19,18 +19,9 @@
 #      and the CDP/listener ports are NOT in the firewall;
 #   5. secret handling: Jev keys arrive via systemd LoadCredential (runtime
 #      paths from agenix), never in argv / Environment; jey ExecStart wraps
-#      credential injection (never raw secret in the unit).
-#
-# These are invariants of the stack, not node-specific values: a legitimate
-# change to ports/models/keys must not fail the test, but reintroducing any of
-# the f18-08 crash causes (seccomp ~@resources, tmpfs HOME, non-loopback listen,
-# secrets in argv) must.
-#
-# Note on CDP-readiness: the smoke/integration of the FULL path — real
-# Camoufox boot, Jev observe/act/click, DONE — runs on the live node
-# (f18-04 smoke re-verified 2026-09-23) and is out of scope for a Nix sandbox
-# eval. The unit's ExecStartPre probe assertion below pins the readiness
-# contract so a regression of that path fails fast at eval time.
+#      credential injection (never raw secret in the unit);
+#   6. headless GPU: runs headless with direct /dev/dri render node access (EGL/VA-API),
+#      no software Xvfb wrapper.
 
 let
   inherit (nixpkgs) lib;
@@ -57,22 +48,6 @@ let
     ];
   }).config;
 
-  modeConfig = mode: (lib.nixosSystem {
-    modules = [
-      foxbridgeModule
-      {
-        nixpkgs.pkgs = pkgs;
-        system.stateVersion = "26.05";
-        lattice.foxbridge-camoufox = { enable = true; camoufox = mode; };
-      }
-    ];
-  }).config;
-  headlessConfig = modeConfig { headless = true; virtualDisplay = false; };
-  virtualConfig = modeConfig { headless = false; virtualDisplay = true; };
-  invalidConfig = modeConfig { headless = true; virtualDisplay = true; };
-  headlessUnit = headlessConfig.systemd.services.foxbridge-camoufox;
-  virtualUnit = virtualConfig.systemd.services.foxbridge-camoufox;
-
   fb = config.lattice.foxbridge-camoufox;
   jev = config.lattice.jev-ultrafast;
   fbUnit = config.systemd.services.foxbridge-camoufox;
@@ -81,19 +56,16 @@ let
   execStart = builtins.toString (jevUnit.serviceConfig.ExecStart or "");
   execStartPre = builtins.toString (jevUnit.serviceConfig.ExecStartPre or "");
 in
-# Generated commands must implement the chosen display mode; the old module
-# always passed --headless regardless of the public option.
-assert lib.hasInfix "--headless" headlessUnit.serviceConfig.ExecStart;
-assert !(lib.hasInfix "xvfb-run" headlessUnit.serviceConfig.ExecStart);
-assert lib.hasInfix "xvfb-run" virtualUnit.serviceConfig.ExecStart;
-assert !(lib.hasInfix "--headless" virtualUnit.serviceConfig.ExecStart);
-assert lib.hasInfix "-nolisten tcp" virtualUnit.serviceConfig.ExecStart;
-assert lib.elem "LIBGL_ALWAYS_SOFTWARE=1" virtualUnit.serviceConfig.Environment;
-assert virtualUnit.serviceConfig.PrivateDevices;
-assert lib.all (call: lib.elem call virtualUnit.serviceConfig.SystemCallFilter) [ "setresuid" "setuid" ];
-assert virtualUnit.serviceConfig.NoNewPrivileges;
-assert virtualUnit.serviceConfig.KillMode == "control-group";
-assert lib.any (a: lib.hasInfix "virtualDisplay" a.message && !a.assertion) invalidConfig.assertions;
+# --- 0. headless browser + GPU contract ---
+assert lib.hasInfix "--headless" (builtins.toString fbUnit.serviceConfig.ExecStart);
+assert !(lib.hasInfix "xvfb-run" (builtins.toString fbUnit.serviceConfig.ExecStart));
+assert !(lib.elem "LIBGL_ALWAYS_SOFTWARE=1" (fbUnit.serviceConfig.Environment or []));
+assert !fbUnit.serviceConfig.PrivateDevices;
+assert lib.elem "/dev/dri/renderD128 rw" fbUnit.serviceConfig.DeviceAllow;
+assert lib.elem "render" config.users.users.${fb.user}.extraGroups;
+assert lib.elem "video" config.users.users.${fb.user}.extraGroups;
+assert fbUnit.serviceConfig.NoNewPrivileges;
+assert fbUnit.serviceConfig.KillMode == "mixed";
 
 assert jev.enable;
 assert fb.enable;
@@ -142,6 +114,7 @@ assert lib.hasInfix "camoufox" (builtins.toString (fbUnit.serviceConfig.ExecStar
 
 pkgs.runCommand "f18-browser-stack-contract" { } ''
   echo "F18 browser stack contract OK:
+  - headless browser + GPU EGL/VA-API (no Xvfb)
   - jev Requires+After foxbridge, ExecStartPre CDP probe
   - seccomp: no ~@resources, @system-service + ~@privileged retained
   - browser home persistent /var/lib (no tmpfs RuntimeDirectory)
