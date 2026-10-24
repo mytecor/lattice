@@ -18,7 +18,10 @@
 
 > `agentd` выполняет `TaskSpec` через r1s, ACP tunnel и bounded verification loop.
 
-- **Статус:** ⏳ ещё не начата — после доказанного dummy pipeline F11.
+- **Статус:** 🟡 начата — [f19-01](./roadmap/f19-agent-execution-loop/f19-01-agentd-components.md)
+  выполнена; базовый verification loop реализован на dummy runtime/ACP. Следующий шаг —
+  [f19-02](./roadmap/f19-agent-execution-loop/f19-02-r1s-acp-tunnel.md): реальный r1s run и ACP tunnel;
+  recovery и полная приёмка остаются в f19-03/f19-04.
 - **Готово, когда:** disposable agent меняет source repository, проверки проходят или возвращают
   ACP feedback, а `agentd` выдаёт terminal `TaskResult` и восстанавливается без durable local state.
 - **Зависит от:** [F10](#f10-agent-runtime), [F11](#f11-git-task-pipeline)
@@ -77,9 +80,9 @@
 
 > Второй ACP-клиент (браузерный workbench acp-components) против существующего LAN endpoint.
 
-- **Статус:** 🟡 начата — [f13-01](./roadmap/f13-acp-web-client/f13-01-deploy-acp-components.md)
-  (разворачивание [`acp-components`](https://github.com/zvzuola/acp-components) против LAN
-  ACP endpoint из [f8-06](#f8-интерактивный-pi)).
+- **Статус:** 🟡 частично — [f13-01](./roadmap/f13-acp-web-client/f13-01-deploy-acp-components.md):
+  клиент собран, развёрнут на LAN и mesh, загрузка в браузере подтверждена; остаются полная
+  ACP-приёмка (parallel sessions, reconnect/attach, streaming) и контракт-тест ingress.
 - **Готово, когда:** клиент развёрнут декларативно, подключается к `ws://acp.<nodename>.local/`
   и воспроизводит acceptance из [f8-06](#f8-интерактивный-pi) — либо зафиксирован
   воспроизводимый отрицательный результат совместимости.
@@ -99,11 +102,10 @@
 > Центральный single sign-on для пользовательских web-сервисов ноды; единый вход через Authentik,
 > стоящий за существующим Caddy.
 
-- **Статус:** ⏳ ещё не начата — [f14-01](./roadmap/f14-sso-authentik/f14-01-deploy-authentik-sso.md)
-  (развернуть Authentik нативно через NixOS и встроить как центральный SSO: собственный модуль
-  поверх `pkgs.authentik`, agenix-секреты, Caddy ForwardAuth для сервисов без собственного SSO,
-  нативный OIDC для Grafana, защита только web-UI API-сервисов, разделение «люди» и
-  машина-к-машине).
+- **Статус:** 🟡 реализация есть — [f14-01](./roadmap/f14-sso-authentik/f14-01-deploy-authentik-sso.md):
+  модуль Authentik, agenix, декларативный provisioning, ForwardAuth для `acp-ui` и `browser`,
+  Grafana OIDC и контракт-тест включены в конфигурацию. Полная live-приёмка единого входа
+  на LAN и mesh ещё не зафиксирована.
 - **Готово, когда:** один вход в Authentik открывает защищённый веб-UI всех подключённых сервисов;
   сервисы без собственного SSO защищены Caddy ForwardAuth; Grafana входит через OIDC; M2M-пути не
   зависят от браузерной сессии; у API-сервиса с раздельными UI/API защищён только UI.
@@ -123,31 +125,20 @@
   [F12](#f12-observability-метрики-gateway--grafana).
 - **После MVP:** embeddings/hybrid retrieval, hierarchical summaries и raw-page promotion.
 
-### [F17. Аварийный доступ и хотспот](./roadmap/f17-wifi-hotspot-switch/README.md)
-
-> Переключение Wi-Fi-радио: проводной аплинк есть → точка доступа, нет → клиент.
-
-- **Статус:** 🟢 завершена 2026-09-29; задачи
-  [f17-01..f17-04](./roadmap/f17-wifi-hotspot-switch/README.md#порядок-работ).
-- **Готово, когда:** на многодомной ноде вставленный провод переводит Wi-Fi в точку доступа
-  (hostapd/dnsmasq/NAT), выдёргивание возвращает в клиент; в любой момент активно ровно одно
-  состояние (STA **или** AP), переключение переживает reboot и гонки кабеля.
-- **Зависит от:** [F1](#f1-одна-железная-нода); базируется на модели многодомной ноды из
-  [F4](#f4-полезная-нагрузка) (`tcp-gateway`) и зафиксированном результате про одновременный
-  STA+AP (снятый `wireless-hotspot`).
-
 ### [F18. Браузерный стек для агентов](./roadmap/f18-browser-agent-stack/README.md)
 
 > Отдельный браузерный runtime для агентов: Jev → browser-harness → Foxbridge → Camoufox.
 > Оригинальный `jev-ultrafast` без форка, все Firefox-совместимости в Foxbridge.
 
-- **Статус:** 🟢 завершена 2026-09-23 (приёмка [f18-12](./roadmap/f18-browser-agent-stack/f18-12-acceptance.md));
-  11/12 пунктов приняты фактом на живой ноде, п.7 (реальная web-задача Jev) снят с блокировки —
-  homelab LLM-gateway отвечает на chat completions, остаётся один прогон f18-11.
+- **Статус:** 🟡 частично принята — [f18-12](./roadmap/f18-browser-agent-stack/f18-12-acceptance.md)
+  фиксирует 11/12 пунктов на живой ноде 2026-09-23; полноценная web-задача Jev
+  ([f18-11](./roadmap/f18-browser-agent-stack/f18-11-integration-test.md)) ещё не подтверждена.
+  В текущей реализации Camoufox использует Headless EGL/GPU; CDP доступен также через
+  Authentik-защищённый browser ingress, при loopback-only backend.
 - **Готово, когда:** оригинальный `jev-ultrafast` запускается с `BU_CDP_URL` без локальных
   изменений, браузером фактически является Camoufox, между ними работает Foxbridge, Jev
   закрывает минимум одну полноценную web-задачу, fingerprint Camoufox сохраняется, стек
-  стартует декларативно на NixOS через systemd, CDP недоступен извне хоста, есть
+  стартует декларативно на NixOS через systemd, прямой CDP backend недоступен извне хоста, есть
   smoke/integration test полного пути.
 - **Зависит от:** [F4](#f4-полезная-нагрузка) (app services на ноде), [F2](#f2-секреты-и-идентичность)
   (секреты через agenix), частично от [F8](#f8-интерактивный-pi) и [F10](#f10-agent-runtime)
@@ -252,6 +243,19 @@
 - **Готово, когда:** из ACP-сессии на ноде коммит доезжает до Radicle и GitHub одним
   `git push publish main` и применяется нодой через comin; состояние переживает reboot.
 - **Зависит от:** [F4](#f4-полезная-нагрузка) (f4-01 выполнен), [F8](#f8-интерактивный-pi)
+
+### [F17. Аварийный доступ и хотспот](./roadmap/f17-wifi-hotspot-switch/README.md)
+
+> Переключение Wi-Fi-радио: проводной аплинк есть → точка доступа, нет → клиент.
+
+- **Статус:** 🟢 завершена 2026-09-29; задачи
+  [f17-01..f17-04](./roadmap/f17-wifi-hotspot-switch/README.md#порядок-работ).
+- **Готово, когда:** на многодомной ноде вставленный провод переводит Wi-Fi в точку доступа
+  (hostapd/dnsmasq/NAT), выдёргивание возвращает в клиент; в любой момент активно ровно одно
+  состояние (STA **или** AP), переключение переживает reboot и гонки кабеля.
+- **Зависит от:** [F1](#f1-одна-железная-нода); базируется на модели многодомной ноды из
+  [F4](#f4-полезная-нагрузка) (`tcp-gateway`) и зафиксированном результате про одновременный
+  STA+AP (снятый `wireless-hotspot`).
 
 ### [F10. Agent runtime](./roadmap/f10-disposable-worker/README.md)
 

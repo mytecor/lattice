@@ -8,6 +8,18 @@ Jev не знает ничего про Camoufox/Foxbridge: всё связыв�
 
 Соответствует новой вехе в [ROADMAP.md](../../ROADMAP.md#f18-браузерный-стек-для-агентов).
 
+## Текущий статус
+
+**Частичная приёмка:** [f18-12](./f18-12-acceptance.md) фиксирует 11 из 12 критериев
+на живой ноде 2026-09-23. Реальная web-задача Jev с моделью в
+[f18-11](./f18-11-integration-test.md) остаётся незакрытой, поэтому F18 целиком не завершена.
+
+После той приёмки реализация обновлена: Camoufox работает через Headless EGL/GPU без X11/Xvfb;
+[профиль](../../profiles/browser-agent-stack/README.md) сохраняет loopback-only backend,
+а [browser ingress](../../packages/browser-ingress/README.md) предоставляет защищённый
+Authentik маршрут `/foxbridge/` для DevTools и CDP. Эти изменения не заменяют прогон
+реальной задачи Jev.
+
 ## Зачем
 
 - У агентов (Pi) сейчас нет браузерного инструмента. Чтобы закрывать реальные web-задачи
@@ -46,7 +58,8 @@ Web
 
 Два отдельных systemd-сервиса: `foxbridge-camoufox.service` (long-running browser runtime)
 и `jev-ultrafast.service` (агент, зависит от первого через `After=`/`Requires=`).
-Foxbridge слушает только loopback — CDP наружу homelab не публикуется.
+Foxbridge слушает только loopback; внешний доступ к CDP для отладки идёт через
+Authentik-защищённый browser ingress, описанный выше.
 
 ## Порядок работ
 
@@ -91,5 +104,5 @@ Foxbridge слушает только loopback — CDP наружу homelab не
 (без локальных изменений), браузером фактически является Camoufox, между ними работает
 Foxbridge, Jev закрывает минимум одну полноценную web-задачу (click/type/navigation/
 `Runtime.evaluate(awaitPromise=true)`), fingerprint Camoufox сохраняется, стек стартует
-декларативно на NixOS через systemd, CDP недоступен извне хоста, есть smoke/integration
+декларативно на NixOS через systemd, прямой CDP backend недоступен извне хоста, есть smoke/integration
 test полного пути.

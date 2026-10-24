@@ -5,6 +5,16 @@
 [`tcp-gateway`](../../profiles/tcp-gateway/README.md)) и от конвенций секретов
 [F2](../f2-secrets-identity/README.md) (agenix, секреты только runtime-файлами).
 
+## Текущий статус
+
+Сверка с кодом 2026-10-25: модуль, секреты, ingress, Blueprint provisioning, ForwardAuth
+и Grafana OIDC реализованы в [модуле Authentik](../../modules/authentik/config.nix),
+[профиле gateway](../../profiles/tcp-gateway/config.nix) и
+[конфигурации homelab](../../nodes/mytecor-homelab/config.nix).
+[Контракт-тест](../../tests/authentik.nix) присутствует; результаты полной live-приёмки
+единого входа на LAN и mesh в этой задаче ещё не записаны. Исправления живого deployment
+ниже подтверждают частичное развёртывание, но не закрывают весь acceptance.
+
 ## Контекст
 
 На ноде уже есть единый внешний listener — Caddy из
@@ -30,29 +40,34 @@ admin-пароль из agenix, у статических сайтов защи�
 
 ## Что сделать
 
-- [ ] 1. **Модуль `modules/authentik/`**: `default.nix` + `options.nix` (типизированные опции по
-      образцу [`modules/grafana`](../../modules/grafana/README.md)). Поверх `services.postgresql`
-      и `services.redis`; systemd-юниты `authentik-server` и `authentik-worker` через
+- [x] 1. **[Модуль Authentik](../../modules/authentik/README.md)**: типизированные опции
+      по образцу [Grafana](../../modules/grafana/README.md). Поверх `services.postgresql`
+      с peer-аутентификацией через Unix socket; cache хранится в PostgreSQL, отдельный Redis
+      не используется; systemd-юниты `authentik-server` и `authentik-worker` через
       `${pkgs.authentik}/bin/ak server` / `ak worker`; `manage migrate` в `preStart`/one-shot;
       `/var/lib/authentik` персистится через impermanence (как
       [`/var/lib/grafana`](../../nodes/mytecor-homelab/config.nix)).
-- [ ] 2. **Секреты через agenix** (`nodes/mytecor-homelab/secrets/secrets.nix` + `.age`-файлы):
-      `authentik-secret-key` (`SECRET_KEY`), `authentik-bootstrap-token`, пароль выделенного
-      DB-пользователя (`authentik-postgres-password`) и при необходимости stack-пароль. Все — с
+- [x] 2. **Секреты через agenix**
+      ([правила получателей](../../nodes/mytecor-homelab/secrets/secrets.nix) + `.age`-файлы):
+      `authentik-secret-key` (`SECRET_KEY`), `authentik-bootstrap-token`, bootstrap
+      user/email/password и Grafana OAuth client secret.
+      Пароль PostgreSQL не требуется: используется peer-аутентификация. Все — с
       получателями `admin` + `node` в `publicKeys`, как у существующих. В store попадают только
       runtime-пути, не значения.
-- [ ] 3. **Flake-интеграция**: input `module-authentik = { url = "path:./modules/authentik"; }`,
+- [x] 3. **Flake-интеграция**: input `module-authentik = { url = "path:./modules/authentik"; }`,
       экспорт `nixosModules.authentik`, включение в `self.nixosModules.default`.
-- [ ] 4. **Caddy-ингресс для самого Authentik**: сайт `auth` на LAN `http://auth.<node>.local/`
+- [x] 4. **Caddy-ингресс для самого Authentik**: сайт `auth` на LAN `http://auth.<node>.local/`
       и на mesh `https://auth.<meshDomain>/` через `serviceSites` из
       [`profiles/tcp-gateway/config.nix`](../../profiles/tcp-gateway/config.nix); mDNS-публикатор
       `auth-mdns` по образцу `grafana-mdns`. Authentik слушает loopback, backend-порт не в
       firewall (как Grafana). `auth` НЕ в `meshExclude` — это логинстраница, должна быть
       достижима с mesh-клиентов.
-- [ ] 5. **Bootstrap-провижиниг** (декларативно, источник истины — репозиторий, не клики в UI):
+- [x] 5. **Bootstrap-провижиниг** (декларативно, источник истины — репозиторий, не клики в UI):
       оператор-аккаунт, default flow, OIDC-провайдер и ForwardAuth endpoint для последующих
-      подключений. Скрипт через `ak manage shell`/REST, bootstrap-token из agenix; идемпотентный.
-- [ ] 6. **Caddy ForwardAuth для сервисов без собственного SSO**: опция профиля
+      подключений. Bootstrap-параметры из agenix и декларативный Blueprint через `ak apply_blueprint`;
+      OIDC client secret читается runtime-тегом `!File`. Подробности —
+      [f14-02](./f14-02-provisioning.md).
+- [x] 6. **Caddy ForwardAuth для сервисов без собственного SSO**: опция профиля
       `tcp-gateway`/общий шаблон, которая оборачивает `extraConfig` уже существующего сайта
       (`serviceSites`) директивой `forward_auth` + `auth_request` на
       `/outpost.goauthentik.io/auth/caddy`, чтобы не трогать backend. Применение к статике
@@ -63,22 +78,20 @@ admin-пароль из agenix, у статических сайтов защи�
       `X-Forwarded-Host`/`Host` против `external_host` (один провайдер = один host) — без
       mesh-провайдера mesh-сайт отдаёт 404-страницу Authentik вместо статики (см.
       [f14-02](./f14-02-provisioning.md#3-forwardauth-endpoint-для-acp-ui-статический-web-клиент-acp)).
-- [ ] 7. **Нативный OIDC: Grafana** — в [`modules/grafana`](../../modules/grafana/README.md)
+- [x] 7. **Нативный OIDC: Grafana** — в [`modules/grafana`](../../modules/grafana/README.md)
       секция `auth.generic_oauth` (client_id/client_secret/`auth_url`/`token_url`/`api_url`,
       scopes `openid profile email`), client-секрет — agenix. Вход через Authentik, admin-роль
       мапится из группы/claim. Логинстраница Authentik остаётся единственной точкой входа.
-- [ ] 8. **Machine-to-machine не завязывается на browser-based flow**: API-пути/сервисы (LLM
+- [x] 8. **Machine-to-machine не завязывается на browser-based flow**: API-пути/сервисы (LLM
       gateway API-ключи, Radicle-подписи, rnsh/rns, ACP daemon) остаются как есть; SSO защищает
       только браузерный UI. Для API-сервиса с раздельными UI/API (например `acp-ui` против
       `acp`) — защищается только UI-сайт, API endpoints не трогаются: UI-ставка за Caddy
       `forward_auth` с `uri_prune`/subpath, backend-контракт без изменений.
-- [ ] 9. **Контракт-тест** `tests/authentik.nix` (по образцу
-      [`tests/grafana-ingress.nix`](../../tests/grafana-ingress.nix)): модуль собирается при
-      заданных секретах; assertion без секретов падает; Caddy-сайт `auth` существует и
-      проксирует на loopback; backend-порт не в firewall; `auth-mdns` публикует alias; Authentik
-      binds 127.0.0.1; у ForwardAuth-сайтов `extraConfig` содержит `forward_auth` на
-      `/outpost.goauthentik.io/auth/caddy`; Grafana-конфиг содержит `auth.generic_oauth`. Плюс
-      `nix flake check`.
+- [x] 9. **Контракт-тест** [tests/authentik.nix](../../tests/authentik.nix): Caddy ingress,
+      loopback-only backend, firewall/mDNS, systemd units, runtime secret paths,
+      Blueprint provisioning, ForwardAuth и Grafana OAuth. Evaluation всех checks
+      подтверждена 2026-10-25 через `nix flake check --all-systems --no-build`;
+      сборка Linux checks этим запуском не выполнялась.
 - [ ] 10. **Живое подтверждение** на `mytecor-homelab`: вход в Authentik (bootstrap-token →
       оператор), создание провайдера, вход Grafana через SSO, проверка ForwardAuth-сайта,
       достижимость `auth` на LAN и mesh. Зафиксировать результат в этой задаче.
@@ -126,9 +139,9 @@ proxy-провайдера (и `forward_single`, и `proxy`) — при нуле
       provisioning идемпотентен и живёт в репозитории.
 - [ ] Сервис без собственного SSO защищён Caddy ForwardAuth; Grafana входит через OIDC-провайдер
       Authentik — один вход открывает оба интерфейса.
-- [ ] M2M/API-пути не зависят от браузерной сессии Authentik; у API-сервиса с раздельными UI/API
+- [x] M2M/API-пути не зависят от браузерной сессии Authentik; у API-сервиса с раздельными UI/API
       защищён только UI, API endpoints не тронуты (подтверждено тестом/проверкой).
-- [ ] `nix flake check --all-systems --no-build` зелёный (включая новый контракт-тест).
+- [x] `nix flake check --all-systems --no-build` зелёный (включая новый контракт-тест).
 
 ## Затрагиваемые файлы / слои
 
@@ -147,12 +160,12 @@ proxy-провайдера (и `forward_single`, и `proxy`) — при нуле
 
 ## Открытые вопросы
 
-- **СУБД**: системный `services.postgresql` (одна БД на ноду) или отдельный кластер для
-  Authentik. Решение по ходу шага 1; контракт — пароль только agenix.
-- **Bootstrap-токен**: временный (после provisioning отзывается) против постоянного.
-  Предпочтительно временный.
+- **СУБД — решено:** системный `services.postgresql`, peer-аутентификация через Unix socket,
+  cache в PostgreSQL; пароль БД и Redis не требуются.
+- **Bootstrap-токен — реализовано:** постоянный API-токен оператора через agenix,
+  как описано в [модуле Authentik](../../modules/authentik/README.md#безопасность--секреты).
 - **mesh и `auth`**: вход с mesh-клиентов нужен, поэтому `auth` не в `meshExclude`.
-- **какие именно статические сайты** (`acp-ui`, `status`) заворачиваются в ForwardAuth на первом
-  шаге — по решению оператора; механизм делается общим, без изменения backend.
+- **ForwardAuth — реализовано:** на homelab защищены `acp-ui` и `browser`; `status` не включён
+  в список ForwardAuth. ACP backend остаётся отдельным endpoint.
 
-_нет_ открытых блокеров до старта.
+Остаётся зафиксировать полную live-приёмку (шаг 10).

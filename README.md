@@ -52,12 +52,17 @@ runtime» и «Loki / Расследование»; конкретный зап�
 Готов исполняемый fabric
 [r1s](https://github.com/mytecor/r1s): децентрализованное выполнение OCI workload поверх Reticulum
 (клиент `r1s`, allocator `r1sd` над `containerd`). Он является готовым execution fabric;
-временный `LocalExecutor` и Lattice-owned scheduler из плана убраны. Следующая вертикаль описана в
-[TASK_EXECUTION.md](./TASK_EXECUTION.md): F10 строит ACP endpoint в disposable agent container,
-F11 добавляет Git task pipeline, F19 — `agentd` и verification loop, F20 — planning agent.
+временный `LocalExecutor` и Lattice-owned scheduler из плана убраны.
+В вертикали [TASK_EXECUTION.md](./TASK_EXECUTION.md) закрыты
+[F10](./roadmap/f10-disposable-worker/README.md) (disposable ACP runtime) и
+[F11](./roadmap/f11-git-task-pipeline/README.md) (dummy Git task pipeline).
+[F19](./roadmap/f19-agent-execution-loop/README.md) начата: `agentd` разделён на компоненты,
+базовый verification loop работает с dummy runtime/ACP. Следующий шаг —
+[f19-02](./roadmap/f19-agent-execution-loop/f19-02-r1s-acp-tunnel.md), реальный r1s run и ACP tunnel;
+затем recovery, полная приёмка и [F20](./roadmap/f20-planning-loop/README.md) (planning agent).
 Задачи f9-01..f9-03 (caches) закрыты, artifacts/S3-часть F9 отложена и не блокирует эту вертикаль.
 Остатки F4 (drill без GitHub, bootstrap новой ноды, f4-05) тоже отложены на потом
-и не блокируют старт цикла F10→F11→F19→F20.
+и не блокируют продолжение F19→F20.
 
 ## Направления развития
 

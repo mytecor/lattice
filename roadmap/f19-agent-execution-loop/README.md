@@ -9,6 +9,15 @@ session, отправляет `TaskSpec`, запускает verifier и воз�
 [вехе 19](../../ROADMAP.md#f19-agent-execution-loop). Архитектурный контракт описан в
 [TASK_EXECUTION.md](../../TASK_EXECUTION.md).
 
+## Текущий статус
+
+Сверка с реализацией 2026-10-25: [f19-01](./f19-01-agentd-components.md) выполнена
+(коммит `8f2f90f`). В [agentd](../../packages/agentd/main.go) подключены dummy runtime и
+ACP client; реальные r1s run и ACP tunnel ещё не подключены. Базовый verification loop
+уже реализован, но recovery и полная single-agent приёмка остаются открытыми.
+
+Следующий шаг — [f19-02](./f19-02-r1s-acp-tunnel.md).
+
 Задачи:
 
 - [f19-01](./f19-01-agentd-components.md) — разделить `agentd` на runtime/acp/loop/verifier;

@@ -10,10 +10,15 @@ API разделены, может защищаться отдельно, не �
 
 Соответствует [вехе 14](../../ROADMAP.md#f14-sso-через-authentik).
 
+**Статус (сверка 2026-10-25):** реализация включена в конфигурацию homelab; полная
+live-приёмка единого входа на LAN и mesh ещё не зафиксирована. Модуль, provisioning,
+ForwardAuth и Grafana OIDC реализованы; контракт покрывает
+[tests/authentik.nix](../../tests/authentik.nix).
+
 Задачи: [f14-01](./f14-01-deploy-authentik-sso.md) — развёртывание Authentik нативно через NixOS и
 встраивание его как центрального SSO: собственный модуль поверх `pkgs.authentik`, секреты через
 agenix, Caddy-ингресс, Caddy ForwardAuth для сервисов без собственного SSO, нативный OIDC для
-Grafana, защита только web-UI API-сервисов и разделение «люди vs machine-to-machine». Дальнейшие
+Grafana, защита только web-UI API-сервисов и разделение «люди vs machine-to-machine». Provisioning описан в [f14-02](./f14-02-provisioning.md). Дальнейшие
 доработки (user lifecycle, multi-node) — отдельные follow-up.
 
 **Критерий готовности:** один вход в Authentik через
