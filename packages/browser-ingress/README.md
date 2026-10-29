@@ -27,15 +27,19 @@ Caddy отвечает за внешний HTTP/TLS ingress и ForwardAuth. Go-�
 browser-ingress --listen 127.0.0.1:9224 \
   --upstream http://127.0.0.1:9223 \
   --frontend /path/to/devtools-frontend \
-  --foxbridge http://127.0.0.1:9222
+  --foxbridge http://127.0.0.1:9222 \
+  --idle-timeout 20m
 ```
 
 `--frontend` обязателен. `--upstream` задаёт Moli, `--foxbridge` — необязательный
-фиксированный upstream для `/foxbridge/`. Привязка page-сессии и JSON text framing
+фиксированный upstream для `/foxbridge/`. Флаг `--idle-timeout` (по умолчанию 20m)
+отслеживает активные WebSocket CDP-сессии к страницам; при отсутствии подключений
+в течение таймаута непустые вкладки сбрасываются на `about:blank`, предотвращая фоновую
+нагрузку на CPU и систему охлаждения. Привязка page-сессии и JSON text framing
 Foxbridge обеспечиваются [патчем](./../foxbridge/devtools-page-socket.patch).
 
 [Go-тесты](./main_test.go) проверяют HTTP/HTTPS discovery, перенаправления,
-статические ресурсы, маршрутизацию backend-ов и отсутствие старых endpoint-ов.
+статические ресурсы, маршрутизацию backend-ов, отсутствие старых endpoint-ов и сброс неактивных вкладок по таймауту.
 [Runtime smoke](./../../tests/moli.nix) запускает настоящий Moli, загружает frontend,
 подключается по WebSocket, выполняет JavaScript и получает PNG.
 

@@ -17,7 +17,10 @@ SSH-туннель, `chrome://inspect` и ручные `devtools://` ссылк�
 Moli и общий [browser-ingress](./../../packages/browser-ingress/README.md) слушают только loopback, backend-порты закрыты firewall.
 Ingress отдаёт готовые статические ресурсы DevTools под `/devtools/frontend/`,
 проксирует CDP и исправляет `webSocketDebuggerUrl` и `devtoolsFrontendUrl`
-в discovery. HTTP-сайт использует `ws`, HTTPS-сайт — `wss`; frontend и WebSocket
+в discovery. При отсутствии активных CDP WebSocket-подключений дольше таймаута
+(`lattice.moli.idleTimeout`, по умолчанию `20m`), непустые вкладки сбрасываются
+на `about:blank`, предотвращая фоновую нагрузку на CPU.
+HTTP-сайт использует `ws`, HTTPS-сайт — `wss`; frontend и WebSocket
 остаются на одном origin и используют одну сессию Authentik.
 Обычные данные страницы не переписываются.
 

@@ -145,7 +145,14 @@ in
 {
   imports = [ ../tcp-gateway/config.nix ];
 
-  options.lattice.moli.enable = lib.mkEnableOption "Moli remote debugging browser";
+  options.lattice.moli = {
+    enable = lib.mkEnableOption "Moli remote debugging browser";
+    idleTimeout = lib.mkOption {
+      type = lib.types.str;
+      default = "20m";
+      description = "Idle timeout before resetting inactive browser tabs to about:blank.";
+    };
+  };
 
   config = {
     services.caddy.virtualHosts = {

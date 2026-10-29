@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 func TestDiscovery(t *testing.T) {
@@ -26,7 +27,7 @@ func TestDiscovery(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://browser.example/json/list?ignored=true", nil)
 			req.Header.Set("X-Forwarded-Proto", scheme)
 			res := httptest.NewRecorder()
-			proxyHandler(upstream, http.Dir(t.TempDir()), "").ServeHTTP(res, req)
+			proxyHandler(upstream, http.Dir(t.TempDir()), "", nil).ServeHTTP(res, req)
 			if res.Code != 200 {
 				t.Fatal(res.Code, res.Body.String())
 			}
@@ -64,7 +65,7 @@ func TestPassThrough(t *testing.T) {
 	defer backend.Close()
 	upstream, _ := url.Parse(backend.URL)
 	res := httptest.NewRecorder()
-	proxyHandler(upstream, http.Dir(t.TempDir()), "").ServeHTTP(res, httptest.NewRequest("PUT", "http://browser.example/json/new?https://example.org", strings.NewReader("payload")))
+	proxyHandler(upstream, http.Dir(t.TempDir()), "", nil).ServeHTTP(res, httptest.NewRequest("PUT", "http://browser.example/json/new?https://example.org", strings.NewReader("payload")))
 	if res.Code != http.StatusCreated || res.Body.String() != "payload" {
 		t.Fatal(res)
 	}
@@ -84,7 +85,7 @@ func TestHostedInspector(t *testing.T) {
 	defer backend.Close()
 	upstream, _ := url.Parse(backend.URL)
 	frontend := http.FS(fstest.MapFS{"inspector.html": {Data: []byte("official inspector")}})
-	handler := proxyHandler(upstream, frontend, "")
+	handler := proxyHandler(upstream, frontend, "", nil)
 	for _, scheme := range []string{"http", "https"} {
 		request := httptest.NewRequest("GET", "http://browser.example/", nil)
 		request.Header.Set("X-Forwarded-Proto", scheme)
@@ -134,9 +135,9 @@ func TestBackendRouteKeepsDiscoveryOnSelectedBackend(t *testing.T) {
 			var handler http.Handler
 			if prefix == "/moli" {
 				selected, _ := url.Parse(fox.URL)
-				handler = browserHandler(selected, moli.URL, http.FS(fstest.MapFS{}))
+				handler = browserHandler(selected, moli.URL, http.FS(fstest.MapFS{}), nil)
 			} else {
-				handler = browserHandler(upstream, fox.URL, http.FS(fstest.MapFS{}))
+				handler = browserHandler(upstream, fox.URL, http.FS(fstest.MapFS{}), nil)
 			}
 			alias := httptest.NewRecorder()
 			handler.ServeHTTP(alias, httptest.NewRequest("GET", "http://browser.example"+prefix, nil))
@@ -189,7 +190,7 @@ func TestBrowserIndexDoesNotContactBackends(t *testing.T) {
 	defer backend.Close()
 	upstream, _ := url.Parse(backend.URL)
 	for _, foxbridge := range []string{"", backend.URL} {
-		handler := browserHandler(upstream, foxbridge, http.FS(fstest.MapFS{}))
+		handler := browserHandler(upstream, foxbridge, http.FS(fstest.MapFS{}), nil)
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest("GET", "http://browser.example/", nil))
 		body := response.Body.String()
@@ -210,7 +211,7 @@ func TestUnprefixedEndpointsAreNotProxied(t *testing.T) {
 	upstream, _ := url.Parse(backend.URL)
 	handler := browserHandler(upstream, backend.URL, http.FS(fstest.MapFS{
 		"inspector.html": {Data: []byte("official inspector")},
-	}))
+	}), nil)
 	for _, path := range []string{"/json", "/json/list", "/json/version", "/json/new?about:blank", "/devtools/page/target", "/devtools/browser/target", "/unknown"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest("GET", "http://browser.example"+path, nil))
@@ -222,5 +223,140 @@ func TestUnprefixedEndpointsAreNotProxied(t *testing.T) {
 	handler.ServeHTTP(response, httptest.NewRequest("GET", "http://browser.example/devtools/frontend/inspector.html", nil))
 	if response.Code != http.StatusOK || response.Body.String() != "official inspector" {
 		t.Fatal("shared frontend unavailable", response.Code, response.Body)
+	}
+}
+
+func TestIdleTargetReset(t *testing.T) {
+	navigated := make(chan string, 1)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/json/list" {
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[{"id":"tab-1","type":"page","url":"https://github.com/","webSocketDebuggerUrl":"ws://`+r.Host+`/devtools/page/tab-1"}]`)
+			return
+		}
+		if r.URL.Path == "/devtools/page/tab-1" && isWebSocketUpgrade(r) {
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				http.Error(w, "hijack not supported", 500)
+				return
+			}
+			conn, brw, err := hj.Hijack()
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			brw.WriteString("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n")
+			brw.Flush()
+
+			hdr := make([]byte, 2)
+			if _, err := io.ReadFull(brw, hdr); err != nil {
+				return
+			}
+			isMasked := (hdr[1] & 0x80) != 0
+			length := int(hdr[1] & 0x7F)
+			var mask [4]byte
+			if isMasked {
+				io.ReadFull(brw, mask[:])
+			}
+			payload := make([]byte, length)
+			io.ReadFull(brw, payload)
+			if isMasked {
+				for i := range payload {
+					payload[i] ^= mask[i%4]
+				}
+			}
+			navigated <- string(payload)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	tr := newTracker(50*time.Millisecond, 15*time.Millisecond, u)
+	defer tr.Close()
+
+	select {
+	case msg := <-navigated:
+		if !strings.Contains(msg, "Page.navigate") || !strings.Contains(msg, "about:blank") {
+			t.Fatalf("unexpected navigation message: %s", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for idle reset to about:blank")
+	}
+}
+
+func TestActiveClientPreventsReset(t *testing.T) {
+	navigated := make(chan string, 10)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/json/list" {
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[{"id":"tab-2","type":"page","url":"https://github.com/","webSocketDebuggerUrl":"ws://`+r.Host+`/devtools/page/tab-2"}]`)
+			return
+		}
+		if r.URL.Path == "/devtools/page/tab-2" && isWebSocketUpgrade(r) {
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				http.Error(w, "hijack not supported", 500)
+				return
+			}
+			conn, brw, err := hj.Hijack()
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			brw.WriteString("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n")
+			brw.Flush()
+
+			hdr := make([]byte, 2)
+			if _, err := io.ReadFull(brw, hdr); err != nil {
+				return
+			}
+			isMasked := (hdr[1] & 0x80) != 0
+			length := int(hdr[1] & 0x7F)
+			var mask [4]byte
+			if isMasked {
+				io.ReadFull(brw, mask[:])
+			}
+			payload := make([]byte, length)
+			io.ReadFull(brw, payload)
+			if isMasked {
+				for i := range payload {
+					payload[i] ^= mask[i%4]
+				}
+			}
+			navigated <- string(payload)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	tr := newTracker(80*time.Millisecond, 20*time.Millisecond, u)
+	defer tr.Close()
+
+	// Simulate active client connected to tab-2
+	tr.clientConnected(u, "tab-2")
+
+	// Wait past idle timeout while client is active
+	time.Sleep(120 * time.Millisecond)
+	select {
+	case msg := <-navigated:
+		t.Fatalf("target was reset while client was active: %s", msg)
+	default:
+	}
+
+	// Client disconnects
+	tr.clientDisconnected(u, "tab-2")
+
+	// Now wait for idle timeout after disconnect
+	select {
+	case msg := <-navigated:
+		if !strings.Contains(msg, "Page.navigate") || !strings.Contains(msg, "about:blank") {
+			t.Fatalf("unexpected navigation message: %s", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for reset after disconnect")
 	}
 }
