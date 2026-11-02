@@ -1,12 +1,24 @@
 # Выполнение задач через Git, r1s и ACP
 
-Этот документ фиксирует целевую архитектуру постановки и выполнения задач в Lattice. Он заменяет
-прежнюю модель F10/F11 с общим controller, собственной очередью, leases, worker registry и
-heartbeat. План реализации разложен по [F10](./roadmap/f10-disposable-worker/README.md),
+Этот документ описывает single-agent baseline F10/F11/F19 и исторический контракт, на котором
+построена текущая реализация. Он заменил прежнюю модель F10/F11 с общим controller, собственной
+очередью, leases, worker registry и heartbeat. План baseline разложен по [F10](./roadmap/f10-disposable-worker/README.md),
 [F11](./roadmap/f11-git-task-pipeline/README.md), [F19](./roadmap/f19-agent-execution-loop/README.md),
 [F20](./roadmap/f20-planning-loop/README.md) и [F21](./roadmap/f21-multi-agent/README.md).
 
+**Обновление направления, 2026-11-02:** согласованный будущий процесс зафиксирован в
+[AGENT_WORKFLOW.md](./roadmap/AGENT_WORKFLOW.md). Он вводит фичи и иерархию Git-задач, локальный
+`taskd` CLI в контейнерах вместо host-reconciler, reconciliation в `agentd`, ветки задач,
+независимый review/checks и отдельную распределённую координацию. Review/trunk и кворум вынесены
+в [F22](./roadmap/f22-git-trunk-review/README.md) и
+[F23](./roadmap/f23-distributed-coordination/README.md). Ни текущий terminal-result контракт,
+ни отсутствие отдельной координации ниже не являются ограничением этой будущей модели.
+Реализация baseline от этого обновления документации не меняется.
+
 ## Целевая модель
+
+Схема ниже относится к single-agent baseline; будущая схема приведена в
+[ARCHITECTURE.md](./ARCHITECTURE.md#целевая-схема-автономной-работы).
 
 ```text
 ACP planning agent
@@ -273,15 +285,19 @@ correctness от runtime state сервисов. Только после это�
 
 ## Planning и multi-agent
 
-Planning agent использует существующий ACP ingress Lattice. Его единственный durable output — Git
-commit с `task.md`; напрямую `agentd` или r1s он не вызывает.
+Будущие planning/multi-agent требования описаны в [AGENT_WORKFLOW.md](./roadmap/AGENT_WORKFLOW.md),
+[F20](./roadmap/f20-planning-loop/README.md) и [F21](./roadmap/f21-multi-agent/README.md).
+Root сохраняет драфт в отдельной ветке, явная команда человека запускает отдельного planner,
+иерархия выражается задачами с поручениями и памятью. Распределённые `agentd` выполняют готовые
+задачи независимо от root-сессии; зависимости разблокируются после принятия результата в `main`.
 
-Multi-agent остаётся отдельным поздним этапом. Root agent сможет запускать child workloads через
-r1s и общаться с ними по ACP через r1s tunnels. Ephemeral child живёт не дольше владеющего root
-process/run; `parent_id` не добавляется в control state. Работа, которая должна пережить root
-agent, оформляется новой durable `task.md`.
+Прежнее предложение ephemeral children, ограниченных жизнью root и общающихся напрямую по ACP,
+не является целевой моделью F21. В первой версии долговременная координация и эскалация идут
+через Git без A2A; ACP сохраняется между управляющим runtime и сессией агента.
 
 ## Явно вне архитектуры
+
+Для single-agent baseline; будущая отдельная координация имеет собственную область в F23.
 
 Не создаются controller database, task queue, worker registry, scheduler, Lattice execution
 leases, heartbeat protocol, generic event journal, service registry, metadata discovery в

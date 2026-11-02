@@ -22,6 +22,7 @@ Lattice - проект для построения сети связанных �
 - [ROADMAP.md](./ROADMAP.md) - роадмап (вехи / фичи / задачи)
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - архитектура сети, структура нод
 - [TASK_EXECUTION.md](./TASK_EXECUTION.md) - durable Git-задачи, r1s execution и ACP loop
+- [AGENT_WORKFLOW.md](./roadmap/AGENT_WORKFLOW.md) - целевой автономный процесс фич, задач, review и координации (F20–F23)
 - [DEPLOYMENT.md](./DEPLOYMENT.md) - разворачивание нод
 - [CONTRIBUTING.md](./CONTRIBUTING.md) - добавление новых узлов в сеть
 - [KEY_MANAGEMENT.md](./KEY_MANAGEMENT.md) - ротация ключей и отзыв доступа

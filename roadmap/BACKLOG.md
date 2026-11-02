@@ -9,35 +9,56 @@
 - Запись появляется, когда вопрососознанно откладывается.
 - Когда вопрос закрывается, запись переносится в ARCHITECTURE.md / файл фичи / задачу и
   удаляется отсюда.
-- Решение №1 (модель сборки) закрыто и зафиксировано в [ARCHITECTURE.md](../ARCHITECTURE.md).
+- Решение №1 (модель сборки) закрыто и зафиксировано в [ARCHITECTURE.md](./../ARCHITECTURE.md).
 - Инструмент секретов выбран: `agenix`; решение зафиксировано в
-  [ARCHITECTURE.md](../ARCHITECTURE.md#секреты).
-- Модель идентичности узла закрыта в [f2-02](f2-secrets-identity/f2-02-node-identity.md) и зафиксирована в
-  [ARCHITECTURE.md](../ARCHITECTURE.md#идентичность-узла).
-- Bootstrap Radicle закрыт в [f4-01](f4-payload/f4-01-radicle-seed-comin.md): начальный config
+  [ARCHITECTURE.md](./../ARCHITECTURE.md#секреты).
+- Модель идентичности узла закрыта в [f2-02](./f2-secrets-identity/f2-02-node-identity.md) и зафиксирована в
+  [ARCHITECTURE.md](./../ARCHITECTURE.md#идентичность-узла).
+- Bootstrap Radicle закрыт в [f4-01](./f4-payload/f4-01-radicle-seed-comin.md): начальный config
   приходит из installer checkout или GitHub, затем selective seed получает публичную реплику, а
   `comin` читает локальное bare storage первым remote.
-- Решение по LLM gateway runtime закрыто: [f7-06](f7-llm-gateway/f7-06-go-lip-gonka-cutover.md) сохранила
+- Решение по LLM gateway runtime закрыто: [f7-06](./f7-llm-gateway/f7-06-go-lip-gonka-cutover.md) сохранила
   отрицательный результат Go LIP PoC, а целевой собственный Go proxy поверх Bifrost Go API и
-  прямой cutover закреплены в [f7-07](f7-llm-gateway/f7-07-bifrost-go-proxy.md).
+  прямой cutover закреплены в [f7-07](./f7-llm-gateway/f7-07-bifrost-go-proxy.md).
 - Backend изоляции первого disposable worker зафиксирован в
   [README F10](./f10-disposable-worker/README.md) и
   [f10-01](./f10-disposable-worker/f10-01-package-r1s.md): OCI/`containerd` через r1s `r1sd`,
   общий immutable agent image. Переход на VM/microVM допустим позднее при измеренном требовании к
   более сильной boundary. Полный вычислительный контур зафиксирован в
-  [TASK_EXECUTION.md](../TASK_EXECUTION.md).
+  [TASK_EXECUTION.md](./../TASK_EXECUTION.md).
 
 ## Открытые решения
 
+Целевой процесс агентов зафиксирован в [AGENT_WORKFLOW.md](./AGENT_WORKFLOW.md), но следующие
+реализационные решения остаются открытыми:
+
+- **Git review/trunk backend:** Gerrit или собственный минимальный `merged` над bare Git;
+  review state остаётся в Git, без зависимости от Radicle review и формата задач. Проверить
+  PoC, выдачу ограниченных credentials reviewer, независимые checks, обновление кандидата,
+  автоприём служебных изменений и стоимость распределённого развёртывания —
+  [F22](./f22-git-trunk-review/README.md).
+- **Кворум поверх RNS:** готовая реализация консенсуса, служебное storage/recovery, минимальный
+  API, политика admission/автоисключения и передача права с учётом последнего r1s lease —
+  [F23](./f23-distributed-coordination/README.md). Начальный состав из identity и один кластер
+  на realm согласованы; большинство не пересчитывается по видимым сейчас peers.
+- **Межнодовое принятие trunk:** согласование разных локальных bare `main`, доступность
+  Git-объектов и восстановление после частичного принятия — совместный дизайн F22/F23.
+  Успешный локальный push предложения и Radicle-репликация не дают эту гарантию сами по себе.
+- **Контракт фич/задач и миграция:** точная файловая schema, локальный `taskd` CLI вместо
+  текущего host-reconciler, подтверждение старта/изменения требований человеком и перенос
+  reconciliation в `agentd` — [F20](./f20-planning-loop/README.md) и
+  [F21](./f21-multi-agent/README.md). Эксплуатационные пределы одного запуска отделить от
+  выбранного отсутствия универсального лимита review/fix-циклов.
+
 4. **Внешний доступ к сервисам с поддоменов `myt.su` через Yggdrasil** — открыт в
-   [f4-05](f4-payload/f4-05-yggdrasil-public-subdomain-ingress.md): хостинг/управление DNS зоны
+   [f4-05](./f4-payload/f4-05-yggdrasil-public-subdomain-ingress.md): хостинг/управление DNS зоны
    `myt.su`, какие сервисы F4 выводятся наружу и каким поддоменам соответствуют.
 
-Смысл вычислений и хранилища уточнён в [f4-03](f4-payload/f4-03-shared-storage-compute.md): вычисления
+Смысл вычислений и хранилища уточнён в [f4-03](./f4-payload/f4-03-shared-storage-compute.md): вычисления
 выполняются disposable workers, общей persistent FS у них нет, caches не являются source of truth,
 а S3 хранит artifacts и другие естественно объектные результаты.
 
-Точки входа Reticulum выбраны в [F3-02](f3-reticulum-tcp/f3-02-define-entry-points.md): два публичных
+Точки входа Reticulum выбраны в [F3-02](./f3-reticulum-tcp/f3-02-define-entry-points.md): два публичных
 peer, общий реестр в flake и исходящие TCP-соединения.
 
 ## Отложенное
@@ -55,21 +76,21 @@ peer, общий реестр в flake и исходящие TCP-соедине�
    надёжно ответить через текущие метрики, structured events и correlation по `request_id`.
 
 4. **Stdio shim для Zed поверх no-auth LAN ACP endpoint** — stock-клиент
-   [`@hydra-acp/cli`](../packages/hydra-acp/README.md) несовместим с безаутентичным endpoint
+   [`@hydra-acp/cli`](./../packages/hydra-acp/README.md) несовместим с безаутентичным endpoint
    `ws://acp.<nodename>.local/`: для не-loopback хоста требует credential из `remotes.json`, который
    выдаётся только через `/v1/auth/login`, а daemon без master password отвечает `403`. Caddy host
    при этом переписывает любой path во внутренний `/acp`, так что HTTP API клиента недостижимо в
    принципе (отрицательный результат зафиксирован в
-   [f8-06](f8-pi-runtime/f8-06-network-acp-daemon.md#отрицательный-результат-stock-hydra-acp-client-как-local-stdio-shim-для-zed)).
+   [f8-06](./f8-pi-runtime/f8-06-network-acp-daemon.md#отрицательный-результат-stock-hydra-acp-client-как-local-stdio-shim-для-zed)).
    Открытая работа — auth-задача вместе с LAN boundary: выбрать либо включение Hydra master
    password + пересмотр «host целиком ACP-endpoint», либо собственный минимальный
    stdio→WebSocket shim (форма соединения Ferngeist), который не трогает HTTP API гидры.
 
    Смежная, но закрытая проблема — разрыв ответов на отдельные чанки из-за per-token `messageId`
    (речь не про Zed): решена на стороне daemon трансформером
-   [acp-normalizer](f8-pi-runtime/f8-06-network-acp-daemon.md#трансформер-acp-normalizer-стабильный-messageid-на-логическое-сообщение)
+   [acp-normalizer](./f8-pi-runtime/f8-06-network-acp-daemon.md#трансформер-acp-normalizer-стабильный-messageid-на-логическое-сообщение)
    и включена глобально через `lattice.pi-acp-daemon.defaultTransformers`, см.
-   [`packages/acp-normalizer`](../packages/acp-normalizer/README.md).
+   [`packages/acp-normalizer`](./../packages/acp-normalizer/README.md).
 
 5. **Вернуть pi-acp-daemon к минимальным доступам (revert privileged)** — на `mytecor-homelab`
    временно включён `lattice.pi-acp-daemon.privileged = true` для живой диагностики
@@ -77,12 +98,12 @@ peer, общий реестр в flake и исходящие TCP-соедине�
    после завершения диагностики выключить опцию и восстановить строгий песочник (без netlink,
    пустой `CapabilityBoundingSet`, `NoNewPrivileges=true`, `ProtectSystem=full`, `PrivateDevices`).
    Смысл/границы раскрытия — в
-   [README модуля](../modules/pi-acp-daemon/README.md#временный-privileged-доступ-stopgap-переработать).
+   [README модуля](./../modules/pi-acp-daemon/README.md#временный-privileged-доступ-stopgap-переработать).
 
 6. **Humanization действий Jev (траектория к клику / паузы)** — Camoufox `humanize=true`
    применяется только к CDP `Input.dispatchMouseEvent type="mouseMoved"` (`mousemove`), а
    Jev в action loop шлёт только `mousePressed`/`mouseReleased`/`mouseWheel` (+клавиатура и
    insertText), поэтому на фактических действиях Jev humanization не срабатывает. Подтверждено
-   в [f18-06](f18-browser-agent-stack/f18-06-humanize.md). Если понадобится человекообразность
+   в [f18-06](./f18-browser-agent-stack/f18-06-humanize.md). Если понадобится человекообразность
    действий Jev — отдельная задача на границе Foxbridge (добавлять `mousemove` перед кликом /
    паузы) или собственный HumanCursor в Jev; await f18-11 при реальной web-задаче.

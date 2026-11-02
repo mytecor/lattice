@@ -88,6 +88,10 @@ valid interface combinations:
 
 ### Общая карта сервисов
 
+Общая карта и baseline флоу ниже отражают существующие роли сервисов. Будущее изменение границ
+`taskd`/`agentd`, Git review и отдельная координация показаны в
+[целевой схеме](#целевая-схема-автономной-работы); они пока не реализованы.
+
 ```mermaid
 flowchart TD
     subgraph Clients["Клиентский доступ"]
@@ -250,7 +254,7 @@ flowchart TD
 
 ### Флоу 2: Постановка и выполнение задач (Task Pipeline & Agent Loop)
 
-Декларативный контур выполнения задач по [TASK_EXECUTION.md](./TASK_EXECUTION.md):
+Single-agent baseline по [TASK_EXECUTION.md](./TASK_EXECUTION.md):
 Git хранит `task.md` и результаты, `git-watchd` транслирует изменения в `MeshBus`,
 `taskd` выполняет сверку и постановку, а `agentd` запускает контейнер в `r1s` и
 управляет циклом исполнения через ACP. Реализация f19-02 использует public library API r1s:
@@ -289,6 +293,69 @@ flowchart TD
     Agentd -- "Возвращает TaskResult" --> Taskd
     Taskd -- "Фиксирует terminal result в Git" --> GitRepo
 ```
+
+#### Целевая схема автономной работы
+
+Направление F20–F23 согласовано 2026-11-02 и полностью описано в
+[AGENT_WORKFLOW.md](./roadmap/AGENT_WORKFLOW.md). Это будущие границы, не текущий deployment:
+`taskd` становится локальным CLI в контейнере, а `agentd` сверяет Git-задачи и запускает готовых
+исполнителей. Каждый агент публикует рабочую ветку, отдельный Git review/trunk backend принимает
+проверенный кандидат. Backend пока не выбран: рассматриваются Gerrit и собственный `merged`
+над bare Git. Ни Git-ядро принятия, ни r1s не знают устройства фич и задач.
+
+```mermaid
+flowchart TD
+    Human["Человек<br/>(Требования и явный старт)"]
+    Root["Root-агент<br/>(Обсуждение и драфт)"]
+    Git["Git-репозиторий<br/>(Фичи, задачи, память и trunk)"]
+    Watch["git-watchd<br/>(Изменения Git-ревизий)"]
+    Bus["meshbus / RNS<br/>(Аутентифицированная связь)"]
+    Agentd["agentd на нодах<br/>(Готовые задачи и сессии)"]
+    Coord["Слой координации<br/>(Кворум физических нод)"]
+    Runtime["r1s / r1sd<br/>(Контейнеры и runtime lease)"]
+    subgraph Container["Контейнер исполнителя"]
+        Agent["Агент<br/>(Planner, исполнитель, docs или reviewer)"]
+        TaskCLI["taskd CLI<br/>(Формат и изменение задач)"]
+        Worktree["Локальный Git<br/>(Рабочая ветка задачи)"]
+    end
+    Policy["Интеграция Lattice<br/>(Полномочия и правила задач)"]
+    Trunk["Git review / trunk<br/>(Приём кандидатов и слияние)"]
+    Checks["Независимые проверки<br/>(Результат для кандидата)"]
+    Replication["Репликация Git<br/>(Radicle или замена)"]
+
+    Human --> Root
+    Root --> Policy
+    Root --> Trunk
+    Watch --> Git
+    Watch --> Bus
+    Bus --> Agentd
+    Agentd --> Git
+    Agentd <--> Coord
+    Coord <--> Bus
+    Agentd --> Runtime
+    Runtime --> Container
+    Agentd --> Agent
+    Agent --> TaskCLI
+    TaskCLI --> Worktree
+    Agent --> Worktree
+    Git --> Worktree
+    Worktree --> Trunk
+    Agent --> Policy
+    Policy --> Trunk
+    Agent --> Trunk
+    Checks --> Trunk
+    Runtime --> Checks
+    Trunk --> Git
+    Git <--> Replication
+```
+
+Связь слоя координации идёт через существующий RNS; в общем realm голосуют только разрешённые
+identity физических нод. Потеряв право сопровождения, `agentd` прекращает продление r1s run,
+а работоспособный `r1sd` останавливает контейнер штатным lease. Реестр ACP-сессий не переносится
+в файлы задач. Протокол выдачи полномочий, запуска независимых checks и межнодового принятия
+разных bare `main` ещё проектируется в [F22](./roadmap/f22-git-trunk-review/README.md) и
+[F23](./roadmap/f23-distributed-coordination/README.md); схема не обещает готовой атомарности
+между Git-репликами. Между агентами нет обязательного A2A/ACP-канала.
 
 ### Флоу 3: Инференс LLM (AI Inference Flow)
 
@@ -520,16 +587,22 @@ Mesh-схема `http` по умолчанию; с Cloudflare-токеном —
 
 ## Выполнение durable задач
 
-Целевой вычислительный контур зафиксирован в
+Текущий single-agent baseline зафиксирован в
 [TASK_EXECUTION.md](./TASK_EXECUTION.md). Git хранит immutable revisions постановок `task.md` и
 terminal results; `meshbus` переносит сообщения между узкими сервисами; `r1s` выполняет OCI
 workloads; `git-watchd` сообщает об изменениях Git revisions; `taskd` reconciles actionable tasks;
 `agentd` ведёт ACP execution и verification loop.
 
-Общего controller, отдельного `workd`, Lattice-owned queue, scheduler, worker registry, heartbeat
-и execution leases в архитектуре нет. Runtime state сервисов, конкретный r1s execution и ACP
+В baseline нет общего controller, отдельного `workd`, Lattice-owned queue, scheduler, worker registry,
+heartbeat и execution leases. Runtime state сервисов, конкретный r1s execution и ACP
 session считаются ephemeral. После сбоя незавершённая задача восстанавливается из Git и
 возможностей logical run в r1s.
+
+Дальнейшая цель — [автономный процесс фич и задач](./roadmap/AGENT_WORKFLOW.md): локальный
+`taskd` CLI, reconciliation в распределённых `agentd`, контролируемый Git trunk и отдельный
+кворумный слой. r1s сохраняет ответственность только за контейнеры; review не зависит от
+Radicle, а выбор Gerrit или собственного приёма остаётся открытым. Будущий контракт не следует
+выводить из ограничений terminal-result parser текущего baseline.
 
 ## LLM gateway
 

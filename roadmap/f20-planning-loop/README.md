@@ -1,21 +1,25 @@
 # F20. Planning loop
 
-Planning agent работает через существующий ACP ingress Lattice и превращает разговор, уточнения и
-acceptance criteria в Git commit с `task.md`. Он не вызывает `agentd` или r1s напрямую; pipeline
-запускается самим появлением новой Git revision.
+Root работает через существующий ACP ingress и сохраняет обсуждение как сжатый драфт в отдельной
+Git-ветке. Только после явной команды человека отдельный planning-агент формирует фичу, иерархию
+задач и зависимости. Запуск исполнителей принадлежит `agentd`, а не planner или локальному `taskd`.
 
-Зависит от [F11](../f11-git-task-pipeline/README.md) и
-[F19](../f19-agent-execution-loop/README.md). Соответствует
-[вехе 20](../../ROADMAP.md#f20-planning-loop). Контракт описан в
-[TASK_EXECUTION.md](../../TASK_EXECUTION.md#planning-и-multi-agent).
+Развивает контракт [F11](./../f11-git-task-pipeline/README.md), использует принятие из
+[F22](./../f22-git-trunk-review/README.md); полная приёмка совместна с
+[F21](./../f21-multi-agent/README.md). Соответствует [вехе 20](./../../ROADMAP.md#f20-planning-loop).
+Целевые требования зафиксированы в [AGENT_WORKFLOW.md](./../AGENT_WORKFLOW.md).
+
+**Статус:** не реализовано. Обновление roadmap не меняет текущие parser, CLI и сервис `taskd`.
 
 Задачи:
 
-- [f20-01](./f20-01-task-authoring.md) — создать `task.md` из ACP conversation;
-- [f20-02](./f20-02-end-to-end-acceptance.md) — принять conversation-to-result path.
+- [f20-01](./f20-01-task-authoring.md) — драфты, контракт фич/задач и локальный `taskd` CLI;
+- [f20-02](./f20-02-end-to-end-acceptance.md) — восстановление драфта, явный старт и передача плана.
 
-**Критерий готовности:** planning agent commit'ит валидную task revision, после чего F11/F19 без
-прямого вызова со стороны planner доводят её до terminal result в Git.
+**Критерий готовности:** новая сессия root восстанавливает драфт; до явного старта исполнение не
+начинается; затем planner публикует через Git-приём валидный план без runtime ID. Иерархия задаётся
+задачами, каждый будущий агент получает своё поручение и память; формат обслуживает `taskd` CLI.
 
-**Осознанно откладываем:** multi-agent orchestration — до
-[F21](../f21-multi-agent/README.md).
+**Открытые решения:** точная schema и размещение файлов, миграция текущего `taskd`-reconciler,
+связь драфта с активной фичей и способ подтверждения команд человека. Распределённое исполнение,
+review-задачи по фиксированной политике и lifecycle фичи принимаются в F21–F23.
