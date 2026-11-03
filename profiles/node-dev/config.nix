@@ -54,14 +54,20 @@ in
         RAD_HOME = radiclePeerHome;
         RAD_LOG = "info";
       };
-      serviceConfig = {
-        Type = "simple";
-        ExecStart = "${pkgs.radicle-node}/bin/radicle-node --force";
-        Restart = "on-failure";
-        RestartSec = "30s";
-        User = "root";
-        Group = "root";
-      };
+      serviceConfig =
+        let
+          dbGuard = lib.getExe pkgs.lattice.radicle-db-guard;
+        in
+        {
+          Type = "simple";
+          ExecStartPre = [ "${dbGuard} ${radiclePeerHome}" ];
+          ExecStart = "${pkgs.radicle-node}/bin/radicle-node --force";
+          ExecStartPost = [ "${dbGuard} --wait ${radiclePeerHome}" ];
+          Restart = "on-failure";
+          RestartSec = "30s";
+          User = "root";
+          Group = "root";
+        };
     };
 
     # f15-02/acceptance: bootstrap the Lattice RID into the peer profile so the

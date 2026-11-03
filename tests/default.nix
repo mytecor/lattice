@@ -382,5 +382,11 @@ in
     inherit nixpkgs pkgs;
     agentdModule = self.nixosModules.agentd;
   };
+
+  radicle-db-guard = import ./radicle-db-guard.nix {
+    inherit lib pkgs;
+    radicleUnit = homelabConfig.systemd.services.radicle-node;
+    radiclePeerUnit = homelabConfig.systemd.services.radicle-peer-node;
+  };
 }
 

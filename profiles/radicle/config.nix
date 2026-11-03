@@ -1,8 +1,10 @@
-{ config, ... }:
+{ config, lib, pkgs, ... }:
 
 let
   latticePorts = import ../networking/ports.nix;
   latticeRepository = (import ./repositories.nix).lattice;
+  dbGuard = lib.getExe pkgs.lattice.radicle-db-guard;
+  radicleHome = "/var/lib/radicle";
 in
 {
   config = {
@@ -24,6 +26,15 @@ in
         listenPort = latticePorts.radicle-httpd;
         aliases.lattice = latticeRepository.rid;
       };
+    };
+
+    # Guard against malformed gossip announcements where a bracketed IPv6
+    # literal is stored with type='dns', which leaves last_attempt=NULL and
+    # spins radicle-node at 100% CPU. `+` runs outside the unit's chroot
+    # confinement so sqlite can access /var/lib/radicle/node/node.db directly.
+    systemd.services.radicle-node.serviceConfig = {
+      ExecStartPre = [ "+${dbGuard} ${radicleHome}" ];
+      ExecStartPost = [ "+${dbGuard} --wait ${radicleHome}" ];
     };
 
     # Persist the selective seed policy and fetch the repository from any

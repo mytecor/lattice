@@ -235,6 +235,11 @@
             export RAD_HOME="''${LATTICE_RADICLE_PEER_HOME:-/persist/var/lib/radicle-peer}"
             exec ${final.lib.getExe' final.radicle-node "rad"} "$@"
           '';
+          radicle-db-guard = final.writeShellApplication {
+            name = "lattice-radicle-db-guard";
+            runtimeInputs = [ final.coreutils final.sqlite ];
+            text = builtins.readFile ./scripts/radicle-db-guard.sh;
+          };
           node-status = final.callPackage ./packages/node-status/package.nix { };
           acp-normalizer = final.callPackage ./packages/acp-normalizer/package.nix { };
           # f13-01: web client for ACP — acp-components workbench as a static SPA.
