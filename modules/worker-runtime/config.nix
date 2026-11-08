@@ -220,6 +220,8 @@ in
         Restart = "on-failure";
         RestartSec = 5;
         UMask = "0077";
+        LogRateLimitIntervalSec = "30s";
+        LogRateLimitBurst = 100;
 
         # Strict by default. Execution tunnels additionally enter the task's
         # network namespace and bring up its loopback interface, which upstream

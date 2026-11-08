@@ -11,13 +11,12 @@
   pname = "r1s";
   version = "0.5.1";
 
-  # v0.5.1 adds F25-01 deterministic allocator bootstrap destinations and
-  # tunnel peering fixes (default peers and detached child argument order).
+  # v0.5.1 + F24-13 meshbus Node adoption + Reticulum-Go announce debug spam fix.
   src = fetchFromGitHub {
     owner = "mytecor";
     repo = "r1s";
-    rev = "a5f22a13fea2c955df6b4bff3cd77e34634d74ab";
-    hash = "sha256-Kj9gt+s2htiwRWoV8Bd9ny5VClWx7RIYksQqg8POTOI=";
+    rev = "bb9ecc292b1a1ddf6b4df85764d1f2b6a9ad786e";
+    hash = "sha256-lPaezeNexN96FigzSZyeKylynaBU+7lFh4yXdojiOZY=";
   };
 
   vendorHash = "sha256-WArtt0x1GJXXWiFAMyBSDCuOSsgIkuVRcgmuq/KnbCE=";

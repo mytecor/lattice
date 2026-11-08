@@ -13,6 +13,16 @@
   boot.kernelModules = [ "kvm-intel" ];
   hardware.cpu.intel.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
 
+  # Suppress Realtek RTL8822CE PCIe AER error floods and disable link ASPM
+  boot.kernelParams = [ "pci=noaer" ];
+  boot.extraModprobeConfig = ''
+    options rtw88_pci disable_aspm=y
+  '';
+
+  services.udev.extraRules = ''
+    ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10ec", ATTR{device}=="0xc822", ATTR{link/l1_aspm}="0", ATTR{link/l1_1_aspm}="0", ATTR{link/l1_2_aspm}="0", ATTR{link/l0s_aspm}="0", ATTR{link/clkpm}="0"
+  '';
+
   # Intel UHD Graphics (Alder Lake-N)
   hardware.graphics = {
     enable = true;
