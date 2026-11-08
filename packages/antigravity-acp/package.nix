@@ -9,16 +9,16 @@
 }:
 
 let
-  version = "1.4.0";
+  version = "1.4.5";
 
   sources = {
     x86_64-linux = {
       url = "https://dl.google.com/agy-extensions/releases/linux/agy-acp-server-${version}-linux-x86_64.zip";
-      sha256 = "fbb2d54dd94fb897845308d3b6b46187c627f1c60078ded81adeeaf8b90c5d7a";
+      sha256 = "923923a0d7dc8073f66cc6f78647a3107e3a7ee2b7e1a24df8b3927b5188013b";
     };
     aarch64-darwin = {
       url = "https://dl.google.com/agy-extensions/releases/macos/agy-acp-server-${version}-darwin-arm64.zip";
-      sha256 = "21a32eeab85b394a515510c84539bda4b2504bf2917e0a201f5c4130b13581a5";
+      sha256 = "886fff7767d08994ca39eb02c3d01a7532c7325a94aa33aaf52d52068733284f";
     };
   };
 
@@ -87,5 +87,8 @@ EOF
 
     exec ${lib.getExe nodejs} ${./filter.mjs} ${lib.getExe adapter} "$@"
   '';
+  meta = {
+    platforms = builtins.attrNames sources;
+  };
   passthru = { inherit adapter; };
 }

@@ -133,7 +133,7 @@ index 3a1006b..f3f9f03 100644
 +    )]
 +    pub allow_repos: Vec<String>,
 +
-     /// Skip the upstream fetch on `info/refs` if the mirror was refreshed within
+     /// Skip the upstream fetch on `info/refs` if the last fetch started within
      /// this many seconds. Coalesces bursts of clones for the same repo. `0` =
      /// always fetch (freshest, more upstream load).
 diff --git a/src/lib.rs b/src/lib.rs
@@ -270,18 +270,17 @@ index 3db5dd1..ca5b109 100644
  /// time, so response latency does not leak how many leading bytes matched. Only
  /// the length can differ observably, which is not sensitive for a shared secret.
 diff --git a/tests/e2e.rs b/tests/e2e.rs
-index 0ccf8fb..589edbd 100644
 --- a/tests/e2e.rs
 +++ b/tests/e2e.rs
-@@ -15,6 +15,7 @@ use std::time::Duration;
+@@ -15,6 +15,7 @@
  
- use axum::body::Body;
+ use axum::body::{Body, Bytes};
  use axum::http::{Request, StatusCode};
 +use git_cache_proxy::allowed::Allowlist;
  use git_cache_proxy::evict::CacheIndex;
  use git_cache_proxy::git::{GitCache, GitConfig};
  use git_cache_proxy::lfs::{Lfs, LfsConfig};
-@@ -76,6 +77,7 @@ async fn upload_pack_decodes_gzip_encoded_request() {
+@@ -81,6 +82,7 @@
          upstream_base: format!("file://{}", up.path().display()),
          cache_root: cache.path().to_path_buf(),
          serve_token: None,
@@ -289,7 +288,7 @@ index 0ccf8fb..589edbd 100644
          max_decoded_body: 512 * 1024 * 1024,
          max_concurrent: 8,
          metrics,
-@@ -171,6 +173,7 @@ async fn clones_through_proxy_serves_all_refs_and_rejects_push() {
+@@ -210,6 +212,7 @@
          upstream_base: format!("file://{}", up.path().display()),
          cache_root: cache.path().to_path_buf(),
          serve_token: None,
@@ -297,7 +296,31 @@ index 0ccf8fb..589edbd 100644
          max_decoded_body: 512 * 1024 * 1024,
          max_concurrent: 8,
          metrics: metrics.clone(),
-@@ -612,6 +615,7 @@ async fn start_proxy(up: &Path, big_file_threshold: &str) -> Proxy {
+@@ -347,6 +350,7 @@
+         upstream_base: format!("file://{}", up.path().display()),
+         cache_root: cache.path().to_path_buf(),
+         serve_token: None,
++        allowlist: Allowlist::new(&[]),
+         max_decoded_body: 512 * 1024 * 1024,
+         max_concurrent: 8,
+         metrics: metrics.clone(),
+@@ -480,6 +484,7 @@
+         upstream_base: format!("file://{}", up.path().display()),
+         cache_root: cache.path().to_path_buf(),
+         serve_token: None,
++        allowlist: Allowlist::new(&[]),
+         max_decoded_body: 512 * 1024 * 1024,
+         max_concurrent: 8,
+         metrics: metrics.clone(),
+@@ -861,6 +866,7 @@
+         upstream_base: format!("file://{}", up.path().display()),
+         cache_root: cache.path().to_path_buf(),
+         serve_token: None,
++        allowlist: Allowlist::new(&[]),
+         max_decoded_body: 512 * 1024 * 1024,
+         max_concurrent: 8,
+         metrics: metrics.clone(),
+@@ -1516,6 +1522,7 @@
          upstream_base: format!("file://{}", up.display()),
          cache_root: cache.path().to_path_buf(),
          serve_token: None,

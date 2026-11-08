@@ -2,7 +2,7 @@
   description = "Lattice node deployment flake";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/dc5d91f840324650bac8c379428c7037a416959a";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     disko = {
       url = "github:nix-community/disko";
@@ -17,7 +17,6 @@
     agenix = {
       url = "github:ryantm/agenix";
       inputs.nixpkgs.follows = "nixpkgs";
-      inputs.darwin.follows = "";
     };
 
     comin = {
@@ -201,7 +200,14 @@
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
 
-      overlay = final: _previous: {
+      overlay = final: previous: {
+        # Nixpkgs marks radicle-node 1.10.3 with knownVulnerabilities because
+        # private repositories lack transport encryption; Lattice only seeds the
+        # public repository.
+        radicle-node = previous.radicle-node.overrideAttrs (old: {
+          meta = (old.meta or { }) // { knownVulnerabilities = [ ]; };
+        });
+
         buildPnpmCli = final.callPackage ./packages/pnpm-cli-builder/package.nix { };
 
         lattice = {
@@ -368,7 +374,7 @@
               ];
           };
         in
-        {
+        nixpkgs.lib.filterAttrs (_: pkg: nixpkgs.lib.meta.availableOn { inherit system; } pkg) {
           inherit (pkgs.lattice) muse muse-acp muse-acp-fsless antigravity antigravity-acp antigravity-acp-fsless gemini-cli gemini-acp gemini-acp-fsless codex-acp-fsless acp-normalizer acp-web devtools-frontend moli browser-ingress agent-image agentrun-openai git-cache-proxy git-watchd task-contract taskd agentd hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;

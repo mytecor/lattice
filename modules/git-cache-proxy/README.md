@@ -15,7 +15,7 @@ content-addressed. Метрики Prometheus: `/healthz`, `/readyz`, `/metrics`.
 
 - `lattice.git-cache-proxy.enable` — включить сервис.
 - `lattice.git-cache-proxy.package` — пакет (по умолчанию
-  `pkgs.lattice.git-cache-proxy`, pinned `0.1.12`).
+  `pkgs.lattice.git-cache-proxy`, pinned `0.2.8`).
 - `lattice.git-cache-proxy.user` / `group` — system user/group
   (по умолчанию `git-cache-proxy`).
 - `lattice.git-cache-proxy.host` / `port` — адрес привязки (по умолчанию
@@ -57,7 +57,7 @@ content-addressed. Метрики Prometheus: `/healthz`, `/readyz`, `/metrics`.
 
 Repo-scoped authorization (f9-02) вынесен отдельной задачей — у кандидата его
 нет, и он не может быть добавлен только конфигурацией. Lattice патчит pinned
-`0.1.12` (`packages/git-cache-proxy/repo-allowlist.patch`), добавляя флаг
+`0.2.8` (`packages/git-cache-proxy/repo-allowlist.patch`), добавляя флаг
 `--allow-repo` (repeatable). Модуль передаёт `allowRepos` как repeatable argv
 (это публичные пути, не секреты); upstream credential по-прежнему идёт только
 через `LoadCredential`/env. Модульный assertion запрещает upstream credential

@@ -19,7 +19,7 @@ multi-session/multi-client acceptance из
 
 ## Lattice-патч: `session/list` включает never-prompted сессии
 
-Upstream `0.1.183` скрывает сессии без единого промпта из ACP `session/list` (daemon вызывает
+Upstream `0.1.214` скрывает сессии без единого промпта из ACP `session/list` (daemon вызывает
 `manager.list` без `includeNonInteractive`). Из-за этого свежесозданная сессия невидима до первого
 промпта, и переподключающийся клиент создаёт новую сессию вместо resume — тёплые сессии и агенты
 накапливаются молча. Патч в [`package.nix`](./package.nix) (хук `postInstall` общего билдера)
@@ -29,7 +29,7 @@ Upstream `0.1.183` скрывает сессии без единого пром�
 
 ## Lattice-патч (f15-01): серверная политика defaultCwd для `session/new` и `session/list`
 
-Upstream `0.1.183` принимает клиентский cwd как есть: `session/new` создаёт сессию ровно в
+Upstream `0.1.214` принимает клиентский cwd как есть: `session/new` создаёт сессию ровно в
 присланном клиентом каталоге (схема требует `cwd`), а `session/list` фильтрует список по
 присланному клиентом cwd (путь-равенство `Td`/`wo` в `manager.list`). Для node dev-loop это
 ломалось с двух сторон: stateless-клиент (acp-ui, Ferngeist) увёл бы новую сессию из рабочего
@@ -37,8 +37,8 @@ checkout указанием произвольного пути, а при чт�
 обновления страницы) скрыл бы все сессии, хотя они и были созданы под `defaultCwd`.
 
 Патч [`package.nix`](./package.nix) делает политику симметричной на сервере: `manager.create`
-**безусловно** заменяет cwd на `fe(this.defaultCwd)`, а обработчик `session/list` **безусловно**
-листит по `fe(e.manager.defaultCwd)`, игнорируя клиентский путь в обоих случаях. Все ACP-сессии
+**безусловно** заменяет cwd на `ce(this.defaultCwd)`, а обработчик `session/list` **безусловно**
+листит по `ce(e.manager.defaultCwd)`, игнорируя клиентский путь в обоих случаях. Все ACP-сессии
 работают в единой рабочей копии; клиентские патчи (правки acp-ui) не нужны. Регрессия —
 `session/list` с cwd = `/` обязан вернуть сессии — закреплена в
 [`tests/acp-ingress-smoke.mjs`](../../tests/acp-ingress-smoke.mjs) и

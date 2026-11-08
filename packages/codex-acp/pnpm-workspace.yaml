@@ -1,4 +1,4 @@
 minimumReleaseAge: 0
 blockExoticSubdeps: false
 overrides:
-  '@openai/codex': 0.161.0
+  '@openai/codex': 0.167.0

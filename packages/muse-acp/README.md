@@ -1,7 +1,7 @@
 # Muse ACP для agentrun-openai
 
 [Пакет](./package.nix) закрепляет community-адаптер
-[BrokkAi/muse-acp](https://github.com/BrokkAi/muse-acp) `0.15.0`
+[BrokkAi/muse-acp](https://github.com/BrokkAi/muse-acp) `0.21.0`
 для `x86_64-linux` и `aarch64-linux`. Он переводит ACP stdio в MSP
 процесса `muse serve`; Linux ELF адаптируется через `autoPatchelfHook`.
 Официальный [Muse Code](./../muse/README.md) закреплён отдельно.

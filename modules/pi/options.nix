@@ -39,8 +39,8 @@ in
         options.packages = mkOption {
           type = types.listOf (types.either types.str types.package);
           default = [ ];
-          example = [ "npm:pi-mcp-adapter@2.33.0" ];
-          description = "Pi packages, e.g. `npm:pi-mcp-adapter@2.33.0` (pinned spec) or a Nix-built package.";
+          example = [ "npm:pi-mcp-adapter@7.0.1" ];
+          description = "Pi packages, e.g. `npm:pi-mcp-adapter@7.0.1` (pinned spec) or a Nix-built package.";
         };
         # Прямая загрузка расширений по пути: локальный файл `*.ts`/`*.js` или
         # каталог расширения (index.ts). Значение-строка идёт как есть; Nix-пакет

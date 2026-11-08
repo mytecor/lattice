@@ -1,6 +1,6 @@
 # Gemini CLI
 
-[Пакет](./package.nix) упаковывает официальный дистрибутив **Google Gemini CLI** (`@google/gemini-cli`) версии `0.64.0`, собранный через общий [`packages/pnpm-cli-builder`](./../pnpm-cli-builder/README.md).
+[Пакет](./package.nix) упаковывает официальный дистрибутив **Google Gemini CLI** (`@google/gemini-cli`) версии `0.67.0`, собранный через общий [`packages/pnpm-cli-builder`](./../pnpm-cli-builder/README.md).
 
 Gemini CLI представляет собой терминальный агентный харнесс с поддержкой моделей Gemini, сессионного планирования, встроенных и подключаемых инструментов, расширений и нативной поддержки протокола ACP (Agent Client Protocol).
 

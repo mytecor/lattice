@@ -62,7 +62,11 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   installPhase = ''
     runHook preInstall
 
-    pnpm prune --prod
+    cat > pnpm-workspace.yaml <<'EOF'
+    minimumReleaseAge: 0
+    blockExoticSubdeps: false
+    EOF
+    CI=true pnpm prune --prod --ignore-scripts --config.confirm-modules-dir=false
     mkdir -p "$out/bin" "$out/libexec/${pname}"
     cp -R dist node_modules package.json pnpm-lock.yaml "$out/libexec/${pname}/"
     # Same closure-reference trick as buildPnpmCli: record the fetchPnpmDeps FOD

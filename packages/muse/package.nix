@@ -1,15 +1,15 @@
 { lib, stdenvNoCC, fetchurl, makeWrapper, cacert }:
 
 let
-  version = "1.4.11-R6667.1";
+  version = "1.4.14-R7309.1";
   sources = {
     x86_64-linux = {
       artifact = "muse-x86-linux";
-      sha256 = "6fda12a6a4f236528dafa707384cf6395fe859b1438ef77c7be26ed9d7976839";
+      sha256 = "0809aac7cb58d18f5022b6d05e02aa1974683c0ec430e5f04d25b60ed17de2da";
     };
     aarch64-linux = {
       artifact = "muse-aarch64-linux";
-      sha256 = "b1ce49b4d988a1d6b1d76994d6c7a0eae912c8ed2c1cf67ac89434c017c8232e";
+      sha256 = "3dc39b8fa26f9963cc2038f2966c0932ed5a39f0f9efb39cc0266a261cbbcf76";
     };
   };
   source = sources.${stdenvNoCC.hostPlatform.system};

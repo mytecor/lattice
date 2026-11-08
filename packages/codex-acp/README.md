@@ -1,7 +1,7 @@
 # Codex через ACP без локального окружения
 
-[Пакет](./package.nix) запускает `@agentclientprotocol/codex-acp 2.1.1`
-и Codex `0.161.0`, закреплённые в [lockfile](./pnpm-lock.yaml) и
+[Пакет](./package.nix) запускает `@agentclientprotocol/codex-acp 2.5.0`
+и Codex `0.167.0`, закреплённые в [lockfile](./pnpm-lock.yaml) и
 [правилах зависимостей](./pnpm-workspace.yaml). Используется upstream без патчей.
 На homelab [конфигурация](./../../nodes/mytecor-homelab/codex.nix)
 добавляет backend `codex` в agentrun-openai после появления зашифрованной авторизации.
@@ -17,14 +17,14 @@ include_local = true
 ```
 
 `default = "none"` не прикрепляет локальное окружение к сессии модели.
-`include_local = true` оставляет runtime для stdio MCP: в Codex 0.161.0
+`include_local = true` оставляет runtime для stdio MCP: в Codex 0.167.0
 `include_local = false` запрещает также запуск таких MCP-серверов.
 Проверка подтверждает, что при этой конфигурации модель получает MCP-инструмент,
 но не получает инструментов для работы с локальным окружением.
 
 Codex не предоставляет модели инструменты
 для выполнения команд и работы с локальными файлами. Дополнительно выключены
-shell, web search, image generation, subagents, goals, apps и code mode.
+shell, web search, image generation, view image, subagents, goals, apps и code mode.
 Клиентские инструменты приходят через ACP `mcpServers` из agentrun-openai.
 Старая переменная `CODEX_EXEC_SERVER_URL` больше не используется.
 
@@ -50,7 +50,7 @@ Codex по-прежнему читает свой конфиг, обновляе
 `/var/lib/agentrun-openai/codex`, с `cli_auth_credentials_store="file"`:
 
 ```sh
-# На ноде: codex — закреплённая версия 0.161.0.
+# На ноде: codex — закреплённая версия 0.167.0.
 env CODEX_HOME=/var/lib/agentrun-openai/codex \
   codex -c 'cli_auth_credentials_store="file"' login --device-auth
 ```

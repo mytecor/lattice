@@ -9,8 +9,8 @@
 ## Закреплённая версия Reticulum
 
 `rns-server` и `rnsh` собираются из одного snapshot `rns-rs`, зафиксированного по commit и хешам
-исходников/Cargo-зависимостей в `package.nix`. Обновление от 2026-10-04 использует release commit
-`3ddb784b19203d72b2ef119dbd3c3dc6a39a21dd`: `rns-server` 0.3.3 и `rns-cli` 0.4.3 (бинарник `rnsh`).
+исходников/Cargo-зависимостей в `package.nix`. Обновление от 2026-11-08 использует release commit
+`3257fde5cbebed6492cd099a20d471249159bf9d`: `rns-server` 0.6.1 и `rns-cli` 0.7.1 (бинарник `rnsh`).
 В вывод `--version` передаётся версия соответствующего Cargo-пакета и короткий commit hash:
 GitHub-архив не содержит `.git`, из которого upstream обычно вычисляет номер сборки.
 
@@ -76,12 +76,12 @@ MSP/ACP с отключёнными встроенными инструмент�
 
 ## Antigravity CLI
 
-[`antigravity`](./antigravity/README.md) — официальный бинарный дистрибутив Google Antigravity CLI (`1.3.5`).
+[`antigravity`](./antigravity/README.md) — официальный бинарный дистрибутив Google Antigravity CLI (`1.5.3`).
 Устанавливает в `bin` исполняемый файл `antigravity` и симлинк `agy`.
 
 ## Antigravity ACP
 
-[`antigravity-acp`](./antigravity-acp/README.md) — официальный Agent Client Protocol (ACP) сервер Google Antigravity (`1.4.0`),
+[`antigravity-acp`](./antigravity-acp/README.md) — официальный Agent Client Protocol (ACP) сервер Google Antigravity (`1.4.5`),
 включающий бинарники `agy_acp_server.par` и `localharness_external`.
 Для работы со шлюзом [`agentrun-openai`](./agentrun-openai/README.md) пакет предоставляет враппер
 `antigravity-acp-fsless`, который изолирует рабочее окружение `$GEMINI_HOME` и отключает встроенные
@@ -89,7 +89,7 @@ MSP/ACP с отключёнными встроенными инструмент�
 
 ## Gemini CLI
 
-[`gemini-cli`](./gemini-cli/README.md) — официальный CLI-дистрибутив Google Gemini CLI (`@google/gemini-cli` `0.64.0`),
+[`gemini-cli`](./gemini-cli/README.md) — официальный CLI-дистрибутив Google Gemini CLI (`@google/gemini-cli` `0.67.0`),
 собранный через общий [`pnpm-cli-builder`](./pnpm-cli-builder/README.md). Устанавливает в `bin` исполняемый файл `gemini`.
 
 ## Gemini ACP

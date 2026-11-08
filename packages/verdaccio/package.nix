@@ -2,16 +2,17 @@
 
 buildPnpmCli {
   pname = "verdaccio";
-  version = "6.10.3";
+  version = "7.0.2";
 
   package = "verdaccio";
   pnpmLock = ./pnpm-lock.yaml;
-  pnpmDepsHash = "sha256-xD963fwH6t9+SBKY7BMJQGoREdhP+28QjXvUfjHDvp0=";
+  pnpmWorkspace = ./pnpm-workspace.yaml;
+  pnpmDepsHash = "sha256-Tf62U7rlWSw2Bo/MbCl932Dv96j3ruCo78ixC1oNdG0=";
   executables.verdaccio = "bin/verdaccio";
   # buildPnpmCli's default install check runs `<mainProgram> --version` and
-  # compares against the version string. verdaccio prints "v6.10.3" (leading
+  # compares against the version string. verdaccio prints "v7.0.2" (leading
   # "v"), so the expected output must carry the prefix, not the bare version.
-  versionCheckOutput = "v6.10.3";
+  versionCheckOutput = "v7.0.2";
 
   description = "Lightweight private npm registry as a caching proxy";
   homepage = "https://verdaccio.org";

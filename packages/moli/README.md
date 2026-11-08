@@ -1,6 +1,6 @@
 # Moli
 
-[Пакет](./package.nix) закрепляет Linux x86_64 release `1.1.18`
+[Пакет](./package.nix) закрепляет Linux x86_64 release `1.1.22`
 [Moli](https://github.com/lexmount/moli), проверяет SHA-256 архива, адаптирует
 ELF-зависимости к NixOS и задаёт системный CA bundle. Fontconfig и zlib входят
 в runtime closure. Проверка установки запускает `--version` и `serve --help`.

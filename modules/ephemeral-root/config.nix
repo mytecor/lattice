@@ -177,10 +177,6 @@ in
         assertion = lib.versionAtLeast pkgs.btrfs-progs.version "6.12";
         message = "lattice.ephemeral-root requires btrfs-progs 6.12 or newer";
       }
-      {
-        assertion = config.boot.initrd.systemd.enable;
-        message = "lattice.ephemeral-root requires the systemd initrd";
-      }
     ];
 
     boot.initrd.supportedFilesystems = [ "btrfs" ];

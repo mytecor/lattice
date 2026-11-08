@@ -8,18 +8,18 @@
 
 rustPlatform.buildRustPackage rec {
   pname = "git-cache-proxy";
-  version = "0.1.12";
+  version = "0.2.8";
 
   src = fetchFromGitHub {
     owner = "rolandjitsu";
     repo = "git-cache-proxy";
     rev = "v${version}";
-    hash = "sha256-iq9/3Yjiw2mucs4PYIoBXQEwN6dsbBfz8WZHlwK4WTs=";
+    hash = "sha256-lHbogx/+ltte/AOgmnnNNwB4gbplS+v9dR7O9qE7MaQ=";
   };
 
-  cargoHash = "sha256-CtT7wCWOa8bzW/mmXzPM3YTqHgzmFKSmQp7QXJux41Y=";
+  cargoHash = "sha256-OQ913uAkOsMoCCP/KFex4XUA1/TN/6UGDAAI1JQfyzI=";
 
-  # Lattice patch (f9-02): repo-scoped authorization allowlist. Upstream 0.1.12
+  # Lattice patch (f9-02): repo-scoped authorization allowlist. Upstream 0.2.8
   # has a single global serve token and no way to restrict *which* repositories
   # a request may target, so one upstream credential reads everything it can
   # reach. This patch adds `--allow-repo` (repeatable): every serving path (git

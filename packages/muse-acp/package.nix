@@ -1,15 +1,15 @@
 { lib, stdenv, fetchurl, autoPatchelfHook, makeWrapper, muse }:
 
 let
-  version = "0.15.0";
+  version = "0.21.0";
   sources = {
     x86_64-linux = {
       target = "x86_64-unknown-linux-gnu";
-      sha256 = "16e193de0d09e3a00395312665176e98685ce5a68f1652fd2f049db6850b0d47";
+      sha256 = "cd7f448f0e1803b7f7e39d8646f7c0a84cc3649775f529cc5c49878b0ec47d57";
     };
     aarch64-linux = {
       target = "aarch64-unknown-linux-gnu";
-      sha256 = "790c224ab3ea65c21449a3432b71bbe79a695e0ade839be9993eecd0f007dacf";
+      sha256 = "f1ebfff4981f2e4bc7f3196a81e862e687039d347b6cd1298f091e7a7bd43511";
     };
   };
   source = sources.${stdenv.hostPlatform.system};

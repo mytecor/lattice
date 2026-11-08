@@ -3,17 +3,17 @@
 let
   adapter = buildPnpmCli {
     pname = "codex-acp";
-    version = "2.1.1";
+    version = "2.5.0";
     package = "@agentclientprotocol/codex-acp";
     pnpmLock = ./pnpm-lock.yaml;
     pnpmWorkspace = ./pnpm-workspace.yaml;
-    pnpmDepsHash = "sha256-MfkVQnoVv1Hf2FyklQ+X0noDa9W1SqOgc1jty6gDY/w=";
+    pnpmDepsHash = "sha256-mg72htBNZwIWDvdRfaXjQcBUIi8xh8mJuBz25/D/9No=";
     executables.codex-acp = "dist/index.js";
     description = "ACP adapter for Codex App Server";
     homepage = "https://github.com/agentclientprotocol/codex-acp";
     license = lib.licenses.asl20;
     mainProgram = "codex-acp";
-    versionCheckOutput = "@agentclientprotocol/codex-acp 2.1.1";
+    versionCheckOutput = "@agentclientprotocol/codex-acp 2.5.0";
   };
   sessionConfig = {
     cli_auth_credentials_store = "file";
@@ -22,6 +22,7 @@ let
       shell_tool = false;
       multi_agent = false;
       image_generation = false;
+      view_image = false;
       code_mode = false;
       code_mode_only = false;
       tool_search = false;

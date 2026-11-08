@@ -1,7 +1,7 @@
 # Antigravity через ACP без локального окружения
 
 [Пакет](./package.nix) запускает официальный Agent Client Protocol (ACP) сервер Google Antigravity
-(`agy-acp-server 1.4.0`), зарегистрированный в официальном ACP Registry (`antigravity-acp`).
+(`agy-acp-server 1.4.5`), зарегистрированный в официальном ACP Registry (`antigravity-acp`).
 
 Пакет предоставляет:
 1. `antigravity-acp` — upstream ACP-сервер (`agy_acp_server.par` + `localharness_external`).

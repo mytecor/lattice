@@ -1,7 +1,7 @@
 # Muse Code
 
 [Пакет](./package.nix) устанавливает официальный статический Linux-бинарник
-[Meta Muse Code](https://dev.meta.ai/docs/muse-code) версии `1.4.11-R6667.1`.
+[Meta Muse Code](https://dev.meta.ai/docs/muse-code) версии `1.4.14-R7309.1`.
 Поддерживаются `x86_64-linux` и `aarch64-linux`; URL и SHA-256 закреплены
 отдельно для каждой архитектуры по upstream release manifest.
 

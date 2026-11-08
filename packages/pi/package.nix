@@ -2,11 +2,12 @@
 
 buildPnpmCli {
   pname = "pi-coding-agent";
-  version = "0.85.1";
+  version = "1.5.0";
 
   package = "@earendil-works/pi-coding-agent";
   pnpmLock = ./pnpm-lock.yaml;
-  pnpmDepsHash = "sha256-MbYRMvkyCoH5vCuX3Xm7vTB6073qmUqOL/PAOkG7qRc=";
+  pnpmWorkspace = ./pnpm-workspace.yaml;
+  pnpmDepsHash = "sha256-uvXd0UUTaGxTnwnGPAAMpprflQJSxDieqsRh8QIOwXM=";
   executables.pi = "dist/bundle/cli.js";
 
   description = "Minimal terminal coding harness";

@@ -19,11 +19,11 @@
 let
   pkg = buildPnpmCli {
     pname = "pi-mcp-adapter";
-    version = "2.33.0";
+    version = "7.0.1";
     package = "pi-mcp-adapter";
     pnpmLock = ./pnpm-lock.yaml;
     pnpmWorkspace = ./pnpm-workspace.yaml;
-    pnpmDepsHash = "sha256-WDOZcxjOzM+mhRinjI9AVi6ZJrrEsiLhD0roo4+JyoM=";
+    pnpmDepsHash = "sha256-VZagasVLHnwW0youoFnZVl6FOmklkCLqN2DakLbZYNo=";
 
     description = "MCP (Model Context Protocol) adapter extension for Pi coding agent";
     homepage = "https://github.com/nicobailon/pi-mcp-adapter";

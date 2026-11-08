@@ -2,13 +2,13 @@
 
 Обёртка над pinned upstream
 [`rolandjitsu/git-cache-proxy`](https://github.com/rolandjitsu/git-cache-proxy)
-**v0.1.12** (rev `da96b57f84260c821fd6430a7845168245619ef3`), собираемая
+**v0.2.8**, собираемая
 `rustPlatform.buildRustPackage`. Runtime PATH получает закреплённый `git` через
 makeWrapper (весь wire protocol делегируется системному `git`).
 
 ## Lattice-патч: repo-scoped authorization (f9-02)
 
-Upstream 0.1.12 имеет только глобальный `serve-token` и никак не ограничивает,
+Upstream 0.2.8 имеет только глобальный `serve-token` и никак не ограничивает,
 *какие* репозитории запрос может читать: один upstream credential читает всё,
 что он может достичь. Патч [`repo-allowlist.patch`](./repo-allowlist.patch)
 добавляет повторяемый флаг `--allow-repo <path>`:
