@@ -15,7 +15,7 @@
   src = fetchFromGitHub {
     owner = "mytecor";
     repo = "r1s";
-    rev = "bb9ecc292b1a1ddf6b4df85764d1f2b6a9ad786e";
+    rev = "bb9ecc2fc0be1cc70d23f7001d6d0e0b7be6defd";
     hash = "sha256-lPaezeNexN96FigzSZyeKylynaBU+7lFh4yXdojiOZY=";
   };
 
