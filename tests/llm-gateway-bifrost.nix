@@ -43,7 +43,7 @@ let
                 vertex_region = "global";
               }
             ];
-            routing_rules = [
+            rules = [
               { route = "standard"; action = "filter"; where.model.eq = "standard"; }
               { route = "standard"; action = "filter"; where.provider."in" = [ "gonka-proxy" "gonka-openbroker" ]; }
               { route = "standard"; action = "map"; native = "native-model"; }
@@ -106,7 +106,7 @@ pkgs.runCommand "llm-gateway-bifrost-module-evaluation" {
     and any(.providers[];
       .id == "google-vertex"
       and .vertex_auth_credentials == "env.LATTICE_LLM_PROVIDER_GOOGLE_VERTEX_CREDENTIALS")
-    and any(.routing_rules[];
+    and any(.rules[];
       .action == "semaphore"
       and .max_calls == 4
       and .max_in_flight == 3)

@@ -18,7 +18,7 @@ let
               base_provider = "openai";
               inference_url = "https://a.invalid/v1";
             }];
-            routing_rules = [
+            rules = [
               { route = "standard"; action = "filter"; where.model.eq = "standard"; }
               { route = "standard"; action = "filter"; where.provider."in" = [ "provider-a" ]; }
               { route = "standard"; action = "map"; native = "native-model"; }
@@ -59,8 +59,8 @@ pkgs.runCommand "llm-gateway-flat-settings" { nativeBuildInputs = [ pkgs.jq ]; }
       "base_provider": "openai",
       "inference_url": "https://a.invalid/v1"
     }]
-    and (.routing_rules | type == "array")
-    and any(.routing_rules[];
+    and (.rules | type == "array")
+    and any(.rules[];
       .route == "standard" and .action == "map" and .native == "native-model")
     and (has("models") | not)
     and (has("pipeline") | not)

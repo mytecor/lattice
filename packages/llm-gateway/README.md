@@ -1,3 +1,30 @@
+# Пакет llm-gateway
+
+Рабочий runtime собирается из закреплённого commit внешнего
+[репозитория llm-gateway](https://github.com/mytecor/llm-gateway).
+[package.nix](./package.nix) фиксирует источник и зависимости, собирает gateway core
+и отдельный `http-driver` и добавляет драйвер в `PATH` через wrapper.
+Нативные ACP/Web-драйверы не входят в текущую HTTP-конфигурацию хомлабы.
+
+Конфигурация передаётся через `lattice.llm-gateway.settings` без преобразований;
+верхнеуровневый список маршрутов называется `rules`. Параметры провайдеров и
+клиентские ключи сохраняют действующий контракт `env.NAME`.
+
+Включён Strict Structured Outputs для Chat Completions: JSON Schema validation,
+до двух коррекций и буферизация строгих SSE-ответов. Запросы с `strict: true`
+не поддерживают клиентские tools и несколько completions. См.
+[актуальное описание Structured Outputs](https://github.com/mytecor/llm-gateway/blob/a10c5ccb7a38ef985fa9af56bb668448f3c3c7d7/docs/structured-outputs.md).
+
+Сборка: `nix build .#packages.x86_64-linux.llm-gateway`.
+Интеграция проверяется модульными Nix checks и runtime smoke-test упакованного
+процесса с локальным HTTP fixture без обращения к внешним LLM.
+
+Исходники Go в этой директории — исторический снимок до выделения отдельного
+репозитория; пакет их больше не компилирует. Описание прежней реализации ниже
+сохранено для ссылок из завершённых задач роадмапа.
+
+---
+
 # Lattice LLM Gateway
 
 Небольшой OpenAI-compatible HTTP proxy на Go. Он использует

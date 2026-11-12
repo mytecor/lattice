@@ -122,7 +122,8 @@ flowchart TD
     end
 
     subgraph AI["Инференс LLM"]
-        LLMGateway["llm-gateway<br/>(Маршрутизация и fallback)"]
+        LLMGateway["llm-gateway<br/>(Маршрутизация и Strict JSON Schema)"]
+        HTTPDriver["http-driver<br/>(Bifrost HTTP-адаптер)"]
         Agentrun["agentrun-openai<br/>(OpenAI-совместимый шлюз)"]
         MuseACP["muse-acp<br/>(Адаптер ACP / MSP)"]
         Muse["Muse Code<br/>(Агент с клиентскими MCP-инструментами)"]
@@ -187,7 +188,8 @@ flowchart TD
     MuseACP --> Muse
     Muse --> Meta
     Agentrun --> LLMGateway
-    LLMGateway --> Upstream
+    LLMGateway -->|NDJSON| HTTPDriver
+    HTTPDriver --> Upstream
 
     GitWatchd --> MeshBus
     MeshBus --> Taskd
@@ -375,10 +377,12 @@ flowchart TD
         DirectClient["Внешние клиенты<br/>(С клиентскими ключами)"]
     end
 
-    subgraph Gateway["LLM Gateway (Bifrost Go)"]
+    subgraph Gateway["LLM Gateway"]
         Router["Маршрутизатор моделей<br/>(stupid, standard, smart)"]
         Balancer["Балансировщик и Health State<br/>(Учёт ошибок и латентности)"]
         Engine["Движок исполнения<br/>(Speculative race, retry, fallback)"]
+        Structured["Structured Outputs<br/>(Валидация и исправление JSON)"]
+        HTTPDriver["http-driver<br/>(Bifrost HTTP-адаптер)"]
     end
 
     subgraph Upstream["Внешние провайдеры инференса"]
@@ -400,11 +404,16 @@ flowchart TD
     Router --> Balancer
     Balancer --> Engine
 
-    Engine --> Vertex
-    Engine --> AIStudio
-    Engine --> Gonka
-    Engine --> Hyperfusion
-    Engine --> Dahl
+    Router -->|Strict JSON Schema| Structured
+    Structured --> Engine
+    Engine -->|Готовый strict-ответ| Structured
+    Structured -->|Корректирующий запрос| Router
+    Engine -->|NDJSON| HTTPDriver
+    HTTPDriver --> Vertex
+    HTTPDriver --> AIStudio
+    HTTPDriver --> Gonka
+    HTTPDriver --> Hyperfusion
+    HTTPDriver --> Dahl
 ```
 
 ### Флоу 4: Наблюдаемость (Observability Flow)
@@ -606,15 +615,20 @@ Radicle, а выбор Gerrit или собственного приёма ос�
 
 ## LLM gateway
 
-Runtime F7 — собственный небольшой Go HTTP proxy поверх Bifrost Core, собранный пакетом
-[`packages/llm-gateway`](./packages/llm-gateway). Legacy `mxyhi/token_proxy` (input `token-proxy-src`,
+Runtime собирается из закреплённой ревизии отдельного
+[репозитория llm-gateway](https://github.com/mytecor/llm-gateway) через
+[пакет Lattice](./packages/llm-gateway/package.nix). Core владеет ingress,
+маршрутизацией и Strict Structured Outputs; отдельный `http-driver` выполняет
+HTTP/SSE-запросы через Bifrost Core и обменивается с gateway по NDJSON.
+Конфигурация модуля использует нативное поле `rules`.
+ Legacy `mxyhi/token_proxy` (input `token-proxy-src`,
 package, patches и spike-тест) удалён из активной конфигурации после подтверждённого cutover;
 исторические findings [f7-01](./roadmap/f7-llm-gateway/f7-01-token-proxy-spike.md),
 [f7-05](./roadmap/f7-llm-gateway/f7-05-research-gateway-alternatives.md) и
 [f7-06](./roadmap/f7-llm-gateway/f7-06-go-lip-gonka-cutover.md) сохранены неизменными.
 
-Выбранный runtime закреплён в
-[f7-07](./roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md): собственный небольшой Go HTTP proxy
+Исторический выбор runtime закреплён в
+[f7-07](./roadmap/f7-llm-gateway/f7-07-bifrost-go-proxy.md). Теперь отдельный HTTP-драйвер
 использует Bifrost через Go API как provider execution library. Bifrost отвечает за
 provider-specific adapters, schema conversion, streaming transport и поддерживаемую им
 инфраструктуру; Lattice владеет OpenAI-compatible ingress, логическими моделями, model discovery

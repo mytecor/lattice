@@ -594,7 +594,7 @@ in
         set_params.reasoning_effort = "medium";
       }];
 
-      routing_rules = [
+      rules = [
         # stupid
         { route = "stupid"; action = "filter"; where.model.eq = "stupid"; }
         {

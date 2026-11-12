@@ -70,12 +70,15 @@ exists and does a meaningful self-contained pass over generated material —
 without booting a VM.
 
 Examples: [`comin-source-sync.nix`](./comin-source-sync.nix) (seeds a bare git
-remote, runs `comin-source-sync`, asserts the sync semantics).
+remote, runs `comin-source-sync`, asserts the sync semantics), and
+[`llm-gateway-runtime.nix`](./llm-gateway-runtime.nix) (runs the packaged gateway
+with its HTTP driver against a local fixture and exercises strict output through
+the installed process boundary).
 
 ### Application tests
 
 Go / JS / Rust / other tests live next to the application code itself (for
-example `packages/llm-gateway/*_test.go`). Nix tests must not re-test the
+example in the external [llm-gateway repository](https://github.com/mytecor/llm-gateway)). Nix tests must not re-test the
 application's internal logic; they verify only the integration boundary:
 
 ```text

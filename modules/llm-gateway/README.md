@@ -1,8 +1,8 @@
 # LLM gateway module
 
 `lattice.llm-gateway` запускает OpenAI-compatible gateway как непривилегированный
-systemd service. Runtime реализован в
-[`packages/llm-gateway`](../../packages/llm-gateway/README.md).
+systemd service. Пакет закреплённого внешнего runtime описан в
+[`packages/llm-gateway`](./../../packages/llm-gateway/README.md).
 
 ## Конфигурационная граница
 
@@ -59,7 +59,7 @@ providers, отсутствующие targets и циклы обнаружива
         api_key = "env.LATTICE_LLM_PROVIDER_PROXY_KEY";
       }];
 
-      routing_rules = [
+      rules = [
         { route = "standard"; action = "filter"; where.model.eq = "standard"; }
         { route = "standard"; action = "filter"; where.provider."in" = [ "proxy" ]; }
         { route = "standard"; action = "map"; native = "native-model"; }
@@ -72,9 +72,9 @@ providers, отсутствующие targets и циклы обнаружива
 ```
 
 Полное production-описание находится в
-[`nodes/mytecor-homelab/config.nix`](../../nodes/mytecor-homelab/config.nix).
+[`nodes/mytecor-homelab/config.nix`](./../../nodes/mytecor-homelab/config.nix).
 Семантика actions и JSON-полей документирована в
-[`packages/llm-gateway/README.md`](../../packages/llm-gateway/README.md).
+[`packages/llm-gateway/README.md`](./../../packages/llm-gateway/README.md).
 
 ## Секреты
 
@@ -101,7 +101,7 @@ Gateway работает без root и с systemd hardening. `MemoryDenyWriteEx
 
 ## Сетевой доступ
 
-Профиль [`profiles/llm-gateway`](../../profiles/llm-gateway/README.md) задаёт
+Профиль [`profiles/llm-gateway`](./../../profiles/llm-gateway/README.md) задаёт
 loopback defaults. LAN/mesh ingress предоставляет Caddy из
-[`profiles/tcp-gateway`](../../profiles/tcp-gateway/README.md); firewall port для
+[`profiles/tcp-gateway`](./../../profiles/tcp-gateway/README.md); firewall port для
 gateway напрямую не открывается.

@@ -74,6 +74,8 @@ in
     gatewayProfile = "${profiles}/llm-gateway/config.nix";
   };
 
+  llm-gateway-runtime = import ./llm-gateway-runtime.nix { inherit pkgs; };
+
   llm-gateway-flat = import ./llm-gateway-flat.nix {
     inherit nixpkgs pkgs;
     gatewayModule = self.nixosModules.llm-gateway;
