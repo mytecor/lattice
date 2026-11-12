@@ -15,6 +15,13 @@
 не поддерживают клиентские tools и несколько completions. См.
 [актуальное описание Structured Outputs](https://github.com/mytecor/llm-gateway/blob/a10c5ccb7a38ef985fa9af56bb668448f3c3c7d7/docs/structured-outputs.md).
 
+Для маршрута `stupid` на хомлабе включено явное правило
+`{ route = "stupid"; action = "transform"; type = "split_thinking"; }`.
+Оно отделяет ведущий `<think>…</think>` в `reasoning_content` до strict-валидации,
+включая streaming. Отдельные thinking-поля других моделей проходят своим каналом.
+Правило не включается автоматически по имени модели или провайдера.
+См. [контракт трансформаций](https://github.com/mytecor/llm-gateway/blob/9e411d392d8ba3335f742d55c72a00624c8d3ca7/docs/response-transforms.md).
+
 Сборка: `nix build .#packages.x86_64-linux.llm-gateway`.
 Интеграция проверяется модульными Nix checks и runtime smoke-test упакованного
 процесса с локальным HTTP fixture без обращения к внешним LLM.

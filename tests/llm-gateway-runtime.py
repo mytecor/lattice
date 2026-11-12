@@ -30,7 +30,21 @@ class Upstream(http.server.BaseHTTPRequestHandler):
         # The integration boundary must preserve both the mapped model and schema.
         assert payload["model"] == "fixture-model"
         assert payload["response_format"]["json_schema"]["strict"] is True
-        content = '{"value":-1}' if len(self.requests) == 1 else '{"value":1}'
+        wrapped = payload["messages"][0]["content"] == "Return wrapped value 1."
+        content = '<think>fixture thought</think>{"value":1}' if wrapped else ('{"value":-1}' if len(self.requests) == 1 else '{"value":1}')
+        if payload.get("stream"):
+            events = []
+            for part in ["<thi", "nk>fixture thought</thi", 'nk>{"value":1}']:
+                events.append({"id": "fixture-stream", "object": "chat.completion.chunk", "model": "fixture-model", "choices": [{"index": 0, "delta": {"content": part}, "finish_reason": None}]})
+            events.append({"id": "fixture-stream", "object": "chat.completion.chunk", "model": "fixture-model", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})
+            events.append({"id": "fixture-stream", "object": "chat.completion.chunk", "model": "fixture-model", "choices": [], "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}})
+            data = ("".join("data: " + json.dumps(event) + "\n\n" for event in events) + "data: [DONE]\n\n").encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         data = json.dumps({
             "id": "fixture-response", "object": "chat.completion", "model": "fixture-model",
             "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
@@ -64,6 +78,10 @@ def main():
             {"route": "fixture", "action": "filter", "where": {"model": {"eq": "logical"}}},
             {"route": "fixture", "action": "map", "providers": ["fixture"], "native": "fixture-model"},
             {"route": "fixture", "action": "race", "count": 1},
+            {"route": "fixture", "action": "transform", "type": "split_thinking"},
+            {"route": "raw", "action": "filter", "where": {"model": {"eq": "raw"}}},
+            {"route": "raw", "action": "map", "providers": ["fixture"], "native": "fixture-model"},
+            {"route": "raw", "action": "race", "count": 1},
         ],
     }
     try:
@@ -102,6 +120,42 @@ def main():
                     assert len(Upstream.requests) == 2
                     assert Upstream.requests[1]["messages"][-1]["role"] == "user"
                     assert result["usage"]["prompt_tokens"] == 6
+
+                    # Exercise the installed transformation boundary, including
+                    # delimiter fragments arriving in separate HTTP SSE events.
+                    request["messages"] = [{"role": "user", "content": "Return wrapped value 1."}]
+                    for stream in (False, True):
+                        before = len(Upstream.requests)
+                        request["stream"] = stream
+                        request["stream_options"] = {"include_usage": True}
+                        query = urllib.request.Request(url + "/v1/chat/completions", data=json.dumps(request).encode(), headers={"Content-Type": "application/json"})
+                        with urllib.request.urlopen(query, timeout=20) as response:
+                            if stream:
+                                events = [json.loads(line[6:]) for line in response.read().decode().splitlines() if line.startswith("data: ") and line != "data: [DONE]"]
+                                content = "".join(choice.get("delta", {}).get("content", "") for event in events for choice in event.get("choices", []))
+                                reasoning = "".join(choice.get("delta", {}).get("reasoning_content", "") for event in events for choice in event.get("choices", []))
+                            else:
+                                result = json.load(response)
+                                content = result["choices"][0]["message"]["content"]
+                                reasoning = result["choices"][0]["message"]["reasoning_content"]
+                        assert json.loads(content) == {"value": 1}
+                        assert reasoning == "fixture thought"
+                        assert len(Upstream.requests) == before + 1
+
+                    # A second logical model with the same physical provider
+                    # has no transform and rejects the same wrapped JSON.
+                    request["model"] = "raw"
+                    request["stream"] = False
+                    query = urllib.request.Request(url + "/v1/chat/completions", data=json.dumps(request).encode(), headers={"Content-Type": "application/json"})
+                    before = len(Upstream.requests)
+                    try:
+                        urllib.request.urlopen(query, timeout=20)
+                    except urllib.error.HTTPError as error:
+                        assert error.code == 502
+                        assert json.load(error)["error"]["code"] == "structured_output_validation_failed"
+                    else:
+                        raise AssertionError("transformation leaked to an unconfigured logical model")
+                    assert len(Upstream.requests) == before + 3
                 except BaseException:
                     log.flush()
                     print(pathlib.Path(log.name).read_text(), file=sys.stderr)

@@ -615,6 +615,7 @@ in
         { route = "stupid"; action = "balance"; strategy = "expected-ttft"; window = "5m"; error_budget = 0.2; }
         { route = "stupid"; action = "affinity"; sources = [ "responses.conversation" "responses.previous_response_id" ]; ttl = "24h"; on_missing = "ignore"; on_provider_failure = "fail-closed"; }
         { route = "stupid"; action = "race"; count = 1; }
+        { route = "stupid"; action = "transform"; type = "split_thinking"; }
         { route = "stupid"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
         { route = "stupid"; action = "hedge"; after = "20s"; }
         { route = "stupid"; action = "timeout"; duration = "60s"; idle = "2m"; }
