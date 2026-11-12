@@ -651,8 +651,8 @@ in
         { route = "standard"; action = "affinity"; sources = [ "responses.conversation" "responses.previous_response_id" ]; ttl = "24h"; on_missing = "ignore"; on_provider_failure = "fail-closed"; }
         { route = "standard"; action = "race"; count = 1; }
         { route = "standard"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
-        { route = "standard"; action = "hedge"; after = "10s"; }
-        { route = "standard"; action = "timeout"; duration = "60s"; idle = "2m"; }
+        { route = "standard"; action = "hedge"; after = "8s"; }
+        { route = "standard"; action = "timeout"; duration = "90s"; idle = "2m"; }
         { route = "standard"; action = "continue"; idle = "2m"; reshare = "full"; retries = 2; wait = "5m"; }
 
         # smart
