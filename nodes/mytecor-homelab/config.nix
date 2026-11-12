@@ -607,9 +607,10 @@ in
         {
           route = "stupid";
           action = "admission";
-          maxInFlight = 4;
-          maxPending = 16;
-          waitTimeout = "30s";
+          dynamic = true;
+          maxInFlight = 24;
+          maxPending = 32;
+          waitTimeout = "15s";
         }
         { route = "stupid"; action = "rank"; strategy = "priority"; }
         { route = "stupid"; action = "balance"; strategy = "expected-ttft"; window = "5m"; error_budget = 0.2; }
@@ -617,7 +618,7 @@ in
         { route = "stupid"; action = "race"; count = 1; }
         { route = "stupid"; action = "transform"; type = "split_thinking"; }
         { route = "stupid"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
-        { route = "stupid"; action = "hedge"; after = "20s"; }
+        { route = "stupid"; action = "hedge"; after = "10s"; }
         { route = "stupid"; action = "timeout"; duration = "60s"; idle = "2m"; }
         { route = "stupid"; action = "continue"; idle = "2m"; reshare = "full"; retries = 2; wait = "5m"; }
 
@@ -640,16 +641,17 @@ in
         {
           route = "standard";
           action = "admission";
-          maxInFlight = 4;
-          maxPending = 16;
-          waitTimeout = "30s";
+          dynamic = true;
+          maxInFlight = 24;
+          maxPending = 32;
+          waitTimeout = "15s";
         }
         { route = "standard"; action = "rank"; strategy = "priority"; }
         { route = "standard"; action = "balance"; strategy = "expected-ttft"; window = "5m"; error_budget = 0.2; }
         { route = "standard"; action = "affinity"; sources = [ "responses.conversation" "responses.previous_response_id" ]; ttl = "24h"; on_missing = "ignore"; on_provider_failure = "fail-closed"; }
         { route = "standard"; action = "race"; count = 1; }
         { route = "standard"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
-        { route = "standard"; action = "hedge"; after = "20s"; }
+        { route = "standard"; action = "hedge"; after = "10s"; }
         { route = "standard"; action = "timeout"; duration = "60s"; idle = "2m"; }
         { route = "standard"; action = "continue"; idle = "2m"; reshare = "full"; retries = 2; wait = "5m"; }
 
