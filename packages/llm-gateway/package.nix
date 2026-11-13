@@ -2,12 +2,12 @@
 
 let
   version = "0.1.0-unstable-2026-11-13";
-  revision = "ef679d815e7fd9f851f6ede918bd63a50876b5ca";
+  revision = "17e352c2e2cd905abae3a68e51528215dc4b29f4";
   src = fetchFromGitHub {
     owner = "mytecor";
     repo = "llm-gateway";
     rev = revision;
-    hash = "sha256-W4b+OtAZgvMAhsE9SF0iGFMJsun/buNViRndlGc0l44=";
+    hash = "sha256-B5NtHeg1saICAIdGO63XUvfM1nIOdJQpG0VrE9B/hRw=";
   };
 
   # Keep the full checkout for the local replacement of the shared protocol.
@@ -16,7 +16,7 @@ let
     inherit version src;
     modRoot = "drivers/http";
     subPackages = [ "." ];
-    vendorHash = "sha256-BWsBFqQYuwdi3cw0f0A9uaME7PVPDNSDqPfEG2GppDA=";
+    vendorHash = "sha256-ztkFoK+VJiNz9NupgWagVd4p8ui/I5TQe6AZj0kRX0g=";
     postInstall = ''
       mv "$out/bin/http" "$out/bin/http-driver"
     '';

@@ -515,8 +515,8 @@ in
   };
 
   # LLM Gateway: the `settings` attribute is the gateway's public JSON contract
-  # verbatim. Field names are snake_case and every routing rule is written
-  # literally; the NixOS module does not generate pipelines or translate a
+  # verbatim. Field names are snake_case and `models` declares tiers and targets
+  # while the gateway schedules execution; the NixOS module does not translate a
   # second Nix-specific schema. Secrets remain separate runtime paths in
   # `credentials` and are referenced from settings as env.NAME.
   lattice.llm-gateway = {
@@ -549,6 +549,7 @@ in
           api_key = "env.LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY";
           priority = 50;
           request_timeout = "45s";
+          labels.pool = "gonka";
           strip_params = [ "thinking" "reasoning_effort" ];
           set_params.thinking.type = "disabled";
         }
@@ -559,6 +560,7 @@ in
           api_key = "env.LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY";
           priority = 40;
           request_timeout = "45s";
+          labels.pool = "gonka";
           strip_params = [ "thinking" "reasoning_effort" ];
           set_params.thinking.type = "disabled";
         }
@@ -569,13 +571,14 @@ in
           api_key = "env.LATTICE_LLM_PROVIDER_GONKA_API_KEY";
           priority = 30;
           request_timeout = "45s";
+          labels.pool = "gonka";
           strip_params = [ "thinking" "reasoning_effort" ];
           set_params.thinking.type = "disabled";
         }
-        { id = "dahl"; base_provider = "openai"; inference_url = "https://inference.dahl.global/v1"; api_key = "env.LATTICE_LLM_PROVIDER_DAHL_KEY"; priority = 20; request_timeout = "45s"; strip_params = [ "thinking" "reasoning_effort" ]; }
-        { id = "dahl-2"; base_provider = "openai"; inference_url = "https://inference.dahl.global/v1"; api_key = "env.LATTICE_LLM_PROVIDER_DAHL_2_KEY"; priority = 20; request_timeout = "45s"; strip_params = [ "thinking" "reasoning_effort" ]; }
-        { id = "hyperfusion"; base_provider = "openai"; inference_url = "https://api.hyperfusion.io/v1"; api_key = "env.LATTICE_LLM_PROVIDER_HYPERFUSION_KEY"; priority = 100; request_timeout = "45s"; strip_params = [ "thinking" "reasoning_effort" ]; }
-        { id = "gonkarouter"; base_provider = "openai"; inference_url = "https://api.gonkarouter.io/v1"; api_key = "env.LATTICE_LLM_PROVIDER_GONKAROUTER_KEY"; priority = 10; request_timeout = "45s"; strip_params = [ "thinking" "reasoning_effort" ]; }
+        { id = "dahl"; base_provider = "openai"; inference_url = "https://inference.dahl.global/v1"; api_key = "env.LATTICE_LLM_PROVIDER_DAHL_KEY"; priority = 20; request_timeout = "45s"; labels.pool = "gonka"; strip_params = [ "thinking" "reasoning_effort" ]; }
+        { id = "dahl-2"; base_provider = "openai"; inference_url = "https://inference.dahl.global/v1"; api_key = "env.LATTICE_LLM_PROVIDER_DAHL_2_KEY"; priority = 20; request_timeout = "45s"; labels.pool = "gonka"; strip_params = [ "thinking" "reasoning_effort" ]; }
+        { id = "hyperfusion"; base_provider = "openai"; inference_url = "https://api.hyperfusion.io/v1"; api_key = "env.LATTICE_LLM_PROVIDER_HYPERFUSION_KEY"; priority = 100; request_timeout = "45s"; labels.pool = "gonka"; strip_params = [ "thinking" "reasoning_effort" ]; }
+        { id = "gonkarouter"; base_provider = "openai"; inference_url = "https://api.gonkarouter.io/v1"; api_key = "env.LATTICE_LLM_PROVIDER_GONKAROUTER_KEY"; priority = 10; request_timeout = "45s"; labels.pool = "gonka"; strip_params = [ "thinking" "reasoning_effort" ]; }
         {
           id = "google-vertex";
           base_provider = "vertex";
@@ -584,6 +587,7 @@ in
           vertex_project_id = "mytecor";
           vertex_region = "global";
           priority = 100;
+          max_concurrent = 6;
           strip_params = [ "thinking" "reasoning_effort" ];
           set_params.reasoning_effort = "medium";
         }
@@ -597,91 +601,49 @@ in
         set_params.reasoning_effort = "medium";
       }];
 
-      rules = [
-        # stupid
-        { route = "stupid"; action = "filter"; where.model.eq = "stupid"; }
-        {
-          route = "stupid";
-          action = "map";
-          providers = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ];
-          native = "MiniMaxAI/MiniMax-M2.7";
-          tier = 0;
-        }
-        {
-          route = "stupid";
-          action = "admission";
-          dynamic = true;
-          maxInFlight = 24;
-          maxPending = 32;
-          waitTimeout = "15s";
-        }
-        { route = "stupid"; action = "rank"; strategy = "priority"; }
-        { route = "stupid"; action = "balance"; strategy = "expected-ttft"; window = "5m"; error_budget = 0.2; }
-        { route = "stupid"; action = "affinity"; sources = [ "responses.conversation" "responses.previous_response_id" ]; ttl = "24h"; on_missing = "ignore"; on_provider_failure = "fail-closed"; }
-        { route = "stupid"; action = "race"; count = 1; }
-        { route = "stupid"; action = "transform"; type = "split_thinking"; }
-        { route = "stupid"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
-        { route = "stupid"; action = "hedge"; }
-        { route = "stupid"; action = "timeout"; duration = "60s"; idle = "2m"; }
-        { route = "stupid"; action = "continue"; idle = "2m"; reshare = "full"; retries = 2; wait = "5m"; }
+      models = let
+        responsesAffinity = {
+          sources = [ "responses.conversation" "responses.previous_response_id" ];
+          ttl = "24h";
+          on_missing = "ignore";
+          on_provider_failure = "fail-closed";
+        };
+      in {
+        stupid = {
+          tiers = [{
+            targets = [{ select.pool = "gonka"; native = "MiniMaxAI/MiniMax-M2.7"; }];
+          }];
+          timeout = "60s";
+          stream_idle_timeout = "2m";
+          transforms = [ "split_thinking" ];
+          affinity = responsesAffinity;
+          safe_continue = true;
+          continue = { idle = "2m"; reshare = "full"; retries = 2; wait = "5m"; };
+        };
 
-        # standard
-        { route = "standard"; action = "filter"; where.model.eq = "standard"; }
-        {
-          route = "standard";
-          action = "map";
-          providers = [ "gonka-proxy" "gonka-openbroker" "gonka-api" "dahl" "dahl-2" "hyperfusion" "gonkarouter" ];
-          native = "deepseek-ai/DeepSeek-V4-Flash-0731";
-          tier = 0;
-        }
-        {
-          route = "standard";
-          action = "map";
-          providers = [ "hyperfusion" ];
-          native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731";
-          tier = 1;
-        }
-        {
-          route = "standard";
-          action = "admission";
-          dynamic = true;
-          maxInFlight = 24;
-          maxPending = 32;
-          waitTimeout = "15s";
-        }
-        { route = "standard"; action = "rank"; strategy = "priority"; }
-        { route = "standard"; action = "balance"; strategy = "expected-ttft"; window = "5m"; error_budget = 0.2; }
-        { route = "standard"; action = "affinity"; sources = [ "responses.conversation" "responses.previous_response_id" ]; ttl = "24h"; on_missing = "ignore"; on_provider_failure = "fail-closed"; }
-        { route = "standard"; action = "race"; count = 1; }
-        { route = "standard"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
-        { route = "standard"; action = "hedge"; }
-        { route = "standard"; action = "timeout"; duration = "110s"; idle = "2m"; }
-        { route = "standard"; action = "continue"; idle = "2m"; reshare = "full"; retries = 2; wait = "5m"; }
+        standard = {
+          tiers = [
+            { targets = [{ select.pool = "gonka"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }]; }
+            { targets = [{ provider = "hyperfusion"; native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731"; }]; }
+          ];
+          timeout = "110s";
+          stream_idle_timeout = "2m";
+          affinity = responsesAffinity;
+          safe_continue = true;
+          continue = { idle = "2m"; reshare = "full"; retries = 2; wait = "5m"; };
+        };
 
-        # smart
-        { route = "smart"; action = "filter"; where.model.eq = "smart"; }
-        {
-          route = "smart";
-          action = "map";
-          providers = [ "google-vertex" ];
-          native = "gemini-4-argon";
-          tier = 0;
-        }
-        {
-          route = "smart";
-          action = "admission";
-          maxInFlight = 6;
-          maxPending = 16;
-          waitTimeout = "30s";
-        }
-        { route = "smart"; action = "rank"; strategy = "priority"; }
-        { route = "smart"; action = "balance"; strategy = "round_robin"; weights = { }; window = "5m"; error_budget = 0.2; }
-        { route = "smart"; action = "affinity"; sources = [ "responses.conversation" "responses.previous_response_id" ]; ttl = "24h"; on_missing = "ignore"; on_provider_failure = "fail-closed"; }
-        { route = "smart"; action = "race"; count = 1; }
-        { route = "smart"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "200ms"; max = "1s"; }; }
-        { route = "smart"; action = "timeout"; duration = "3m"; idle = "5m"; }
-        { route = "smart"; action = "continue"; idle = "5m"; reshare = "full"; retries = 2; wait = "10m"; }
-      ];
+        smart = {
+          tiers = [{
+            targets = [{ provider = "google-vertex"; native = "gemini-4-argon"; }];
+          }];
+          timeout = "3m";
+          stream_idle_timeout = "5m";
+          affinity = responsesAffinity;
+          safe_continue = true;
+          continue = { idle = "5m"; reshare = "full"; retries = 2; wait = "10m"; };
+        };
+      };
     };
   };
 
