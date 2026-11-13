@@ -22,6 +22,13 @@
 Правило не включается автоматически по имени модели или провайдера.
 См. [контракт трансформаций](https://github.com/mytecor/llm-gateway/blob/9e411d392d8ba3335f742d55c72a00624c8d3ca7/docs/response-transforms.md).
 
+Hedge включается правилом `{ route = "standard"; action = "hedge"; }` без задержки.
+Поле `after` удалено: gateway сам оценивает p95 отдельно для провайдера, native model
+и streaming/non-streaming. До 20 успешных измерений hedge отключён; после пяти минут
+без пригодных наблюдений требуется новый прогрев. Около 5% превышений — ориентир при
+стабильной нагрузке, а не жёсткий бюджет upstream calls. Подробнее см.
+[архитектуру gateway](./../../ARCHITECTURE.md).
+
 Сборка: `nix build .#packages.x86_64-linux.llm-gateway`.
 Интеграция проверяется модульными Nix checks и runtime smoke-test упакованного
 процесса с локальным HTTP fixture без обращения к внешним LLM.

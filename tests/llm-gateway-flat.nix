@@ -24,6 +24,7 @@ let
               { route = "standard"; action = "map"; native = "native-model"; }
               { route = "standard"; action = "rank"; strategy = "priority"; }
               { route = "standard"; action = "race"; count = 1; }
+              { route = "standard"; action = "hedge"; }
             ];
           };
         };
@@ -62,6 +63,7 @@ pkgs.runCommand "llm-gateway-flat-settings" { nativeBuildInputs = [ pkgs.jq ]; }
     and (.rules | type == "array")
     and any(.rules[];
       .route == "standard" and .action == "map" and .native == "native-model")
+    and any(.rules[]; .action == "hedge" and (has("after") | not))
     and (has("models") | not)
     and (has("pipeline") | not)
     and (has("routingRules") | not)

@@ -680,8 +680,15 @@ EWMA TTFT) и `weighted` (только статические веса). Health 
 `conversation` /
 `previous_response_id`) за вернувшим её provider и fail-closed при его отказе; Chat affinity
 никогда не получает. `race` запускает только top-`count` unused targets; `retry`
-`scope = "next"` берёт следующие unused targets и не повторяет provider; `hedge` разрешает
-следующему retry batch начаться до завершения текущих branches; `semaphore` ограничивает
+`scope = "next"` берёт следующие unused targets и не повторяет provider; явное правило `hedge`
+без `after` запускает резервный batch, когда все активные primary branches превысили
+адаптивный p95 задержки. Отдельная статистика `(provider, native model, streaming mode)`
+прогревается на 20 успешных измерениях; до прогрева действует обычный timeout без hedge.
+Streaming измеряется до первого meaningful event, non-streaming — до полного ответа.
+Отменённые медленные losers и таймауты после порога учитываются как неполные наблюдения;
+клиентские отмены нейтральны. После пяти минут без пригодных наблюдений профиль
+прогревается заново. Цель — около 5% превышений при стабильной нагрузке, без жёсткого
+лимита дополнительных вызовов; `semaphore` ограничивает
 суммарные/одновременные/на-провайдера upstream calls во всём request, включая fallback;
 `timeout` ограничивает primary, backoff и fallback одним абсолютным deadline. Retry следующей
 wave разрешён, только когда все ошибки завершившейся active wave входят в `retry.on`; итоговый

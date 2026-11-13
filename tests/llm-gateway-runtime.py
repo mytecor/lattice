@@ -1,4 +1,4 @@
-"""Verify the packaged core can discover its HTTP driver and serve strict JSON."""
+"""Verify packaged driver discovery, adaptive hedge config and strict JSON."""
 import http.server
 import json
 import pathlib
@@ -78,6 +78,7 @@ def main():
             {"route": "fixture", "action": "filter", "where": {"model": {"eq": "logical"}}},
             {"route": "fixture", "action": "map", "providers": ["fixture"], "native": "fixture-model"},
             {"route": "fixture", "action": "race", "count": 1},
+            {"route": "fixture", "action": "hedge"},
             {"route": "fixture", "action": "transform", "type": "split_thinking"},
             {"route": "raw", "action": "filter", "where": {"model": {"eq": "raw"}}},
             {"route": "raw", "action": "map", "providers": ["fixture"], "native": "fixture-model"},
