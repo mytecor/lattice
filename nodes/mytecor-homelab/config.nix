@@ -622,9 +622,10 @@ in
         };
 
         standard = {
+          profile = "high-reliability";
+          budget = { max_calls = 8; max_calls_per_provider = 3; max_in_flight = 2; };
           tiers = [
             { targets = [{ select.pool = "gonka"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }]; }
-            { targets = [{ provider = "hyperfusion"; native = "gonka/deepseek-ai/DeepSeek-V4-Flash-0731"; }]; }
           ];
           timeout = "110s";
           stream_idle_timeout = "2m";
