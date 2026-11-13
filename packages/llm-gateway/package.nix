@@ -2,12 +2,12 @@
 
 let
   version = "0.1.0-unstable-2026-11-13";
-  revision = "17e352c2e2cd905abae3a68e51528215dc4b29f4";
+  revision = "77220f1453bc1e11086791cb14c0bebe69b83d87";
   src = fetchFromGitHub {
     owner = "mytecor";
     repo = "llm-gateway";
     rev = revision;
-    hash = "sha256-B5NtHeg1saICAIdGO63XUvfM1nIOdJQpG0VrE9B/hRw=";
+    hash = "sha256-ZDavqa4K3KFeFFkaJfoZB5ZeSGoJjsiljrQVspX4e1U=";
   };
 
   # Keep the full checkout for the local replacement of the shared protocol.
