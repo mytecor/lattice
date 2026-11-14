@@ -1,13 +1,13 @@
 { lib, buildGo127Module, fetchFromGitHub, makeWrapper }:
 
 let
-  version = "0.1.0-unstable-2026-11-13";
-  revision = "ffdfddea08df8f4e302ae42d7c46b9514b55a05f";
+  version = "0.1.0-unstable-2026-11-14";
+  revision = "de13c0ae0b17a684d75eec4760d01cd5214ebd49";
   src = fetchFromGitHub {
     owner = "mytecor";
     repo = "llm-gateway";
     rev = revision;
-    hash = "sha256-mxNHD0GvMJWJATfJtLInZ93m7UfX/q6V5MYvlY7Gchc=";
+    hash = "sha256-gH/lFa4nAQx/TdkOp24swPc2b8pVMcN5tELb4hydjcQ=";
   };
 
   # Keep the full checkout for the local replacement of the shared protocol.
