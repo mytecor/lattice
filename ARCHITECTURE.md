@@ -124,11 +124,14 @@ flowchart TD
     subgraph AI["Инференс LLM"]
         LLMGateway["llm-gateway<br/>(Маршрутизация и Strict JSON Schema)"]
         HTTPDriver["http-driver<br/>(Bifrost HTTP-адаптер)"]
+        JEVDriver["jev-driver<br/>(Нативные типизированные решения)"]
         Agentrun["agentrun-openai<br/>(OpenAI-совместимый шлюз)"]
         MuseACP["muse-acp<br/>(Адаптер ACP / MSP)"]
         Muse["Muse Code<br/>(Агент с клиентскими MCP-инструментами)"]
         Meta["Meta AI<br/>(Провайдер Muse)"]
         Upstream["Внешние LLM провайдеры<br/>(Vertex AI, Gonka, Hyperfusion)"]
+        JevGonka["Gonka Proxy<br/>(Текстовые решения JEV)"]
+        TypeSafe["TypeSafe API<br/>(Решения, изображения и Box)"]
     end
 
     subgraph Observability["Наблюдаемость"]
@@ -188,6 +191,9 @@ flowchart TD
     MuseACP --> Muse
     Muse --> Meta
     Agentrun --> LLMGateway
+    LLMGateway -->|NDJSON| JEVDriver
+    JEVDriver --> JevGonka
+    JEVDriver --> TypeSafe
     LLMGateway -->|NDJSON| HTTPDriver
     HTTPDriver --> Upstream
 
@@ -385,11 +391,12 @@ flowchart TD
     end
 
     subgraph Gateway["LLM Gateway"]
-        Router["Маршрутизатор моделей<br/>(stupid, standard, smart)"]
+        Router["Маршрутизатор моделей<br/>(stupid, standard, smart, jev)"]
         Balancer["Балансировщик и Health State<br/>(Учёт ошибок и латентности)"]
         Engine["Движок исполнения<br/>(Speculative race, retry, fallback)"]
         Structured["Structured Outputs<br/>(Валидация и исправление JSON)"]
         HTTPDriver["http-driver<br/>(Bifrost HTTP-адаптер)"]
+        JEVDriver["jev-driver<br/>(Нативные типизированные решения)"]
     end
 
     subgraph Upstream["Внешние провайдеры инференса"]
@@ -398,6 +405,8 @@ flowchart TD
         Gonka["Gonka / OpenBroker<br/>(Классы standard и stupid)"]
         Hyperfusion["Hyperfusion<br/>(Primary и fallback модели)"]
         Dahl["Dahl / GonkaRouter<br/>(Дополнительные ветки пула)"]
+        JevGonka["Gonka Proxy<br/>(Текстовые решения JEV)"]
+        TypeSafe["TypeSafe API<br/>(Решения, изображения и Box)"]
     end
 
     HydraACP --> Router
@@ -415,6 +424,9 @@ flowchart TD
     Structured --> Engine
     Engine -->|Готовый strict-ответ| Structured
     Structured -->|Корректирующий запрос| Router
+    Engine -->|NDJSON| JEVDriver
+    JEVDriver --> JevGonka
+    JEVDriver --> TypeSafe
     Engine -->|NDJSON| HTTPDriver
     HTTPDriver --> Vertex
     HTTPDriver --> AIStudio
@@ -621,6 +633,16 @@ Radicle, а выбор Gerrit или собственного приёма ос�
 выводить из ограничений terminal-result parser текущего baseline.
 
 ## LLM gateway
+
+Нативные endpoints `/v1/systemone` и `/v1/decisions` обслуживают модель `jev`.
+Gonka и TypeSafe входят в один tier с существующим профилем `balanced`; текстовые
+запросы балансируются между доступными провайдерами, а изображения, `box` и
+long-context заранее ограничивают пул совместимыми targets. Отдельный `jev-driver`
+адаптирует форматы провайдеров и проверяет ответы до выбора победителя. TypeSafe
+включается при наличии предусмотренного agenix-секрета; содержимое ключа gateway
+получает только через runtime credentials. Подробнее — в
+[описании пакета](./packages/llm-gateway/README.md).
+
 
 Runtime собирается из закреплённой ревизии отдельного
 [репозитория llm-gateway](https://github.com/mytecor/llm-gateway) через

@@ -11,6 +11,7 @@ let
         system.stateVersion = "26.05";
         lattice.llm-gateway = {
           credentials = {
+            LATTICE_JEV_TYPESAFE_KEY = "/run/agenix/jev-typesafe-key";
             LATTICE_CLIENT_PRIMARY_KEY = "/run/agenix/llm-gateway-client-key";
             LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY = "/run/agenix/llm-provider-openbroker";
             LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY = "/run/agenix/llm-provider-proxy";
@@ -19,6 +20,15 @@ let
           settings = {
             client_api_keys = [{ id = "primary"; key = "env.LATTICE_CLIENT_PRIMARY_KEY"; }];
             providers = [
+              {
+                id = "jev-typesafe";
+                driver = "jev";
+                config = {
+                  dialect = "typesafe";
+                  inference_url = "https://api.typesafe.ai/v1";
+                  api_key = "env.LATTICE_JEV_TYPESAFE_KEY";
+                };
+              }
               {
                 id = "gonka-proxy";
                 base_provider = "openai";
@@ -43,6 +53,10 @@ let
                 vertex_region = "global";
               }
             ];
+            models.jev = {
+              profile = "balanced";
+              tiers = [{ targets = [{ provider = "jev-typesafe"; native = "jev-latest"; }]; }];
+            };
             rules = [
               { route = "standard"; action = "filter"; where.model.eq = "standard"; }
               { route = "standard"; action = "filter"; where.provider."in" = [ "gonka-proxy" "gonka-openbroker" ]; }
@@ -70,6 +84,7 @@ assert
   else
     builtins.elem "/run/llm-gateway-env/keys.env" (service.serviceConfig.EnvironmentFile or [ ]));
 assert builtins.elem "llm-gateway-env.service" service.after;
+assert builtins.elem "LATTICE_JEV_TYPESAFE_KEY:/run/agenix/jev-typesafe-key" envCredentials;
 assert builtins.elem "LATTICE_CLIENT_PRIMARY_KEY:/run/agenix/llm-gateway-client-key" envCredentials;
 assert builtins.elem "LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY:/run/agenix/llm-provider-proxy" envCredentials;
 assert builtins.elem "LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY:/run/agenix/llm-provider-openbroker" envCredentials;
@@ -104,6 +119,11 @@ pkgs.runCommand "llm-gateway-bifrost-module-evaluation" {
       .id == "gonka-proxy"
       and .api_key == "env.LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY")
     and any(.providers[];
+      .driver == "jev"
+      and .config.dialect == "typesafe"
+      and .config.api_key == "env.LATTICE_JEV_TYPESAFE_KEY")
+    and any(.models.jev.tiers[].targets[]; .provider == "jev-typesafe")
+    and any(.providers[];
       .id == "google-vertex"
       and .vertex_auth_credentials == "env.LATTICE_LLM_PROVIDER_GOOGLE_VERTEX_CREDENTIALS")
     and any(.rules[];
@@ -112,7 +132,7 @@ pkgs.runCommand "llm-gateway-bifrost-module-evaluation" {
       and .max_in_flight == 3)
   ' "$cfg" >/dev/null
 
-  if grep -q 'llm-gateway-client-key\|llm-provider-proxy\|llm-provider-openbroker\|llm-provider-google-vertex-credentials' "$cfg"; then
+  if grep -q 'jev-typesafe-key\|llm-gateway-client-key\|llm-provider-proxy\|llm-provider-openbroker\|llm-provider-google-vertex-credentials' "$cfg"; then
     echo "public gateway config contains a credential path" >&2
     exit 1
   fi

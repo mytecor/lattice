@@ -1,4 +1,4 @@
-"""Verify packaged driver discovery, adaptive hedge config and strict JSON."""
+"""Verify packaged HTTP/JEV driver discovery and native request boundaries."""
 import http.server
 import json
 import pathlib
@@ -19,6 +19,12 @@ class Upstream(http.server.BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        if self.path == "/jev/v1/models":
+            data = json.dumps({"models": [{"name": "jev-latest", "description": "Fixture", "release_date": "2026-11-16"}]}).encode()
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(data)
+            return
         data = json.dumps({"object": "list", "data": [{"id": "fixture-model", "object": "model"}]}).encode()
         self.send_response(200)
         self.end_headers()
@@ -26,6 +32,18 @@ class Upstream(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if self.path == "/jev/v1/systemone":
+            assert payload["model"] == "jev-latest"
+            assert payload["state"] == {"ticket": "fixture"}
+            assert self.headers["Authorization"] == "Bearer fixture-jev-key"
+            assert self.headers["TypeSafe-Danger-Zone-Long-Context"] == "true"
+            data = json.dumps({"model": "jev-fixture-version", "answers": {"q": {"type": "noul", "noul": 0.9}}, "usage": {"input_tokens": 4, "output_tokens": 1}}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         self.requests.append(payload)
         # The integration boundary must preserve both the mapped model and schema.
         assert payload["model"] == "fixture-model"
@@ -73,7 +91,11 @@ def main():
         "providers": [{"id": "fixture", "config": {
             "base_provider": "openai", "inference_url": f"http://127.0.0.1:{upstream.server_port}/v1",
             "allow_private_network": True,
+        }}, {"id": "jev-fixture", "driver": "jev", "config": {
+            "dialect": "typesafe", "inference_url": f"http://127.0.0.1:{upstream.server_port}/jev/v1",
+            "api_key": "fixture-jev-key",
         }}],
+        "models": {"jev": {"profile": "balanced", "tiers": [{"targets": [{"provider": "jev-fixture", "native": "jev-latest"}]}]}},
         "rules": [
             {"route": "fixture", "action": "filter", "where": {"model": {"eq": "logical"}}},
             {"route": "fixture", "action": "map", "providers": ["fixture"], "native": "fixture-model"},
@@ -106,6 +128,15 @@ def main():
                             time.sleep(0.05)
                     else:
                         raise RuntimeError("packaged gateway did not start")
+                    for endpoint in ("/v1/systemone", "/v1/decisions"):
+                        decision = {"model": "jev", "state": {"ticket": "fixture"}, "questions": {"q": {"type": "noul", "instructions": "Is this a ticket?"}}}
+                        query = urllib.request.Request(url + endpoint, data=json.dumps(decision).encode(), headers={"Content-Type": "application/json", "TypeSafe-Danger-Zone-Long-Context": "true"})
+                        with urllib.request.urlopen(query, timeout=20) as response:
+                            result = json.load(response)
+                        assert result["model"] == "jev-fixture-version"
+                        assert result["answers"]["q"]["noul"] == 0.9
+                        assert result["usage"]["input_tokens"] == 4
+
                     request = {
                         "model": "logical", "messages": [{"role": "user", "content": "Return value 1."}],
                         "response_format": {"type": "json_schema", "json_schema": {

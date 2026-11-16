@@ -531,6 +531,8 @@ in
       LATTICE_LLM_PROVIDER_HYPERFUSION_KEY = config.age.secrets.llm-provider-hyperfusion.path;
       LATTICE_LLM_PROVIDER_GONKAROUTER_KEY = config.age.secrets.llm-provider-gonkarouter.path;
       LATTICE_LLM_PROVIDER_GOOGLE_VERTEX_CREDENTIALS = config.age.secrets.llm-provider-google-vertex.path;
+    } // lib.optionalAttrs hasJevTypesafeKey {
+      LATTICE_LLM_PROVIDER_TYPESAFE_KEY = config.age.secrets.jev-typesafe-api-key.path;
     } // lib.optionalAttrs hasGoogleAiStudioKey {
       LATTICE_LLM_PROVIDER_GOOGLE_AI_STUDIO_KEY = config.age.secrets.llm-provider-google-ai-studio.path;
     };
@@ -542,6 +544,15 @@ in
         { id = "mac"; key = "env.LATTICE_CLIENT_MAC_KEY"; }
       ];
       providers = [
+        {
+          id = "jev-gonka";
+          driver = "jev";
+          config = {
+            dialect = "gonka";
+            inference_url = "https://api.proxy.gonka.gg/v1";
+            api_key = "env.LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY";
+          };
+        }
         {
           id = "gonka-proxy";
           base_provider = "openai";
@@ -591,7 +602,15 @@ in
           strip_params = [ "thinking" "reasoning_effort" ];
           set_params.reasoning_effort = "medium";
         }
-      ] ++ lib.optionals hasGoogleAiStudioKey [{
+      ] ++ lib.optionals hasJevTypesafeKey [{
+        id = "jev-typesafe";
+        driver = "jev";
+        config = {
+          dialect = "typesafe";
+          inference_url = "https://api.typesafe.ai/v1";
+          api_key = "env.LATTICE_LLM_PROVIDER_TYPESAFE_KEY";
+        };
+      }] ++ lib.optionals hasGoogleAiStudioKey [{
         id = "google-ai-studio";
         base_provider = "gemini";
         inference_url = "https://generativelanguage.googleapis.com/v1beta";
@@ -609,6 +628,14 @@ in
           on_provider_failure = "fail-closed";
         };
       in {
+        jev = {
+          profile = "balanced";
+          tiers = [{
+            targets = [{ provider = "jev-gonka"; native = "jev"; }]
+              ++ lib.optionals hasJevTypesafeKey [{ provider = "jev-typesafe"; native = "jev-latest"; }];
+          }];
+        };
+
         stupid = {
           tiers = [{
             targets = [{ select.pool = "gonka"; native = "MiniMaxAI/MiniMax-M2.7"; }];

@@ -3,8 +3,42 @@
 Рабочий runtime собирается из закреплённого commit внешнего
 [репозитория llm-gateway](https://github.com/mytecor/llm-gateway).
 [package.nix](./package.nix) фиксирует источник и зависимости, собирает gateway core
-и отдельный `http-driver` и добавляет драйвер в `PATH` через wrapper.
+и отдельный `http-driver` и `jev-driver`, добавляя оба драйвера в `PATH` через wrapper.
 Нативные ACP/Web-драйверы не входят в текущую HTTP-конфигурацию хомлабы.
+
+Поддержка JEV включена в закреплённый
+[commit llm-gateway](https://github.com/mytecor/llm-gateway/commit/939604d888b4bfa7444874349c2146b2dd6481ec).
+Пакет собирает опубликованные исходники напрямую; revision, source hash и vendor
+hashes закреплены в [описании сборки](./package.nix).
+
+## Нативный API JEV
+
+Авторизованные `POST /v1/systemone` и `/v1/decisions` принимают `model: "jev"`,
+`state`, `questions` и опциональные `assets`. Вопросы: `choice`, `score`, `noul`,
+экспериментальный `box`. Поддерживаются JSON/base64 и multipart-загрузки изображений.
+Изображения/Box требуют `TypeSafe-Danger-Zone-Images: true`, long-context —
+`TypeSafe-Danger-Zone-Long-Context: true`. Ответ сохраняет upstream model/version,
+вероятности и confidence; отсутствие usage не заменяется выдуманными значениями.
+
+В [конфигурации homelab](./../../nodes/mytecor-homelab/config.nix) модель `jev`
+использует один tier с профилем `balanced`: `jev-gonka` (`native: jev`) и
+`jev-typesafe` (`native: jev-latest`). TypeSafe объявляется при наличии
+`jev-typesafe-api-key.age` через существующий agenix-механизм. Gonka использует
+имеющийся ключ proxy. Совместимость фильтруется перед балансировкой, retry и hedge:
+экспериментальные возможности идут только в TypeSafe. Без совместимого target API
+возвращает `503 no_compatible_provider`; Gonka `403` допускает переход к другому
+провайдеру. `Retry-After` не обходится cooling fail-open.
+
+HTTP-запросы JEV ограничены 32 MiB, внутренний JSON — 48 MiB, команда драйверу —
+64 MiB; лимиты Chat/Responses остаются прежними. Runtime smoke проверяет поиск
+установленного JEV-драйвера и передачу запроса через локальный fixture. Live smoke
+с TypeSafe требует подготовки секрета оператором. Web healing пока использует
+своего клиента и автоматически на gateway не переключается.
+
+Официальный контракт: [TypeSafe System One](https://docs.typesafe.ai/api/system-one),
+адаптируемый контракт: [Gonka JEV](https://proxy.gonka.gg/docs/jev).
+
+## Конфигурация и существующие возможности
 
 Конфигурация передаётся через `lattice.llm-gateway.settings` без преобразований;
 верхнеуровневый список маршрутов называется `rules`. Параметры провайдеров и
