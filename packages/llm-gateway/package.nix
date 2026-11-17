@@ -2,12 +2,12 @@
 
 let
   version = "0.1.0-unstable-2026-11-17";
-  revision = "9870e7e50866a3504556974289b1138196674d8c";
+  revision = "c1e4680b1fc40cfea1cb909be042ca07665b0f6a";
   src = fetchFromGitHub {
     owner = "mytecor";
     repo = "llm-gateway";
     rev = revision;
-    hash = "sha256-EI8AbCAiqF3S31gcfGz+23Z3wYWw7ZSStrTj5/E+Csw=";
+    hash = "sha256-AUK1u+UttE2sBuGei9yjJtDmgrxk1ILMBGZvZhE/28M=";
   };
 
   embeddingsDriver = buildGo127Module {
@@ -15,7 +15,7 @@ let
     inherit version src;
     modRoot = "drivers/embeddings";
     subPackages = [ "." ];
-    vendorHash = "sha256-RBMPwmNgJTjycSeM5VSUn97bRrzXaApLglhivvOZxF4=";
+    vendorHash = "sha256-x0MsGpEZShKv3cMAdpRK4LE+drdqvKKKl31aVAVV9sI=";
     postInstall = ''
       mv "$out/bin/embeddings" "$out/bin/embeddings-driver"
     '';

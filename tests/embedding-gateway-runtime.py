@@ -98,7 +98,8 @@ def main(binary):
             assert len(raw) == 128*4 and struct.unpack_from("<f", raw)[0] == 1.0
             content = {"parts": [{"text": "before "}, {"inlineData": {"mimeType": "image/png", "data": "YQ=="}}, {"text": " after"}]}
             oai = post("/v1/embeddings", {"model": "embedding", "input": content, "dimensions": 256})
-            google = post("/v1beta/models/embedding:embedContent", {"content": content, "outputDimensionality": 256}, True)
+            sdk_content = {"parts": [{"text": "before "}, {"inline_data": {"mime_type": "image/png", "data": "YQ=="}}, {"text": " after"}]}
+            google = post("/v1beta/models/embedding:embedContent", {"content": sdk_content, "outputDimensionality": 256}, True)
             assert oai["data"][0]["embedding"] == google["embedding"]["values"]
             batch = post("/v1beta/models/embedding:batchEmbedContents", {"requests": [{"content": content, "outputDimensionality": 128}, {"content": content, "outputDimensionality": 512}]}, True)
             assert [len(v["values"]) for v in batch["embeddings"]] == [128, 512]

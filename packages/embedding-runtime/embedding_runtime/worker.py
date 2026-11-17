@@ -15,7 +15,7 @@ from .contract import Failure, MAX_BYTES, MAX_TOKENS, MIME, prompt
 
 def probe(path):
     result = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height",
+        ["ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "format=duration:stream=codec_type,width,height",
          "-of", "json", str(path)], capture_output=True, timeout=15, check=True,
     )
     info = json.loads(result.stdout)
@@ -59,7 +59,7 @@ def prepare_parts(parts, directory):
             probe(path)
             if mime.startswith("audio/"):
                 audio = subprocess.run(
-                    ["ffmpeg", "-v", "error", "-nostdin", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000",
+                    ["ffmpeg", "-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000",
                      "-t", "330", "-f", "f32le", "pipe:1"], capture_output=True, check=True, timeout=30,
                 )
                 value = np.frombuffer(audio.stdout, dtype="<f4").copy()

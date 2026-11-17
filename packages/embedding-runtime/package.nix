@@ -16,6 +16,7 @@ python3Packages.buildPythonApplication {
     av librosa soundfile torchvision torchcodec
   ];
   nativeBuildInputs = [ makeWrapper ];
+  nativeCheckInputs = [ ffmpeg ];
   postFixup = ''
     for binary in $out/bin/embedding-runtime $out/bin/embedding-runtime-benchmark; do
       wrapProgram "$binary" --prefix PATH : ${lib.makeBinPath [ ffmpeg ]}
