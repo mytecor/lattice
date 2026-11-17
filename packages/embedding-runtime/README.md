@@ -87,3 +87,15 @@ FP32, два потока. Короткие синтетические вход�
 
 Peak RSS не включает supervisor и временные decoder-процессы. Проверены все
 заявленные MIME-типы и фактическое завершение worker. На ноде задан `MemoryMax=6G`.
+
+Обычные OpenAI и Google GenAI SDK проверяются отдельным
+[скриптом совместимости](./../../scripts/check-embedding-clients.py). Он проверяет
+совпадение текстовых векторов, native token IDs, каталог модальностей и реальное
+изображение, сериализованное Google SDK (включая URL-safe base64). Ключ передаётся
+через stdin и не выводится:
+
+```sh
+cat /path/to/client-key | uv run --no-project \
+  --with openai --with google-genai --with pillow --with numpy \
+  python scripts/check-embedding-clients.py --base-url https://gateway.example
+```
