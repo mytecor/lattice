@@ -57,7 +57,14 @@ in
             };
           }];
         }
-      ] ++ cfg.extraScrapeConfigs;
+      ] ++ lib.optionals (config.lattice.embedding-runtime.enable or false) [{
+        job_name = "embedding-runtime";
+        metrics_path = "/metrics";
+        static_configs = [{
+          targets = [ "127.0.0.1:${toString config.lattice.embedding-runtime.port}" ];
+          labels = { service = "embedding-runtime"; environment = cfg.gatewayEnvironment; };
+        }];
+      }] ++ cfg.extraScrapeConfigs;
     };
 
     # The nixpkgs prometheus unit already ships the strict sandbox

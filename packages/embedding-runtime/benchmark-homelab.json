@@ -1,0 +1,42 @@
+{
+  "date": "2026-11-17",
+  "hardware": "Intel N100, 16 GiB RAM",
+  "dtype": "float32",
+  "threads": 2,
+  "model_revision": "f9972ac22e696a105c482202646979e33e4b5a1e",
+  "notes": "Short synthetic fixtures; VmHWM is worker peak RSS, excludes supervisor and decoder subprocesses. Idle expiry uses the production path with advanced time. Latency is workload dependent.",
+  "profiles": {
+    "text": {
+      "cold_seconds": 8.577926761005074,
+      "warm_seconds": 0.1789603600045666,
+      "tokens": 11,
+      "VmHWM": 2217742336,
+      "VmRSS": 2006220800,
+      "unloaded": true
+    },
+    "vision": {
+      "cold_seconds": 26.9006698919693,
+      "warm_seconds": 18.3551498639863,
+      "tokens": 260,
+      "VmHWM": 3228291072,
+      "VmRSS": 2704154624,
+      "unloaded": true
+    },
+    "audio": {
+      "cold_seconds": 9.791485483990982,
+      "warm_seconds": 0.7999745819251984,
+      "tokens": 29,
+      "VmHWM": 4060246016,
+      "VmRSS": 3238522880,
+      "unloaded": true
+    },
+    "full": {
+      "cold_seconds": 45.30897111806553,
+      "warm_seconds": 34.944888707017526,
+      "tokens": 537,
+      "VmHWM": 5069991936,
+      "VmRSS": 3970842624,
+      "unloaded": true
+    }
+  }
+}

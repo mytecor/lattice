@@ -1,0 +1,135 @@
+"""Installed gateway/driver boundary against an isolated canonical fixture."""
+import base64
+from concurrent.futures import ThreadPoolExecutor
+import json
+import os
+from pathlib import Path
+import socket
+import struct
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+
+class Fixture(BaseHTTPRequestHandler):
+    calls = 0
+    blocking = 0
+    lock = threading.Lock()
+    release = threading.Event()
+
+    def log_message(self, *args):
+        pass
+
+    def respond(self, value):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(value).encode())
+
+    def do_GET(self):
+        assert self.path == "/models"
+        self.respond({"data": [{"id": "native", "input_modalities": ["text", "image", "audio", "video"], "embedding_dimensions": [128, 256, 512, 768]}]})
+
+    def do_POST(self):
+        assert self.path == "/embed"
+        request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        assert request["model"] == "native"
+        with self.lock:
+            type(self).calls += 1
+        if request["items"][0].get("parts", [{}])[0].get("text") == "block":
+            with self.lock:
+                type(self).blocking += 1
+            assert self.release.wait(4), "fixture release timed out"
+        self.respond({"embeddings": [{"values": [1.0] + [0.0] * (item["dimensions"]-1), "tokens": 4} for item in request["items"]]})
+
+
+def main(binary):
+    fixture = ThreadingHTTPServer(("127.0.0.1", 0), Fixture)
+    threading.Thread(target=fixture.serve_forever, daemon=True).start()
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    config = {
+        "host": "127.0.0.1", "port": port, "log_level": "silent",
+        "client_api_keys": [{"id": "fixture", "key": "fixture-key"}],
+        "providers": [{"id": "local", "driver": "embeddings", "config": {"inference_url": f"http://127.0.0.1:{fixture.server_port}"}}],
+        "rules": [
+            {"route": "embedding", "action": "filter", "where": {"model": {"eq": "embedding"}}},
+            {"route": "embedding", "action": "filter", "where": {"provider": {"in": ["local"]}}},
+            {"route": "embedding", "action": "map", "native": "native"},
+            {"route": "embedding", "action": "admission", "max_in_flight": 5, "max_pending": 0},
+            {"route": "embedding", "action": "rank", "strategy": "priority"},
+            {"route": "embedding", "action": "race", "count": 1},
+            {"route": "embedding", "action": "semaphore", "max_calls": 1, "max_calls_per_provider": 1, "max_in_flight": 1},
+            {"route": "embedding", "action": "timeout", "duration": "5s"},
+        ],
+    }
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "config.json"
+        path.write_text(json.dumps(config))
+        process = subprocess.Popen([binary, "--config", str(path), "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            for _ in range(200):
+                try:
+                    with urlopen(f"http://127.0.0.1:{port}/healthz", timeout=1):
+                        break
+                except (URLError, TimeoutError):
+                    if process.poll() is not None:
+                        raise AssertionError("packaged gateway failed to start")
+                    time.sleep(0.05)
+            else:
+                raise AssertionError("packaged gateway did not become ready")
+
+            def post(endpoint, payload, google=False):
+                headers = {"Content-Type": "application/json"}
+                headers["x-goog-api-key" if google else "Authorization"] = "fixture-key" if google else "Bearer fixture-key"
+                request = Request(f"http://127.0.0.1:{port}{endpoint}", data=json.dumps(payload).encode(), headers=headers)
+                with urlopen(request, timeout=10) as response:
+                    return json.load(response)
+
+            result = post("/v1/embeddings", {"model": "embedding", "input": ["one", "two"], "dimensions": 128, "encoding_format": "base64"})
+            assert result["model"] == "embedding" and [row["index"] for row in result["data"]] == [0, 1]
+            raw = base64.b64decode(result["data"][0]["embedding"])
+            assert len(raw) == 128*4 and struct.unpack_from("<f", raw)[0] == 1.0
+            content = {"parts": [{"text": "before "}, {"inlineData": {"mimeType": "image/png", "data": "YQ=="}}, {"text": " after"}]}
+            oai = post("/v1/embeddings", {"model": "embedding", "input": content, "dimensions": 256})
+            google = post("/v1beta/models/embedding:embedContent", {"content": content, "outputDimensionality": 256}, True)
+            assert oai["data"][0]["embedding"] == google["embedding"]["values"]
+            batch = post("/v1beta/models/embedding:batchEmbedContents", {"requests": [{"content": content, "outputDimensionality": 128}, {"content": content, "outputDimensionality": 512}]}, True)
+            assert [len(v["values"]) for v in batch["embeddings"]] == [128, 512]
+            assert Fixture.calls == 4
+            with ThreadPoolExecutor(max_workers=5) as pool:
+                blocked = [pool.submit(post, "/v1/embeddings", {"model": "embedding", "input": "block", "dimensions": 128}) for _ in range(5)]
+                try:
+                    for _ in range(100):
+                        if Fixture.blocking == 5:
+                            break
+                        time.sleep(0.02)
+                    assert Fixture.blocking == 5
+                    try:
+                        post("/v1/embeddings", {"model": "embedding", "input": "overload"})
+                        raise AssertionError("gateway added an unbounded queue")
+                    except HTTPError as error:
+                        assert error.code == 429 and error.headers.get("Retry-After")
+                finally:
+                    Fixture.release.set()
+                for result in blocked:
+                    assert result.result()["model"] == "embedding"
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            fixture.shutdown()
+    print("installed embeddings gateway/driver smoke passed")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1])

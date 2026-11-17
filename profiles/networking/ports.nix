@@ -1,5 +1,6 @@
 {
   llm-gateway = 9208;
+  embedding-runtime = 9225;
   pi-acp = 55514;
   radicle-node = 8776;
   radicle-httpd = 8080;

@@ -257,6 +257,7 @@
           rnsh = final.callPackage "${rns-rs}/package.nix" { bin = "rnsh"; };
           hydra-acp = final.callPackage ./packages/hydra-acp/package.nix { };
           llm-gateway = final.callPackage ./packages/llm-gateway/package.nix { };
+          embedding-runtime = final.callPackage ./packages/embedding-runtime/package.nix { };
           agentrun-openai = final.callPackage ./packages/agentrun-openai/package.nix { };
           codex-acp-fsless = final.callPackage ./packages/codex-acp/package.nix { };
           muse = final.callPackage ./packages/muse/package.nix { };
@@ -375,7 +376,7 @@
           };
         in
         nixpkgs.lib.filterAttrs (_: pkg: nixpkgs.lib.meta.availableOn { inherit system; } pkg) {
-          inherit (pkgs.lattice) muse muse-acp muse-acp-fsless antigravity antigravity-acp antigravity-acp-fsless gemini-cli gemini-acp gemini-acp-fsless codex-acp-fsless acp-normalizer acp-web devtools-frontend moli browser-ingress agent-image agentrun-openai git-cache-proxy git-watchd task-contract taskd agentd hydra-acp llm-gateway node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
+          inherit (pkgs.lattice) muse muse-acp muse-acp-fsless antigravity antigravity-acp antigravity-acp-fsless gemini-cli gemini-acp gemini-acp-fsless codex-acp-fsless acp-normalizer acp-web devtools-frontend moli browser-ingress agent-image agentrun-openai git-cache-proxy git-watchd task-contract taskd agentd hydra-acp llm-gateway embedding-runtime node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
         });
@@ -438,6 +439,7 @@
         rns-server.imports = [ "${module-rns-server}" ];
         rnsh.imports = [ "${module-rnsh}" ];
         llm-gateway.imports = [ "${module-llm-gateway}" ];
+        embedding-runtime = import ./modules/embedding-runtime;
         agentrun-openai.imports = [ "${module-agentrun-openai}" ];
         pi.imports = [ "${module-pi}" ];
         pi-acp-daemon.imports = [ "${module-pi-acp-daemon}" ];
@@ -463,6 +465,7 @@
           self.nixosModules.rns-server
           self.nixosModules.rnsh
           self.nixosModules.llm-gateway
+          self.nixosModules.embedding-runtime
           self.nixosModules.agentrun-openai
           self.nixosModules.pi
           self.nixosModules.pi-acp-daemon

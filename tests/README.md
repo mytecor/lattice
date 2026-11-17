@@ -75,6 +75,13 @@ remote, runs `comin-source-sync`, asserts the sync semantics), and
 with its HTTP driver against a local fixture and exercises strict output through
 the installed process boundary).
 
+The embedding integration also has isolated module/supervisor coverage in
+[`embedding-runtime.nix`](./embedding-runtime.nix) and an installed gateway/driver
+smoke in [`embedding-gateway-runtime.py`](./embedding-gateway-runtime.py). The latter
+checks both API dialects and the bounded public admission queue. Real-weight CPU
+acceptance remains an explicit target-host step described in the
+[runtime package](./../packages/embedding-runtime/README.md).
+
 ### Application tests
 
 Go / JS / Rust / other tests live next to the application code itself (for

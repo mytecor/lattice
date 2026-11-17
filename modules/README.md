@@ -27,3 +27,5 @@
 Каждый каталог содержит `default.nix` — обычный NixOS-модуль. Корневой flake подключает каталоги
 как inputs с `flake = false` и экспортирует их через `nixosModules`. Зависимости на пакеты и значения
 передаются типизированными опциями, а не скрытыми module arguments.
+
+- [embedding-runtime](./embedding-runtime/README.md) — offline мультимодальные embeddings с автоматической выгрузкой модели.

@@ -68,6 +68,11 @@ source result и recovery; затем полная приёмка и
 Остатки F4 (drill без GitHub, bootstrap новой ноды, f4-05) тоже отложены на потом
 и не блокируют продолжение F19→F20.
 
+Локальные мультимодальные embeddings обслуживает
+[embedding-runtime](./modules/embedding-runtime/README.md) с моделью EmbeddingGemma 2.
+Через llm-gateway доступны OpenAI embeddings с явным расширением `parts` и Google
+`embedContent`/`batchEmbedContents`; worker освобождает память через 20 минут простоя.
+
 ## Направления развития
 
 - NixOS-модули для настройки ноды

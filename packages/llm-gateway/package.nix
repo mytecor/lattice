@@ -1,13 +1,26 @@
 { lib, buildGo127Module, fetchFromGitHub, makeWrapper }:
 
 let
-  version = "0.1.0-unstable-2026-11-16";
-  revision = "939604d888b4bfa7444874349c2146b2dd6481ec";
+  version = "0.1.0-unstable-2026-11-17";
+  revision = "9870e7e50866a3504556974289b1138196674d8c";
   src = fetchFromGitHub {
     owner = "mytecor";
     repo = "llm-gateway";
     rev = revision;
-    hash = "sha256-xm1g20Ze+ANSO/VD827eghv4JGjR11+s+eME2QWjV+A=";
+    hash = "sha256-EI8AbCAiqF3S31gcfGz+23Z3wYWw7ZSStrTj5/E+Csw=";
+  };
+
+  embeddingsDriver = buildGo127Module {
+    pname = "llm-gateway-embeddings-driver";
+    inherit version src;
+    modRoot = "drivers/embeddings";
+    subPackages = [ "." ];
+    vendorHash = "sha256-RBMPwmNgJTjycSeM5VSUn97bRrzXaApLglhivvOZxF4=";
+    postInstall = ''
+      mv "$out/bin/embeddings" "$out/bin/embeddings-driver"
+    '';
+    doCheck = true;
+    meta.mainProgram = "embeddings-driver";
   };
 
   jevDriver = buildGo127Module {
@@ -15,7 +28,7 @@ let
     inherit version src;
     modRoot = "drivers/jev";
     subPackages = [ "." ];
-    vendorHash = "sha256-XKtqBWM6ToUOhErAPjdgcq6psx0O1xEHp4K97NU1dTY=";
+    vendorHash = "sha256-GOW246ASn5dieoPE1xg6xOceUZ+Cy2Sy3s8zy0iylr4=";
     postInstall = ''
       mv "$out/bin/jev" "$out/bin/jev-driver"
     '';
@@ -29,7 +42,7 @@ let
     inherit version src;
     modRoot = "drivers/http";
     subPackages = [ "." ];
-    vendorHash = "sha256-mGFswlI92k9cszZYsNHa+MpavQHQ/lw50fXJxEl1J6k=";
+    vendorHash = "sha256-FnP4EQTaYJh5gAfaz7vKnPnNe2ZvzduT9SmdXxTcxWo=";
     postInstall = ''
       mv "$out/bin/http" "$out/bin/http-driver"
     '';
@@ -53,14 +66,14 @@ buildGo127Module {
   '';
   postInstall = ''
     wrapProgram "$out/bin/llm-gateway" \
-      --prefix PATH : ${lib.makeBinPath [ httpDriver jevDriver ]}
+      --prefix PATH : ${lib.makeBinPath [ httpDriver jevDriver embeddingsDriver ]}
   '';
   passthru = {
-    inherit httpDriver jevDriver;
+    inherit httpDriver jevDriver embeddingsDriver;
     sourceRevision = revision;
   };
   meta = {
-    description = "OpenAI-compatible gateway with strict structured outputs and HTTP/JEV drivers";
+    description = "OpenAI-compatible gateway with strict structured outputs and HTTP/JEV/embeddings drivers";
     homepage = "https://github.com/mytecor/llm-gateway";
     license = lib.licenses.mit;
     mainProgram = "llm-gateway";

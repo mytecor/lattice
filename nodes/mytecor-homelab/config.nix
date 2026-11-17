@@ -514,6 +514,15 @@ in
     textModelApiKeyFile = if hasJevTextModelKey then config.age.secrets.jev-text-model-api-key.path else null;
   };
 
+  # Weights are immutable; changing their revision requires an index migration decision.
+  lattice.embedding-runtime = {
+    enable = true;
+    port = (import ../../profiles/networking/ports.nix).embedding-runtime;
+    idleSeconds = 20 * 60;
+    threads = 2;
+    memoryMax = "6G";
+  };
+
   # LLM Gateway: the `settings` attribute is the gateway's public JSON contract
   # verbatim. Field names are snake_case and `models` declares tiers and targets
   # while the gateway schedules execution; the NixOS module does not translate a
@@ -544,6 +553,13 @@ in
         { id = "mac"; key = "env.LATTICE_CLIENT_MAC_KEY"; }
       ];
       providers = [
+        {
+          id = "local-embedding";
+          driver = "embeddings";
+          request_timeout = "5m";
+          max_concurrent = 5;
+          config.inference_url = "http://127.0.0.1:${toString config.lattice.embedding-runtime.port}";
+        }
         {
           id = "jev-gonka";
           driver = "jev";
@@ -619,6 +635,20 @@ in
         strip_params = [ "thinking" "reasoning_effort" ];
         set_params.reasoning_effort = "medium";
       }];
+
+      # Keep the public backlog bounded as well as the runtime queue: five
+      # admitted requests are one active inference plus four runtime waiters.
+      # Declarative model defaults otherwise add a second gateway queue.
+      rules = [
+        { route = "embedding"; action = "filter"; where.model.eq = "embedding"; }
+        { route = "embedding"; action = "filter"; where.provider."in" = [ "local-embedding" ]; }
+        { route = "embedding"; action = "map"; native = "google/embeddinggemma-2"; }
+        { route = "embedding"; action = "admission"; max_in_flight = 5; max_pending = 0; }
+        { route = "embedding"; action = "rank"; strategy = "priority"; }
+        { route = "embedding"; action = "race"; count = 1; }
+        { route = "embedding"; action = "semaphore"; max_calls = 1; max_calls_per_provider = 1; max_in_flight = 1; }
+        { route = "embedding"; action = "timeout"; duration = "5m"; }
+      ];
 
       models = let
         responsesAffinity = {

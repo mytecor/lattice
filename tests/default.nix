@@ -75,6 +75,16 @@ in
   };
 
   llm-gateway-runtime = import ./llm-gateway-runtime.nix { inherit pkgs; };
+  embedding-gateway-runtime = pkgs.runCommand "embedding-gateway-packaged-runtime" {
+    nativeBuildInputs = [ pkgs.lattice.llm-gateway pkgs.python3 ];
+  } ''
+    python3 ${./embedding-gateway-runtime.py} "$(command -v llm-gateway)"
+    touch $out
+  '';
+  embedding-runtime = import ./embedding-runtime.nix {
+    inherit pkgs nixpkgs;
+    runtimeModule = self.nixosModules.embedding-runtime;
+  };
 
   llm-gateway-flat = import ./llm-gateway-flat.nix {
     inherit nixpkgs pkgs;

@@ -628,3 +628,12 @@ runtime credentials. `--require-env-secrets` запрещает literal credenti
 описан в [F16: design и задачи f16-01..f16-09](./../../roadmap/f16-context-transformation/README.md).
 Это план, текущий runtime историю не сжимает. MVP ограничен полной `messages[]` в Chat
 Completions; Responses/affinity сохраняют текущий контракт.
+
+## Локальные embeddings
+
+Пакет включает `embeddings-driver`. Логическая модель `embedding` использует
+[embedding-runtime](./../embedding-runtime/README.md) на хомлабе. Поддерживаются
+OpenAI `/v1/embeddings` с явным мультимодальным `parts` и Google
+`embedContent`/`batchEmbedContents`; client keys остаются общими для gateway.
+Модель загружается по запросу и выгружается через 20 минут простоя. Маршрут имеет
+одну попытку, без hedging/fallback; пятый ожидающий запрос получает `429`.

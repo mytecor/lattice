@@ -77,6 +77,13 @@ LLM gateway доступен через отдельный Caddy reverse proxy �
 http://llm-gateway.mytecor-homelab.local/v1
 ```
 
+Логическая модель `embedding` обслуживается локальным
+[embedding-runtime](./../../modules/embedding-runtime/README.md): EmbeddingGemma 2
+на CPU, текст/изображения/аудио/видео, OpenAI `/v1/embeddings` и Google
+`/v1beta/models/embedding:embedContent` / `:batchEmbedContents`. Client keys те же,
+медиа передаются inline base64. Энкодеры загружаются по запросу, worker выгружается
+через 20 минут простоя. Отдельный публичный адрес для runtime не создаётся.
+
 Сам Gateway (Lattice-owned Go proxy поверх Bifrost) слушает на `127.0.0.1:9208`; в LAN открыт
 только Caddy на порту 80.
 

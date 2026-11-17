@@ -123,6 +123,8 @@ flowchart TD
 
     subgraph AI["Инференс LLM"]
         LLMGateway["llm-gateway<br/>(Маршрутизация и Strict JSON Schema)"]
+        EmbeddingsDriver["embeddings-driver<br/>(Типизированный embeddings-адаптер)"]
+        EmbeddingRuntime["embedding-runtime<br/>(Offline embeddings и выгрузка worker)"]
         HTTPDriver["http-driver<br/>(Bifrost HTTP-адаптер)"]
         JEVDriver["jev-driver<br/>(Нативные типизированные решения)"]
         Agentrun["agentrun-openai<br/>(OpenAI-совместимый шлюз)"]
@@ -179,6 +181,8 @@ flowchart TD
     Grafana -.-> Authentik
 
     Prometheus --> LLMGateway
+    Prometheus --> EmbeddingRuntime
+    Alloy -.-> EmbeddingRuntime
     Prometheus --> NodeStatus
     Alloy --> Loki
     Alloy -.-> LLMGateway
@@ -194,6 +198,8 @@ flowchart TD
     LLMGateway -->|NDJSON| JEVDriver
     JEVDriver --> JevGonka
     JEVDriver --> TypeSafe
+    LLMGateway -->|NDJSON embeddings| EmbeddingsDriver
+    EmbeddingsDriver -->|HTTP embeddings| EmbeddingRuntime
     LLMGateway -->|NDJSON| HTTPDriver
     HTTPDriver --> Upstream
 
@@ -395,6 +401,8 @@ flowchart TD
         Balancer["Балансировщик и Health State<br/>(Учёт ошибок и латентности)"]
         Engine["Движок исполнения<br/>(Speculative race, retry, fallback)"]
         Structured["Structured Outputs<br/>(Валидация и исправление JSON)"]
+        EmbeddingsDriver["embeddings-driver<br/>(Типизированный embeddings-адаптер)"]
+        EmbeddingRuntime["embedding-runtime<br/>(Offline embeddings и выгрузка worker)"]
         HTTPDriver["http-driver<br/>(Bifrost HTTP-адаптер)"]
         JEVDriver["jev-driver<br/>(Нативные типизированные решения)"]
     end
@@ -427,6 +435,8 @@ flowchart TD
     Engine -->|NDJSON| JEVDriver
     JEVDriver --> JevGonka
     JEVDriver --> TypeSafe
+    Engine -->|NDJSON embeddings| EmbeddingsDriver
+    EmbeddingsDriver -->|HTTP embeddings| EmbeddingRuntime
     Engine -->|NDJSON| HTTPDriver
     HTTPDriver --> Vertex
     HTTPDriver --> AIStudio
@@ -445,6 +455,7 @@ flowchart TD
     subgraph Sources["Источники телеметрии"]
         SystemdUnits["Systemd сервисы<br/>(caddy, llm-gateway, etc.)"]
         LLMGateway["llm-gateway<br/>(Эндпоинт метрик и логи)"]
+        EmbeddingRuntime["embedding-runtime<br/>(Метрики и жизненный цикл модели)"]
         NodeStatus["node-status<br/>(Сборщик системных метрик)"]
     end
 
@@ -463,6 +474,8 @@ flowchart TD
     NodeStatus -- "Опрашивает статус юнитов" --> SystemdUnits
     Prometheus -- "Скрейпит метрики" --> NodeStatus
     Prometheus -- "Скрейпит метрики" --> LLMGateway
+    Prometheus -- "Скрейпит метрики" --> EmbeddingRuntime
+    Alloy -- "Извлекает structured events" --> EmbeddingRuntime
 
     Alloy -- "Читает journald логи" --> SystemdUnits
     Alloy -- "Извлекает structured events" --> LLMGateway
@@ -916,3 +929,18 @@ flowchart LR
     Ingress <--> Foxbridge
     Foxbridge <-->|Juggler: ввод и screencast| Camoufox
 ```
+
+### Локальные мультимодальные embeddings
+
+Логическая модель `embedding` обслуживается отдельным CPU-сервисом
+[embedding-runtime](./modules/embedding-runtime/README.md) через `embeddings-driver`.
+OpenAI embeddings endpoint и Google `embedContent`/`batchEmbedContents` преобразуются
+в общий типизированный контракт; текстовые формы OpenAI сохраняются, мультимодальный
+вход задаётся явным объектом `parts`. Несовместимые провайдеры исключаются до
+балансировки и recovery. Маршрут использует одну попытку без race, hedge и fallback.
+
+Жизненный цикл весов принадлежит runtime. По первому запросу запускается worker
+с нужными энкодерами; расширение профиля выполняется между запросами с завершением
+прежнего процесса. Через 20 минут простоя worker выгружается. Каталог, healthcheck
+и Prometheus модель не загружают. Веса и Python-зависимости закреплены Nix;
+изменение embedding-пространства требует явного решения о миграции индексов.
