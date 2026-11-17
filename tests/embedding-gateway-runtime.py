@@ -96,9 +96,9 @@ def main(binary):
             assert result["model"] == "embedding" and [row["index"] for row in result["data"]] == [0, 1]
             raw = base64.b64decode(result["data"][0]["embedding"])
             assert len(raw) == 128*4 and struct.unpack_from("<f", raw)[0] == 1.0
-            content = {"parts": [{"text": "before "}, {"inlineData": {"mimeType": "image/png", "data": "YQ=="}}, {"text": " after"}]}
+            content = {"parts": [{"text": "before "}, {"inlineData": {"mimeType": "image/png", "data": "+/8="}}, {"text": " after"}]}
             oai = post("/v1/embeddings", {"model": "embedding", "input": content, "dimensions": 256})
-            sdk_content = {"parts": [{"text": "before "}, {"inline_data": {"mime_type": "image/png", "data": "YQ=="}}, {"text": " after"}]}
+            sdk_content = {"parts": [{"text": "before "}, {"inline_data": {"mime_type": "image/png", "data": "-_8"}}, {"text": " after"}]}
             google = post("/v1beta/models/embedding:embedContent", {"content": sdk_content, "outputDimensionality": 256}, True)
             assert oai["data"][0]["embedding"] == google["embedding"]["values"]
             batch = post("/v1beta/models/embedding:batchEmbedContents", {"requests": [{"content": content, "outputDimensionality": 128}, {"content": content, "outputDimensionality": 512}]}, True)
