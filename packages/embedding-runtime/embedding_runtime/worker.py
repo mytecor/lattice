@@ -30,7 +30,7 @@ def probe(path):
 
 def prepare_parts(parts, directory):
     import numpy as np
-    from PIL import Image
+    from PIL import Image, ImageOps
 
     content = []
     media = False
@@ -51,7 +51,7 @@ def prepare_parts(parts, directory):
                 if image.width * image.height > 16_777_216 or image.format not in ("JPEG", "PNG", "WEBP"):
                     raise Failure("unsupported_media")
                 image.load()
-                value = image.convert("RGB")
+                value = ImageOps.exif_transpose(image).convert("RGB")
             content.append({"type": "image", "image": value})
         else:
             path = Path(directory) / f"media-{index}{MIME[mime][1]}"

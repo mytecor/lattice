@@ -1,7 +1,9 @@
 """Uploaded media must not turn decoder auto-detection into a URL fetcher."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import base64
 import importlib.util
+import io
 import shutil
 import subprocess
 import tempfile
@@ -9,6 +11,41 @@ import threading
 import unittest
 
 from embedding_runtime.worker import prepare_parts, probe
+
+
+@unittest.skipUnless(importlib.util.find_spec("PIL") and importlib.util.find_spec("numpy"), "image decoder stack required")
+class ImageOrientationTests(unittest.TestCase):
+    def test_exif_orientation_matches_upright_pixels(self):
+        from PIL import Image
+
+        pixels = [(255, 0, 0), (0, 255, 0), (0, 0, 255),
+                  (0, 255, 255), (255, 0, 255), (255, 255, 0)]
+        source = Image.new("RGB", (3, 2))
+        source.putdata(pixels)
+        cases = {
+            1: ((3, 2), [0, 1, 2, 3, 4, 5]),
+            2: ((3, 2), [2, 1, 0, 5, 4, 3]),
+            3: ((3, 2), [5, 4, 3, 2, 1, 0]),
+            4: ((3, 2), [3, 4, 5, 0, 1, 2]),
+            5: ((2, 3), [0, 3, 1, 4, 2, 5]),
+            6: ((2, 3), [3, 0, 4, 1, 5, 2]),
+            7: ((2, 3), [5, 2, 4, 1, 3, 0]),
+            8: ((2, 3), [2, 5, 1, 4, 0, 3]),
+        }
+        for orientation, (size, order) in cases.items():
+            with self.subTest(orientation=orientation), tempfile.TemporaryDirectory() as directory:
+                exif = Image.Exif()
+                exif[274] = orientation
+                encoded = io.BytesIO()
+                source.save(encoded, format="PNG", exif=exif)
+                part = {"inlineData": {"mimeType": "image/png",
+                                       "data": base64.b64encode(encoded.getvalue()).decode()}}
+                result = prepare_parts([part], directory)["content"][0]["image"]
+                self.assertEqual(result.mode, "RGB")
+                self.assertEqual(result.size, size)
+                actual = [result.getpixel((x, y)) for y in range(size[1]) for x in range(size[0])]
+                self.assertEqual(actual, [pixels[i] for i in order])
+                self.assertIn(result.getexif().get(274), (None, 1))
 
 
 @unittest.skipUnless(shutil.which("ffprobe"), "ffmpeg required for decoder contract")
