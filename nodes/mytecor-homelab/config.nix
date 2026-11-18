@@ -883,6 +883,8 @@ in
     # chown fails on a not-yet-created user). Ownership is established by the
     # worker-runtime service's StateDirectory at first start instead.
     { directory = "/var/lib/worker-runtime"; mode = "0700"; }
+  ] ++ lib.optionals (config.lattice.llm-gateway.settings ? batch) [
+    { directory = "/var/lib/llm-gateway"; user = "llm-gateway"; group = "llm-gateway"; mode = "0700"; }
   ] ++ lib.optionals hasR1sClusterToken [
     # f10-04: IPFS repo and pinned image blocks survive reboots (impermanence).
     # The persistent source must be owned by the service user before ipfs'
