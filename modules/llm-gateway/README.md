@@ -105,3 +105,21 @@ Gateway работает без root и с systemd hardening. `MemoryDenyWriteEx
 loopback defaults. LAN/mesh ingress предоставляет Caddy из
 [`profiles/tcp-gateway`](./../../profiles/tcp-gateway/README.md); firewall port для
 gateway напрямую не открывается.
+
+## Пакетные задания
+
+`settings.batch` включается на версии шлюза с поддержкой Batch API. Сервис
+хранит идентификаторы заданий в приватном каталоге
+`/var/lib/llm-gateway/batches`. Vertex использует существующий приватный
+бакет и прежний service account. Этому аккаунту нужны права на задания
+Vertex AI и объекты бакета. Сервисному агенту Vertex AI нужен доступ к
+входным файлам и результатам.
+
+На homelab зашифрованный ключ `llm-provider-openrouter.age` включает
+логические модели `deepseek-openrouter` и `gemini-openrouter`. DeepSeek
+может получать фото из приватного бакета по подписанным ссылкам. Текстовый
+OpenRouter Batch может использовать конфигурацию без Cloud Storage.
+
+Для проверки новой версии из рабочей копии используйте
+`pkgs.lattice.llm-gateway.override { srcOverride = /path/to/llm-gateway; }`.
+Для проверки сборки без Batch API переопределите `supportsBatch = false`.

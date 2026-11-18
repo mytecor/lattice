@@ -1,21 +1,22 @@
-{ lib, buildGo127Module, fetchFromGitHub, makeWrapper }:
+{ lib, buildGo127Module, fetchFromGitHub, makeWrapper, srcOverride ? null, supportsBatch ? true }:
 
 let
-  version = "0.1.0-unstable-2026-11-17";
-  revision = "185cdc3d77a43a109194d20074780c3167647a6f";
-  src = fetchFromGitHub {
+  version = "0.1.0-unstable-2026-11-18";
+  revision = "8e0c759ff7e8113ab3c8d09b103366b91485e209";
+  pinnedSrc = fetchFromGitHub {
     owner = "mytecor";
     repo = "llm-gateway";
     rev = revision;
-    hash = "sha256-12n4uyvLvXwWHf3SNlSlaCMpBWJqk11TKc3Bvc7Zvk0=";
+    hash = "sha256-V1lLmzX46l+FZFdiThegfQfVTr2pwRPO1daKUhliuHI=";
   };
+  src = if srcOverride == null then pinnedSrc else lib.cleanSource srcOverride;
 
   embeddingsDriver = buildGo127Module {
     pname = "llm-gateway-embeddings-driver";
     inherit version src;
     modRoot = "drivers/embeddings";
     subPackages = [ "." ];
-    vendorHash = "sha256-agcOlrMFYOosjQs8+HFXetPxByrqoKfwWDFQkkPvT10=";
+    vendorHash = "sha256-wvp99zeGoVA0aGWnsA2gB7WVbC2PJcsbsTjrhmYsT38=";
     postInstall = ''
       mv "$out/bin/embeddings" "$out/bin/embeddings-driver"
     '';
@@ -28,7 +29,7 @@ let
     inherit version src;
     modRoot = "drivers/jev";
     subPackages = [ "." ];
-    vendorHash = "sha256-GOW246ASn5dieoPE1xg6xOceUZ+Cy2Sy3s8zy0iylr4=";
+    vendorHash = "sha256-WkWGmtwzW6XbF4KsFpJqE+Rujk+ob2Gml2X/MM+ScVU=";
     postInstall = ''
       mv "$out/bin/jev" "$out/bin/jev-driver"
     '';
@@ -42,7 +43,7 @@ let
     inherit version src;
     modRoot = "drivers/http";
     subPackages = [ "." ];
-    vendorHash = "sha256-FnP4EQTaYJh5gAfaz7vKnPnNe2ZvzduT9SmdXxTcxWo=";
+    vendorHash = "sha256-uLP+K8KoDAKPFGOAu9auNRkUs8qljDlYDnREegnDK6Y=";
     postInstall = ''
       mv "$out/bin/http" "$out/bin/http-driver"
     '';
@@ -69,7 +70,7 @@ buildGo127Module {
       --prefix PATH : ${lib.makeBinPath [ httpDriver jevDriver embeddingsDriver ]}
   '';
   passthru = {
-    inherit httpDriver jevDriver embeddingsDriver;
+    inherit httpDriver jevDriver embeddingsDriver supportsBatch;
     sourceRevision = revision;
   };
   meta = {

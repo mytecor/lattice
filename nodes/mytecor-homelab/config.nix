@@ -50,6 +50,8 @@ let
   # remains the active Gemini carrier until then.
   googleAiStudioKeyFile = ./secrets/llm-provider-google-ai-studio.age;
   hasGoogleAiStudioKey = builtins.pathExists googleAiStudioKeyFile;
+  openRouterKeyFile = ./secrets/llm-provider-openrouter.age;
+  hasOpenRouterKey = builtins.pathExists openRouterKeyFile;
   # F17: WPA2 passphrase for the dynamic Wi-Fi hotspot.
   hotspotPasswordFile = ./secrets/hotspot-password.age;
   hasHotspotPassword = builtins.pathExists hotspotPasswordFile;
@@ -262,6 +264,11 @@ in
     } // lib.optionalAttrs hasGoogleAiStudioKey {
       llm-provider-google-ai-studio = {
         file = googleAiStudioKeyFile;
+        mode = "0400";
+      };
+    } // lib.optionalAttrs hasOpenRouterKey {
+      llm-provider-openrouter = {
+        file = openRouterKeyFile;
         mode = "0400";
       };
     } // lib.optionalAttrs hasHotspotPassword {
@@ -544,6 +551,8 @@ in
       LATTICE_LLM_PROVIDER_TYPESAFE_KEY = config.age.secrets.jev-typesafe-api-key.path;
     } // lib.optionalAttrs hasGoogleAiStudioKey {
       LATTICE_LLM_PROVIDER_GOOGLE_AI_STUDIO_KEY = config.age.secrets.llm-provider-google-ai-studio.path;
+    } // lib.optionalAttrs hasOpenRouterKey {
+      LATTICE_LLM_PROVIDER_OPENROUTER_KEY = config.age.secrets.llm-provider-openrouter.path;
     };
 
     settings = {
@@ -634,6 +643,11 @@ in
         priority = 90;
         strip_params = [ "thinking" "reasoning_effort" ];
         set_params.reasoning_effort = "medium";
+      }] ++ lib.optionals hasOpenRouterKey [{
+        id = "openrouter";
+        base_provider = "openai";
+        inference_url = "https://openrouter.ai/api/v1";
+        api_key = "env.LATTICE_LLM_PROVIDER_OPENROUTER_KEY";
       }];
 
       # Keep the public backlog bounded as well as the runtime queue: five
@@ -702,6 +716,37 @@ in
           affinity = responsesAffinity;
           safe_continue = true;
           continue = { idle = "5m"; reshare = "full"; retries = 2; wait = "10m"; };
+        };
+      } // lib.optionalAttrs hasOpenRouterKey {
+        deepseek-openrouter.tiers = [{
+          targets = [{ provider = "openrouter"; native = "deepseek/deepseek-v4.1-flash-1017"; }];
+        }];
+        gemini-openrouter.tiers = [{
+          targets = [{ provider = "openrouter"; native = "google/gemini-3.8-flash"; }];
+        }];
+      };
+    } // lib.optionalAttrs (config.lattice.llm-gateway.package.supportsBatch or false) {
+      batch = {
+        client = "mac";
+        model = "smart";
+        storage_provider = "google-vertex";
+        bucket = "mytecor-apartments-vertex-batch";
+        prefix = "apartments";
+        state_dir = "/var/lib/llm-gateway/batches";
+        routes = {
+          smart = { provider = "google-vertex"; native = "gemini-3.8-flash"; backend = "vertex"; };
+        } // lib.optionalAttrs hasOpenRouterKey {
+          deepseek-openrouter = {
+            provider = "openrouter";
+            native = "deepseek/deepseek-v4.1-flash-1017";
+            backend = "openrouter";
+            image_providers = [ "sail-research" "together" ];
+          };
+          gemini-openrouter = {
+            provider = "openrouter";
+            native = "google/gemini-3.8-flash";
+            backend = "openrouter";
+          };
         };
       };
     };

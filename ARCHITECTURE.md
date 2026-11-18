@@ -394,6 +394,7 @@ flowchart TD
         Meta["Meta AI<br/>(Провайдер Muse)"]
         Jev["jev-ultrafast<br/>(Браузерный агент)"]
         DirectClient["Внешние клиенты<br/>(С клиентскими ключами)"]
+        Apartments["apartments<br/>(Пакетный анализ каталога)"]
     end
 
     subgraph Gateway["LLM Gateway"]
@@ -404,11 +405,14 @@ flowchart TD
         EmbeddingsDriver["embeddings-driver<br/>(Типизированный embeddings-адаптер)"]
         EmbeddingRuntime["embedding-runtime<br/>(Offline embeddings и выгрузка worker)"]
         HTTPDriver["http-driver<br/>(Bifrost HTTP-адаптер)"]
+        BatchAPI["Batch API<br/>(Загрузка и состояние заданий)"]
         JEVDriver["jev-driver<br/>(Нативные типизированные решения)"]
     end
 
     subgraph Upstream["Внешние провайдеры инференса"]
         Vertex["Google Vertex AI<br/>(Класс smart: gemini)"]
+        BatchStorage["Cloud Storage<br/>(Входные данные и результаты батчей)"]
+        OpenRouter["OpenRouter<br/>(Дополнительные модели и батчи)"]
         AIStudio["Google AI Studio<br/>(Класс smart: gemini)"]
         Gonka["Gonka / OpenBroker<br/>(Классы standard и stupid)"]
         Hyperfusion["Hyperfusion<br/>(Primary и fallback модели)"]
@@ -423,6 +427,12 @@ flowchart TD
     Muse --> Meta
     Agentrun --> Router
     Jev --> Router
+    Apartments --> BatchAPI
+    BatchAPI --> HTTPDriver
+    HTTPDriver <--> BatchStorage
+    HTTPDriver --> OpenRouter
+    Vertex <--> BatchStorage
+    OpenRouter --> BatchStorage
     DirectClient --> Router
 
     Router --> Balancer

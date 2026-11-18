@@ -35,6 +35,7 @@ in
   # Provisioned separately: once this encrypted file exists, the node config
   # automatically adds Google AI Studio to the shared `smart` Gemini pool.
   "llm-provider-google-ai-studio.age".publicKeys = [ admin node ];
+  "llm-provider-openrouter.age".publicKeys = [ admin node ];
   # LLM Gateway client keys (settings.client_api_keys): по одному на потребителя. node-pi — Pi
   # на ноде; mac — операторский Mac (mDNS + mesh). Значения созданы оператором
   # (openssl rand, без перевода строки), так что `!cat`-ссылка в Pi и env-путь

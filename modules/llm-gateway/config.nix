@@ -96,6 +96,8 @@ in
         RuntimeDirectory = cfg.runtimeDirectory;
         RuntimeDirectoryMode = "0700";
         RuntimeDirectoryPreserve = "restart";
+        StateDirectory = lib.mkIf (cfg.settings ? batch) "llm-gateway";
+        StateDirectoryMode = lib.mkIf (cfg.settings ? batch) "0700";
         WorkingDirectory = dataDir;
         EnvironmentFile = envFile;
         ExecStart = "${lib.getExe cfg.package} --config ${runtimeConfigFile} serve";
