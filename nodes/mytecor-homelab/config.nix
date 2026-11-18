@@ -368,7 +368,7 @@ in
           };
           compat = { supportsReasoningEffort = false; };
         };
-        # smart → gemini-4-argon through Vertex AI.
+        # smart → gemini-3.8-flash through Vertex AI.
         # Reasoning level is controlled by llm-gateway (set_params.reasoning_effort = "medium"),
         # so Pi keeps reasoning controls disabled on the client side.
         smart = {
@@ -695,7 +695,7 @@ in
 
         smart = {
           tiers = [{
-            targets = [{ provider = "google-vertex"; native = "gemini-4-argon"; }];
+            targets = [{ provider = "google-vertex"; native = "gemini-3.8-flash"; }];
           }];
           timeout = "3m";
           stream_idle_timeout = "5m";

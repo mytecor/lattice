@@ -749,7 +749,7 @@ call к одному provider. Для `standard` второй stage даёт Hyp
 классифицируется как `model_not_found` и переводит выполнение на fallback без
 лексикографической подстановки произвольной модели. Provider с retryable failure получает
 cooldown и временно пропускается; если охлаждаются все ветки, gateway fail-open пробует pool
-снова. `smart` отображается на `gemini-4-argon` через Google Vertex AI с зафиксированным
+снова. `smart` отображается на `gemini-3.8-flash` через Google Vertex AI с зафиксированным
 уровнем thinking `medium`; у Vertex отдельный service-account credential. Квота, health и cooldown
 учитываются независимо, но для клиента логические модели образуют единый контракт. Legacy `race accessGroups`,
 отдельный `models` registry и access-group routing удалены.
@@ -769,7 +769,7 @@ runtime-specific legacy config удалены после подтверждён�
 | --- | --- |
 | `stupid` | `MiniMaxAI/MiniMax-M2.7`, назначен всем provider primary stage; дешёвые и простые шаги. |
 | `standard` | `deepseek-ai/DeepSeek-V4-Flash-0731` в primary stage, плюс `model_not_found`-fallback на `gonka/deepseek-ai/DeepSeek-V4-Flash-0731` (Hyperfusion); основной рабочий класс. |
-| `smart` | `gemini-4-argon` через Google Vertex AI (thinking level medium); сложные и мультимодальные задачи. |
+| `smart` | `gemini-3.8-flash` через Google Vertex AI (thinking level medium); сложные и мультимодальные задачи. |
 
 Mappings можно менять без изменения клиента, если новое назначение сохраняет смысл класса,
 поддерживает нужный OpenAI-compatible protocol и проходит контрактные/resilience checks. Изменение
