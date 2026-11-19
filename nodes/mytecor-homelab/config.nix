@@ -68,9 +68,21 @@ in
   services.yggdrasil = {
     enable = true;
     settings = {
-      # Локальный listener для локальных r1s/r1sd tunnel edges.
+      # Локальный listener для локальных r1s/r1sd tunnel edges и LAN-пиринга
+      # с соседними узлами (например, Mac через mDNS mytecor-homelab.local или ap0).
       Listen = [
         "tcp://127.0.0.1:9002"
+        "tls://[::]:9001"
+      ];
+      # Автообнаружение и пиринг в локальном L2-сегменте (фиксированный порт 9003,
+      # чтобы NixOS firewall не блокировал случайный эфемерный порт).
+      MulticastInterfaces = [
+        {
+          Regex = "^(enp|wlp|ap).*";
+          Beacon = true;
+          Listen = true;
+          Port = 9003;
+        }
       ];
       # Стабильные, проверенные публичные peers (несколько регионов для отказоустойчивости).
       Peers = [
@@ -84,6 +96,9 @@ in
       IfName = "ygg0";
     };
   };
+
+  networking.firewall.allowedTCPPorts = [ 9001 9003 ];
+  networking.firewall.allowedUDPPorts = [ 9003 ];
 
   # f4-05: внешний (mesh) ingress поверх LAN-контракта. Caddy обслуживает сервисы
   # по Host заголовку и для *.homelab.myt.su параллельно *.local. domain null → mesh закрыт.
@@ -898,6 +913,8 @@ in
     { directory = "/var/lib/prometheus"; user = "prometheus"; group = "prometheus"; mode = "0750"; }
     { directory = "/var/lib/loki"; user = "loki"; group = "loki"; mode = "0750"; }
     { directory = "/var/lib/grafana"; user = "grafana"; group = "grafana"; mode = "0750"; }
+    # Caddy ACME certificates and state survive reboots (avoids Let's Encrypt rate limits).
+    { directory = "/var/lib/caddy"; user = "caddy"; group = "caddy"; mode = "0750"; }
     # F14: Authentik SSO data (media/storage) survives reboots (impermanence).
     { directory = "/var/lib/authentik"; user = "authentik"; group = "authentik"; mode = "0750"; }
     # agentrun-openai: persistent native session metadata (resume IDs, never
