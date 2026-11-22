@@ -1,13 +1,13 @@
 { lib, buildGo127Module, fetchFromGitHub, makeWrapper, srcOverride ? null, supportsBatch ? true }:
 
 let
-  version = "0.1.0-unstable-2026-11-18";
-  revision = "7a8b06450e2cee3b05eb336581c1ec0e8cdbf595";
+  version = "0.1.0-unstable-2026-11-23";
+  revision = "21badf6dcd511b5bb7f4c1ebe15b58fdb1684c38";
   pinnedSrc = fetchFromGitHub {
     owner = "mytecor";
     repo = "llm-gateway";
     rev = revision;
-    hash = "sha256-WrOSjEtejBeEBZ69ayzoP6ZN5IJfD659Xmf3yi/fNgo=";
+    hash = "sha256-VAGc9+NKRh2LJsKrwWx/aW22jCz9nu62kaaVqBOr9zs=";
   };
   src = if srcOverride == null then pinnedSrc else lib.cleanSource srcOverride;
 
