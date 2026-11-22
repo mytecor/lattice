@@ -143,6 +143,34 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await runner.cleanup()
 
+    async def test_allow_ips_enforced(self):
+        await self.manager.close()
+        allowed_cfg = Config("/unused", allow_ips=("200:e9f0::/32",), worker_command=self.config.worker_command)
+        runner = web.AppRunner(application(allowed_cfg), handler_cancellation=True)
+        await runner.setup()
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        base = "http://127.0.0.1:" + str(site._server.sockets[0].getsockname()[1])
+        try:
+            async with ClientSession() as client:
+                async with client.get(base + "/healthz") as response:
+                    self.assertEqual(response.status, 403)
+        finally:
+            await runner.cleanup()
+
+        allowed_local = Config("/unused", allow_ips=("127.0.0.1",), worker_command=self.config.worker_command)
+        runner = web.AppRunner(application(allowed_local), handler_cancellation=True)
+        await runner.setup()
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        base = "http://127.0.0.1:" + str(site._server.sockets[0].getsockname()[1])
+        try:
+            async with ClientSession() as client:
+                async with client.get(base + "/healthz") as response:
+                    self.assertEqual(response.status, 200)
+        finally:
+            await runner.cleanup()
+
 
 class ContractTests(unittest.TestCase):
     def test_invalid_requests_and_profile_union(self):

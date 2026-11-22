@@ -578,8 +578,18 @@ in
       ];
       providers = [
         {
+          id = "mac-embedding";
+          driver = "embeddings";
+          priority = 100;
+          request_timeout = "45s";
+          max_concurrent = 4;
+          cooldown = "30s";
+          config.inference_url = "http://[204:a90a:1ca3:ff42:b4b4:bf54:5997:6194]:${toString config.lattice.embedding-runtime.port}";
+        }
+        {
           id = "local-embedding";
           driver = "embeddings";
+          priority = 10;
           request_timeout = "5m";
           max_concurrent = 5;
           config.inference_url = "http://127.0.0.1:${toString config.lattice.embedding-runtime.port}";
@@ -665,17 +675,18 @@ in
         api_key = "env.LATTICE_LLM_PROVIDER_OPENROUTER_KEY";
       }];
 
-      # Keep the public backlog bounded as well as the runtime queue: five
-      # admitted requests are one active inference plus four runtime waiters.
-      # Declarative model defaults otherwise add a second gateway queue.
+      # Keep the public backlog bounded while routing primarily to the faster
+      # MacBook MPS runtime when online and failing over to local CPU runtime.
       rules = [
         { route = "embedding"; action = "filter"; where.model.eq = "embedding"; }
-        { route = "embedding"; action = "filter"; where.provider."in" = [ "local-embedding" ]; }
+        { route = "embedding"; action = "filter"; where.provider."in" = [ "mac-embedding" "local-embedding" ]; }
         { route = "embedding"; action = "map"; native = "google/embeddinggemma-2"; }
-        { route = "embedding"; action = "admission"; max_in_flight = 5; max_pending = 0; }
+        { route = "embedding"; action = "admission"; max_in_flight = 8; max_pending = 12; wait_timeout = "30s"; }
         { route = "embedding"; action = "rank"; strategy = "priority"; }
+        { route = "embedding"; action = "balance"; strategy = "expected-ttft"; exploration_rate = 0.05; }
         { route = "embedding"; action = "race"; count = 1; }
-        { route = "embedding"; action = "semaphore"; max_calls = 1; max_calls_per_provider = 1; max_in_flight = 1; }
+        { route = "embedding"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "100ms"; max = "1s"; }; }
+        { route = "embedding"; action = "semaphore"; max_calls = 2; max_calls_per_provider = 1; max_in_flight = 1; }
         { route = "embedding"; action = "timeout"; duration = "5m"; }
       ];
 

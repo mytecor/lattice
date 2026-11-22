@@ -3,6 +3,7 @@ import argparse
 import asyncio
 from collections import deque
 from dataclasses import dataclass, field
+import ipaddress
 import json
 import logging
 import os
@@ -25,7 +26,9 @@ class Config:
     idle_seconds: float = 1200
     timeout_seconds: float = 300
     threads: int = 2
+    device: str = "cpu"
     max_queue: int = 4
+    allow_ips: tuple[str, ...] = ()
     worker_command: list[str] | None = None
 
 
@@ -141,14 +144,17 @@ class Supervisor:
         if self.process is None:
             started = self.clock()
             command = self.config.worker_command or [sys.executable, "-m", "embedding_runtime.worker"]
+            extra_args = ["--device", self.config.device] if self.config.device != "cpu" else []
             self.temporary = tempfile.TemporaryDirectory(prefix="embedding-worker-")
+            worker_env = {**os.environ, "TMPDIR": self.temporary.name}
+            if not self.config.worker_command:
+                worker_env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p)
             self.process = await asyncio.create_subprocess_exec(
                 *command, "--model-path", self.config.model_path, "--profile", str(profile),
-                "--threads", str(self.config.threads), stdin=asyncio.subprocess.PIPE,
+                "--threads", str(self.config.threads), *extra_args, stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
                 limit=MAX_BYTES, start_new_session=True,
-                env={**os.environ, "TMPDIR": self.temporary.name,
-                     "PYTHONPATH": os.pathsep.join(p for p in sys.path if p)},
+                env=worker_env,
             )
             if await self.process.stdout.readline() != b'{"ready":true}\n':
                 raise Failure("worker_failed", 503)
@@ -234,9 +240,31 @@ class Supervisor:
         return "\n".join(lines) + "\n"
 
 
+def _peer_allowed(remote, networks):
+    if not remote:
+        return False
+    try:
+        addr = ipaddress.ip_address(remote.split("%", 1)[0])
+    except ValueError:
+        return False
+    candidates = [addr]
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        candidates.append(addr.ipv4_mapped)
+    return any(candidate in net for candidate in candidates for net in networks)
+
+
 def application(config, supervisor=None):
     manager = supervisor or Supervisor(config)
-    app = web.Application(client_max_size=MAX_BYTES)
+    networks = tuple(ipaddress.ip_network(entry, strict=False) for entry in config.allow_ips)
+    middlewares = []
+    if networks:
+        @web.middleware
+        async def allow_ip_middleware(request, handler):
+            if not _peer_allowed(request.remote, networks):
+                return web.json_response({"error": {"code": "forbidden"}}, status=403)
+            return await handler(request)
+        middlewares.append(allow_ip_middleware)
+    app = web.Application(client_max_size=MAX_BYTES, middlewares=middlewares)
 
     async def lifecycle(app):
         await manager.start()
@@ -274,17 +302,31 @@ def application(config, supervisor=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-path", required=True)
+    parser.add_argument("--host", action="append", default=None)
     parser.add_argument("--port", type=int, default=9225)
     parser.add_argument("--idle-seconds", type=float, default=1200)
     parser.add_argument("--timeout-seconds", type=float, default=300)
     parser.add_argument("--threads", type=int, default=2)
+    parser.add_argument("--device", choices=("cpu", "mps", "cuda"), default="cpu")
+    parser.add_argument("--allow-ip", action="append", default=[])
+    parser.add_argument("--worker-python", default=None)
     args = parser.parse_args()
     if args.idle_seconds <= 0 or args.timeout_seconds <= 0 or args.threads <= 0:
         parser.error("timeouts and threads must be positive")
+    hosts = args.host or ["127.0.0.1"]
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    config = Config(args.model_path, idle_seconds=args.idle_seconds, timeout_seconds=args.timeout_seconds, threads=args.threads)
+    worker_command = [args.worker_python, "-m", "embedding_runtime.worker"] if args.worker_python else None
+    config = Config(
+        args.model_path,
+        idle_seconds=args.idle_seconds,
+        timeout_seconds=args.timeout_seconds,
+        threads=args.threads,
+        device=args.device,
+        allow_ips=tuple(args.allow_ip),
+        worker_command=worker_command,
+    )
     # Peer disconnect cancels the handler, its queued job, or active worker.
-    web.run_app(application(config), host="127.0.0.1", port=args.port,
+    web.run_app(application(config), host=hosts if len(hosts) > 1 else hosts[0], port=args.port,
                 handler_cancellation=True, access_log=None, print=None)
 
 

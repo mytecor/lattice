@@ -75,7 +75,7 @@ def prepare_parts(parts, directory):
 
 
 class Encoder:
-    def __init__(self, path, profile, threads):
+    def __init__(self, path, profile, threads, device="cpu"):
         import torch
         from sentence_transformers import SentenceTransformer
 
@@ -86,8 +86,10 @@ class Encoder:
             config["vision_config"] = None
         if not profile & 2:
             config["audio_config"] = None
+        self.device = device
+        self._requests = 0
         self.model = SentenceTransformer(
-            path, device="cpu", local_files_only=True, trust_remote_code=False,
+            path, device=device, local_files_only=True, trust_remote_code=False,
             config_kwargs=config, model_kwargs={"dtype": torch.float32},
         ).eval()
         self.torch = torch
@@ -107,7 +109,11 @@ class Encoder:
                             prefix_ids = self.model.tokenizer.encode(prefix, add_special_tokens=False)
                             offset = int(ids[0] == self.model.tokenizer.bos_token_id)
                             ids[offset:offset] = prefix_ids
-                        features = {"input_ids": torch.tensor([ids]), "attention_mask": torch.ones((1, len(ids)), dtype=torch.long), "modality": "text"}
+                        features = {
+                            "input_ids": torch.tensor([ids], device=self.device),
+                            "attention_mask": torch.ones((1, len(ids)), dtype=torch.long, device=self.device),
+                            "modality": "text",
+                        }
                     else:
                         value = prepare_parts(item["parts"], directory)
                         if isinstance(value, str):
@@ -118,6 +124,8 @@ class Encoder:
                             "video": {"fps": 1, "max_frames": 32, "overflow_strategy": "uniform", "add_timestamps": False},
                             "audio": {"sampling_rate": 16000, "truncation": False},
                         })
+                        if self.device != "cpu":
+                            features = {k: v.to(self.device) if hasattr(v, "to") else v for k, v in features.items()}
                     count = int(features["attention_mask"].sum().item())
                     if not 0 < count <= MAX_TOKENS:
                         raise Failure("context_length_exceeded")
@@ -128,7 +136,11 @@ class Encoder:
                     if not torch.isfinite(vector).all() or not torch.isfinite(norm) or norm <= 0:
                         raise Failure("worker_failed", 503)
                     vector = vector / norm
-                    vectors.append({"values": vector.tolist(), "tokens": count})
+                    vectors.append({"values": vector.cpu().tolist(), "tokens": count})
+        if self.device == "mps":
+            self._requests += 1
+            if self._requests % 32 == 0:
+                torch.mps.empty_cache()
         return {"embeddings": vectors}
 
 
@@ -137,12 +149,13 @@ def main():
     parser.add_argument("--model-path", required=True)
     parser.add_argument("--profile", type=int, required=True)
     parser.add_argument("--threads", type=int, default=2)
+    parser.add_argument("--device", choices=("cpu", "mps", "cuda"), default="cpu")
     args = parser.parse_args()
     os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", TOKENIZERS_PARALLELISM="false")
     output = sys.stdout
     # Library progress/warnings must never corrupt the JSON protocol.
     with contextlib.redirect_stdout(sys.stderr):
-        encoder = Encoder(args.model_path, args.profile, args.threads)
+        encoder = Encoder(args.model_path, args.profile, args.threads, device=args.device)
     output.write('{"ready":true}\n')
     output.flush()
     while True:
