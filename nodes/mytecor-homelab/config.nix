@@ -390,9 +390,8 @@ in
           };
           compat = { supportsReasoningEffort = false; };
         };
-        # smart → gemini-3.8-flash through Vertex AI.
-        # Reasoning level is controlled by llm-gateway (set_params.reasoning_effort = "medium"),
-        # so Pi keeps reasoning controls disabled on the client side.
+        # smart → deepseek/deepseek-v4.1-flash-1017 via OpenRouter (when provisioned)
+        # or gemini-3.8-flash through Vertex AI.
         smart = {
           reasoning = true;
           input = [ "text" "image" ];
@@ -735,7 +734,9 @@ in
 
         smart = {
           tiers = [{
-            targets = [{ provider = "google-vertex"; native = "gemini-3.8-flash"; }];
+            targets = if hasOpenRouterKey
+              then [{ provider = "openrouter"; native = "deepseek/deepseek-v4.1-flash-1017"; }]
+              else [{ provider = "google-vertex"; native = "gemini-3.8-flash"; }];
           }];
           timeout = "3m";
           stream_idle_timeout = "5m";
@@ -760,7 +761,16 @@ in
         prefix = "apartments";
         state_dir = "/var/lib/llm-gateway/batches";
         routes = {
-          smart = { provider = "google-vertex"; native = "gemini-3.8-flash"; backend = "vertex"; };
+          smart = if hasOpenRouterKey then {
+            provider = "openrouter";
+            native = "deepseek/deepseek-v4.1-flash-1017";
+            backend = "openrouter";
+            image_providers = [ "sail-research" "together" ];
+          } else {
+            provider = "google-vertex";
+            native = "gemini-3.8-flash";
+            backend = "vertex";
+          };
         } // lib.optionalAttrs hasOpenRouterKey {
           deepseek-openrouter = {
             provider = "openrouter";
