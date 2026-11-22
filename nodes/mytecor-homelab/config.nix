@@ -608,7 +608,7 @@ in
           inference_url = "https://api.proxy.gonka.gg/v1";
           api_key = "env.LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY";
           priority = 50;
-          request_timeout = "30s";
+          request_timeout = "90s";
           labels.pool = "gonka";
           strip_params = [ "thinking" "reasoning_effort" ];
           set_params.thinking.type = "disabled";
@@ -619,7 +619,7 @@ in
           inference_url = "https://api.openbroker.gonka.gg/v1";
           api_key = "env.LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY";
           priority = 40;
-          request_timeout = "30s";
+          request_timeout = "90s";
           labels.pool = "gonka";
           strip_params = [ "thinking" "reasoning_effort" ];
           set_params.thinking.type = "disabled";
@@ -630,7 +630,7 @@ in
           inference_url = "https://hskyauefqcgbvgvxkluj.supabase.co/functions/v1/gonka";
           api_key = "env.LATTICE_LLM_PROVIDER_GONKA_API_KEY";
           priority = 30;
-          request_timeout = "30s";
+          request_timeout = "90s";
           labels.pool = "gonka";
           strip_params = [ "thinking" "reasoning_effort" ];
           set_params.thinking.type = "disabled";
@@ -638,7 +638,7 @@ in
         { id = "dahl"; base_provider = "openai"; inference_url = "https://inference.dahl.global/v1"; api_key = "env.LATTICE_LLM_PROVIDER_DAHL_KEY"; priority = 20; request_timeout = "45s"; strip_params = [ "thinking" "reasoning_effort" ]; }
         { id = "dahl-2"; base_provider = "openai"; inference_url = "https://inference.dahl.global/v1"; api_key = "env.LATTICE_LLM_PROVIDER_DAHL_2_KEY"; priority = 20; request_timeout = "45s"; strip_params = [ "thinking" "reasoning_effort" ]; }
         { id = "hyperfusion"; base_provider = "openai"; inference_url = "https://api.hyperfusion.io/v1"; api_key = "env.LATTICE_LLM_PROVIDER_HYPERFUSION_KEY"; priority = 100; request_timeout = "45s"; strip_params = [ "thinking" "reasoning_effort" ]; }
-        { id = "gonkarouter"; base_provider = "openai"; inference_url = "https://api.gonkarouter.io/v1"; api_key = "env.LATTICE_LLM_PROVIDER_GONKAROUTER_KEY"; priority = 10; request_timeout = "30s"; max_concurrent = 4; labels.pool = "gonka"; strip_params = [ "thinking" "reasoning_effort" ]; set_params.thinking.type = "disabled"; }
+        { id = "gonkarouter"; base_provider = "openai"; inference_url = "https://api.gonkarouter.io/v1"; api_key = "env.LATTICE_LLM_PROVIDER_GONKAROUTER_KEY"; priority = 10; request_timeout = "90s"; max_concurrent = 4; labels.pool = "gonka"; strip_params = [ "thinking" "reasoning_effort" ]; set_params.thinking.type = "disabled"; }
         {
           id = "google-vertex";
           base_provider = "vertex";
@@ -724,8 +724,8 @@ in
           tiers = [
             { targets = [{ select.pool = "gonka"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }]; }
           ];
-          timeout = "90s";
-          stream_idle_timeout = "2m";
+          timeout = "3m";
+          stream_idle_timeout = "5m";
           transforms = [ "split_thinking" ];
           affinity = responsesAffinity;
           safe_continue = true;
