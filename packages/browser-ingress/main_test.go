@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +15,9 @@ import (
 
 func TestDiscovery(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host != r.Context().Value(http.LocalAddrContextKey).(net.Addr).String() {
+			t.Error("discovery request must use the upstream Host", r.Host)
+		}
 		if r.Header.Get("Accept-Encoding") != "identity" {
 			t.Error("compressed discovery requested")
 		}
@@ -25,6 +29,7 @@ func TestDiscovery(t *testing.T) {
 	for _, scheme := range []string{"http", "https"} {
 		t.Run(scheme, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://browser.example/json/list?ignored=true", nil)
+			req.Header.Set("X-Forwarded-Host", "other.example")
 			req.Header.Set("X-Forwarded-Proto", scheme)
 			res := httptest.NewRecorder()
 			proxyHandler(upstream, http.Dir(t.TempDir()), "", nil).ServeHTTP(res, req)

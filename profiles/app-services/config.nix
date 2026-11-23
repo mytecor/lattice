@@ -8,7 +8,30 @@ let
   statusPort = latticePorts.node-status;
   browserEnabled = config.lattice.moli.enable;
   browserHost = "browser.${hostName}.local";
-  browserSiteConfig = "reverse_proxy 127.0.0.1:${toString latticePorts.browser-ingress}";
+  browserUpstream = "127.0.0.1:${toString latticePorts.browser-ingress}";
+  browserSiteConfig = authTarget:
+    let sso = wrapForwardAuth "browser" authTarget "reverse_proxy ${browserUpstream}";
+    in if config.lattice.moli.apiKeysFile == null then sso else ''
+      handle /_cdp_auth {
+        respond 404
+      }
+      @cdpBearer {
+        # Match the request path before Caddy's path matcher normalizes dot segments.
+        expression `{http.request.uri.path}.matches('^/(moli|foxbridge)/(json(/[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)?)?/?|devtools/(page/[A-Za-z0-9_-]+|browser(/[A-Za-z0-9_-]+)?))$')`
+        header_regexp Authorization (?i)^Bearer([[:blank:]]|$)
+      }
+      handle @cdpBearer {
+        forward_auth ${browserUpstream} {
+          uri /_cdp_auth
+        }
+        reverse_proxy ${browserUpstream} {
+          header_up -Authorization
+        }
+      }
+      handle {
+        ${sso}
+      }
+    '';
 
   # f4-05: mesh (внешний) доступ к status — параллельно LAN-контракту. Читаем те же
   # опции, что задаёт профиль tcp-gateway: meshDomain и cloudflareToken. Без токена
@@ -152,6 +175,15 @@ in
       default = "20m";
       description = "Idle timeout before resetting inactive browser tabs to about:blank.";
     };
+    apiKeysFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      example = "/run/agenix/browser-cdp-api-keys";
+      description = ''
+        Runtime file with one CDP bearer key per line. When set, Caddy accepts
+        these keys for CDP discovery and WebSocket alongside Authentik sessions.
+      '';
+    };
   };
 
   config = {
@@ -161,9 +193,9 @@ in
       # f14: acp-ui может быть защищён Authentik ForwardAuth (см. wrapForwardAuth).
       "http://${acpUiHost}".extraConfig = wrapForwardAuth "acp-ui" authLanHost acpUiSiteConfig;
     } // lib.optionalAttrs browserEnabled {
-      "http://${browserHost}".extraConfig = wrapForwardAuth "browser" authLanHost browserSiteConfig;
+      "http://${browserHost}".extraConfig = browserSiteConfig authLanHost;
     } // lib.optionalAttrs (browserEnabled && meshDomain != null && !(lib.elem "browser" config.lattice.tcp-gateway.meshExclude)) {
-      "${meshScheme}://browser.${meshDomain}".extraConfig = wrapForwardAuth "browser" authMeshHost browserSiteConfig;
+      "${meshScheme}://browser.${meshDomain}".extraConfig = browserSiteConfig authMeshHost;
     } // lib.optionalAttrs (statusMeshHost != null) {
       "${statusMeshHost}".extraConfig = statusSiteConfig;
     } // lib.optionalAttrs (acpUiMeshHost != null) {

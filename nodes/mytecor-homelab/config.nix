@@ -8,6 +8,8 @@ let
   # mesh-HTTPS остаётся выключен, LAN-контракт *.local не затронут.
   caddyCloudflareTokenFile = ./secrets/caddy-cloudflare-token.age;
   hasCaddyCloudflare = builtins.pathExists caddyCloudflareTokenFile;
+  browserCDPKeysFile = ./secrets/browser-cdp-api-keys.age;
+  hasBrowserCDPKeys = builtins.pathExists browserCDPKeysFile;
   # Non-secret SSIDs exposed as world-readable store files, matching the module's
   # "both fields are file paths" contract. Passwords still come from a shared
   # agenix secret (wifi-password.age); only the home SSID uses wifi-ssid.age.
@@ -252,6 +254,11 @@ in
       # EnvironmentFile (services.caddy.environmentFile), в store не попадает.
       caddy-cloudflare-token = {
         file = caddyCloudflareTokenFile;
+        mode = "0400";
+      };
+    } // lib.optionalAttrs hasBrowserCDPKeys {
+      browser-cdp-api-keys = {
+        file = browserCDPKeysFile;
         mode = "0400";
       };
     } // lib.optionalAttrs hasGithubDeployKey {
@@ -805,6 +812,11 @@ in
     secretKeyFile = config.age.secrets.grafana-secret-key.path;
     domain = "https://grafana.${meshDomain}";
   };
+
+  lattice.moli.apiKeysFile = lib.mkIf hasBrowserCDPKeys config.age.secrets.browser-cdp-api-keys.path;
+  systemd.services.browser-ingress.restartTriggers = lib.mkIf hasBrowserCDPKeys [
+    (builtins.hashFile "sha256" browserCDPKeysFile)
+  ];
 
   # F14: центральный SSO (Authentik) за Caddy-ингрессом. Loopback-only; наружу
   # выставляется только Caddy-сайтом `auth` (см. sso-профиль и tcp-gateway).

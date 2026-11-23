@@ -1,6 +1,7 @@
 { config, lib, pkgs, ... }:
 let
   ports = import ../networking/ports.nix;
+  cfg = config.lattice.moli;
   foxbridge = config.lattice.foxbridge-camoufox or { enable = false; };
   sandbox = {
     Restart = "on-failure";
@@ -20,7 +21,7 @@ let
 in {
   config = lib.mkMerge [
     { lattice.moli.enable = lib.mkDefault true; }
-    (lib.mkIf config.lattice.moli.enable {
+    (lib.mkIf cfg.enable {
       assertions = [{
         assertion = config.lattice.authentik.enable
           && lib.any (entry: entry.service == "browser") config.lattice.authentik.forwardAuth;
@@ -42,9 +43,12 @@ in {
         after = [ "moli.service" ] ++ lib.optional foxbridge.enable "foxbridge-camoufox.service";
         wants = [ "moli.service" ] ++ lib.optional foxbridge.enable "foxbridge-camoufox.service";
         serviceConfig = sandbox // {
-          ExecStart = "${lib.getExe pkgs.lattice.browser-ingress} --listen 127.0.0.1:${toString ports.browser-ingress} --upstream http://127.0.0.1:${toString ports.moli-cdp} --frontend ${pkgs.lattice.devtools-frontend} --idle-timeout ${config.lattice.moli.idleTimeout}"
-            + lib.optionalString foxbridge.enable " --foxbridge http://127.0.0.1:${toString foxbridge.port}";
+          ExecStart = "${lib.getExe pkgs.lattice.browser-ingress} --listen 127.0.0.1:${toString ports.browser-ingress} --upstream http://127.0.0.1:${toString ports.moli-cdp} --frontend ${pkgs.lattice.devtools-frontend} --idle-timeout ${cfg.idleTimeout}"
+            + lib.optionalString foxbridge.enable " --foxbridge http://127.0.0.1:${toString foxbridge.port}"
+            + lib.optionalString (cfg.apiKeysFile != null) " --api-keys-file %d/cdp-api-keys";
           MemoryDenyWriteExecute = true;
+        } // lib.optionalAttrs (cfg.apiKeysFile != null) {
+          LoadCredential = [ "cdp-api-keys:${toString cfg.apiKeysFile}" ];
         };
       };
     })

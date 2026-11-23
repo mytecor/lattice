@@ -115,7 +115,7 @@ flowchart TD
     end
 
     subgraph Browser["Браузерный стек"]
-        BrowserIngress["browser-ingress<br/>(Выбор браузера, DevTools и CDP proxy)"]
+        BrowserIngress["browser-ingress<br/>(DevTools, CDP proxy и проверка API-ключей)"]
         Moli["Moli<br/>(Браузер удалённой отладки)"]
         Foxbridge["Foxbridge<br/>(CDP-прокси)"]
         Camoufox["Camoufox<br/>(Браузер агента)"]
@@ -223,7 +223,7 @@ flowchart TD
 ### Флоу 1: Ингресс, доступ и безопасность
 
 Маршрутизация внешнего и локального трафика, завершение TLS, проверка авторизации
-через центральный SSO (Authentik ForwardAuth и OIDC).
+через Authentik ForwardAuth и OIDC или по API-ключу для CDP.
 
 ```mermaid
 flowchart TD
@@ -235,7 +235,7 @@ flowchart TD
 
     subgraph Backends["Локальные сервисы"]
         AcpUI["acp-web<br/>(Веб-интерфейс ACP)"]
-        BrowserIngress["browser-ingress<br/>(Выбор браузера, DevTools и CDP proxy)"]
+        BrowserIngress["browser-ingress<br/>(DevTools, CDP proxy и проверка API-ключей)"]
         MoliBrowser["Moli<br/>(Браузер удалённой отладки)"]
         FoxBrowser["Foxbridge / Camoufox<br/>(Тест Firefox CDP)"]
         GrafanaSvc["Grafana<br/>(Дашборды)"]
@@ -894,8 +894,9 @@ age-получателя не заменяет отзыв SSH/rnsh-доступ�
 [Профиль Moli](./profiles/moli/README.md) публикует отдельный headless-браузер
 по `http://browser.<node>.local/`. Moli запускается с `--layout --resource`,
 чтобы DevTools мог получать геометрию, скриншоты и screencast. Caddy проверяет
-Authentik ForwardAuth для HTTP discovery и WebSocket; клиенты SDK передают cookie
-авторизованной сессии. Loopback-only ingress переписывает endpoint-поля discovery
+сессию Authentik для DevTools, HTTP discovery и WebSocket. При настроенном файле
+ключей Caddy передаёт Bearer-запросы к CDP на проверку в `browser-ingress`.
+Loopback-only ingress переписывает endpoint-поля discovery
 на адрес внешнего сайта с правильной схемой `ws`/`wss` и проксирует CDP upgrade.
 Общий [browser-ingress](./packages/browser-ingress/README.md) собирается отдельно
 от пакета Moli и обслуживает оба браузера.
@@ -908,8 +909,8 @@ URL `devtools://…?ws=…`. Discovery и WebSocket Moli используют п
 CDP endpoints без префикса недоступны.
 Вкладки и cookies Moli временные. Jev обращается к Foxbridge/Camoufox.
 Тестовый маршрут `/foxbridge/` открывает тот же frontend для Camoufox:
-HTTP discovery и WebSocket проксируются в Foxbridge с отдельным префиксом,
-под тем же Authentik. Page WebSocket Foxbridge привязан к CDP-сессии вкладки;
+HTTP discovery и WebSocket проксируются в Foxbridge с отдельным префиксом
+и общей для двух браузеров проверкой доступа. Page WebSocket Foxbridge привязан к CDP-сессии вкладки;
 корневые сообщения передаются как стандартные JSON text frames.
 Поддержка панелей ограничена реализацией Foxbridge; маршрут не означает
 полную совместимость Chrome DevTools. Профиль запускает Camoufox в headless-режиме
@@ -927,7 +928,7 @@ flowchart LR
     SDK["CDP SDK<br/>(Автоматизация)"]
     Caddy["Caddy<br/>(HTTP и WebSocket ingress)"]
     Authentik["Authentik<br/>(ForwardAuth)"]
-    Ingress["browser-ingress<br/>(Выбор браузера, DevTools и CDP proxy)"]
+    Ingress["browser-ingress<br/>(DevTools, CDP proxy и проверка API-ключей)"]
     Moli["Moli<br/>(DOM, JavaScript и рендеринг)"]
     Foxbridge["Foxbridge<br/>(Тестовый CDP-прокси)"]
     Camoufox["Camoufox<br/>(Firefox браузер)"]

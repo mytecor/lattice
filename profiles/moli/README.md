@@ -24,26 +24,42 @@ HTTP-сайт использует `ws`, HTTPS-сайт — `wss`; frontend и W
 остаются на одном origin и используют одну сессию Authentik.
 Обычные данные страницы не переписываются.
 
-Профиль требует Authentik и запись `service = "browser"` в `forwardAuth`.
-Авторизация защищает frontend, discovery и WebSocket handshake. Сначала войдите через
-`http://browser.mytecor-homelab.local/`; для SDK передавайте cookie этой
-авторизованной сессии в заголовках подключения. Не сохраняйте cookie в Git
-или логах. Пример Playwright (cookie приходит из окружения):
+## Подключение SDK по API-ключу
+
+Задайте `lattice.moli.apiKeysFile` как путь к runtime-файлу с одним Bearer-ключом
+на строку. Конфигурация `mytecor-homelab` подключает этот файл через agenix при наличии
+зашифрованного секрета, указанного в [правилах agenix](./../../nodes/mytecor-homelab/secrets/secrets.nix).
+Для выпуска ключа сгенерируйте 32 случайных байта в hex и добавьте их отдельной
+строкой в секрет. Откройте секрет в редакторе из каталога с правилами:
+
+```sh
+cd nodes/mytecor-homelab/secrets
+agenix -e browser-cdp-api-keys.age -i "$RECOVERY_KEY"
+```
+
+При ротации замените или удалите строку с отзываемым ключом. Пустой список отзывает
+все ключи. На `mytecor-homelab` новая версия секрета применяется при обновлении
+конфигурации и перезапуске ingress.
+При изменении runtime-файла вручную перезапустите `browser-ingress.service`.
+
+Передавайте `Authorization: Bearer <ключ>` для HTTP discovery и WebSocket handshake
+под `/moli` или `/foxbridge`. Указывайте заголовок в каждом запросе. Неверный ключ
+даёт HTTP `401`. Для Bearer-подключений используйте HTTPS/WSS.
 
 ```javascript
 import { chromium } from "playwright";
 
 const browser = await chromium.connectOverCDP(
-  "http://browser.mytecor-homelab.local/moli",
-  { headers: { Cookie: process.env.BROWSER_COOKIE } },
+  "https://browser.homelab.myt.su/moli",
+  { headers: { Authorization: `Bearer ${process.env.BROWSER_CDP_API_KEY}` } },
 );
-const context = browser.contexts()[0];
-const page = context.pages()[0] ?? await context.newPage();
-await page.goto("https://example.org");
-console.log(await page.title());
 ```
 
 ## Подключение из Chrome
+
+Для интерфейса DevTools профиль требует Authentik и запись `service = "browser"`
+в `forwardAuth`. SDK также может передавать `Cookie` авторизованной сессии
+в заголовках discovery и WebSocket.
 
 1. Откройте `http://browser.mytecor-homelab.local/` и войдите через Authentik.
    Выберите Moli или перейдите сразу на `/moli/`.
@@ -55,8 +71,7 @@ console.log(await page.title());
 содержит относительную ссылку на inspector конкретной вкладки; открывайте её
 на том же сайте. Для SDK доступны обычные CDP discovery и WebSocket endpoints.
 Вкладки создаются через CDP `Target.createTarget` или HTTP `PUT /moli/json/new?<url>`.
-Клиенты SDK по внешнему сайту передают cookie Authentik; без неё сервер
-перенаправляет на вход вместо CDP JSON/upgrade.
+Запросы discovery и WebSocket без Bearer-заголовка проходят Authentik.
 Для машин вне LAN используйте mesh-имя: `.local` обнаруживается через mDNS
 в локальной сети.
 
@@ -65,7 +80,7 @@ console.log(await page.title());
 При включённом [браузерном стеке](./../browser-agent-stack/README.md) доступен
 `http://browser.mytecor-homelab.local/foxbridge/`. Он открывает тот же стандартный
 frontend для первой вкладки Camoufox. Moli доступен через `/moli/`.
-Оба маршрута защищены Authentik; отдельный порт снаружи не открывается.
+Интерфейс обоих маршрутов защищён Authentik, а CDP поддерживает оба способа входа.
 
 Discovery Moli доступен под `/moli/json/list`, WebSocket — под
 `/moli/devtools/page/<target-id>`. Адрес `/moli` перенаправляет на `/moli/`,

@@ -16,10 +16,11 @@ URL, заголовки и содержимое страниц. Публичны
 выбранного браузера, внешний host и схему `ws`/`wss`. Frontend и WebSocket
 используют один origin и одну сессию Authentik.
 
-Caddy отвечает за внешний HTTP/TLS ingress и ForwardAuth. Go-сервис оставлен
-для структурного преобразования CDP discovery и выбора вкладки. Перенос этой
-логики в Caddy потребовал бы шаблонов с разбором JSON либо дополнительного
-модуля; обычного `reverse_proxy` недостаточно.
+Caddy обслуживает внешний HTTP/TLS ingress. Для CDP-запросов с Bearer-заголовком
+он вызывает внутренний обработчик проверки ключей в `browser-ingress`. Запросы
+с сессией Authentik проходят через ForwardAuth. Ключи для `browser-ingress`
+загружаются через systemd, а Caddy удаляет заголовок `Authorization` при
+проксировании проверенного запроса к браузеру.
 
 ## Запуск и проверки
 
@@ -38,9 +39,12 @@ browser-ingress --listen 127.0.0.1:9224 \
 нагрузку на CPU и систему охлаждения. Привязка page-сессии и JSON text framing
 Foxbridge обеспечиваются [патчем](./../foxbridge/devtools-page-socket.patch).
 
+Флаг `--api-keys-file` включает проверку ключей на внутреннем маршруте `/_cdp_auth`.
+Файл содержит один Bearer-ключ на строку и загружается при запуске.
+
 [Go-тесты](./main_test.go) проверяют HTTP/HTTPS discovery, перенаправления,
 статические ресурсы, маршрутизацию backend-ов, отсутствие старых endpoint-ов и сброс неактивных вкладок по таймауту.
-[Runtime smoke](./../../tests/moli.nix) запускает настоящий Moli, загружает frontend,
-подключается по WebSocket, выполняет JavaScript и получает PNG.
+[Runtime smoke](./../../tests/moli.nix) запускает настоящий Moli, проверяет
+авторизацию discovery и WebSocket через Caddy, выполняет JavaScript и получает PNG.
 
 Конфигурация сервиса и подключение описаны в [профиле](./../../profiles/moli/README.md).

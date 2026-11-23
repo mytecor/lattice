@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -13,10 +15,51 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 )
+
+var bearerToken = regexp.MustCompile(`^[A-Za-z0-9._~+/-]+=*$`)
+
+func apiKeyAuth(file string) (http.Handler, error) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	var keys [][sha256.Size]byte
+	for i, line := range strings.Split(string(data), "\n") {
+		key := strings.TrimSpace(line)
+		if key == "" {
+			continue
+		}
+		if !bearerToken.MatchString(key) {
+			return nil, fmt.Errorf("invalid bearer key on line %d", i+1)
+		}
+		keys = append(keys, sha256.Sum256([]byte(key)))
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization := r.Header.Values("Authorization")
+		if len(authorization) == 1 {
+			parts := strings.Fields(authorization[0])
+			if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+				provided := sha256.Sum256([]byte(parts[1]))
+				matched := 0
+				for _, key := range keys {
+					matched |= subtle.ConstantTimeCompare(provided[:], key[:])
+				}
+				if matched == 1 {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+			}
+		}
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	}), nil
+}
 
 // Only protocol endpoint fields are rewritten. A page's URL/title/content must
 // never change just because it contains the upstream's address.
@@ -287,6 +330,9 @@ func proxyHandler(upstream *url.URL, frontend http.FileSystem, prefix string, tr
 	director := proxy.Director
 	proxy.Director = func(r *http.Request) {
 		director(r)
+		// Moli accepts only IP literals and localhost in the Host header.
+		r.Header.Set("X-Forwarded-Host", r.Host)
+		r.Host = upstream.Host
 		r.Header.Set("Accept-Encoding", "identity")
 	}
 	proxy.ModifyResponse = func(r *http.Response) error {
@@ -304,7 +350,7 @@ func proxyHandler(upstream *url.URL, frontend http.FileSystem, prefix string, tr
 		if r.Request.Header.Get("X-Forwarded-Proto") == "https" {
 			scheme = "wss"
 		}
-		rewriteDiscovery(value, r.Request.Host, scheme, prefix)
+		rewriteDiscovery(value, r.Request.Header.Get("X-Forwarded-Host"), scheme, prefix)
 		body, err := json.Marshal(value)
 		if err != nil {
 			return err
@@ -373,7 +419,7 @@ func proxyHandler(upstream *url.URL, frontend http.FileSystem, prefix string, tr
 // Both backends share one authenticated site and the same hosted frontend.
 // The public prefix is removed only when forwarding to the fixed loopback
 // backend, and retained in discovery so clients never fall through to Moli.
-func browserHandler(moli *url.URL, foxbridge string, frontend http.FileSystem, trk *tracker) http.Handler {
+func browserHandler(moli *url.URL, foxbridge string, frontend http.FileSystem, trk *tracker) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/moli/", http.StripPrefix("/moli", proxyHandler(moli, frontend, "/moli", trk)))
 	if foxbridge != "" {
@@ -420,6 +466,7 @@ func main() {
 	backend := flag.String("upstream", "http://127.0.0.1:9223", "Moli address")
 	frontend := flag.String("frontend", "", "hosted DevTools frontend directory")
 	foxbridge := flag.String("foxbridge", "", "optional Foxbridge HTTP upstream")
+	apiKeysFile := flag.String("api-keys-file", "", "optional file with one CDP bearer key per line")
 	idleTimeout := flag.Duration("idle-timeout", 20*time.Minute, "idle timeout before resetting inactive browser tabs to about:blank (0 disables)")
 	checkInterval := flag.Duration("check-interval", 30*time.Second, "interval to check for idle browser tabs")
 	flag.Parse()
@@ -439,6 +486,13 @@ func main() {
 	trk := newTracker(*idleTimeout, *checkInterval, upstreams...)
 	defer trk.Close()
 	handler := browserHandler(upstream, *foxbridge, http.Dir(*frontend), trk)
+	if *apiKeysFile != "" {
+		auth, err := apiKeyAuth(*apiKeysFile)
+		if err != nil {
+			log.Fatalf("load CDP API keys: %v", err)
+		}
+		handler.Handle("GET /_cdp_auth", auth)
+	}
 	server := &http.Server{Addr: *listen, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	log.Fatal(server.ListenAndServe())
 }
