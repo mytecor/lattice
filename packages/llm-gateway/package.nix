@@ -43,7 +43,7 @@ let
     inherit version src;
     modRoot = "drivers/http";
     subPackages = [ "." ];
-    vendorHash = "sha256-6dt6grK/esy81yRV4LvQ4hRoEzUzopZqz2n8h7gR6hg=";
+    vendorHash = "sha256-1jFOixjj+LiMbSnBaHQYMLFzjMoSbxxRm/bl+gvc4f8=";
     postInstall = ''
       mv "$out/bin/http" "$out/bin/http-driver"
     '';
