@@ -772,7 +772,7 @@ in
             provider = "openrouter";
             native = "deepseek/deepseek-v4.1-flash-1017";
             backend = "openrouter";
-            image_providers = [ "sail-research" "together" ];
+            image_providers = [ "sail-research" ];
             reasoning_effort = "low";
           } else {
             provider = "google-vertex";
@@ -784,7 +784,7 @@ in
             provider = "openrouter";
             native = "deepseek/deepseek-v4.1-flash-1017";
             backend = "openrouter";
-            image_providers = [ "sail-research" "together" ];
+            image_providers = [ "sail-research" ];
             reasoning_effort = "low";
           };
           gemini-openrouter = {
