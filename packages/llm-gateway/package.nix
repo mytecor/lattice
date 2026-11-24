@@ -2,12 +2,12 @@
 
 let
   version = "0.1.0-unstable-2026-11-24";
-  revision = "f461b42117d8f8bfb563472b56e176c205397bf7";
+  revision = "3d3f1e1b4c2bb0a3debb228ea80b8f23ec628c84";
   pinnedSrc = fetchFromGitHub {
     owner = "mytecor";
     repo = "llm-gateway";
     rev = revision;
-    hash = "sha256-B/fXf7KENcG5fSLFpE9y0K9k4L7jk0HCEEZcegsU+AU=";
+    hash = "sha256-MxcpxvHMPHUNm+h+xkz0kK1jGwnAu87NDx0D0cSFdk4=";
   };
   src = if srcOverride == null then pinnedSrc else lib.cleanSource srcOverride;
 
