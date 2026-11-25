@@ -77,14 +77,12 @@ LLM gateway доступен через отдельный Caddy reverse proxy �
 http://llm-gateway.mytecor-homelab.local/v1
 ```
 
-Логическую модель `embedding` обслуживает [CPU-Max](./../../modules/cpu-max/README.md)
-на Intel N100. Gateway поддерживает OpenAI `/v1/embeddings` и Google
-`/v1beta/models/embedding:embedContent` / `:batchEmbedContents`. Клиенты
-передают медиа inline base64 и используют общий ключ gateway.
-
-Модель `embedding-gguf` ведёт к [llama-server](./../../modules/llama-embeddings/README.md)
-на Mac через SSH-туннель. Оба провайдера принимают мультимодальный
-`/v1/embeddings` на loopback.
+Gateway балансирует модель `embedding` между
+[CPU-Max на Intel N100](./../../modules/cpu-max/README.md) и
+[llama-server на Mac](./../../modules/llama-embeddings/README.md) через SSH-туннель.
+Клиенты используют общий ключ и передают медиа inline base64. В OpenAI
+`/v1/embeddings` поле `model` можно опустить. Для Google используются
+`/v1beta/models/embedding:embedContent` и `:batchEmbedContents`.
 
 Сам Gateway (Lattice-owned Go proxy поверх Bifrost) слушает на `127.0.0.1:9208`; в LAN открыт
 только Caddy на порту 80.

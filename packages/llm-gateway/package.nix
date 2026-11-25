@@ -56,6 +56,7 @@ in
 buildGo127Module {
   pname = "lattice-llm-gateway";
   inherit version src;
+  patches = lib.optional (srcOverride == null) ./default-embedding-model.patch;
   vendorHash = "sha256-qVoj03LNLbdoCUAOydK7oEHsuZ1BZ6Z2jwYB3gPOfrw=";
   subPackages = [ "cmd/llm-gateway" ];
   nativeBuildInputs = [ makeWrapper ];

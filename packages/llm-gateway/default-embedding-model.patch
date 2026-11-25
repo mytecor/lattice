@@ -1,0 +1,102 @@
+diff --git a/driverproto/embeddings/contract.go b/driverproto/embeddings/contract.go
+index 069cad4..3d4ef6a 100644
+--- a/driverproto/embeddings/contract.go
++++ b/driverproto/embeddings/contract.go
+@@ -194,6 +194,11 @@ func (r *Request) Validate() (Features, error) {
+ }
+ 
+ func ParseOpenAI(data []byte) (Request, string, error) {
++	return ParseOpenAIWithDefaultModel(data, "")
++}
++
++// ParseOpenAIWithDefaultModel supplies the logical model when the client omits it.
++func ParseOpenAIWithDefaultModel(data []byte, defaultModel string) (Request, string, error) {
+ 	var wire struct {
+ 		Model      string          `json:"model"`
+ 		Input      json.RawMessage `json:"input"`
+@@ -214,6 +219,9 @@ func ParseOpenAI(data []byte) (Request, string, error) {
+ 		return r, "", errors.New("encoding_format must be float or base64")
+ 	}
+ 	r.Model = wire.Model
++	if r.Model == "" {
++		r.Model = defaultModel
++	}
+ 	makeItem := func(raw json.RawMessage) (Item, error) {
+ 		i := Item{Dimensions: wire.Dimensions, TaskType: wire.Task, Title: wire.Title}
+ 		s := bytes.TrimSpace(raw)
+diff --git a/driverproto/embeddings/contract_test.go b/driverproto/embeddings/contract_test.go
+index 8b05444..20a2db6 100644
+--- a/driverproto/embeddings/contract_test.go
++++ b/driverproto/embeddings/contract_test.go
+@@ -10,6 +10,20 @@ import (
+ 	"testing"
+ )
+ 
++func TestParseOpenAIWithDefaultModel(t *testing.T) {
++	req, _, err := ParseOpenAIWithDefaultModel([]byte(`{"input":"one"}`), "embedding")
++	if err != nil || req.Model != "embedding" {
++		t.Fatalf("omitted model: %+v, %v", req, err)
++	}
++	req, _, err = ParseOpenAIWithDefaultModel([]byte(`{"model":"explicit","input":"one"}`), "embedding")
++	if err != nil || req.Model != "explicit" {
++		t.Fatalf("explicit model: %+v, %v", req, err)
++	}
++	if _, _, err := ParseOpenAI([]byte(`{"input":"one"}`)); err == nil {
++		t.Fatal("accepted omitted model without a configured default")
++	}
++}
++
+ func TestInputShapesAndValidation(t *testing.T) {
+ 	for _, input := range []string{`"hello"`, `["one","two"]`, `[2,3,1]`, `[[2,3],[2,4]]`, `{"parts":[{"text":"one"}]}`, `[{"parts":[{"text":"one"}]},{"parts":[{"text":"two"}]}]`} {
+ 		r, encoding, err := ParseOpenAI([]byte(`{"model":"embedding","input":` + input + `}`))
+diff --git a/internal/config/compile.go b/internal/config/compile.go
+index 6d992cd..78f007b 100644
+--- a/internal/config/compile.go
++++ b/internal/config/compile.go
+@@ -82,6 +82,9 @@ func CompileConfig(prepared PreparedConfig) (*CompiledConfig, error) {
+ 	compiled.Routes = result.Routes
+ 	compiled.Models = result.Models
+ 	compiled.LogicalIDs = result.LogicalIDs
++	if model := cfg.DefaultEmbeddingModel; model != "" && result.Models[model] == nil {
++		return nil, fmt.Errorf("default_embedding_model %q is not a configured logical model", model)
++	}
+ 	if err := compiled.validateBatch(); err != nil {
+ 		return nil, err
+ 	}
+diff --git a/internal/config/config.go b/internal/config/config.go
+index 2da08d5..0766e77 100644
+--- a/internal/config/config.go
++++ b/internal/config/config.go
+@@ -29,6 +29,7 @@ type Config struct {
+ 	SessionCheckpointRetention Duration                    `json:"session_checkpoint_retention,omitempty"`
+ 	SessionCheckpointLimit     int                         `json:"session_checkpoint_limit,omitempty"`
+ 	Providers                  []provider.Provider         `json:"providers"`
++	DefaultEmbeddingModel      string                      `json:"default_embedding_model,omitempty"`
+ 	Models                     map[string]policy.ModelSpec `json:"models,omitempty"`
+ 	Rules                      policy.Rules                `json:"rules,omitempty"`
+ 	Batch                      *BatchConfig                `json:"batch,omitempty"`
+diff --git a/internal/config/settings.go b/internal/config/settings.go
+index 2a767f4..56493b3 100644
+--- a/internal/config/settings.go
++++ b/internal/config/settings.go
+@@ -69,6 +69,7 @@ func normalizeSettings(cfg Config) (Config, error) {
+ 		return Config{}, errors.New("session_checkpoint_limit must not be negative")
+ 	}
+ 	cfg.SessionFile = strings.TrimSpace(cfg.SessionFile)
++	cfg.DefaultEmbeddingModel = strings.TrimSpace(cfg.DefaultEmbeddingModel)
+ 	if cfg.SessionFile != "" {
+ 		path, err := filepath.Abs(cfg.SessionFile)
+ 		if err != nil {
+diff --git a/internal/server/embeddings.go b/internal/server/embeddings.go
+index 8401557..354f150 100644
+--- a/internal/server/embeddings.go
++++ b/internal/server/embeddings.go
+@@ -103,7 +103,7 @@ func (s *Server) embeddingRequest(w http.ResponseWriter, r *http.Request, google
+ 	if google {
+ 		req, err = embeddings.ParseGoogle(body, logical, batch)
+ 	} else {
+-		req, encoding, err = embeddings.ParseOpenAI(body)
++		req, encoding, err = embeddings.ParseOpenAIWithDefaultModel(body, s.config.Raw.DefaultEmbeddingModel)
+ 		logical = req.Model
+ 	}
+ 	if err != nil {

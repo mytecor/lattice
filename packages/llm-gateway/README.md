@@ -631,11 +631,11 @@ Completions; Responses/affinity сохраняют текущий контрак
 
 ## Локальные embeddings
 
-Пакет включает `embeddings-driver`. Модель `embedding` использует
-[CPU-Max](./../../modules/cpu-max/README.md) на хомлабе. Модель
-`embedding-gguf` использует [llama-server](./../../modules/llama-embeddings/README.md)
-на Mac. В конфигурации обоих провайдеров `inference_url` указывает на базовый
-адрес HTTP-сервера. Драйвер отправляет `POST /v1/embeddings` с мультимодальными
-частями OpenAI-совместимого формата. Gateway принимает OpenAI `/v1/embeddings`
-и Google `embedContent`/`batchEmbedContents`, сохраняет порядок частей и
-обрабатывает task prompts и размерность вектора.
+Пакет включает `embeddings-driver`. Gateway автоматически балансирует
+`embedding` между [CPU-Max](./../../modules/cpu-max/README.md) на хомлабе и
+[llama-server](./../../modules/llama-embeddings/README.md) на Mac. Параметр
+`default_embedding_model` задаёт модель для OpenAI `/v1/embeddings` при
+пропущенном `model`. Google `embedContent`/`batchEmbedContents` используют имя
+`embedding` в пути. Драйвер обращается к обоим провайдерам через OpenAI-совместимый
+`POST /v1/embeddings`, сохраняет порядок частей и обрабатывает task prompts
+и размерность вектора.

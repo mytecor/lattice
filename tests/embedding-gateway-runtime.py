@@ -16,8 +16,9 @@ from urllib.request import Request, urlopen
 
 
 class Fixture(BaseHTTPRequestHandler):
-    calls = 0
+    calls = []
     blocking = 0
+    unavailable_model = None
     lock = threading.Lock()
     release = threading.Event()
 
@@ -32,12 +33,13 @@ class Fixture(BaseHTTPRequestHandler):
 
     def do_GET(self):
         assert self.path == "/v1/models"
-        self.respond({"data": [{"id": "native"}]})
+        self.respond({"data": [{"id": "native"}, {"id": "native-alt"}]})
 
     def do_POST(self):
         assert self.path == "/v1/embeddings"
         request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        assert request["model"] == "native" and request["encoding_format"] == "float"
+        native = request["model"]
+        assert native in ("native", "native-alt") and request["encoding_format"] == "float"
         inputs = request["input"]
         for item in inputs:
             if isinstance(item, dict):
@@ -47,7 +49,11 @@ class Fixture(BaseHTTPRequestHandler):
                     {"type": "text", "text": " after"},
                 ]}
         with self.lock:
-            type(self).calls += 1
+            type(self).calls.append(native)
+            unavailable = native == self.unavailable_model
+        if unavailable:
+            self.send_error(503)
+            return
         if inputs[0] == "block":
             with self.lock:
                 type(self).blocking += 1
@@ -66,16 +72,22 @@ def main(binary):
         port = reservation.getsockname()[1]
     config = {
         "host": "127.0.0.1", "port": port, "log_level": "silent",
+        "default_embedding_model": "embedding",
         "client_api_keys": [{"id": "fixture", "key": "fixture-key"}],
-        "providers": [{"id": "local", "driver": "embeddings", "config": {"inference_url": f"http://127.0.0.1:{fixture.server_port}"}}],
+        "providers": [
+            {"id": name, "driver": "embeddings", "config": {"inference_url": f"http://127.0.0.1:{fixture.server_port}"}}
+            for name in ("local", "alternate")
+        ],
         "rules": [
             {"route": "embedding", "action": "filter", "where": {"model": {"eq": "embedding"}}},
-            {"route": "embedding", "action": "filter", "where": {"provider": {"in": ["local"]}}},
-            {"route": "embedding", "action": "map", "native": "native"},
+            {"route": "embedding", "action": "map", "providers": ["local"], "native": "native"},
+            {"route": "embedding", "action": "map", "providers": ["alternate"], "native": "native-alt"},
             {"route": "embedding", "action": "admission", "max_in_flight": 5, "max_pending": 0},
             {"route": "embedding", "action": "rank", "strategy": "priority"},
+            {"route": "embedding", "action": "balance", "strategy": "round_robin"},
             {"route": "embedding", "action": "race", "count": 1},
-            {"route": "embedding", "action": "semaphore", "max_calls": 1, "max_calls_per_provider": 1, "max_in_flight": 1},
+            {"route": "embedding", "action": "retry", "attempts": 2},
+            {"route": "embedding", "action": "semaphore", "max_calls": 2, "max_calls_per_provider": 1, "max_in_flight": 1},
             {"route": "embedding", "action": "timeout", "duration": "5s"},
         ],
     }
@@ -102,7 +114,7 @@ def main(binary):
                 with urlopen(request, timeout=10) as response:
                     return json.load(response)
 
-            result = post("/v1/embeddings", {"model": "embedding", "input": ["one", "two"], "dimensions": 128, "encoding_format": "base64"})
+            result = post("/v1/embeddings", {"input": ["one", "two"], "dimensions": 128, "encoding_format": "base64"})
             assert result["model"] == "embedding" and [row["index"] for row in result["data"]] == [0, 1]
             raw = base64.b64decode(result["data"][0]["embedding"])
             assert len(raw) == 128*4 and struct.unpack_from("<f", raw)[0] == 1.0
@@ -113,7 +125,19 @@ def main(binary):
             assert oai["data"][0]["embedding"] == google["embedding"]["values"]
             batch = post("/v1beta/models/embedding:batchEmbedContents", {"requests": [{"content": content, "outputDimensionality": 128}, {"content": content, "outputDimensionality": 512}]}, True)
             assert [len(v["values"]) for v in batch["embeddings"]] == [128, 512]
-            assert Fixture.calls == 4
+            assert len(Fixture.calls) == 4
+            first = len(Fixture.calls)
+            for _ in range(2):
+                assert post("/v1/embeddings", {"input": content})["model"] == "embedding"
+            assert set(Fixture.calls[first:]) == {"native", "native-alt"}
+            with Fixture.lock:
+                Fixture.unavailable_model = "native-alt"
+                first = len(Fixture.calls)
+            for _ in range(2):
+                assert post("/v1/embeddings", {"input": content})["model"] == "embedding"
+            with Fixture.lock:
+                assert set(Fixture.calls[first:]) == {"native", "native-alt"}
+                Fixture.unavailable_model = None
             with ThreadPoolExecutor(max_workers=5) as pool:
                 blocked = [pool.submit(post, "/v1/embeddings", {"model": "embedding", "input": "block", "dimensions": 128}) for _ in range(5)]
                 try:

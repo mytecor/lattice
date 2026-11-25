@@ -69,9 +69,10 @@ source result и recovery; затем полная приёмка и
 и не блокируют продолжение F19→F20.
 
 Локальные мультимодальные embeddings обслуживают [CPU-Max](./modules/cpu-max/README.md)
-на Intel N100 (`embedding`) и [llama-server](./modules/llama-embeddings/README.md)
-на Mac с Metal (`embedding-gguf`). Gateway отправляет обоим OpenAI-совместимые
-запросы `/v1/embeddings` и принимает OpenAI и Google SDK.
+на Intel N100 и [llama-server](./modules/llama-embeddings/README.md) на Mac с Metal.
+Gateway автоматически выбирает провайдера для модели `embedding` и отправляет
+ему OpenAI-совместимый запрос `/v1/embeddings`. В этом API gateway подставляет
+`embedding`, когда клиент опускает `model`. Google SDK использует тот же маршрут.
 
 ## Направления развития
 

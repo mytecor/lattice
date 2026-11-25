@@ -572,6 +572,7 @@ in
 
     settings = {
       log_level = "debug";
+      default_embedding_model = "embedding";
       client_api_keys = [
         { id = "node-pi"; key = "env.LATTICE_CLIENT_NODE_PI_KEY"; }
         { id = "mac"; key = "env.LATTICE_CLIENT_MAC_KEY"; }
@@ -588,6 +589,7 @@ in
           id = "mac-llama-embedding";
           driver = "embeddings";
           request_timeout = "5m";
+          cooldown = "30s";
           max_concurrent = 1;
           config.inference_url = "http://127.0.0.1:${toString ports.mac-llama-embeddings-tunnel}";
         }
@@ -672,25 +674,17 @@ in
         api_key = "env.LATTICE_LLM_PROVIDER_OPENROUTER_KEY";
       }];
 
-      # CPU-Max uses the deployed index's image preprocessing. The Mac model
-      # uses a separate index namespace because the media vectors differ.
       rules = [
         { route = "embedding"; action = "filter"; where.model.eq = "embedding"; }
-        { route = "embedding"; action = "filter"; where.provider."in" = [ "local-cpu-max" ]; }
-        { route = "embedding"; action = "map"; native = "embeddinggemma-2"; }
+        { route = "embedding"; action = "map"; providers = [ "local-cpu-max" ]; native = "embeddinggemma-2"; }
+        { route = "embedding"; action = "map"; providers = [ "mac-llama-embedding" ]; native = "google/embeddinggemma-2"; }
         { route = "embedding"; action = "admission"; max_in_flight = 8; max_pending = 12; wait_timeout = "30s"; }
         { route = "embedding"; action = "rank"; strategy = "priority"; }
+        { route = "embedding"; action = "balance"; strategy = "expected-completion"; }
         { route = "embedding"; action = "race"; count = 1; }
-        { route = "embedding"; action = "semaphore"; max_calls = 1; max_calls_per_provider = 1; max_in_flight = 1; }
+        { route = "embedding"; action = "retry"; attempts = 2; }
+        { route = "embedding"; action = "semaphore"; max_calls = 2; max_calls_per_provider = 1; max_in_flight = 1; }
         { route = "embedding"; action = "timeout"; duration = "5m"; }
-        { route = "embedding-gguf"; action = "filter"; where.model.eq = "embedding-gguf"; }
-        { route = "embedding-gguf"; action = "filter"; where.provider."in" = [ "mac-llama-embedding" ]; }
-        { route = "embedding-gguf"; action = "map"; native = "google/embeddinggemma-2"; }
-        { route = "embedding-gguf"; action = "admission"; max_in_flight = 2; max_pending = 4; wait_timeout = "30s"; }
-        { route = "embedding-gguf"; action = "rank"; strategy = "priority"; }
-        { route = "embedding-gguf"; action = "race"; count = 1; }
-        { route = "embedding-gguf"; action = "semaphore"; max_calls = 1; max_calls_per_provider = 1; max_in_flight = 1; }
-        { route = "embedding-gguf"; action = "timeout"; duration = "5m"; }
       ];
 
       models = let

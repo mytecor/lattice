@@ -953,7 +953,9 @@ OpenAI embeddings и Google `embedContent`/`batchEmbedContents` преобраз
 сохраняет порядок частей и отправляет обоим провайдерам OpenAI-совместимый
 `POST /v1/embeddings`.
 
-Маршрут `embedding` использует [CPU-Max](./modules/cpu-max/README.md) на Intel
-N100 с предобработкой рабочего индекса. Маршрут `embedding-gguf` использует
+Модель `embedding` балансирует все модальности между
+[CPU-Max](./modules/cpu-max/README.md) на Intel N100 и
 [llama-server](./modules/llama-embeddings/README.md) на Mac через обратный
-SSH-туннель. llama-server освобождает веса после 20 минут простоя.
+SSH-туннель. Gateway учитывает ожидаемое время ответа и доступность провайдеров.
+Для OpenAI `/v1/embeddings` модель `embedding` подставляется по умолчанию.
+llama-server освобождает веса после 20 минут простоя.

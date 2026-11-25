@@ -12,6 +12,6 @@
 чтобы сохранять близость к векторам действующего индекса. Инференс всех
 модальностей выполняет CPU-Max.
 
-Gateway использует CPU-Max для `embedding`. Модель `embedding-gguf` ведёт к
-[llama-server на Mac](./../llama-embeddings/README.md) с собственным
-представлением медиа. Оба маршрута доступны через один публичный адрес gateway.
+Gateway балансирует маршрут `embedding` между CPU-Max и
+[llama-server на Mac](./../llama-embeddings/README.md). Оба сервера принимают
+текст, изображения, аудио и видео через один публичный адрес gateway.
