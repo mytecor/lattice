@@ -1,38 +1,37 @@
 { config, lib, pkgs, ... }:
 let
-  cfg = config.lattice.llama-embeddings;
+  cfg = config.lattice.cpu-max;
   inherit (lib) mkEnableOption mkOption types;
 in {
-  options.lattice.llama-embeddings = {
-    enable = mkEnableOption "native llama.cpp multimodal embeddings";
-    package = mkOption { type = types.package; default = pkgs.lattice.llama-embeddings; };
+  options.lattice.cpu-max = {
+    enable = mkEnableOption "local CPU-Max EmbeddingGemma 2 inference";
+    package = mkOption { type = types.package; default = pkgs.lattice.cpu-max; };
     port = mkOption {
       type = types.port;
-      default = (import ../../profiles/networking/ports.nix).llama-embeddings;
-      description = "Loopback port for the native llama-server router.";
+      default = (import ../../profiles/networking/ports.nix).cpu-max;
+      description = "Loopback HTTP port.";
     };
-    idleSeconds = mkOption { type = types.ints.positive; default = 1200; };
-    threads = mkOption { type = types.ints.positive; default = 2; };
+    threads = mkOption { type = types.ints.positive; default = 4; };
     memoryMax = mkOption { type = types.str; default = "6G"; };
   };
 
   config = lib.mkIf cfg.enable {
-    systemd.services.llama-embeddings = {
-      description = "llama.cpp EmbeddingGemma 2 router";
+    systemd.services.cpu-max = {
+      description = "CPU-Max EmbeddingGemma 2";
       wantedBy = [ "multi-user.target" ];
       before = [ "llm-gateway.service" ];
-      environment.LLAMA_CACHE = "/run/llama-embeddings/cache";
       serviceConfig = {
         ExecStart = lib.escapeShellArgs [
-          "${cfg.package}/bin/llama-embeddings"
+          (lib.getExe cfg.package)
           "--port" (toString cfg.port)
-          "--sleep-idle-seconds" (toString cfg.idleSeconds)
           "--threads" (toString cfg.threads)
-          "--threads-batch" (toString cfg.threads)
+          "--workers" "4"
+          "--max-queue" "16"
+          "--max-client-batch-size" "64"
+          "--max-batch-sequence-tokens" "8192"
+          "--tokenizer-workers" (toString cfg.threads)
         ];
         DynamicUser = true;
-        RuntimeDirectory = "llama-embeddings";
-        RuntimeDirectoryMode = "0700";
         Restart = "on-failure";
         RestartSec = 2;
         MemoryMax = cfg.memoryMax;
@@ -45,7 +44,7 @@ in {
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
         ProtectControlGroups = true;
-        RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
+        RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" ];
         IPAddressDeny = "any";
         IPAddressAllow = "localhost";
         UMask = "0077";

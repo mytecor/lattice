@@ -631,11 +631,11 @@ Completions; Responses/affinity сохраняют текущий контрак
 
 ## Локальные embeddings
 
-Пакет включает `embeddings-driver`. Логическая модель `embedding` использует
-[embedding-runtime](./../embedding-runtime/README.md) на хомлабе. Поддерживаются
-OpenAI `/v1/embeddings` с явным мультимодальным `parts` и Google
-`embedContent`/`batchEmbedContents`; client keys остаются общими для gateway.
-Модель `embedding-gguf` использует тот же публичный API. Для неё
-`config.protocol = "llama.cpp"` переключает драйвер на нативные endpoints
-[llama-server](./../../modules/llama-embeddings/README.md). Task prompts,
-порядок частей и размерность вектора обрабатываются внутри gateway.
+Пакет включает `embeddings-driver`. Модель `embedding` использует
+[CPU-Max](./../../modules/cpu-max/README.md) на хомлабе. Модель
+`embedding-gguf` использует [llama-server](./../../modules/llama-embeddings/README.md)
+на Mac. В конфигурации обоих провайдеров `inference_url` указывает на базовый
+адрес HTTP-сервера. Драйвер отправляет `POST /v1/embeddings` с мультимодальными
+частями OpenAI-совместимого формата. Gateway принимает OpenAI `/v1/embeddings`
+и Google `embedContent`/`batchEmbedContents`, сохраняет порядок частей и
+обрабатывает task prompts и размерность вектора.

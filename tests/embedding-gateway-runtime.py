@@ -1,8 +1,7 @@
-"""Installed gateway/driver boundary against an isolated canonical fixture."""
+"""Installed gateway/driver boundary against an isolated OpenAI fixture."""
 import base64
 from concurrent.futures import ThreadPoolExecutor
 import json
-import os
 from pathlib import Path
 import socket
 import struct
@@ -32,20 +31,31 @@ class Fixture(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(value).encode())
 
     def do_GET(self):
-        assert self.path == "/models"
-        self.respond({"data": [{"id": "native", "input_modalities": ["text", "image", "audio", "video"], "embedding_dimensions": [128, 256, 512, 768]}]})
+        assert self.path == "/v1/models"
+        self.respond({"data": [{"id": "native"}]})
 
     def do_POST(self):
-        assert self.path == "/embed"
+        assert self.path == "/v1/embeddings"
         request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        assert request["model"] == "native"
+        assert request["model"] == "native" and request["encoding_format"] == "float"
+        inputs = request["input"]
+        for item in inputs:
+            if isinstance(item, dict):
+                assert item == {"content": [
+                    {"type": "text", "text": "before "},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,+/8="}},
+                    {"type": "text", "text": " after"},
+                ]}
         with self.lock:
             type(self).calls += 1
-        if request["items"][0].get("parts", [{}])[0].get("text") == "block":
+        if inputs[0] == "block":
             with self.lock:
                 type(self).blocking += 1
             assert self.release.wait(4), "fixture release timed out"
-        self.respond({"embeddings": [{"values": [1.0] + [0.0] * (item["dimensions"]-1), "tokens": 4} for item in request["items"]]})
+        self.respond({
+            "data": [{"index": index, "embedding": [1.0] + [0.0] * 767} for index in range(len(inputs))],
+            "usage": {"prompt_tokens": 4 * len(inputs)},
+        })
 
 
 def main(binary):

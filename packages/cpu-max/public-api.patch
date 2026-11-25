@@ -1,0 +1,362 @@
+diff --git a/src/http_media.h b/src/http_media.h
+index c67939d..8e4ad9c 100644
+--- a/src/http_media.h
++++ b/src/http_media.h
+@@ -39,10 +39,82 @@ static void video_decode_all(const ei_media_input *m, const string_list *frames,
+     for (size_t t = 0; t < started; ++t)
+         pthread_join(workers[t], NULL);
+ }
++
++static bool public_payload(const char **p, sv_string *payload, char *err, size_t len) {
++    if (!json_expect(p, '{', err, len)) return false;
++    bool seen_format = false;
++    for (;;) {
++        sv_string key = {0}, value = {0};
++        if (!parse_json_string(p, &key, err, len)) return false;
++        bool is_payload = string_is(&key, "url") || string_is(&key, "data");
++        bool is_format = string_is(&key, "format");
++        free(key.s);
++        if ((!is_payload && !is_format) || (is_payload && payload->s) ||
++            (is_format && seen_format)) {
++            snprintf(err, len, "unknown or duplicate media field");
++            return false;
++        }
++        if (!json_expect(p, ':', err, len) || !parse_json_string(p, &value, err, len))
++            return false;
++        if (is_payload) {
++            *payload = value;
++        } else {
++            seen_format = true;
++            free(value.s);
++        }
++        skip_ws(p);
++        if (**p == '}') {
++            ++*p;
++            return payload->s && payload->len;
++        }
++        if (!json_expect(p, ',', err, len)) return false;
++    }
++}
++
++static char *prepare_public_media(const char *kind, const sv_string *input) {
++    const char *helper = getenv("EI_LATTICE_MEDIA_HELPER");
++    if (!helper || !*helper) return NULL;
++    FILE *source = tmpfile(), *dest = tmpfile();
++    char *result = NULL;
++    if (!source || !dest || fwrite(input->s, 1, input->len, source) != input->len ||
++        fseek(source, 0, SEEK_SET)) goto done;
++    posix_spawn_file_actions_t actions;
++    if (posix_spawn_file_actions_init(&actions)) goto done;
++    if (posix_spawn_file_actions_adddup2(&actions, fileno(source), STDIN_FILENO) ||
++        posix_spawn_file_actions_adddup2(&actions, fileno(dest), STDOUT_FILENO)) {
++        posix_spawn_file_actions_destroy(&actions);
++        goto done;
++    }
++    extern char **environ;
++    char *argv[] = {(char *)helper, (char *)kind, NULL};
++    pid_t child;
++    int rc = posix_spawn(&child, helper, &actions, NULL, argv, environ);
++    posix_spawn_file_actions_destroy(&actions);
++    if (rc) goto done;
++    int status;
++    do {
++        rc = waitpid(child, &status, 0);
++    } while (rc < 0 && errno == EINTR);
++    if (rc < 0 || !WIFEXITED(status) || WEXITSTATUS(status) || fseek(dest, 0, SEEK_END)) goto done;
++    long bytes = ftell(dest);
++    if (bytes <= 0 || (unsigned long)bytes > MAX_BODY_BYTES || fseek(dest, 0, SEEK_SET)) goto done;
++    result = ei_xmalloc((size_t)bytes + 1);
++    if (fread(result, 1, (size_t)bytes, dest) != (size_t)bytes) {
++        free(result);
++        result = NULL;
++    } else {
++        result[bytes] = '\0';
++    }
++done:
++    if (source) fclose(source);
++    if (dest) fclose(dest);
++    return result;
++}
++
+ static bool media_part(const char **p, ei_media_input *m, char *err, size_t len) {
+     if (!json_expect(p, '{', err, len))
+         return false;
+-    sv_string type = {0}, text = {0}, data = {0};
++    sv_string type = {0}, text = {0}, data = {0}, payload = {0};
+     string_list frames = {0};
+     bool ok = false;
+     double fps = 1;
+@@ -69,6 +141,12 @@ static bool media_part(const char **p, ei_media_input *m, char *err, size_t len)
+             bit = 16;
+         else if (string_is(&key, "vision_tokens"))
+             bit = 32;
++        else if (string_is(&key, "image_url"))
++            bit = 64;
++        else if (string_is(&key, "input_audio"))
++            bit = 128;
++        else if (string_is(&key, "input_video"))
++            bit = 256;
+         free(key.s);
+         if (!bit || (fields & bit)) {
+             snprintf(err, len, "unknown or duplicate content-part field");
+@@ -110,6 +188,11 @@ static bool media_part(const char **p, ei_media_input *m, char *err, size_t len)
+                 goto done;
+             }
+             *p = end;
++        } else if (bit >= 64) {
++            if (payload.s || !public_payload(p, &payload, err, len)) {
++                snprintf(err, len, "invalid inline media payload");
++                goto done;
++            }
+         } else {
+             skip_ws(p);
+             char *end;
+@@ -135,7 +218,18 @@ static bool media_part(const char **p, ei_media_input *m, char *err, size_t len)
+     unsigned media_fields = fields & ~32u;
+     if (string_is(&type, "text") && fields == 3)
+         ok = ei_media_text(m, text.s, text.len, err, len);
+-    else if (string_is(&type, "image") && media_fields == 5)
++    else if ((string_is(&type, "image_url") && fields == 65) ||
++             (string_is(&type, "input_audio") && fields == 129) ||
++             (string_is(&type, "input_video") && fields == 257)) {
++        char *converted = prepare_public_media(type.s, &payload);
++        if (converted) {
++            const char *body = converted;
++            ok = media_part(&body, m, err, len);
++            free(converted);
++        } else {
++            snprintf(err, len, "unsupported_media");
++        }
++    } else if (string_is(&type, "image") && media_fields == 5)
+         ok = ei_media_image(m, data.s, data.len, image_tokens, err, len);
+     else if (string_is(&type, "audio") && fields == 5)
+         ok = ei_media_audio(m, data.s, data.len, err, len);
+@@ -174,6 +268,7 @@ done:
+     free(type.s);
+     free(text.s);
+     free(data.s);
++    free(payload.s);
+     free_inputs(&frames);
+     return ok;
+ }
+diff --git a/src/inference_service.c b/src/inference_service.c
+index 90a0c3f..aa25f90 100644
+--- a/src/inference_service.c
++++ b/src/inference_service.c
+@@ -1186,8 +1186,8 @@ bool ei_inference_service_embed_batch_with_usage(
+         }
+     }
+     for (size_t i = 0; i < batch_size; i++) {
+-        truncate_tokens(service, &tokens[i]);
+-        if (tokens[i].n == 0) {
++        if (tokens[i].n == 0 || tokens[i].n > context_limit(service->tokenizer)) {
++            const char *message = tokens[i].n ? "context_length_exceeded" : "input produced no tokens";
+             for (size_t j = 0; j < batch_size; j++) ei_tokens_free(&tokens[j]);
+             free(entries);
+             free(tokens);
+@@ -1195,7 +1195,7 @@ bool ei_inference_service_embed_batch_with_usage(
+             service->arriving_requests -= batch_size;
+             pthread_cond_broadcast(&service->queue_ready);
+             pthread_mutex_unlock(&service->mutex);
+-            set_error(err, err_len, "input produced no tokens");
++            set_error(err, err_len, message);
+             return false;
+         }
+     }
+diff --git a/src/media.c b/src/media.c
+index 50dbc10..5283faa 100644
+--- a/src/media.c
++++ b/src/media.c
+@@ -127,9 +127,11 @@ void ei_media_input_free(ei_media_input *m) {
+ bool ei_media_text(ei_media_input *m, const char *text, size_t len, char *err, size_t err_len) {
+     ei_tokens t;
+     ei_tokenize_spm(m->tokenizer, text, len, false, false, &t);
+-    (void)err;
+-    (void)err_len;
+-    for (size_t i = 0; i < t.n && avail(m); ++i)
++    if (t.n > avail(m)) {
++        ei_tokens_free(&t);
++        return fail(err, err_len, "context_length_exceeded");
++    }
++    for (size_t i = 0; i < t.n; ++i)
+         token(m, t.ids[i]);
+     ei_tokens_free(&t);
+     return true;
+@@ -155,7 +157,7 @@ static uint8_t *decode(const char *data, size_t len, size_t *size) {
+         len -= comma + 1 - data;
+         data = comma + 1;
+     }
+-    if (!len || len % 4 || len > 16 * 1024 * 1024)
++    if (!len || len % 4 || len > 40 * 1024 * 1024)
+         return NULL;
+     uint8_t *out = ei_xmalloc(len / 4 * 3);
+     size_t n = 0;
+diff --git a/src/server.c b/src/server.c
+index 7fe8052..974222d 100644
+--- a/src/server.c
++++ b/src/server.c
+@@ -290,7 +290,7 @@ static bool media_audio_submit(void *ctx, const float *mel, int frames, float **
+ }
+ #endif
+ #define EMBEDDINGGEMMA_DEFAULT_PORT 42666
+-#define MAX_BODY_BYTES (16u * 1024u * 1024u)
++#define MAX_BODY_BYTES (40u * 1024u * 1024u)
+ #define MAX_HEADER_BYTES (64u * 1024u)
+ 
+ extern char **environ;
+@@ -635,8 +635,8 @@ static bool parse_input_item(const char **p, string_list *inputs, char *err, siz
+         if (!parse_json_string(p, &value, err, len)) return false;
+         return append_input(inputs, value);
+     }
+-    if (**p != '{') {
+-        snprintf(err, len, "input must contain strings or content objects");
++    if (**p != '{' && **p != '[') {
++        snprintf(err, len, "input must contain strings, token arrays, or content objects");
+         return false;
+     }
+     const char *start = *p;
+@@ -694,8 +694,12 @@ static bool parse_embed_request(const char *body, string_list *inputs,
+             snprintf(err, err_len, "input must be a string, content object, or array");
+             return false;
+         }
+-        ++p;
+-        for (;;) {
++        const char *start = p++;
++        skip_ws(&p);
++        if (isdigit((unsigned char)*p)) {
++            p = start;
++            if (!parse_input_item(&p, inputs, err, err_len)) return false;
++        } else for (;;) {
+             if (!parse_input_item(&p, inputs, err, err_len)) return false;
+             skip_ws(&p);
+             if (*p == ']') {
+@@ -862,7 +866,12 @@ static void openai_http_error(int fd, int status, const char *reason,
+     sbuf_append_z(&b, "\",\"param\":");
+     if (param) sbuf_append_json_string(&b, param, strlen(param));
+     else sbuf_append_z(&b, "null");
+-    sbuf_append_z(&b, ",\"code\":null}}\n");
++    sbuf_append_z(&b, ",\"code\":");
++    if (!strcmp(msg, "context_length_exceeded"))
++        sbuf_append_z(&b, "\"context_length_exceeded\"");
++    else
++        sbuf_append_z(&b, "null");
++    sbuf_append_z(&b, "}}\n");
+     http_response(fd, status, reason, b.data, keep_alive);
+     free(b.data);
+ }
+@@ -1070,6 +1079,77 @@ static void handle_tags(int fd, const server_opts *opts, bool keep_alive) {
+ static ei_response_cache *media_cache;
+ #include "http_media.h"
+ 
++static bool embed_token_array(ei_inference_service *service, const char *p, float *out,
++                              size_t *count, char *err, size_t len) {
++    int32_t ids[8192];
++    size_t n = 0;
++    if (!json_expect(&p, '[', err, len)) return false;
++    for (;;) {
++        skip_ws(&p);
++        if (n == sizeof ids / sizeof *ids) {
++            snprintf(err, len, "context_length_exceeded");
++            return false;
++        }
++        char *end = NULL;
++        errno = 0;
++        long id = strtol(p, &end, 10);
++        if (!isdigit((unsigned char)*p) || errno || id >= EI_VOCAB) {
++            snprintf(err, len, "invalid input token ID");
++            return false;
++        }
++        ids[n++] = (int32_t)id;
++        p = end;
++        skip_ws(&p);
++        if (*p == ']') break;
++        if (!json_expect(&p, ',', err, len)) return false;
++    }
++    *count = n;
++    return ei_inference_service_embed_tokens(service, ids, n, out, err, len);
++}
++
++static void handle_tokenize(int fd, const server_opts *opts, const char *body, bool keep_alive) {
++    const char *p = find_json_field(body, "content");
++    sv_string text = {0};
++    char err[128] = "tokenize requires string content";
++    if (!p || !parse_json_string(&p, &text, err, sizeof err)) {
++        openai_http_error(fd, 400, "Bad Request", err, "content", keep_alive);
++        return;
++    }
++    const char *add = find_json_field(body, "add_special");
++    const char *parse = find_json_field(body, "parse_special");
++    if (add) skip_ws(&add);
++    if (parse) skip_ws(&parse);
++    ei_tokens tokens;
++    ei_tokenize_spm(&opts->engine->tokenizer, text.s, text.len,
++                    add && !strncmp(add, "true", 4), !parse || !strncmp(parse, "true", 4), &tokens);
++    free(text.s);
++    if (tokens.n > 8192) {
++        ei_tokens_free(&tokens);
++        openai_http_error(fd, 400, "Bad Request", "context_length_exceeded", "content", keep_alive);
++        return;
++    }
++    sbuf result = {0};
++    sbuf_append_z(&result, "{\"tokens\":[");
++    for (size_t i = 0; i < tokens.n; i++) {
++        char row[32];
++        snprintf(row, sizeof row, "%s%d", i ? "," : "", tokens.ids[i]);
++        sbuf_append_z(&result, row);
++    }
++    sbuf_append_z(&result, "]}");
++    http_response(fd, 200, "OK", result.data, keep_alive);
++    ei_tokens_free(&tokens);
++    free(result.data);
++}
++
++static void handle_models(int fd, const server_opts *opts, bool keep_alive) {
++    sbuf result = {0};
++    sbuf_append_z(&result, "{\"object\":\"list\",\"data\":[{\"object\":\"model\",\"id\":");
++    sbuf_append_json_string(&result, opts->profile->name, strlen(opts->profile->name));
++    sbuf_append_z(&result, "}]}");
++    http_response(fd, 200, "OK", result.data, keep_alive);
++    free(result.data);
++}
++
+ static void handle_embed(int fd, ei_inference_service *service,
+                          const server_opts *opts, const char *body,
+                          size_t body_len, bool keep_alive,
+@@ -1085,6 +1165,11 @@ static void handle_embed(int fd, ei_inference_service *service,
+         openai_http_error(fd, 400, "Bad Request", err, "model", keep_alive);
+         return;
+     }
++    if (api == EMBEDDING_API_OPENAI && !string_is(&model, opts->profile->name)) {
++        free(model.s);
++        openai_http_error(fd, 404, "Not Found", "unknown embedding model", "model", keep_alive);
++        return;
++    }
+     if (!parse_embed_request(body, &inputs, &dimensions, &encoding,
+                              err, sizeof err)) {
+         free_inputs(&inputs);
+@@ -1143,7 +1228,10 @@ static void handle_embed(int fd, ei_inference_service *service,
+     if (any_structured) {
+         for (size_t i = 0; i < inputs.n && embedded; ++i) {
+             size_t count = 0;
+-            if (inputs.structured[i]) {
++            if (inputs.structured[i] && inputs.items[i].s[0] == '[') {
++                embedded = embed_token_array(service, inputs.items[i].s,
++                                             embeddings + i * EI_N_EMBD, &count, err, sizeof err);
++            } else if (inputs.structured[i]) {
+                 embedded = embed_structured(opts, &inputs.items[i], embeddings + i * EI_N_EMBD,
+                                             &count, err, sizeof err);
+             } else
+@@ -1304,9 +1392,10 @@ static bool handle_client(http_connection *connection,
+         http_response(connection->fd, 200, "OK", EI_OPENAPI_JSON, keep_alive);
+     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/tags") == 0) {
+         handle_tags(connection->fd, opts, keep_alive);
+-    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/embed") == 0) {
+-        handle_embed(connection->fd, service, opts, body, body_len,
+-                     keep_alive, response_cache, EMBEDDING_API_NATIVE);
++    } else if (strcmp(method, "GET") == 0 && strcmp(path, "/v1/models") == 0) {
++        handle_models(connection->fd, opts, keep_alive);
++    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/tokenize") == 0) {
++        handle_tokenize(connection->fd, opts, body, keep_alive);
+     } else if (strcmp(method, "POST") == 0 &&
+                strcmp(path, "/v1/embeddings") == 0) {
+         handle_embed(connection->fd, service, opts, body, body_len,

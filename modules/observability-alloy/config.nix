@@ -49,22 +49,16 @@ let
         url = "${cfg.lokiUrl}/loki/api/v1/push"
       }
     }
-  '' + lib.optionalString (config.lattice.embedding-runtime.enable or false) ''
-    loki.source.journal "embedding_runtime" {
+  '' + lib.optionalString (config.lattice.cpu-max.enable or false) ''
+    loki.source.journal "cpu_max" {
       format_as_json = false
       max_age = "12h"
-      matches = "_SYSTEMD_UNIT=embedding-runtime.service"
-      forward_to = [ loki.process.embedding_runtime.receiver ]
+      matches = "_SYSTEMD_UNIT=cpu-max.service"
+      forward_to = [ loki.process.cpu_max.receiver ]
     }
-    loki.process "embedding_runtime" {
+    loki.process "cpu_max" {
       stage.static_labels {
-        values = { service = "embedding-runtime" }
-      }
-      stage.json {
-        expressions = { event = "", code = "", profile = "" }
-      }
-      stage.structured_metadata {
-        values = { event = "", code = "", profile = "" }
+        values = { service = "cpu-max" }
       }
       forward_to = [ loki.write.llm_gateway.receiver ]
     }

@@ -155,4 +155,4 @@ package-specific lock и описание сборки в собственном
 внешние discovery-адреса адаптирует общий [browser-ingress](./browser-ingress/README.md),
 который также обслуживает Foxbridge и страницу выбора браузера.
 
-- [embedding-runtime](./embedding-runtime/README.md) — CPU-инференс EmbeddingGemma 2 и закреплённые веса.
+- [cpu-max](./cpu-max/package.nix) — CPU-Max для EmbeddingGemma 2 и закреплённые Q8_0 GGUF.

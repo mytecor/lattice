@@ -28,5 +28,5 @@
 как inputs с `flake = false` и экспортирует их через `nixosModules`. Зависимости на пакеты и значения
 передаются типизированными опциями, а не скрытыми module arguments.
 
-- [embedding-runtime](./embedding-runtime/README.md) — offline мультимодальные embeddings с автоматической выгрузкой модели.
+- [cpu-max](./cpu-max/README.md) — мультимодальный EmbeddingGemma 2 на Intel N100.
 - [llama-embeddings](./llama-embeddings/README.md) — EmbeddingGemma 2 GGUF в нативном llama-server.

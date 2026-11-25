@@ -68,12 +68,10 @@ source result и recovery; затем полная приёмка и
 Остатки F4 (drill без GitHub, bootstrap новой ноды, f4-05) тоже отложены на потом
 и не блокируют продолжение F19→F20.
 
-Локальные мультимодальные embeddings обслуживает
-[embedding-runtime](./modules/embedding-runtime/README.md) с моделью EmbeddingGemma 2.
-Через llm-gateway доступны OpenAI embeddings с явным расширением `parts` и Google
-`embedContent`/`batchEmbedContents`; worker освобождает память через 20 минут простоя.
-Модель `embedding-gguf` подключает нативный [llama-server](./modules/llama-embeddings/README.md)
-на Mac с Metal и на CPU хомлаба для проверки совместимости с действующими индексами.
+Локальные мультимодальные embeddings обслуживают [CPU-Max](./modules/cpu-max/README.md)
+на Intel N100 (`embedding`) и [llama-server](./modules/llama-embeddings/README.md)
+на Mac с Metal (`embedding-gguf`). Gateway отправляет обоим OpenAI-совместимые
+запросы `/v1/embeddings` и принимает OpenAI и Google SDK.
 
 ## Направления развития
 

@@ -81,10 +81,6 @@ in
     python3 ${./embedding-gateway-runtime.py} "$(command -v llm-gateway)"
     touch $out
   '';
-  embedding-runtime = import ./embedding-runtime.nix {
-    inherit pkgs nixpkgs;
-    runtimeModule = self.nixosModules.embedding-runtime;
-  };
 
   llm-gateway-flat = import ./llm-gateway-flat.nix {
     inherit nixpkgs pkgs;

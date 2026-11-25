@@ -124,8 +124,8 @@ flowchart TD
     subgraph AI["Инференс LLM"]
         LLMGateway["llm-gateway<br/>(Маршрутизация и Strict JSON Schema)"]
         EmbeddingsDriver["embeddings-driver<br/>(Типизированный embeddings-адаптер)"]
-        EmbeddingRuntime["embedding-runtime<br/>(Offline embeddings и выгрузка worker)"]
-        LlamaEmbeddings["llama-server<br/>(EmbeddingGemma 2 GGUF на Mac и хомлабе)"]
+        CpuMax["CPU-Max<br/>(EmbeddingGemma 2 на Intel N100)"]
+        LlamaEmbeddings["llama-server<br/>(EmbeddingGemma 2 на Mac)"]
         HTTPDriver["http-driver<br/>(Bifrost HTTP-адаптер)"]
         JEVDriver["jev-driver<br/>(Нативные типизированные решения)"]
         Agentrun["agentrun-openai<br/>(OpenAI-совместимый шлюз)"]
@@ -182,8 +182,7 @@ flowchart TD
     Grafana -.-> Authentik
 
     Prometheus --> LLMGateway
-    Prometheus --> EmbeddingRuntime
-    Alloy -.-> EmbeddingRuntime
+    Alloy -.-> CpuMax
     Prometheus --> NodeStatus
     Alloy --> Loki
     Alloy -.-> LLMGateway
@@ -200,8 +199,8 @@ flowchart TD
     JEVDriver --> JevGonka
     JEVDriver --> TypeSafe
     LLMGateway -->|NDJSON embeddings| EmbeddingsDriver
-    EmbeddingsDriver -->|HTTP embeddings| EmbeddingRuntime
-    EmbeddingsDriver -->|Нативный HTTP API| LlamaEmbeddings
+    EmbeddingsDriver -->|OpenAI-совместимый HTTP| CpuMax
+    EmbeddingsDriver -->|OpenAI-совместимый HTTP через SSH-туннель| LlamaEmbeddings
     LLMGateway -->|NDJSON| HTTPDriver
     HTTPDriver --> Upstream
 
@@ -411,9 +410,8 @@ flowchart TD
     end
 
     subgraph Local["Локальный инференс"]
-        EmbeddingRuntime["embedding-runtime<br/>(Текущая модель embedding)"]
+        CpuMax["CPU-Max на хомлабе<br/>(Инференс на Intel N100)"]
         MacLlama["llama-server на Mac<br/>(Metal-инференс GGUF)"]
-        HomelabLlama["llama-server на хомлабе<br/>(CPU-инференс GGUF)"]
     end
 
     subgraph Upstream["Внешние провайдеры инференса"]
@@ -453,9 +451,8 @@ flowchart TD
     JEVDriver --> JevGonka
     JEVDriver --> TypeSafe
     Engine -->|NDJSON embeddings| EmbeddingsDriver
-    EmbeddingsDriver -->|HTTP embeddings| EmbeddingRuntime
-    EmbeddingsDriver -->|Нативный HTTP API через SSH-туннель| MacLlama
-    EmbeddingsDriver -->|Нативный HTTP API| HomelabLlama
+    EmbeddingsDriver -->|OpenAI-совместимый HTTP| CpuMax
+    EmbeddingsDriver -->|OpenAI-совместимый HTTP через SSH-туннель| MacLlama
     Engine -->|NDJSON| HTTPDriver
     HTTPDriver --> Vertex
     HTTPDriver --> AIStudio
@@ -474,7 +471,7 @@ flowchart TD
     subgraph Sources["Источники телеметрии"]
         SystemdUnits["Systemd сервисы<br/>(caddy, llm-gateway, etc.)"]
         LLMGateway["llm-gateway<br/>(Эндпоинт метрик и логи)"]
-        EmbeddingRuntime["embedding-runtime<br/>(Метрики и жизненный цикл модели)"]
+        CpuMax["CPU-Max<br/>(Журнал сервера)"]
         NodeStatus["node-status<br/>(Сборщик системных метрик)"]
     end
 
@@ -493,8 +490,7 @@ flowchart TD
     NodeStatus -- "Опрашивает статус юнитов" --> SystemdUnits
     Prometheus -- "Скрейпит метрики" --> NodeStatus
     Prometheus -- "Скрейпит метрики" --> LLMGateway
-    Prometheus -- "Скрейпит метрики" --> EmbeddingRuntime
-    Alloy -- "Извлекает structured events" --> EmbeddingRuntime
+    Alloy -- "Читает journald логи" --> CpuMax
 
     Alloy -- "Читает journald логи" --> SystemdUnits
     Alloy -- "Извлекает structured events" --> LLMGateway
@@ -952,14 +948,12 @@ flowchart LR
 
 ### Локальные мультимодальные embeddings
 
-OpenAI embeddings endpoint и Google `embedContent`/`batchEmbedContents`
-преобразуют вход в типизированный контракт внутри gateway. Мультимодальный вход
-задаётся объектом `parts`. Драйвер применяет task prompts и преобразует типизированные
-части в формат выбранного провайдера.
+OpenAI embeddings и Google `embedContent`/`batchEmbedContents` преобразуют вход
+в типизированный контракт внутри gateway. Драйвер применяет task prompts,
+сохраняет порядок частей и отправляет обоим провайдерам OpenAI-совместимый
+`POST /v1/embeddings`.
 
-Модель `embedding-gguf` использует нативный API
-[llama-server](./modules/llama-embeddings/README.md). Gateway предпочитает
-Mac с Metal через обратный SSH-туннель. Резервный CPU-провайдер на хомлабе
-использует ту же пару BF16 GGUF. llama-server управляет ленивой загрузкой модели
-и освобождает её веса после 20 минут простоя. Для действующего индекса модель
-`embedding` использует прежний [embedding-runtime](./modules/embedding-runtime/README.md).
+Маршрут `embedding` использует [CPU-Max](./modules/cpu-max/README.md) на Intel
+N100 с предобработкой рабочего индекса. Маршрут `embedding-gguf` использует
+[llama-server](./modules/llama-embeddings/README.md) на Mac через обратный
+SSH-туннель. llama-server освобождает веса после 20 минут простоя.

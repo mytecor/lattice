@@ -1,35 +1,14 @@
 diff --git a/drivers/embeddings/executor.go b/drivers/embeddings/executor.go
-index 49ad33a..df83152 100644
+index 49ad33a..cfef9ee 100644
 --- a/drivers/embeddings/executor.go
 +++ b/drivers/embeddings/executor.go
-@@ -17,6 +17,7 @@ import (
- 
- type config struct {
- 	InferenceURL string `json:"inference_url"`
-+	Protocol     string `json:"protocol,omitempty"`
- }
- type executor struct {
- 	config config
-@@ -28,6 +29,9 @@ func newExecutor(raw json.RawMessage) (*executor, error) {
- 	if embeddings.Decode(raw, &cfg) != nil {
- 		return nil, errors.New("invalid embeddings driver configuration")
- 	}
-+	if cfg.Protocol != "" && cfg.Protocol != "llama.cpp" {
-+		return nil, errors.New("unsupported embeddings provider protocol")
-+	}
- 	cfg.InferenceURL = strings.TrimRight(cfg.InferenceURL, "/")
- 	u, err := url.Parse(cfg.InferenceURL)
- 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-@@ -40,8 +44,16 @@ func newExecutor(raw json.RawMessage) (*executor, error) {
+@@ -40,8 +40,13 @@ func newExecutor(raw json.RawMessage) (*executor, error) {
  func (e *executor) capabilities() driverproto.Capabilities {
  	return driverproto.Capabilities{Embeddings: true, EmbeddingImages: true, EmbeddingAudio: true, EmbeddingVideo: true, SafeReplay: true, SingleAttempt: true}
  }
 +
 +func (e *executor) modelsURL() string {
-+	if e.config.Protocol == "llama.cpp" {
-+		return e.config.InferenceURL + "/v1/models"
-+	}
-+	return e.config.InferenceURL + "/models"
++	return e.config.InferenceURL + "/v1/models"
 +}
 +
  func (e *executor) models(ctx context.Context, override string) ([]driverproto.ModelInfo, error) {
@@ -38,36 +17,24 @@ index 49ad33a..df83152 100644
  	if override != "" && override != endpoint {
  		return nil, errors.New("embeddings models_url must use the configured runtime")
  	}
-@@ -61,6 +73,12 @@ func (e *executor) models(ctx context.Context, override string) ([]driverproto.M
+@@ -61,6 +66,10 @@ func (e *executor) models(ctx context.Context, override string) ([]driverproto.M
  	if err != nil || len(b) > 1<<20 || json.Unmarshal(b, &catalog) != nil || len(catalog.Data) == 0 {
  		return nil, errors.New("invalid embedding catalog")
  	}
-+	if e.config.Protocol == "llama.cpp" {
-+		for i := range catalog.Data {
-+			catalog.Data[i].InputModalities = []string{"text", "image", "audio", "video"}
-+			catalog.Data[i].EmbeddingDimensions = []int{128, 256, 512, 768}
-+		}
++	for i := range catalog.Data {
++		catalog.Data[i].InputModalities = []string{"text", "image", "audio", "video"}
++		catalog.Data[i].EmbeddingDimensions = []int{128, 256, 512, 768}
 +	}
  	return catalog.Data, nil
  }
  func fail(status int, code string) *driverproto.CallError {
-@@ -90,8 +108,25 @@ func (e *executor) do(ctx context.Context, msg command) (json.RawMessage, *drive
+@@ -90,8 +99,15 @@ func (e *executor) do(ctx context.Context, msg command) (json.RawMessage, *drive
  		return nil, fail(400, "invalid_embedding_request")
  	}
  	contract.Model = msg.Model
 -	body, _ := json.Marshal(contract)
 -	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, e.config.InferenceURL+"/embed", bytes.NewReader(body))
-+	if e.config.Protocol == "llama.cpp" {
-+		return e.llamaEmbeddings(ctx, contract)
-+	}
-+	b, failure := e.post(ctx, "/embed", contract)
-+	if failure != nil {
-+		return nil, failure
-+	}
-+	if _, err := contract.ValidateResponse(b); err != nil {
-+		return nil, fail(502, "invalid_embedding_response")
-+	}
-+	return b, nil
++	return e.openAIEmbeddings(ctx, contract)
 +}
 +
 +func (e *executor) post(ctx context.Context, endpoint string, payload any) (json.RawMessage, *driverproto.CallError) {
@@ -79,7 +46,7 @@ index 49ad33a..df83152 100644
  	req.Header.Set("Content-Type", "application/json")
  	resp, err := e.client.Do(req)
  	if err != nil {
-@@ -113,13 +148,27 @@ func (e *executor) do(ctx context.Context, msg command) (json.RawMessage, *drive
+@@ -113,13 +129,28 @@ func (e *executor) do(ctx context.Context, msg command) (json.RawMessage, *drive
  		result := fail(status, "embedding_runtime_error")
  		var detail struct {
  			Error struct {
@@ -93,15 +60,16 @@ index 49ad33a..df83152 100644
 -			switch detail.Error.Code {
 +			var code string
 +			_ = json.Unmarshal(detail.Error.Code, &code)
-+			if e.config.Protocol == "llama.cpp" {
-+				// Non-causal embeddings must fit one physical batch. llama.cpp
-+				// 0.8 reports its size limit as a server error.
-+				physicalBatchLimit := detail.Error.Type == "server_error" &&
-+					strings.HasPrefix(detail.Error.Message, "input (") &&
-+					strings.Contains(detail.Error.Message, " tokens) is too large to process. increase the physical batch size ")
-+				if detail.Error.Type == "exceed_context_size_error" || physicalBatchLimit {
-+					return nil, fail(400, "context_length_exceeded")
-+				}
++			// Non-causal embeddings must fit one physical batch. llama.cpp
++			// 0.8 reports its size limit as a server error.
++			physicalBatchLimit := detail.Error.Type == "server_error" &&
++				strings.HasPrefix(detail.Error.Message, "input (") &&
++				strings.Contains(detail.Error.Message, " tokens) is too large to process. increase the physical batch size ")
++			if detail.Error.Type == "exceed_context_size_error" || physicalBatchLimit {
++				return nil, fail(400, "context_length_exceeded")
++			}
++			if detail.Error.Message == "unsupported_media" {
++				code = "unsupported_media"
 +			}
 +			switch code {
  			case "queue_full", "context_length_exceeded", "unsupported_media", "invalid_embedding_request", "worker_failed", "deadline_exceeded", "model_not_found":
@@ -110,7 +78,7 @@ index 49ad33a..df83152 100644
  			}
  		}
  		if seconds, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && seconds > 0 {
-@@ -127,8 +176,5 @@ func (e *executor) do(ctx context.Context, msg command) (json.RawMessage, *drive
+@@ -127,8 +158,5 @@ func (e *executor) do(ctx context.Context, msg command) (json.RawMessage, *drive
  		}
  		return nil, result
  	}
@@ -119,11 +87,24 @@ index 49ad33a..df83152 100644
 -	}
  	return b, nil
  }
-diff --git a/drivers/embeddings/llama.go b/drivers/embeddings/llama.go
+diff --git a/drivers/embeddings/main.go b/drivers/embeddings/main.go
+index febf6b8..0e67c41 100644
+--- a/drivers/embeddings/main.go
++++ b/drivers/embeddings/main.go
+@@ -109,7 +109,7 @@ func serve(ctx context.Context, input io.Reader, output io.Writer) error {
+ 				return emit(driverproto.Event{Type: "models", Models: models})
+ 			}
+ 			cfg := map[string]any{"inference_url": exec.config.InferenceURL}
+-			if err := emit(driverproto.Event{Type: "ready", Capabilities: ptr(exec.capabilities()), Config: cfg, Catalog: &driverproto.CatalogSource{URL: exec.config.InferenceURL + "/models", Explicit: msg.ModelsURL != ""}}); err != nil {
++			if err := emit(driverproto.Event{Type: "ready", Capabilities: ptr(exec.capabilities()), Config: cfg, Catalog: &driverproto.CatalogSource{URL: exec.modelsURL(), Explicit: msg.ModelsURL != ""}}); err != nil {
+ 				return err
+ 			}
+ 			if msg.Type != "start" {
+diff --git a/drivers/embeddings/openai.go b/drivers/embeddings/openai.go
 new file mode 100644
-index 0000000..cc8810b
+index 0000000..f3e2ac4
 --- /dev/null
-+++ b/drivers/embeddings/llama.go
++++ b/drivers/embeddings/openai.go
 @@ -0,0 +1,173 @@
 +package main
 +
@@ -147,7 +128,7 @@ index 0000000..cc8810b
 +	"CODE_RETRIEVAL_QUERY": "task: code retrieval | query: ",
 +}
 +
-+type llamaContent struct {
++type openAIContent struct {
 +	Type  string            `json:"type"`
 +	Text  string            `json:"text,omitempty"`
 +	Image map[string]string `json:"image_url,omitempty"`
@@ -155,12 +136,12 @@ index 0000000..cc8810b
 +	Video map[string]string `json:"input_video,omitempty"`
 +}
 +
-+// llama.cpp exposes aggregate usage, so record it once in the internal
++// The OpenAI response exposes aggregate usage, so record it once in the internal
 +// response. The gateway sums these counters for both billing and public usage.
-+func (e *executor) llamaEmbeddings(ctx context.Context, request embeddings.Request) (json.RawMessage, *driverproto.CallError) {
++func (e *executor) openAIEmbeddings(ctx context.Context, request embeddings.Request) (json.RawMessage, *driverproto.CallError) {
 +	inputs := make([]any, 0, len(request.Items))
 +	for _, item := range request.Items {
-+		input, failure := e.llamaInput(ctx, request.Model, item)
++		input, failure := e.openAIInput(ctx, request.Model, item)
 +		if failure != nil {
 +			return nil, failure
 +		}
@@ -218,7 +199,7 @@ index 0000000..cc8810b
 +	return encoded, nil
 +}
 +
-+func (e *executor) llamaInput(ctx context.Context, model string, item embeddings.Item) (any, *driverproto.CallError) {
++func (e *executor) openAIInput(ctx context.Context, model string, item embeddings.Item) (any, *driverproto.CallError) {
 +	prefix := taskPrefixes[item.TaskType]
 +	if item.TaskType == "RETRIEVAL_DOCUMENT" {
 +		title := item.Title
@@ -228,27 +209,27 @@ index 0000000..cc8810b
 +		prefix = "title: " + title + " | text: "
 +	}
 +	if len(item.TokenIDs) != 0 {
-+		return e.llamaTokens(ctx, model, item.TokenIDs, prefix)
++		return e.openAITokens(ctx, model, item.TokenIDs, prefix)
 +	}
 +	var text strings.Builder
 +	text.WriteString(prefix)
-+	parts := make([]llamaContent, 0, len(item.Parts))
++	parts := make([]openAIContent, 0, len(item.Parts))
 +	hasMedia := false
 +	for _, part := range item.Parts {
 +		if part.Text != nil {
 +			text.WriteString(*part.Text)
-+			parts = append(parts, llamaContent{Type: "text", Text: *part.Text})
++			parts = append(parts, openAIContent{Type: "text", Text: *part.Text})
 +			continue
 +		}
 +		hasMedia = true
 +		blob := part.InlineData
 +		switch {
 +		case strings.HasPrefix(blob.MIMEType, "image/"):
-+			parts = append(parts, llamaContent{Type: "image_url", Image: map[string]string{"url": "data:" + blob.MIMEType + ";base64," + blob.Data}})
++			parts = append(parts, openAIContent{Type: "image_url", Image: map[string]string{"url": "data:" + blob.MIMEType + ";base64," + blob.Data}})
 +		case strings.HasPrefix(blob.MIMEType, "audio/"):
-+			parts = append(parts, llamaContent{Type: "input_audio", Audio: map[string]string{"data": blob.Data}})
++			parts = append(parts, openAIContent{Type: "input_audio", Audio: map[string]string{"data": blob.Data}})
 +		case strings.HasPrefix(blob.MIMEType, "video/"):
-+			parts = append(parts, llamaContent{Type: "input_video", Video: map[string]string{"data": blob.Data}})
++			parts = append(parts, openAIContent{Type: "input_video", Video: map[string]string{"data": blob.Data}})
 +		}
 +	}
 +	// Literal placeholders can change which tensors the server inserts.
@@ -263,7 +244,7 @@ index 0000000..cc8810b
 +	return text.String(), nil
 +}
 +
-+func (e *executor) llamaTokens(ctx context.Context, model string, ids []int, prefix string) (any, *driverproto.CallError) {
++func (e *executor) openAITokens(ctx context.Context, model string, ids []int, prefix string) (any, *driverproto.CallError) {
 +	// EmbeddingGemma 2 vocabulary and BOS ID, shared by its HF and GGUF exports.
 +	const vocabSize, bos = 262144, 2
 +	for _, id := range ids {
@@ -298,11 +279,11 @@ index 0000000..cc8810b
 +	tokens = append(tokens, tokenized.Tokens...)
 +	return append(tokens, ids[offset:]...), nil
 +}
-diff --git a/drivers/embeddings/llama_test.go b/drivers/embeddings/llama_test.go
+diff --git a/drivers/embeddings/openai_test.go b/drivers/embeddings/openai_test.go
 new file mode 100644
-index 0000000..de1d9a0
+index 0000000..edd6880
 --- /dev/null
-+++ b/drivers/embeddings/llama_test.go
++++ b/drivers/embeddings/openai_test.go
 @@ -0,0 +1,115 @@
 +package main
 +
@@ -317,7 +298,7 @@ index 0000000..de1d9a0
 +	"github.com/mytecor/llm-gateway/driverproto/embeddings"
 +)
 +
-+func TestLlamaNativeBatch(t *testing.T) {
++func TestOpenAINativeBatch(t *testing.T) {
 +	const model = "google/embeddinggemma-2"
 +	expected := []any{
 +		"title: Listing | text: A large balcony",
@@ -365,7 +346,7 @@ index 0000000..de1d9a0
 +		}
 +	}))
 +	defer server.Close()
-+	exec := llamaTestExecutor(t, server.URL)
++	exec := openAITestExecutor(t, server.URL)
 +	models, err := exec.models(context.Background(), "")
 +	if err != nil || len(models) != 1 || models[0].ID != model || !reflect.DeepEqual(models[0].EmbeddingDimensions, []int{128, 256, 512, 768}) {
 +		t.Fatalf("unexpected model catalog: %v, %v", models, err)
@@ -399,7 +380,7 @@ index 0000000..de1d9a0
 +		_, _ = w.Write([]byte(`{"error":{"code":500,"type":"server_error","message":"input (8502 tokens) is too large to process. increase the physical batch size (current batch size: 8192)"}}`))
 +	}))
 +	defer server.Close()
-+	exec := llamaTestExecutor(t, server.URL)
++	exec := openAITestExecutor(t, server.URL)
 +	body := json.RawMessage(`{"model":"logical","items":[{"parts":[{"text":"too long"}],"dimensions":768}]}`)
 +	_, failure := exec.do(context.Background(), command{Kind: "embeddings", Model: "native", Body: body})
 +	if failure == nil || failure.Status != 400 || failure.Code != "context_length_exceeded" || failure.Scope != "request" {
@@ -407,9 +388,9 @@ index 0000000..de1d9a0
 +	}
 +}
 +
-+func llamaTestExecutor(t *testing.T, url string) *executor {
++func openAITestExecutor(t *testing.T, url string) *executor {
 +	t.Helper()
-+	cfg, err := json.Marshal(config{InferenceURL: url, Protocol: "llama.cpp"})
++	cfg, err := json.Marshal(config{InferenceURL: url})
 +	if err != nil {
 +		t.Fatal(err)
 +	}
@@ -419,19 +400,3 @@ index 0000000..de1d9a0
 +	}
 +	return exec
 +}
-diff --git a/drivers/embeddings/main.go b/drivers/embeddings/main.go
-index febf6b8..df31129 100644
---- a/drivers/embeddings/main.go
-+++ b/drivers/embeddings/main.go
-@@ -109,7 +109,10 @@ func serve(ctx context.Context, input io.Reader, output io.Writer) error {
- 				return emit(driverproto.Event{Type: "models", Models: models})
- 			}
- 			cfg := map[string]any{"inference_url": exec.config.InferenceURL}
--			if err := emit(driverproto.Event{Type: "ready", Capabilities: ptr(exec.capabilities()), Config: cfg, Catalog: &driverproto.CatalogSource{URL: exec.config.InferenceURL + "/models", Explicit: msg.ModelsURL != ""}}); err != nil {
-+			if exec.config.Protocol != "" {
-+				cfg["protocol"] = exec.config.Protocol
-+			}
-+			if err := emit(driverproto.Event{Type: "ready", Capabilities: ptr(exec.capabilities()), Config: cfg, Catalog: &driverproto.CatalogSource{URL: exec.modelsURL(), Explicit: msg.ModelsURL != ""}}); err != nil {
- 				return err
- 			}
- 			if msg.Type != "start" {

@@ -543,16 +543,7 @@ in
     textModelApiKeyFile = if hasJevTextModelKey then config.age.secrets.jev-text-model-api-key.path else null;
   };
 
-  # Weights are immutable; changing their revision requires an index migration decision.
-  lattice.embedding-runtime = {
-    enable = true;
-    port = ports.embedding-runtime;
-    idleSeconds = 20 * 60;
-    threads = 2;
-    memoryMax = "6G";
-  };
-
-  lattice.llama-embeddings.enable = true;
+  lattice.cpu-max.enable = true;
 
   # LLM Gateway: the `settings` attribute is the gateway's public JSON contract
   # verbatim. Field names are snake_case and `models` declares tiers and targets
@@ -579,32 +570,7 @@ in
       LATTICE_LLM_PROVIDER_OPENROUTER_KEY = config.age.secrets.llm-provider-openrouter.path;
     };
 
-    settings = let
-      llamaProviders = [
-        {
-          id = "mac-llama-embedding";
-          driver = "embeddings";
-          priority = 100;
-          request_timeout = "45s";
-          max_concurrent = 1;
-          cooldown = "30s";
-          config = {
-            protocol = "llama.cpp";
-            inference_url = "http://127.0.0.1:${toString ports.mac-llama-embeddings-tunnel}";
-          };
-        }
-      ] ++ lib.optional config.lattice.llama-embeddings.enable {
-        id = "local-llama-embedding";
-        driver = "embeddings";
-        priority = 10;
-        request_timeout = "5m";
-        max_concurrent = 1;
-        config = {
-          protocol = "llama.cpp";
-          inference_url = "http://127.0.0.1:${toString config.lattice.llama-embeddings.port}";
-        };
-      };
-    in {
+    settings = {
       log_level = "debug";
       client_api_keys = [
         { id = "node-pi"; key = "env.LATTICE_CLIENT_NODE_PI_KEY"; }
@@ -612,21 +578,18 @@ in
       ];
       providers = [
         {
-          id = "mac-embedding";
+          id = "local-cpu-max";
           driver = "embeddings";
-          priority = 100;
-          request_timeout = "45s";
+          request_timeout = "5m";
           max_concurrent = 4;
-          cooldown = "30s";
-          config.inference_url = "http://[204:a90a:1ca3:ff42:b4b4:bf54:5997:6194]:${toString config.lattice.embedding-runtime.port}";
+          config.inference_url = "http://127.0.0.1:${toString config.lattice.cpu-max.port}";
         }
         {
-          id = "local-embedding";
+          id = "mac-llama-embedding";
           driver = "embeddings";
-          priority = 10;
           request_timeout = "5m";
-          max_concurrent = 5;
-          config.inference_url = "http://127.0.0.1:${toString config.lattice.embedding-runtime.port}";
+          max_concurrent = 1;
+          config.inference_url = "http://127.0.0.1:${toString ports.mac-llama-embeddings-tunnel}";
         }
         {
           id = "jev-gonka";
@@ -686,7 +649,7 @@ in
           strip_params = [ "thinking" "reasoning_effort" ];
           set_params.reasoning_effort = "medium";
         }
-      ] ++ llamaProviders ++ lib.optionals hasJevTypesafeKey [{
+      ] ++ lib.optionals hasJevTypesafeKey [{
         id = "jev-typesafe";
         driver = "jev";
         config = {
@@ -709,28 +672,24 @@ in
         api_key = "env.LATTICE_LLM_PROVIDER_OPENROUTER_KEY";
       }];
 
-      # Keep the public backlog bounded while routing primarily to the faster
-      # MacBook MPS runtime when online and failing over to local CPU runtime.
+      # CPU-Max uses the deployed index's image preprocessing. The Mac model
+      # uses a separate index namespace because the media vectors differ.
       rules = [
         { route = "embedding"; action = "filter"; where.model.eq = "embedding"; }
-        { route = "embedding"; action = "filter"; where.provider."in" = [ "mac-embedding" "local-embedding" ]; }
-        { route = "embedding"; action = "map"; native = "google/embeddinggemma-2"; }
+        { route = "embedding"; action = "filter"; where.provider."in" = [ "local-cpu-max" ]; }
+        { route = "embedding"; action = "map"; native = "embeddinggemma-2"; }
         { route = "embedding"; action = "admission"; max_in_flight = 8; max_pending = 12; wait_timeout = "30s"; }
         { route = "embedding"; action = "rank"; strategy = "priority"; }
-        { route = "embedding"; action = "balance"; strategy = "expected-ttft"; exploration_rate = 0.05; }
         { route = "embedding"; action = "race"; count = 1; }
-        { route = "embedding"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "100ms"; max = "1s"; }; }
-        { route = "embedding"; action = "semaphore"; max_calls = 2; max_calls_per_provider = 1; max_in_flight = 1; }
+        { route = "embedding"; action = "semaphore"; max_calls = 1; max_calls_per_provider = 1; max_in_flight = 1; }
         { route = "embedding"; action = "timeout"; duration = "5m"; }
-        # Keep the GGUF vector space separate until the existing indexes are validated.
         { route = "embedding-gguf"; action = "filter"; where.model.eq = "embedding-gguf"; }
-        { route = "embedding-gguf"; action = "filter"; where.provider."in" = map (provider: provider.id) llamaProviders; }
+        { route = "embedding-gguf"; action = "filter"; where.provider."in" = [ "mac-llama-embedding" ]; }
         { route = "embedding-gguf"; action = "map"; native = "google/embeddinggemma-2"; }
         { route = "embedding-gguf"; action = "admission"; max_in_flight = 2; max_pending = 4; wait_timeout = "30s"; }
         { route = "embedding-gguf"; action = "rank"; strategy = "priority"; }
         { route = "embedding-gguf"; action = "race"; count = 1; }
-        { route = "embedding-gguf"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "100ms"; max = "1s"; }; }
-        { route = "embedding-gguf"; action = "semaphore"; max_calls = 2; max_calls_per_provider = 1; max_in_flight = 1; }
+        { route = "embedding-gguf"; action = "semaphore"; max_calls = 1; max_calls_per_provider = 1; max_in_flight = 1; }
         { route = "embedding-gguf"; action = "timeout"; duration = "5m"; }
       ];
 
