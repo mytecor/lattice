@@ -16,7 +16,7 @@ let
     inherit version src;
     modRoot = "drivers/embeddings";
     subPackages = [ "." ];
-    vendorHash = "sha256-wvp99zeGoVA0aGWnsA2gB7WVbC2PJcsbsTjrhmYsT38=";
+    vendorHash = "sha256-rlug9eZpdUQx9BAhMujWJOn4H8j3oj1mluulq+x2JMU=";
     postInstall = ''
       mv "$out/bin/embeddings" "$out/bin/embeddings-driver"
     '';
