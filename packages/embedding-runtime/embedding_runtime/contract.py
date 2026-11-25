@@ -3,6 +3,8 @@ import base64
 import binascii
 
 MAX_BYTES = 40 << 20
+MAX_RESPONSE_BYTES = 4 << 20
+MAX_ITEMS = 64
 MAX_TOKENS = 8192
 DIMENSIONS = (128, 256, 512, 768)
 MIME = {
@@ -38,7 +40,7 @@ def validate(request, model):
     if request.get("model") != model:
         raise Failure("model_not_found", 404)
     items = request.get("items")
-    if not isinstance(items, list) or not 1 <= len(items) <= 32:
+    if not isinstance(items, list) or not 1 <= len(items) <= MAX_ITEMS:
         raise Failure("invalid_embedding_request")
     profile = 0
     for item in items:

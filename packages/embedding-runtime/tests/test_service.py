@@ -7,7 +7,7 @@ import unittest
 
 from aiohttp import ClientSession, web
 
-from embedding_runtime.contract import Failure, validate
+from embedding_runtime.contract import Failure, MAX_ITEMS, validate
 from embedding_runtime.service import Config, Supervisor, application
 
 
@@ -177,7 +177,10 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(validate(request(), "google/embeddinggemma-2"), 0)
         for mime, expected in (("image/png", 1), ("video/webm", 1), ("audio/ogg", 2)):
             self.assertEqual(validate(request(mime=mime), "google/embeddinggemma-2"), expected)
-        for invalid in ({}, {"model": "wrong", "items": []}, {"model": "google/embeddinggemma-2", "items": [None]}, request(mime="application/pdf")):
+        batch_ok = {"model": "google/embeddinggemma-2", "items": [{"parts": [{"text": "x"}], "dimensions": 128}] * MAX_ITEMS}
+        self.assertEqual(validate(batch_ok, "google/embeddinggemma-2"), 0)
+        batch_too_big = {"model": "google/embeddinggemma-2", "items": [{"parts": [{"text": "x"}], "dimensions": 128}] * (MAX_ITEMS + 1)}
+        for invalid in ({}, {"model": "wrong", "items": []}, {"model": "google/embeddinggemma-2", "items": [None]}, request(mime="application/pdf"), batch_too_big):
             with self.assertRaises(Failure):
                 validate(invalid, "google/embeddinggemma-2")
 

@@ -14,7 +14,7 @@ import time
 
 from aiohttp import web
 
-from .contract import DIMENSIONS, Failure, MAX_BYTES, validate
+from .contract import DIMENSIONS, Failure, MAX_BYTES, MAX_RESPONSE_BYTES, validate
 
 LOG = logging.getLogger("embedding-runtime")
 
@@ -165,7 +165,7 @@ class Supervisor:
         self.process.stdin.write(json.dumps(job.request, separators=(",", ":"), ensure_ascii=False).encode() + b"\n")
         await self.process.stdin.drain()
         line = await self.process.stdout.readline()
-        if not line or len(line) > 2 << 20:
+        if not line or len(line) > MAX_RESPONSE_BYTES:
             raise Failure("worker_failed", 503)
         result = json.loads(line)
         if "error" in result:

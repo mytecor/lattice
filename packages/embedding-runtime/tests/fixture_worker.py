@@ -1,9 +1,11 @@
 """A real disposable subprocess for supervisor tests; never loads model weights."""
 import json
 import os
+from pathlib import Path
 import sys
 import time
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from embedding_runtime.contract import DIMENSIONS
 assert 768 in DIMENSIONS
 
