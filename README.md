@@ -72,6 +72,8 @@ source result и recovery; затем полная приёмка и
 [embedding-runtime](./modules/embedding-runtime/README.md) с моделью EmbeddingGemma 2.
 Через llm-gateway доступны OpenAI embeddings с явным расширением `parts` и Google
 `embedContent`/`batchEmbedContents`; worker освобождает память через 20 минут простоя.
+Модель `embedding-gguf` подключает нативный [llama-server](./modules/llama-embeddings/README.md)
+на Mac с Metal и на CPU хомлаба для проверки совместимости с действующими индексами.
 
 ## Направления развития
 

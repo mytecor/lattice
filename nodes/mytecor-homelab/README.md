@@ -84,6 +84,10 @@ http://llm-gateway.mytecor-homelab.local/v1
 медиа передаются inline base64. Энкодеры загружаются по запросу, worker выгружается
 через 20 минут простоя. Отдельный публичный адрес для runtime не создаётся.
 
+Для проверки GGUF доступна отдельная модель `embedding-gguf`. Она направляет
+запросы к [llama-server](./../../modules/llama-embeddings/README.md) на Mac
+через SSH-туннель с резервным CPU-провайдером на хомлабе.
+
 Сам Gateway (Lattice-owned Go proxy поверх Bifrost) слушает на `127.0.0.1:9208`; в LAN открыт
 только Caddy на порту 80.
 

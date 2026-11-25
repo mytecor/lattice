@@ -14,6 +14,8 @@ let
   embeddingsDriver = buildGo127Module {
     pname = "llm-gateway-embeddings-driver";
     inherit version src;
+    # Apply the provider until the pinned llm-gateway source includes it.
+    patches = lib.optional (srcOverride == null) ./llama-embeddings-driver.patch;
     modRoot = "drivers/embeddings";
     subPackages = [ "." ];
     vendorHash = "sha256-rlug9eZpdUQx9BAhMujWJOn4H8j3oj1mluulq+x2JMU=";

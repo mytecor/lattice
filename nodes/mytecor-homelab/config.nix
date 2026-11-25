@@ -54,6 +54,7 @@ let
   hasGoogleAiStudioKey = builtins.pathExists googleAiStudioKeyFile;
   openRouterKeyFile = ./secrets/llm-provider-openrouter.age;
   hasOpenRouterKey = builtins.pathExists openRouterKeyFile;
+  ports = import ../../profiles/networking/ports.nix;
   # F17: WPA2 passphrase for the dynamic Wi-Fi hotspot.
   hotspotPasswordFile = ./secrets/hotspot-password.age;
   hasHotspotPassword = builtins.pathExists hotspotPasswordFile;
@@ -545,11 +546,13 @@ in
   # Weights are immutable; changing their revision requires an index migration decision.
   lattice.embedding-runtime = {
     enable = true;
-    port = (import ../../profiles/networking/ports.nix).embedding-runtime;
+    port = ports.embedding-runtime;
     idleSeconds = 20 * 60;
     threads = 2;
     memoryMax = "6G";
   };
+
+  lattice.llama-embeddings.enable = true;
 
   # LLM Gateway: the `settings` attribute is the gateway's public JSON contract
   # verbatim. Field names are snake_case and `models` declares tiers and targets
@@ -576,7 +579,32 @@ in
       LATTICE_LLM_PROVIDER_OPENROUTER_KEY = config.age.secrets.llm-provider-openrouter.path;
     };
 
-    settings = {
+    settings = let
+      llamaProviders = [
+        {
+          id = "mac-llama-embedding";
+          driver = "embeddings";
+          priority = 100;
+          request_timeout = "45s";
+          max_concurrent = 1;
+          cooldown = "30s";
+          config = {
+            protocol = "llama.cpp";
+            inference_url = "http://127.0.0.1:${toString ports.mac-llama-embeddings-tunnel}";
+          };
+        }
+      ] ++ lib.optional config.lattice.llama-embeddings.enable {
+        id = "local-llama-embedding";
+        driver = "embeddings";
+        priority = 10;
+        request_timeout = "5m";
+        max_concurrent = 1;
+        config = {
+          protocol = "llama.cpp";
+          inference_url = "http://127.0.0.1:${toString config.lattice.llama-embeddings.port}";
+        };
+      };
+    in {
       log_level = "debug";
       client_api_keys = [
         { id = "node-pi"; key = "env.LATTICE_CLIENT_NODE_PI_KEY"; }
@@ -658,7 +686,7 @@ in
           strip_params = [ "thinking" "reasoning_effort" ];
           set_params.reasoning_effort = "medium";
         }
-      ] ++ lib.optionals hasJevTypesafeKey [{
+      ] ++ llamaProviders ++ lib.optionals hasJevTypesafeKey [{
         id = "jev-typesafe";
         driver = "jev";
         config = {
@@ -694,6 +722,16 @@ in
         { route = "embedding"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "100ms"; max = "1s"; }; }
         { route = "embedding"; action = "semaphore"; max_calls = 2; max_calls_per_provider = 1; max_in_flight = 1; }
         { route = "embedding"; action = "timeout"; duration = "5m"; }
+        # Keep the GGUF vector space separate until the existing indexes are validated.
+        { route = "embedding-gguf"; action = "filter"; where.model.eq = "embedding-gguf"; }
+        { route = "embedding-gguf"; action = "filter"; where.provider."in" = map (provider: provider.id) llamaProviders; }
+        { route = "embedding-gguf"; action = "map"; native = "google/embeddinggemma-2"; }
+        { route = "embedding-gguf"; action = "admission"; max_in_flight = 2; max_pending = 4; wait_timeout = "30s"; }
+        { route = "embedding-gguf"; action = "rank"; strategy = "priority"; }
+        { route = "embedding-gguf"; action = "race"; count = 1; }
+        { route = "embedding-gguf"; action = "retry"; attempts = 2; backoff = { type = "exponential"; initial = "100ms"; max = "1s"; }; }
+        { route = "embedding-gguf"; action = "semaphore"; max_calls = 2; max_calls_per_provider = 1; max_in_flight = 1; }
+        { route = "embedding-gguf"; action = "timeout"; duration = "5m"; }
       ];
 
       models = let

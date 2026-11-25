@@ -125,6 +125,7 @@ flowchart TD
         LLMGateway["llm-gateway<br/>(Маршрутизация и Strict JSON Schema)"]
         EmbeddingsDriver["embeddings-driver<br/>(Типизированный embeddings-адаптер)"]
         EmbeddingRuntime["embedding-runtime<br/>(Offline embeddings и выгрузка worker)"]
+        LlamaEmbeddings["llama-server<br/>(EmbeddingGemma 2 GGUF на Mac и хомлабе)"]
         HTTPDriver["http-driver<br/>(Bifrost HTTP-адаптер)"]
         JEVDriver["jev-driver<br/>(Нативные типизированные решения)"]
         Agentrun["agentrun-openai<br/>(OpenAI-совместимый шлюз)"]
@@ -200,6 +201,7 @@ flowchart TD
     JEVDriver --> TypeSafe
     LLMGateway -->|NDJSON embeddings| EmbeddingsDriver
     EmbeddingsDriver -->|HTTP embeddings| EmbeddingRuntime
+    EmbeddingsDriver -->|Нативный HTTP API| LlamaEmbeddings
     LLMGateway -->|NDJSON| HTTPDriver
     HTTPDriver --> Upstream
 
@@ -403,10 +405,15 @@ flowchart TD
         Engine["Движок исполнения<br/>(Speculative race, retry, fallback)"]
         Structured["Structured Outputs<br/>(Валидация и исправление JSON)"]
         EmbeddingsDriver["embeddings-driver<br/>(Типизированный embeddings-адаптер)"]
-        EmbeddingRuntime["embedding-runtime<br/>(Offline embeddings и выгрузка worker)"]
         HTTPDriver["http-driver<br/>(Bifrost HTTP-адаптер)"]
         BatchAPI["Batch API<br/>(Загрузка и состояние заданий)"]
         JEVDriver["jev-driver<br/>(Нативные типизированные решения)"]
+    end
+
+    subgraph Local["Локальный инференс"]
+        EmbeddingRuntime["embedding-runtime<br/>(Текущая модель embedding)"]
+        MacLlama["llama-server на Mac<br/>(Metal-инференс GGUF)"]
+        HomelabLlama["llama-server на хомлабе<br/>(CPU-инференс GGUF)"]
     end
 
     subgraph Upstream["Внешние провайдеры инференса"]
@@ -447,6 +454,8 @@ flowchart TD
     JEVDriver --> TypeSafe
     Engine -->|NDJSON embeddings| EmbeddingsDriver
     EmbeddingsDriver -->|HTTP embeddings| EmbeddingRuntime
+    EmbeddingsDriver -->|Нативный HTTP API через SSH-туннель| MacLlama
+    EmbeddingsDriver -->|Нативный HTTP API| HomelabLlama
     Engine -->|NDJSON| HTTPDriver
     HTTPDriver --> Vertex
     HTTPDriver --> AIStudio
@@ -943,15 +952,14 @@ flowchart LR
 
 ### Локальные мультимодальные embeddings
 
-Логическая модель `embedding` обслуживается отдельным CPU-сервисом
-[embedding-runtime](./modules/embedding-runtime/README.md) через `embeddings-driver`.
-OpenAI embeddings endpoint и Google `embedContent`/`batchEmbedContents` преобразуются
-в общий типизированный контракт; текстовые формы OpenAI сохраняются, мультимодальный
-вход задаётся явным объектом `parts`. Несовместимые провайдеры исключаются до
-балансировки и recovery. Маршрут использует одну попытку без race, hedge и fallback.
+OpenAI embeddings endpoint и Google `embedContent`/`batchEmbedContents`
+преобразуют вход в типизированный контракт внутри gateway. Мультимодальный вход
+задаётся объектом `parts`. Драйвер применяет task prompts и преобразует типизированные
+части в формат выбранного провайдера.
 
-Жизненный цикл весов принадлежит runtime. По первому запросу запускается worker
-с нужными энкодерами; расширение профиля выполняется между запросами с завершением
-прежнего процесса. Через 20 минут простоя worker выгружается. Каталог, healthcheck
-и Prometheus модель не загружают. Веса и Python-зависимости закреплены Nix;
-изменение embedding-пространства требует явного решения о миграции индексов.
+Модель `embedding-gguf` использует нативный API
+[llama-server](./modules/llama-embeddings/README.md). Gateway предпочитает
+Mac с Metal через обратный SSH-туннель. Резервный CPU-провайдер на хомлабе
+использует ту же пару BF16 GGUF. llama-server управляет ленивой загрузкой модели
+и освобождает её веса после 20 минут простоя. Для действующего индекса модель
+`embedding` использует прежний [embedding-runtime](./modules/embedding-runtime/README.md).

@@ -1,6 +1,8 @@
 {
   llm-gateway = 9208;
   embedding-runtime = 9225;
+  llama-embeddings = 9226;
+  mac-llama-embeddings-tunnel = 9227;
   pi-acp = 55514;
   radicle-node = 8776;
   radicle-httpd = 8080;

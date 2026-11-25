@@ -635,5 +635,7 @@ Completions; Responses/affinity сохраняют текущий контрак
 [embedding-runtime](./../embedding-runtime/README.md) на хомлабе. Поддерживаются
 OpenAI `/v1/embeddings` с явным мультимодальным `parts` и Google
 `embedContent`/`batchEmbedContents`; client keys остаются общими для gateway.
-Модель загружается по запросу и выгружается через 20 минут простоя. Маршрут имеет
-одну попытку, без hedging/fallback; пятый ожидающий запрос получает `429`.
+Модель `embedding-gguf` использует тот же публичный API. Для неё
+`config.protocol = "llama.cpp"` переключает драйвер на нативные endpoints
+[llama-server](./../../modules/llama-embeddings/README.md). Task prompts,
+порядок частей и размерность вектора обрабатываются внутри gateway.

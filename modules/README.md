@@ -29,3 +29,4 @@
 передаются типизированными опциями, а не скрытыми module arguments.
 
 - [embedding-runtime](./embedding-runtime/README.md) — offline мультимодальные embeddings с автоматической выгрузкой модели.
+- [llama-embeddings](./llama-embeddings/README.md) — EmbeddingGemma 2 GGUF в нативном llama-server.
