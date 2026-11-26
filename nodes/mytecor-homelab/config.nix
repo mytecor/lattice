@@ -733,6 +733,19 @@ in
           continue = { idle = "2m"; reshare = "full"; retries = 2; wait = "5m"; };
         };
 
+        # Non-hedged background counterpart of `standard` for bulk/offline pipelines
+        # (e.g. apartments): avoids 2x upstream amplification from the 5s interactive hedge.
+        standard-bg = {
+          profile = "balanced";
+          budget = { max_calls = 12; max_calls_per_provider = 4; max_in_flight = 1; max_hedges = 0; };
+          tiers = [
+            { targets = [{ select.pool = "gonka"; native = "deepseek-ai/DeepSeek-V4-Flash-0731"; }]; }
+          ];
+          timeout = "3m";
+          stream_idle_timeout = "5m";
+          transforms = [ "split_thinking" ];
+        };
+
         smart = {
           tiers = [{
             targets = if hasOpenRouterKey
