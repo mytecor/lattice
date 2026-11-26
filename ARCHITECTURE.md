@@ -121,9 +121,9 @@ flowchart TD
         Camoufox["Camoufox<br/>(Браузер агента)"]
     end
 
-    subgraph Messaging["Telegram"]
+    subgraph Messaging["Telegram и хранилище"]
         TelegramGateway["telegram-gateway<br/>(HTTP API истории и журнала)"]
-        TelegramDB["PostgreSQL<br/>(Журнал событий и контрольные точки)"]
+        PostgreSQL["PostgreSQL<br/>(Общая БД: Authentik, telegram-gateway)"]
         Telegram["Telegram<br/>(MTProto API)"]
     end
 
@@ -172,11 +172,12 @@ flowchart TD
 
     Caddy --> Grafana
     Caddy --> Authentik
+    Authentik --> PostgreSQL
     Caddy --> HydraACP
     Caddy --> AcpWeb
     Caddy <--> BrowserIngress
     Caddy --> TelegramGateway
-    TelegramGateway --> TelegramDB
+    TelegramGateway --> PostgreSQL
     TelegramGateway <-->|MTProto| Telegram
     BrowserIngress <--> Moli
     BrowserIngress <--> Foxbridge
@@ -272,7 +273,7 @@ flowchart TD
     Caddy --> NodeStatusSvc
     Caddy --> LLMGatewaySvc
     Caddy --> HydraACPSvc
-    Caddy -- "LAN" --> TelegramGateway
+    Caddy --> TelegramGateway
     Caddy --> OtherServices
 
     GrafanaSvc -- "OIDC OAuth аутентификация" --> Authentik

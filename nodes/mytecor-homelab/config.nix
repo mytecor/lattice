@@ -958,6 +958,8 @@ in
     { directory = "/var/lib/caddy"; user = "caddy"; group = "caddy"; mode = "0750"; }
     # F14: Authentik SSO data (media/storage) survives reboots (impermanence).
     { directory = "/var/lib/authentik"; user = "authentik"; group = "authentik"; mode = "0750"; }
+    # Shared PostgreSQL cluster (Authentik + Telegram Gateway) survives reboots (impermanence).
+    { directory = "/var/lib/postgresql"; user = "postgres"; group = "postgres"; mode = "0750"; }
     # agentrun-openai: persistent native session metadata (resume IDs, never
     # message text) survives reboots. The gateway runs as root (shared Pi
     # config /root/.pi/agent), so ownership by the module's dedicated user is

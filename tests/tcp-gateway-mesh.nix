@@ -63,10 +63,16 @@ let
   cfgExcluded = buildConfig { useMesh = true; meshExclude = [ "llm-gateway" ]; };
   telegramPort = 9229;
   cfgTelegram = buildConfig {
+    useMesh = true;
+    useCloudflare = true;
+    telegramGatewayPort = telegramPort;
+  };
+  cfgTelegramExcluded = buildConfig {
     telegramGatewayPort = telegramPort;
     meshExclude = [ "telegram-gateway" ];
   };
   telegramHost = "telegram-gateway.${hostName}.local";
+  telegramMeshTls = "https://telegram-gateway.${meshDomain}";
 in
 assert !(builtins.hasAttr meshHostNoTls cfgOff.services.caddy.virtualHosts);
 
@@ -93,9 +99,13 @@ assert !(builtins.hasAttr meshHostTls cfgExcluded.services.caddy.virtualHosts);
 
 assert lib.hasInfix "reverse_proxy 127.0.0.1:${toString telegramPort}"
   cfgTelegram.services.caddy.virtualHosts."http://${telegramHost}".extraConfig;
+assert builtins.hasAttr telegramMeshTls cfgTelegram.services.caddy.virtualHosts;
+assert cfgTelegram.services.caddy.virtualHosts.${telegramMeshTls}.extraConfig
+  == cfgTelegram.services.caddy.virtualHosts."http://${telegramHost}".extraConfig;
 assert lib.hasInfix telegramHost cfgTelegram.systemd.services.telegram-gateway-mdns.script;
 assert !(builtins.elem telegramPort cfgTelegram.networking.firewall.allowedTCPPorts);
-assert !(builtins.hasAttr "http://telegram-gateway.${meshDomain}" cfgTelegram.services.caddy.virtualHosts);
+assert !(builtins.hasAttr "http://telegram-gateway.${meshDomain}" cfgTelegramExcluded.services.caddy.virtualHosts);
+assert !(builtins.hasAttr telegramMeshTls cfgTelegramExcluded.services.caddy.virtualHosts);
 assert !(builtins.hasAttr "http://${telegramHost}" cfg.services.caddy.virtualHosts);
 
 pkgs.runCommand "tcp-gateway-mesh-evaluation" { } "touch $out"

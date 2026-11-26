@@ -2,12 +2,8 @@
 
 let
   service = "telegram-gateway";
-  dbService = "telegram-gateway-db";
   port = (import ../../profiles/networking/ports.nix).telegram-gateway;
   sessionDir = "/var/lib/${service}/account";
-  pg = pkgs.postgresql_17;
-  pgData = "/var/lib/${dbService}/${pg.psqlSchema}";
-  pgSocket = "/run/${dbService}";
   secrets = config.age.secrets;
 in
 {
@@ -18,61 +14,38 @@ in
   };
 
   users.groups.${service} = { };
-  users.users = {
-    ${service} = { isSystemUser = true; group = service; };
-    ${dbService} = { isSystemUser = true; group = service; };
+  users.users.${service} = {
+    isSystemUser = true;
+    group = service;
   };
 
   environment.persistence."/persist".directories = [
     { directory = "/var/lib/${service}"; user = service; group = service; mode = "0700"; }
-    { directory = "/var/lib/${dbService}"; user = dbService; group = service; mode = "0700"; }
   ];
 
-  # A separate cluster keeps the gateway journal persisted independently of Authentik.
-  systemd.services.${dbService} = {
-    description = "PostgreSQL for Telegram Gateway";
-    environment.PGDATA = pgData;
-    preStart = ''
-      if [ ! -f "$PGDATA/PG_VERSION" ]; then
-        ${pg}/bin/initdb --auth-local=peer --auth-host=reject --no-instructions >/dev/null
-      fi
-    '';
-    postStart = ''
-      ${pg}/bin/psql -X -v ON_ERROR_STOP=1 -h ${pgSocket} -d postgres <<'SQL'
-      SELECT 'CREATE ROLE "telegram-gateway" LOGIN'
-      WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'telegram-gateway') \gexec
-      SELECT 'CREATE DATABASE "telegram-gateway" OWNER "telegram-gateway"'
-      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'telegram-gateway') \gexec
-      SQL
-    '';
-    serviceConfig = {
-      Type = "notify";
-      User = dbService;
-      Group = service;
-      RuntimeDirectory = dbService;
-      RuntimeDirectoryMode = "0750";
-      StateDirectory = dbService;
-      StateDirectoryMode = "0700";
-      ExecStart = "${pg}/bin/postgres -D ${pgData} -k ${pgSocket} -c listen_addresses= -c unix_socket_permissions=0770";
-      KillSignal = "SIGINT";
-      Restart = "on-failure";
-      RestartSec = 5;
-    };
+  services.postgresql = {
+    enable = true;
+    ensureDatabases = [ service ];
+    ensureUsers = [
+      {
+        name = service;
+        ensureDBOwnership = true;
+      }
+    ];
   };
 
   systemd.services.${service} = {
     description = "Telegram Gateway";
     wantedBy = [ "multi-user.target" ];
     wants = [ "network-online.target" ];
-    requires = [ "${dbService}.service" ];
-    after = [ "network-online.target" "${dbService}.service" ];
-    partOf = [ "${dbService}.service" ];
+    requires = [ "postgresql.service" ];
+    after = [ "network-online.target" "postgresql.service" ];
     restartTriggers = [
       secrets.telegram-gateway-env.file
       secrets.telegram-gateway-access.file
     ];
     environment = {
-      DATABASE_URL = "host=${pgSocket} dbname=${service} user=${service} sslmode=disable";
+      DATABASE_URL = "host=/run/postgresql dbname=${service} user=${service} sslmode=disable";
       TELEGRAM_LISTEN = "127.0.0.1:${toString port}";
       TELEGRAM_SESSION_DIR = sessionDir;
     };
@@ -106,8 +79,5 @@ in
     };
   };
 
-  lattice.tcp-gateway = {
-    telegramGatewayPort = port;
-    meshExclude = [ service ];
-  };
+  lattice.tcp-gateway.telegramGatewayPort = port;
 }

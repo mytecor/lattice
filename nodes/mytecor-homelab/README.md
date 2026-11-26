@@ -172,14 +172,16 @@ rnsh --config .secrets/rnsh-operator \
 
 ### Telegram Gateway
 
-[Telegram Gateway](https://github.com/mytecor/telegram-gateway) принимает запросы из LAN через Caddy
-по адресу `http://telegram-gateway.mytecor-homelab.local/`. Проверка
-`GET /healthz` доступна без ключа. Запросы к `/v1/` требуют Bearer-ключа клиента.
-Список разрешённых чатов берётся из конфигурации доступа.
+[Telegram Gateway](https://github.com/mytecor/telegram-gateway) принимает запросы из LAN и
+Yggdrasil mesh через Caddy по адресам `http://telegram-gateway.mytecor-homelab.local/` и
+`https://telegram-gateway.homelab.myt.su/`. Проверка `GET /healthz` доступна без ключа.
+Запросы к `/v1/` требуют Bearer-ключа клиента. Список разрешённых чатов берётся из
+конфигурации доступа.
 
 [Модуль ноды](./telegram-gateway.nix) загружает Telegram API credentials, ключ клиента и
 конфигурацию доступа из agenix. При первом старте он инициализирует рабочую сессию из agenix.
-Рабочая сессия и отдельный экземпляр PostgreSQL хранятся в `/persist`.
+Рабочая сессия хранится в `/persist/var/lib/telegram-gateway`, а журнал событий — в системном
+PostgreSQL (`/persist/var/lib/postgresql`).
 
 ## Yggdrasil и mesh-доступ (f4-05)
 
@@ -206,6 +208,7 @@ https://grafana.homelab.myt.su/      — Grafana (с 2026-09-21, за Authentik/
 https://llm-gateway.homelab.myt.su/  — OpenAI-совместимый llm-gateway (с 2026-09-28, см. ниже)
 https://radicle.homelab.myt.su/
 https://status.homelab.myt.su/
+https://telegram-gateway.homelab.myt.su/ — Telegram Gateway (HTTP API с Bearer-ключом клиента)
 ```
 
 Grafana выведена в mesh 2026-09-21 (`https://grafana.homelab.myt.su`), потому что закрыта
