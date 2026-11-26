@@ -2,6 +2,7 @@
   llm-gateway = 9208;
   mac-llama-embeddings-tunnel = 9227;
   cpu-max = 9228;
+  telegram-gateway = 9229;
   pi-acp = 55514;
   radicle-node = 8776;
   radicle-httpd = 8080;

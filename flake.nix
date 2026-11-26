@@ -294,6 +294,7 @@
           jev-ultrafast = final.callPackage ./packages/jev-ultrafast/package.nix { };
           # F10: r1s execution backend (client + r1sd allocator); needs go_1_27 = 1.27.1 (go.mod).
           r1s = final.callPackage ./packages/r1s/package.nix { go = final.go_1_27; };
+          telegram-gateway = final.callPackage ./packages/telegram-gateway/package.nix { go = final.go_1_27; };
           # F10: immutable OCI agent runtime image and IPFS distribution tools.
           agent-image = final.callPackage ./packages/agent-image/package.nix {
             pi = final.lattice.pi;
@@ -377,6 +378,7 @@
         in
         nixpkgs.lib.filterAttrs (_: pkg: nixpkgs.lib.meta.availableOn { inherit system; } pkg) {
           inherit (pkgs.lattice) muse muse-acp muse-acp-fsless antigravity antigravity-acp antigravity-acp-fsless gemini-cli gemini-acp gemini-acp-fsless codex-acp-fsless acp-normalizer acp-web devtools-frontend moli browser-ingress agent-image agentrun-openai git-cache-proxy git-watchd task-contract taskd agentd hydra-acp llm-gateway cpu-max node-status pi pi-acp pi-mcp-adapter pi-retry pi-tool-profile publish-agent-image pull-agent-image rad-peer r1s rns-server rnsh verdaccio foxbridge camoufox jev-ultrafast;
+          inherit (pkgs.lattice) telegram-gateway;
           r1sd = pkgs.lattice.r1s;
           default = pkgs.lattice.rns-server;
         }) // {

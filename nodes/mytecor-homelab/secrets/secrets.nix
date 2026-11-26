@@ -9,6 +9,9 @@ in
   "antigravity-auth.age".publicKeys = [ admin node ];
   # Gemini auth credentials for Gemini ACP backend.
   "gemini-auth.age".publicKeys = [ admin node ];
+  "telegram-gateway-session.age".publicKeys = [ admin node ];
+  "telegram-gateway-env.age".publicKeys = [ admin node ];
+  "telegram-gateway-access.age".publicKeys = [ admin node ];
   "wifi-ssid.age".publicKeys = [ admin node ];
   "wifi-password.age".publicKeys = [ admin node ];
   "hotspot-password.age".publicKeys = [ admin node ];

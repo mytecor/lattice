@@ -6,5 +6,6 @@
     ./antigravity.nix
     ./gemini.nix
     ./muse.nix
+    ./telegram-gateway.nix
   ];
 }

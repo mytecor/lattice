@@ -121,6 +121,12 @@ flowchart TD
         Camoufox["Camoufox<br/>(Браузер агента)"]
     end
 
+    subgraph Messaging["Telegram"]
+        TelegramGateway["telegram-gateway<br/>(HTTP API истории и журнала)"]
+        TelegramDB["PostgreSQL<br/>(Журнал событий и контрольные точки)"]
+        Telegram["Telegram<br/>(MTProto API)"]
+    end
+
     subgraph AI["Инференс LLM"]
         LLMGateway["llm-gateway<br/>(Маршрутизация и Strict JSON Schema)"]
         EmbeddingsDriver["embeddings-driver<br/>(Типизированный embeddings-адаптер)"]
@@ -169,6 +175,9 @@ flowchart TD
     Caddy --> HydraACP
     Caddy --> AcpWeb
     Caddy <--> BrowserIngress
+    Caddy --> TelegramGateway
+    TelegramGateway --> TelegramDB
+    TelegramGateway <-->|MTProto| Telegram
     BrowserIngress <--> Moli
     BrowserIngress <--> Foxbridge
     Foxbridge <-->|Juggler: ввод и screencast| Camoufox
@@ -243,6 +252,7 @@ flowchart TD
         NodeStatusSvc["node-status<br/>(API статуса ноды)"]
         LLMGatewaySvc["llm-gateway<br/>(API инференса)"]
         HydraACPSvc["hydra-acp<br/>(WebSocket ACP)"]
+        TelegramGateway["telegram-gateway<br/>(HTTP API с ключом клиента)"]
         OtherServices["Кэш и GitOps<br/>(Radicle, git-cache, Verdaccio)"]
     end
 
@@ -262,6 +272,7 @@ flowchart TD
     Caddy --> NodeStatusSvc
     Caddy --> LLMGatewaySvc
     Caddy --> HydraACPSvc
+    Caddy -- "LAN" --> TelegramGateway
     Caddy --> OtherServices
 
     GrafanaSvc -- "OIDC OAuth аутентификация" --> Authentik

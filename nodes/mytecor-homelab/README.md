@@ -170,6 +170,17 @@ rnsh --config .secrets/rnsh-operator \
 `~/.reticulum`. Не генерируйте заново операторскую identity поверх существующей: новая identity
 потребует обновить allowlist на ноде. Python rnsh следует запускать из терминала с TTY.
 
+### Telegram Gateway
+
+[Telegram Gateway](https://github.com/mytecor/telegram-gateway) принимает запросы из LAN через Caddy
+по адресу `http://telegram-gateway.mytecor-homelab.local/`. Проверка
+`GET /healthz` доступна без ключа. Запросы к `/v1/` требуют Bearer-ключа клиента.
+Список разрешённых чатов берётся из конфигурации доступа.
+
+[Модуль ноды](./telegram-gateway.nix) загружает Telegram API credentials, ключ клиента и
+конфигурацию доступа из agenix. При первом старте он инициализирует рабочую сессию из agenix.
+Рабочая сессия и отдельный экземпляр PostgreSQL хранятся в `/persist`.
+
 ## Yggdrasil и mesh-доступ (f4-05)
 
 Наружу нода доступна через

@@ -110,8 +110,7 @@ in
   # на mesh (https://llm-gateway.homelab.myt.su): client-auth настраивается через
   # settings.client_api_keys (node-pi, mac) и включается при следующей пересборке ноды; до этого
   # доступ как раньше — только для доверенных участников yggdrasil-сети (mesh — не
-  # публичный интернет). meshExclude не задан — ни один сервис не исключён из mesh;
-  # если сервису нужно остаться только на LAN-контракте *.local, добавить его сюда.
+  # публичный интернет). LAN-only сервисы могут добавлять свои имена в meshExclude.
   lattice.tcp-gateway = {
     meshDomain = "homelab.myt.su";
     # Cloudflare DNS-01: включается автоматически, как только оператор создаст секрет.

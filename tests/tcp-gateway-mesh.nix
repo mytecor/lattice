@@ -25,7 +25,7 @@ let
   hostName = "node-a";
   meshDomain = "homelab.myt.su";
 
-  buildConfig = { useMesh ? true, useCloudflare ? false, meshExclude ? [ ] }:
+  buildConfig = { useMesh ? true, useCloudflare ? false, meshExclude ? [ ], telegramGatewayPort ? null }:
     (lib.nixosSystem {
       modules = [
         gatewayProfile
@@ -38,6 +38,7 @@ let
           lattice.tcp-gateway.cloudflareToken =
             if useCloudflare then "/run/agenix/caddy-cloudflare-token" else null;
           lattice.tcp-gateway.meshExclude = meshExclude;
+          lattice.tcp-gateway.telegramGatewayPort = telegramGatewayPort;
           # Enable the LLM gateway route (it is one of the proxiedServices).
           lattice.llm-gateway.enable = true;
           lattice.llm-gateway.settings.host = "127.0.0.1";
@@ -60,6 +61,12 @@ let
   cfgTls = buildConfig { useMesh = true; useCloudflare = true; };
   cfgOff = buildConfig { useMesh = false; };
   cfgExcluded = buildConfig { useMesh = true; meshExclude = [ "llm-gateway" ]; };
+  telegramPort = 9229;
+  cfgTelegram = buildConfig {
+    telegramGatewayPort = telegramPort;
+    meshExclude = [ "telegram-gateway" ];
+  };
+  telegramHost = "telegram-gateway.${hostName}.local";
 in
 assert !(builtins.hasAttr meshHostNoTls cfgOff.services.caddy.virtualHosts);
 
@@ -83,5 +90,12 @@ assert lib.hasInfix "acme_dns cloudflare" (cfgTls.services.caddy.globalConfig or
 assert builtins.hasAttr lanHost cfgExcluded.services.caddy.virtualHosts;
 assert !(builtins.hasAttr meshHostNoTls cfgExcluded.services.caddy.virtualHosts);
 assert !(builtins.hasAttr meshHostTls cfgExcluded.services.caddy.virtualHosts);
+
+assert lib.hasInfix "reverse_proxy 127.0.0.1:${toString telegramPort}"
+  cfgTelegram.services.caddy.virtualHosts."http://${telegramHost}".extraConfig;
+assert lib.hasInfix telegramHost cfgTelegram.systemd.services.telegram-gateway-mdns.script;
+assert !(builtins.elem telegramPort cfgTelegram.networking.firewall.allowedTCPPorts);
+assert !(builtins.hasAttr "http://telegram-gateway.${meshDomain}" cfgTelegram.services.caddy.virtualHosts);
+assert !(builtins.hasAttr "http://${telegramHost}" cfg.services.caddy.virtualHosts);
 
 pkgs.runCommand "tcp-gateway-mesh-evaluation" { } "touch $out"

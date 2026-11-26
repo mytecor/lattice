@@ -142,6 +142,10 @@ let
       reverse_proxy ${config.lattice.llm-gateway.settings.host}:${toString config.lattice.llm-gateway.settings.port}
     ''))
 
+    (mkIf (cfg.telegramGatewayPort != null) (serviceSites "telegram-gateway" ''
+      reverse_proxy 127.0.0.1:${toString cfg.telegramGatewayPort}
+    ''))
+
     # 4. Authenticated LAN WebSocket ingress for the loopback-only Pi ACP daemon.
     (mkIf piAcpEnabled (serviceSites piAcpCfg.serviceName ''
       handle {
@@ -195,6 +199,12 @@ let
 in
 {
   options.lattice.tcp-gateway = {
+    telegramGatewayPort = mkOption {
+      type = types.nullOr types.port;
+      default = null;
+      description = "Loopback port of Telegram Gateway, or null to disable its ingress.";
+    };
+
     # f4-05: external (mesh) domain served by Caddy in parallel to the LAN
     # *.local contract. When set, every enabled service additionally gets
     # `http(s)://<service>.<meshDomain>/` routing to the same backend. DNS for
@@ -292,6 +302,9 @@ in
       (mkIf radicleEnabled { radicle-mdns = mdnsPublisher "radicle"; })
       (mkIf rnsServerEnabled { rns-server-mdns = mdnsPublisher "rns-server"; })
       (mkIf llmGatewayEnabled { llm-gateway-mdns = mdnsPublisher "llm-gateway"; })
+      (mkIf (cfg.telegramGatewayPort != null) {
+        telegram-gateway-mdns = mdnsPublisher "telegram-gateway";
+      })
       (mkIf piAcpEnabled {
         "${piAcpCfg.serviceName}-mdns" = mdnsPublisher piAcpCfg.serviceName;
       })
