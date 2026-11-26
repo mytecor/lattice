@@ -6,13 +6,13 @@
 }:
 (buildGoModule.override { inherit go; }) {
   pname = "telegram-gateway";
-  version = "unstable-2026-11-26";
+  version = "unstable-2026-11-27";
 
   src = fetchFromGitHub {
     owner = "mytecor";
     repo = "telegram-gateway";
-    rev = "58900a5cb4462513c9ba11a513c5a1ba3b15e7ea";
-    hash = "sha256-6amVdbfCZ98XM7GYmi0DjtS4FweffZDisfRfvDmAvE8=";
+    rev = "c7702c99251b51f10fb53019605650ecb4bfa744";
+    hash = "sha256-S9fjMrx7F5VWyex36AglHuFDbuM+vNbsG9x1g1rvbGo=";
   };
 
   vendorHash = "sha256-MqCYCHimc5T+Ph/P9x4FFPJUOIXiF2pJGFR3iiq8R6k=";
