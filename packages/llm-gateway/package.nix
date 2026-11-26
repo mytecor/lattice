@@ -2,23 +2,21 @@
 
 let
   version = "0.1.0-unstable-2026-11-26";
-  revision = "77b91b7171f2cedb70f0086a69cda3763dab85bd";
+  revision = "cb9736a343b84594f25bfe1cf1e5f4a84cd27f55";
   pinnedSrc = fetchFromGitHub {
     owner = "mytecor";
     repo = "llm-gateway";
     rev = revision;
-    hash = "sha256-im+//ly2qMHD9chqOyR12jqgluyR8+t7PrZy5XHPIgE=";
+    hash = "sha256-eAWvM1AXNHY6TBTEek7gFpf8PAqjpb41HJ3Do17VLfU=";
   };
   src = if srcOverride == null then pinnedSrc else lib.cleanSource srcOverride;
 
   embeddingsDriver = buildGo127Module {
     pname = "llm-gateway-embeddings-driver";
     inherit version src;
-    # Apply the provider until the pinned llm-gateway source includes it.
-    patches = lib.optional (srcOverride == null) ./openai-embeddings-driver.patch;
     modRoot = "drivers/embeddings";
     subPackages = [ "." ];
-    vendorHash = "sha256-rlug9eZpdUQx9BAhMujWJOn4H8j3oj1mluulq+x2JMU=";
+    vendorHash = "sha256-71a7clpfny+zrLy4R8fRLZDYVTIROpp49K5T9mzDnjw=";
     postInstall = ''
       mv "$out/bin/embeddings" "$out/bin/embeddings-driver"
     '';
@@ -56,7 +54,6 @@ in
 buildGo127Module {
   pname = "lattice-llm-gateway";
   inherit version src;
-  patches = lib.optional (srcOverride == null) ./default-embedding-model.patch;
   vendorHash = "sha256-qVoj03LNLbdoCUAOydK7oEHsuZ1BZ6Z2jwYB3gPOfrw=";
   subPackages = [ "cmd/llm-gateway" ];
   nativeBuildInputs = [ makeWrapper ];

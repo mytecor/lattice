@@ -3,10 +3,10 @@
 Рабочий runtime собирается из закреплённого commit внешнего
 [репозитория llm-gateway](https://github.com/mytecor/llm-gateway).
 [package.nix](./package.nix) фиксирует источник и зависимости, собирает gateway core
-и отдельный `http-driver` и `jev-driver`, добавляя оба драйвера в `PATH` через wrapper.
+и добавляет `http-driver`, `jev-driver` и `embeddings-driver` в `PATH` через wrapper.
 Нативные ACP/Web-драйверы не входят в текущую HTTP-конфигурацию хомлабы.
 
-Поддержка JEV включена в закреплённый
+Поддержка JEV появилась в
 [commit llm-gateway](https://github.com/mytecor/llm-gateway/commit/939604d888b4bfa7444874349c2146b2dd6481ec).
 Пакет собирает опубликованные исходники напрямую; revision, source hash и vendor
 hashes закреплены в [описании сборки](./package.nix).

@@ -591,7 +591,10 @@ in
           request_timeout = "5m";
           cooldown = "30s";
           max_concurrent = 1;
-          config.inference_url = "http://127.0.0.1:${toString ports.mac-llama-embeddings-tunnel}";
+          config = {
+            inference_url = "http://127.0.0.1:${toString ports.mac-llama-embeddings-tunnel}";
+            image_align = "embeddinggemma2";
+          };
         }
         {
           id = "jev-gonka";
