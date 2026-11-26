@@ -11,8 +11,8 @@
   src = fetchFromGitHub {
     owner = "mytecor";
     repo = "telegram-gateway";
-    rev = "c7702c99251b51f10fb53019605650ecb4bfa744";
-    hash = "sha256-S9fjMrx7F5VWyex36AglHuFDbuM+vNbsG9x1g1rvbGo=";
+    rev = "e4e382e7ce45bd0246bc91892c4adfa68dfa98aa";
+    hash = "sha256-9Z7J2R380X32jvbFsDQwHjgJVp0g7eFfw51jj0VmM2A=";
   };
 
   vendorHash = "sha256-MqCYCHimc5T+Ph/P9x4FFPJUOIXiF2pJGFR3iiq8R6k=";
