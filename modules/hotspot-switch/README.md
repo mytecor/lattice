@@ -51,9 +51,10 @@
 - Скрипт проверяет через `iw dev <sta> link`, что соединение отсутствует. Если интерфейс не разорвал связь, он принудительно переводится в `down`.
 - Виртуальный интерфейс `ap0` помечен как `networking.networkmanager.unmanaged = [ "ap0" ]`, чтобы NetworkManager не пытался им управлять.
 
-### 3. Автоматический откат (Fail-safe Rollback)
+### 3. Автоматический откат (Fail-safe Rollback) и watchdog
 - Если `hostapd` не смог запуститься или аварийно упал, systemd вызывает `ExecStopPost`, который удаляет `ap0`, возвращает клиентский Wi-Fi в `managed yes` и фиксирует состояние `client`.
 - Нода никогда не остаётся без сетевого доступа при сбое радиомодуля точки доступа.
+- Таймер `lattice-hotspot-ap-watchdog.timer` раз в минуту запускает `lattice-hotspot-switch check-ap-health`: если `multicast TXQ` на `ap0` переполнена (`qsz-pkt >= 64`) и счётчик `tx-packets` не растёт (зависание TX-очереди драйвера, например `rtw88_8822ce` после GTK rekeying), сервис автоматически перезапускает `lattice-hotspot-ap.service`.
 
 ## Опции
 
@@ -92,4 +93,7 @@ lattice-hotspot-switch status
 
 # Принудительная оценка и переключение режимов
 lattice-hotspot-switch eval
+
+# Проверка зависания TX-очереди AP и авто-перезапуск при необходимости
+lattice-hotspot-switch check-ap-health
 ```

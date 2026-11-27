@@ -93,6 +93,8 @@ assert valid.systemd.services.lattice-hotspot-ap.serviceConfig.Restart == "on-fa
 assert lib.elem "lattice-hotspot-dnsmasq.service" valid.systemd.services.lattice-hotspot-ap.wants;
 assert lib.elem "lattice-hotspot-ap.service" valid.systemd.services.lattice-hotspot-dnsmasq.bindsTo;
 assert valid.systemd.services.lattice-hotspot-switch.serviceConfig.Type == "oneshot";
+assert valid.systemd.services.lattice-hotspot-ap-watchdog.serviceConfig.Type == "oneshot";
+assert valid.systemd.timers.lattice-hotspot-ap-watchdog.timerConfig.Unit == "lattice-hotspot-ap-watchdog.service";
 assert valid.systemd.paths.lattice-hotspot-switch-carrier-enp3s0.pathConfig.PathModified == "/sys/class/net/enp3s0/carrier";
 
 # Dispatcher script
@@ -167,6 +169,10 @@ pkgs.runCommand "hotspot-switch-eval-test" {
   elif [ "$ACTION" = "stop" ]; then
     rm -f "$TEST_DIR/ap-is-active"
     echo "client" > "$RUN_DIR/mode"
+    exit 0
+  elif [ "$ACTION" = "restart" ]; then
+    touch "$TEST_DIR/ap-is-active"
+    echo "ap" > "$RUN_DIR/mode"
     exit 0
   fi
   EOF
@@ -272,6 +278,80 @@ pkgs.runCommand "hotspot-switch-eval-test" {
   unset ETH_INTERFACES_OVERRIDE
   eth_detected=$("$SWITCH_CMD" get-eth-interfaces)
   echo "$eth_detected" | grep -q "enp3s0"
+
+  # --- Test Case 10: AP TX-stall watchdog (check-ap-health) ---
+  cat << 'EOF' > "$BIN_DIR/mock-iw"
+  #!/usr/bin/env bash
+  COUNT_FILE="$TEST_DIR/iw-call-count"
+  n=$(cat "$COUNT_FILE" 2>/dev/null || echo 0)
+  n=$((n + 1))
+  echo "$n" > "$COUNT_FILE"
+  if [ -f "$TEST_DIR/mock-iw-$n" ]; then
+    cat "$TEST_DIR/mock-iw-$n"
+  else
+    cat "$TEST_DIR/mock-iw-1"
+  fi
+  EOF
+  chmod +x "$BIN_DIR/mock-iw"
+
+  export IW_CMD="$BIN_DIR/mock-iw"
+  export TXQ_STALL_THRESHOLD="64"
+  export TXQ_CONFIRM_SEC="0"
+  touch "$TEST_DIR/ap-is-active"
+
+  # 10a. Healthy TXQ (qsz-pkt = 0) -> no restart
+  rm -f "$TEST_DIR/iw-call-count" "$TEST_DIR/mock-iw-1" "$TEST_DIR/mock-iw-2"
+  > "$TEST_DIR/systemctl-calls.log"
+  cat << 'EOF' > "$TEST_DIR/mock-iw-1"
+  Interface ap0
+  	multicast TXQ:
+  		qsz-byt	qsz-pkt	flows	drops	marks	overlmt	hashcol	tx-bytes	tx-packets
+  		0	0	0	0	0	0	0	0		100
+  EOF
+  "$SWITCH_CMD" check-ap-health
+  if grep -q "restart lattice-hotspot-ap.service" "$TEST_DIR/systemctl-calls.log"; then
+    echo "ERROR: check-ap-health restarted healthy AP" >&2
+    exit 1
+  fi
+
+  # 10b. Busy but draining TXQ (tx-packets advances) -> no restart
+  rm -f "$TEST_DIR/iw-call-count"
+  > "$TEST_DIR/systemctl-calls.log"
+  cat << 'EOF' > "$TEST_DIR/mock-iw-1"
+  Interface ap0
+  	multicast TXQ:
+  		qsz-byt	qsz-pkt	flows	drops	marks	overlmt	hashcol	tx-bytes	tx-packets
+  		20000	100	100	0	0	0	0	50000		100
+  EOF
+  cat << 'EOF' > "$TEST_DIR/mock-iw-2"
+  Interface ap0
+  	multicast TXQ:
+  		qsz-byt	qsz-pkt	flows	drops	marks	overlmt	hashcol	tx-bytes	tx-packets
+  		18000	90	110	0	0	0	0	55000		110
+  EOF
+  "$SWITCH_CMD" check-ap-health
+  if grep -q "restart lattice-hotspot-ap.service" "$TEST_DIR/systemctl-calls.log"; then
+    echo "ERROR: check-ap-health restarted draining AP" >&2
+    exit 1
+  fi
+
+  # 10c. Stalled TXQ (qsz-pkt >= threshold and tx-packets stuck) -> restarts AP
+  rm -f "$TEST_DIR/iw-call-count"
+  > "$TEST_DIR/systemctl-calls.log"
+  cat << 'EOF' > "$TEST_DIR/mock-iw-1"
+  Interface ap0
+  	multicast TXQ:
+  		qsz-byt	qsz-pkt	flows	drops	marks	overlmt	hashcol	tx-bytes	tx-packets
+  		196176	1757	1751	0	0	0	186	5084861		21166
+  EOF
+  cat << 'EOF' > "$TEST_DIR/mock-iw-2"
+  Interface ap0
+  	multicast TXQ:
+  		qsz-byt	qsz-pkt	flows	drops	marks	overlmt	hashcol	tx-bytes	tx-packets
+  		198000	1770	1764	0	0	0	186	5084861		21166
+  EOF
+  "$SWITCH_CMD" check-ap-health
+  grep -q "restart lattice-hotspot-ap.service" "$TEST_DIR/systemctl-calls.log"
 
   mkdir -p "$out"
   echo "All hotspot switch tests passed successfully." > "$out/success"

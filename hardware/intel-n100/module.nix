@@ -13,10 +13,12 @@
   boot.kernelModules = [ "kvm-intel" ];
   hardware.cpu.intel.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
 
-  # Suppress Realtek RTL8822CE PCIe AER error floods and disable link ASPM
+  # Suppress Realtek RTL8822CE PCIe AER error floods, disable link ASPM,
+  # and disable deep LPS power-saving (prevents AP-mode TX queue stalls after GTK rekeying)
   boot.kernelParams = [ "pci=noaer" ];
   boot.extraModprobeConfig = ''
     options rtw88_pci disable_aspm=y
+    options rtw88_core disable_lps_deep=y
   '';
 
   services.udev.extraRules = ''

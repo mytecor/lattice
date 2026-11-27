@@ -43,12 +43,15 @@ let
     set -euo pipefail
 
     IP_CMD="''${IP_CMD:-${pkgs.iproute2}/bin/ip}"
+    IW_CMD="''${IW_CMD:-${pkgs.iw}/bin/iw}"
     SYS_CLASS_NET="''${SYS_CLASS_NET:-/sys/class/net}"
     SYSTEMCTL_CMD="''${SYSTEMCTL_CMD:-${pkgs.systemd}/bin/systemctl}"
     RUN_DIR="''${RUN_DIR:-/run/lattice-hotspot-switch}"
     MODE_FILE="''${MODE_FILE:-$RUN_DIR/mode}"
     LOCK_FILE="''${LOCK_FILE:-$RUN_DIR/switch.lock}"
     DEBOUNCE_SEC="''${DEBOUNCE_SEC:-2}"
+    TXQ_STALL_THRESHOLD="''${TXQ_STALL_THRESHOLD:-64}"
+    TXQ_CONFIRM_SEC="''${TXQ_CONFIRM_SEC:-5}"
 
     ETH_CONFIGURED="${ethConfiguredStr}"
     WIFI_CONFIGURED="${wifiConfiguredStr}"
@@ -257,6 +260,54 @@ let
       fi
     }
 
+    # Reads "qsz-pkt tx-packets" from `iw dev <ap> info` multicast TXQ table.
+    read_ap_mcast_txq() {
+      "$IW_CMD" dev "$AP_IFACE" info 2>/dev/null | ${pkgs.gawk}/bin/awk '
+        /multicast TXQ:/ { in_txq = 1; next }
+        in_txq && /qsz-byt/ { header = 1; next }
+        in_txq && header { print $2, $9; exit }
+      '
+    }
+
+    # Detects wedged AP TX queue (e.g. rtw88_8822ce stall after GTK rekeying):
+    # multicast TXQ backlog stays >= TXQ_STALL_THRESHOLD while tx-packets does
+    # not advance across TXQ_CONFIRM_SEC seconds.
+    cmd_check_ap_health() {
+      if ! "$SYSTEMCTL_CMD" is-active --quiet lattice-hotspot-ap.service 2>/dev/null; then
+        return 0
+      fi
+
+      local sample1 qsz1 tx1
+      sample1=$(read_ap_mcast_txq || true)
+      read -r qsz1 tx1 <<< "$sample1"
+      [ -n "''${qsz1:-}" ] && [ -n "''${tx1:-}" ] || return 0
+
+      if [ "$qsz1" -lt "$TXQ_STALL_THRESHOLD" ]; then
+        return 0
+      fi
+
+      if [ "$TXQ_CONFIRM_SEC" -gt 0 ]; then
+        sleep "$TXQ_CONFIRM_SEC"
+      fi
+
+      local sample2 qsz2 tx2
+      sample2=$(read_ap_mcast_txq || true)
+      read -r qsz2 tx2 <<< "$sample2"
+      [ -n "''${qsz2:-}" ] && [ -n "''${tx2:-}" ] || return 0
+
+      if [ "$qsz2" -ge "$TXQ_STALL_THRESHOLD" ] && [ "$tx2" -eq "$tx1" ]; then
+        exec 200>"$LOCK_FILE"
+        if ! ${pkgs.util-linux}/bin/flock -n 200; then
+          echo "Hotspot evaluation lock busy, deferring AP health restart." >&2
+          return 0
+        fi
+        if "$SYSTEMCTL_CMD" is-active --quiet lattice-hotspot-ap.service 2>/dev/null; then
+          echo "AP interface $AP_IFACE TX queue stalled (qsz-pkt: $qsz1 -> $qsz2, tx-packets stuck at $tx2); restarting lattice-hotspot-ap.service" >&2
+          "$SYSTEMCTL_CMD" restart lattice-hotspot-ap.service
+        fi
+      fi
+    }
+
     ACTION="''${1:-eval}"
     case "$ACTION" in
       mode)
@@ -280,8 +331,11 @@ let
       eval)
         cmd_eval
         ;;
+      check-ap-health)
+        cmd_check_ap_health
+        ;;
       *)
-        echo "Usage: lattice-hotspot-switch [mode|get-wifi-interface|get-phy|get-eth-interfaces|is-uplink-active|status|eval]" >&2
+        echo "Usage: lattice-hotspot-switch [mode|get-wifi-interface|get-phy|get-eth-interfaces|is-uplink-active|status|eval|check-ap-health]" >&2
         exit 1
         ;;
     esac
@@ -596,6 +650,28 @@ in
         ExecStart = "${pkgs.dnsmasq}/bin/dnsmasq -k --conf-file=/run/lattice-hotspot-switch/dnsmasq.conf";
         Restart = "on-failure";
         RestartSec = "2s";
+      };
+    };
+
+    # Periodic AP TX-stall watchdog: recovers from Wi-Fi driver TX queue wedge
+    # (e.g. rtw88_8822ce multicast/unicast stall after GTK rekeying).
+    systemd.services.lattice-hotspot-ap-watchdog = {
+      description = "Check Wi-Fi hotspot AP TX queue health and recover from stalls";
+      after = [ "network.target" ];
+      path = [ pkgs.coreutils pkgs.gawk pkgs.iw pkgs.util-linux pkgs.systemd ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${switchScript}/bin/lattice-hotspot-switch check-ap-health";
+      };
+    };
+
+    systemd.timers.lattice-hotspot-ap-watchdog = {
+      description = "Run Wi-Fi hotspot AP TX-stall watchdog every minute";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec = "2min";
+        OnUnitActiveSec = "1min";
+        Unit = "lattice-hotspot-ap-watchdog.service";
       };
     };
   };
