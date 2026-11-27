@@ -128,6 +128,8 @@ flowchart TD
     end
 
     subgraph AI["Инференс LLM"]
+        ApartmentsAPI["apartments-api<br/>(Интерактивный поиск)"]
+        ApartmentsWorker["apartments-worker<br/>(Фоновая обработка каталога)"]
         LLMGateway["llm-gateway<br/>(Маршрутизация и Strict JSON Schema)"]
         EmbeddingsDriver["embeddings-driver<br/>(Типизированный embeddings-адаптер)"]
         CpuMax["CPU-Max<br/>(EmbeddingGemma 2 на Intel N100)"]
@@ -200,6 +202,8 @@ flowchart TD
     Grafana --> Prometheus
     Grafana --> Loki
 
+    ApartmentsAPI --> LLMGateway
+    ApartmentsWorker --> LLMGateway
     HydraACP --> LLMGateway
     Agentrun --> MuseACP
     MuseACP --> Muse
@@ -407,7 +411,8 @@ flowchart TD
         Meta["Meta AI<br/>(Провайдер Muse)"]
         Jev["jev-ultrafast<br/>(Браузерный агент)"]
         DirectClient["Внешние клиенты<br/>(С клиентскими ключами)"]
-        Apartments["apartments<br/>(Пакетный анализ каталога)"]
+        ApartmentsAPI["apartments-api<br/>(Интерактивный поиск)"]
+        ApartmentsWorker["apartments-worker<br/>(Фоновый анализ каталога)"]
     end
 
     subgraph Gateway["LLM Gateway"]
@@ -444,7 +449,9 @@ flowchart TD
     Muse --> Meta
     Agentrun --> Router
     Jev --> Router
-    Apartments --> BatchAPI
+    ApartmentsAPI --> Router
+    ApartmentsWorker --> Router
+    ApartmentsWorker --> BatchAPI
     BatchAPI --> HTTPDriver
     HTTPDriver <--> BatchStorage
     HTTPDriver --> OpenRouter

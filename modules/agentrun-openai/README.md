@@ -3,7 +3,7 @@
 `lattice.agentrun-openai` запускает
 [`packages/agentrun-openai`](../../packages/agentrun-openai) — OpenAI-compatible
 HTTP-шлюз над библиотекой `github.com/dmora/agentrun`
-(форк [`github.com/mytecor/agentrun`](https://github.com/mytecor/agentrun)).
+(форк [`github.com/mytecor/agentrun`](https://github.com/mytecor/agentrun-openai/blob/e11419e4d0d2fc34d26fce563a8fafee8869ac94/go.mod#L17)).
 Шлюз предоставляет persistent-сессии любых ACP-совместимых агентов как модели OpenAI API:
 
 - `<backend-id>` — backend-умолчание;

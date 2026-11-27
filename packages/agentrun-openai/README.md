@@ -2,7 +2,7 @@
 
 OpenAI-совместимый HTTP-шлюз над
 [`github.com/dmora/agentrun`](https://github.com/dmora/agentrun)
-(форк [`github.com/mytecor/agentrun`](https://github.com/mytecor/agentrun)).
+(форк [`github.com/mytecor/agentrun`](https://github.com/mytecor/agentrun-openai/blob/e11419e4d0d2fc34d26fce563a8fafee8869ac94/go.mod#L17)).
 Экспонирует агентские CLI (Claude Code, Codex ACP, Antigravity CLI) как модели
 OpenAI API, держа их процессы, инструменты и сессии живыми внутри agentrun.
 

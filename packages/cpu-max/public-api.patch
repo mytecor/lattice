@@ -244,7 +244,7 @@ index 7fe8052..974222d 100644
      http_response(fd, status, reason, b.data, keep_alive);
      free(b.data);
  }
-@@ -1070,6 +1079,77 @@ static void handle_tags(int fd, const server_opts *opts, bool keep_alive) {
+@@ -1070,6 +1079,80 @@ static void handle_tags(int fd, const server_opts *opts, bool keep_alive) {
  static ei_response_cache *media_cache;
  #include "http_media.h"
  
@@ -292,6 +292,9 @@ index 7fe8052..974222d 100644
 +    ei_tokenize_spm(&opts->engine->tokenizer, text.s, text.len,
 +                    add && !strncmp(add, "true", 4), !parse || !strncmp(parse, "true", 4), &tokens);
 +    free(text.s);
++    const char *truncate = find_json_field(body, "truncate");
++    if (truncate) skip_ws(&truncate);
++    if (tokens.n > 8192 && truncate && !strncmp(truncate, "true", 4)) tokens.n = 8192;
 +    if (tokens.n > 8192) {
 +        ei_tokens_free(&tokens);
 +        openai_http_error(fd, 400, "Bad Request", "context_length_exceeded", "content", keep_alive);
@@ -322,7 +325,7 @@ index 7fe8052..974222d 100644
  static void handle_embed(int fd, ei_inference_service *service,
                           const server_opts *opts, const char *body,
                           size_t body_len, bool keep_alive,
-@@ -1085,6 +1165,11 @@ static void handle_embed(int fd, ei_inference_service *service,
+@@ -1085,6 +1168,11 @@ static void handle_embed(int fd, ei_inference_service *service,
          openai_http_error(fd, 400, "Bad Request", err, "model", keep_alive);
          return;
      }
@@ -334,7 +337,7 @@ index 7fe8052..974222d 100644
      if (!parse_embed_request(body, &inputs, &dimensions, &encoding,
                               err, sizeof err)) {
          free_inputs(&inputs);
-@@ -1143,7 +1228,10 @@ static void handle_embed(int fd, ei_inference_service *service,
+@@ -1143,7 +1231,10 @@ static void handle_embed(int fd, ei_inference_service *service,
      if (any_structured) {
          for (size_t i = 0; i < inputs.n && embedded; ++i) {
              size_t count = 0;
@@ -346,7 +349,7 @@ index 7fe8052..974222d 100644
                  embedded = embed_structured(opts, &inputs.items[i], embeddings + i * EI_N_EMBD,
                                              &count, err, sizeof err);
              } else
-@@ -1304,9 +1392,10 @@ static bool handle_client(http_connection *connection,
+@@ -1304,9 +1395,10 @@ static bool handle_client(http_connection *connection,
          http_response(connection->fd, 200, "OK", EI_OPENAPI_JSON, keep_alive);
      } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/tags") == 0) {
          handle_tags(connection->fd, opts, keep_alive);

@@ -181,6 +181,14 @@ in
         file = ./secrets/llm-gateway-client-node-pi.age;
         mode = "0400";
       };
+      llm-gateway-client-apartments-api = {
+        file = ./secrets/llm-gateway-client-apartments-api.age;
+        mode = "0400";
+      };
+      llm-gateway-client-apartments-worker = {
+        file = ./secrets/llm-gateway-client-apartments-worker.age;
+        mode = "0400";
+      };
       llm-gateway-client-mac = {
         file = ./secrets/llm-gateway-client-mac.age;
         mode = "0400";
@@ -552,6 +560,8 @@ in
   lattice.llm-gateway = {
     credentials = {
       LATTICE_CLIENT_NODE_PI_KEY = config.age.secrets.llm-gateway-client-node-pi.path;
+      LATTICE_CLIENT_APARTMENTS_API_KEY = config.age.secrets.llm-gateway-client-apartments-api.path;
+      LATTICE_CLIENT_APARTMENTS_WORKER_KEY = config.age.secrets.llm-gateway-client-apartments-worker.path;
       LATTICE_CLIENT_MAC_KEY = config.age.secrets.llm-gateway-client-mac.path;
       LATTICE_LLM_PROVIDER_GONKA_PROXY_KEY = config.age.secrets.llm-provider-gonka-gg-proxy.path;
       LATTICE_LLM_PROVIDER_GONKA_OPENBROKER_KEY = config.age.secrets.llm-provider-gonka-gg-openbroker.path;
@@ -575,6 +585,8 @@ in
       client_api_keys = [
         { id = "node-pi"; key = "env.LATTICE_CLIENT_NODE_PI_KEY"; }
         { id = "mac"; key = "env.LATTICE_CLIENT_MAC_KEY"; }
+        { id = "apartments-api"; key = "env.LATTICE_CLIENT_APARTMENTS_API_KEY"; default_priority = "interactive"; }
+        { id = "apartments-worker"; key = "env.LATTICE_CLIENT_APARTMENTS_WORKER_KEY"; default_priority = "background"; max_priority = "background"; }
       ];
       providers = [
         {
@@ -680,7 +692,7 @@ in
         { route = "embedding"; action = "filter"; where.model.eq = "embedding"; }
         { route = "embedding"; action = "map"; providers = [ "local-cpu-max" ]; native = "embeddinggemma-2"; }
         { route = "embedding"; action = "map"; providers = [ "mac-llama-embedding" ]; native = "google/embeddinggemma-2"; }
-        { route = "embedding"; action = "admission"; max_in_flight = 8; max_pending = 12; wait_timeout = "30s"; }
+        { route = "embedding"; action = "admission"; max_in_flight = 8; reserve_interactive = 1; max_pending = 12; wait_timeout = "30s"; }
         { route = "embedding"; action = "rank"; strategy = "priority"; }
         { route = "embedding"; action = "balance"; strategy = "expected-completion"; }
         { route = "embedding"; action = "race"; count = 1; }
@@ -767,7 +779,7 @@ in
       };
     } // lib.optionalAttrs (config.lattice.llm-gateway.package.supportsBatch or false) {
       batch = {
-        client = "mac";
+        clients = [ "mac" "apartments-worker" ];
         model = "smart";
         storage_provider = "google-vertex";
         bucket = "mytecor-apartments-vertex-batch";

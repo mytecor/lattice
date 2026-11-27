@@ -1,13 +1,13 @@
 { lib, buildGo127Module, fetchFromGitHub, makeWrapper, srcOverride ? null, supportsBatch ? true }:
 
 let
-  version = "0.1.0-unstable-2026-11-26";
-  revision = "3408506b330a17eaabdfdbb57c100d6e3be12526";
+  version = "0.1.0-unstable-2026-11-28";
+  revision = "924e04ba62918218859f857e96d3777de93b17bc";
   pinnedSrc = fetchFromGitHub {
     owner = "mytecor";
     repo = "llm-gateway";
     rev = revision;
-    hash = "sha256-L6DZDKsbQajUwpEUKssHqjWY7xd1si38bKxx34oSC8Y=";
+    hash = "sha256-SrEzvJ3FXUu5hObh7SEyU+Bo1dMBpTNa9tY2da4oDno=";
   };
   src = if srcOverride == null then pinnedSrc else lib.cleanSource srcOverride;
 
@@ -16,7 +16,7 @@ let
     inherit version src;
     modRoot = "drivers/embeddings";
     subPackages = [ "." ];
-    vendorHash = "sha256-71a7clpfny+zrLy4R8fRLZDYVTIROpp49K5T9mzDnjw=";
+    vendorHash = "sha256-s3ElAH29IMJXTND1z4rE65+5gvE6zl3w35hcfcdLWdc=";
     postInstall = ''
       mv "$out/bin/embeddings" "$out/bin/embeddings-driver"
     '';
@@ -62,7 +62,7 @@ buildGo127Module {
   # HTTP boundary is exercised separately by the Lattice runtime smoke test.
   checkPhase = ''
     runHook preCheck
-    go test ./driverproto/... ./internal/model ./internal/policy ./internal/session ./internal/structured ./internal/transform ./internal/telemetry
+    go test ./client ./driverproto/... ./internal/model ./internal/policy ./internal/session ./internal/structured ./internal/transform ./internal/telemetry
     runHook postCheck
   '';
   postInstall = ''

@@ -62,7 +62,7 @@ NixOS-интеграция и публичный status ingress находятс
 
 [`agentrun-openai`](./agentrun-openai/README.md) — OpenAI-compatible HTTP-шлюз над
 [`github.com/dmora/agentrun`](https://github.com/dmora/agentrun) (форк
-[`github.com/mytecor/agentrun`](https://github.com/mytecor/agentrun)); предоставляет
+[`github.com/mytecor/agentrun`](https://github.com/mytecor/agentrun-openai/blob/e11419e4d0d2fc34d26fce563a8fafee8869ac94/go.mod#L17)); предоставляет
 persistent Claude Code / Codex / Antigravity сессии как модели OpenAI API. Пакет пинится на
 release `v0.1.1` внешнего репозитория (см. `package.nix`). NixOS-интеграция —
 [`modules/agentrun-openai`](../modules/agentrun-openai/README.md), профиль —

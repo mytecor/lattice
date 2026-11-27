@@ -44,6 +44,8 @@ in
   # (openssl rand, без перевода строки), так что `!cat`-ссылка в Pi и env-путь
   # дают один и тот же точный Bearer.
   "llm-gateway-client-node-pi.age".publicKeys = [ admin node ];
+  "llm-gateway-client-apartments-api.age".publicKeys = [ admin node ];
+  "llm-gateway-client-apartments-worker.age".publicKeys = [ admin node ];
   "llm-gateway-client-mac.age".publicKeys = [ admin node ];
   "grafana-admin-password.age".publicKeys = [ admin node ];
   "grafana-secret-key.age".publicKeys = [ admin node ];
